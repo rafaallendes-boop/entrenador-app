@@ -28,15 +28,26 @@ IMPORTANTE:
 
 const RETRY_BACKOFF_MS = [300, 800] as const
 
-/** Returns true only when the model produced genuinely malformed output. */
+/**
+ * Returns true when an action request cannot yield a usable proposal.
+ *
+ * chat_action is only selected for commands that alter the plan, so prose on
+ * its own is not a successful response. Retrying it prevents the UI from
+ * showing an unbacked "sesión creada" message without the proposal button.
+ */
 export function shouldRetryAction(response: CoachNormalizedResponse): boolean {
-  return response.meta?.actionParseFailed === true || response.meta?.likelyTruncated === true
+  return (
+    response.meta?.actionParseFailed === true
+    || response.meta?.likelyTruncated === true
+    || (response.actions?.length ?? 0) === 0
+  )
 }
 
 function shouldRejectAfterRetry(response: CoachNormalizedResponse): boolean {
-  // Only reject when JSON is genuinely malformed.
-  // If the model simply omitted actions, return the text so the user can continue.
-  return response.meta?.actionParseFailed === true && !response.message.trim()
+  // A malformed action block cannot be safely repaired here. A prose-only
+  // response is returned to CoachEngine first: its action post-processor can
+  // deterministically build a proposal for clear single-session requests.
+  return response.meta?.actionParseFailed === true
 }
 
 /** Retryable transient provider errors at the client layer (in addition to server retries). */
@@ -82,7 +93,7 @@ export async function sendWithRecovery(
     throw createProviderError(
       provider.name,
       'parse_error',
-      'RallyIQ devolvio una respuesta con formato invalido en el bloque de acciones. Intenta de nuevo.',
+      'No pude crear la propuesta de forma segura. Intenta de nuevo.',
       true,
     )
   }

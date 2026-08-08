@@ -23,7 +23,15 @@ const ADJUSTMENT_VERB_PATTERN = /\b(ajusta(?:r|me)?|ajustame|cambia(?:r|me)?|cam
 const SESSION_TARGET_PATTERN = /\b(sesion(?:es)?|entreno|entrenamiento|descanso|libre|off|running|squash|fuerza|pesas|gym|gimnasio|strength|cycling|ciclismo|bici|movilidad|recovery|recuperacion|am|pm)\b/
 const NEXT_WEEK_PATTERN = /\b(proxima\s+semana|siguiente\s+semana)\b/
 const CURRENT_WEEK_PATTERN = /\b(esta\s+semana|semana\s+actual)\b/
-const ACTION_CONFIRMATION_PATTERN = /\b(si|sí|ok|okay|dale|confirmo|correcto|hazlo|hacelo|aplica(?:lo)?|aplicar|realiza(?:r)?(?:\s+el)?\s+cambio|procede|adelante)\b/
+// "lunes de la próxima semana" is a temporal qualifier, not a request to
+// generate the whole week. Treat a week word as scope only when it follows the
+// planning verb directly ("créame una semana", "arma el plan").
+const EXPLICIT_WEEK_SCOPE_PATTERN = /\b(?:crea(?:r|me)?|haz(?:me)?|arma(?:me)?|genera(?:r|me)?|planifica(?:r)?|organiza(?:r)?|programa(?:r)?|propuesta|dame|entrega(?:me)?)(?:\s+\w+){0,4}\s+\b(?:semana|microciclo|plan(?:\s+de\s+entrenamiento)?)\b/
+// Include short object-pronoun imperatives ("créala", "hazlo") because users
+// commonly confirm the session the coach just described with a one-word reply.
+// Without this, those replies fall through to chat_general and can only produce
+// prose, even though the preceding turn was asking to create a session.
+const ACTION_CONFIRMATION_PATTERN = /\b(si|sí|ok|okay|dale|confirmo|correcto|hazlo|hacelo|crea(?:la|lo)?|aplica(?:lo)?|aplicar|realiza(?:r)?(?:\s+el)?\s+cambio|procede|adelante)\b/
 const RECENT_ACTION_DISCUSSION_PATTERN = /\b(confirmas?|quieres?|quiero|cambio|cambiar|reemplaza(?:r)?|reemplazo|elimina(?:r)?|eliminar|borra(?:r)?|borrar|saca(?:r)?|sacar|ajusta(?:r)?|modifica(?:r)?|sesion|entreno|entrenamiento|running|corrida|trote|squash|zona\s*2|z2)\b/
 
 export function resolveChatRoute(
@@ -48,7 +56,7 @@ export function resolveChatRoute(
   const isSpecificDaySessionRequest =
     WEEKDAY_PATTERN.test(normalized)
     && SESSION_TARGET_PATTERN.test(normalized)
-    && !WEEK_PLANNING_TARGET_PATTERN.test(normalized)
+    && !EXPLICIT_WEEK_SCOPE_PATTERN.test(normalized)
 
   if (
     ADJUSTMENT_VERB_PATTERN.test(normalized)

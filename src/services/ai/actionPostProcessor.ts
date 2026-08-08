@@ -70,6 +70,9 @@ export function postProcessCoachActions(
   const alignmentWeekStart = requestedWeekStart ?? (resolvedDate ? getWeekStartISO(resolvedDate) : undefined)
   const occupiedSlots = buildOccupiedSlotSet(sessions, alignmentWeekStart)
   const requestedSessionActions =
+    (isCreationConfirmationFollowUp(normalizedMessage) && inheritsRecentActionContext
+      ? buildFallbackRequestedSessionActions(actionIntentText, context, requestedWeekStart, restOffsets)
+      : undefined) ??
     buildFallbackRequestedSessionActions(normalizedMessage, context, requestedWeekStart, restOffsets) ??
     (inheritsRecentActionContext
       ? undefined
@@ -195,7 +198,13 @@ function buildRecentActionIntentText(normalizedMessage: string, context: ChatCon
 
 function isActionConfirmationFollowUp(normalizedMessage: string): boolean {
   return normalizedMessage.length <= 80
-    && /\b(si|sí|ok|okay|dale|confirmo|correcto|hazlo|hacelo|aplicalo|aplica|realiza(?:r)?(?:\s+el)?\s+cambio|procede|adelante)\b/.test(normalizedMessage)
+    && /\b(si|sí|ok|okay|dale|confirmo|correcto|hazlo|hacelo|crea(?:la|lo)?|aplicalo|aplica|realiza(?:r)?(?:\s+el)?\s+cambio|procede|adelante)\b/.test(normalizedMessage)
+    && !/\b(porque|pero|aunque|opino|creo|pregunta|duda)\b/.test(normalizedMessage)
+}
+
+function isCreationConfirmationFollowUp(normalizedMessage: string): boolean {
+  return normalizedMessage.length <= 80
+    && /\b(crea(?:la|lo)?|hazlo|hacelo)\b/.test(normalizedMessage)
     && !/\b(porque|pero|aunque|opino|creo|pregunta|duda)\b/.test(normalizedMessage)
 }
 
@@ -629,7 +638,16 @@ function buildFallbackAddSessionAction(options: {
 
   if (options.sessionType === 'strength') {
     const selection = selectStrengthSession(buildStrengthSelectionContextForAction(options.context, durationMin, objective))
-    action.exercises = selection.exercises.map(toStrengthProposalForEnhancement)
+    const exercises = selection.exercises.map(toStrengthProposalForEnhancement)
+    // The local fallback may be the only proposal available after a malformed
+    // model response. Preserve an explicit supersets request at creation time,
+    // before later enrichment and normalization run.
+    action.exercises = planSupersetGroups(exercises, shouldApplySupersetPolicy({
+      phase: mapActionStrengthPhase(options.context.athleteProfile?.macroPlan?.currentPhase),
+      sportProfile: deriveActionStrengthSportProfile(options.context.athleteProfile?.sportContext?.primarySport),
+      sessionDurationMin: durationMin,
+      intent: detectSupersetIntent(intentText),
+    })).exercises
   }
 
   return completeRunningZone2Details(action, intentText)

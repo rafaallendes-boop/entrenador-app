@@ -6,7 +6,7 @@ import type { AIProvider, AIRequest, CoachNormalizedResponse } from './types'
 import type { AIRequestClass, AITechnicalSurface, ChatContext } from '../../types'
 import { buildCoachPrompt } from './promptBuilder'
 import { normalizeResponse } from './responseNormalizer'
-import { AIProviderError } from './types'
+import { AIProviderError, createProviderError } from './types'
 import { buildAITraceId, getAIRequestPolicy } from './requestPolicy'
 import { getActiveProvider, getProviderForRequestClass, isRealProviderConfigured } from './providerResolver'
 import { useAIDebugStore } from '../../store/useAIDebugStore'
@@ -212,6 +212,14 @@ async function sendTrackedCoachRequest(
       const finalResult = requestClass === 'chat_action'
         ? postProcessCoachActions(result, context, userMessage)
         : result
+      if (requestClass === 'chat_action' && (finalResult.actions?.length ?? 0) === 0) {
+        throw createProviderError(
+          provider.name,
+          'parse_error',
+          'No pude crear una propuesta aplicable de forma segura. Intenta de nuevo.',
+          true,
+        )
+      }
       const normalizedOutcome = result.meta?.outcome
       useAIDebugStore.getState().updateRequest(traceId, {
         outcome: normalizedOutcome,

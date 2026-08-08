@@ -38,6 +38,12 @@ describe('chatRouting', () => {
     expect(resolveChatRoute('Dame la sesión de pesas para mañana lunes').kind).toBe('chat_action')
   })
 
+  it('keeps a next-week day-specific strength request out of the week creator', () => {
+    expect(resolveChatRoute(
+      'Créame una sesión de fuerza con superseries para el lunes de la próxima semana',
+    ).kind).toBe('chat_action')
+  })
+
   it('routes typo-tolerant strength session requests to chat_action', () => {
     expect(resolveChatRoute('crea una sesión de pesas par ahoy').kind).toBe('chat_action')
     expect(resolveChatRoute('crea una sesion de gym a hoy').kind).toBe('chat_action')
@@ -63,6 +69,20 @@ describe('chatRouting', () => {
       recentMessages: [
         { role: 'user', content: 'Realiza un cambio en mi sesión de mañana, quiero realizar una corrida en zona 2' },
         { role: 'coach', content: 'Confirmas que quieres reemplazar la sesión de squash por una corrida en Zona 2?' },
+      ],
+    })
+
+    expect(route.kind).toBe('chat_action')
+  })
+
+  it('routes "créala" to chat_action after the coach has described a session', () => {
+    const route = resolveChatRoute('créala', {
+      recentSessions: [],
+      plannedSessions: [],
+      historicalSessions: [],
+      recentMessages: [
+        { role: 'user', content: 'Quiero una sesión de fuerza con superseries para el lunes.' },
+        { role: 'coach', content: 'Te propongo una sesión de fuerza con superseries para el lunes.' },
       ],
     })
 

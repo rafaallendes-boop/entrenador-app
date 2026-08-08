@@ -31,7 +31,7 @@ describe('CoachEngine recovery heuristics', () => {
     expect(inferCoachActionIntent('Reordena las sesiones de running y fuerza')).toBe('modify_plan')
   })
 
-  it('does not retry a coherent prose-only response without parse failure', () => {
+  it('retries a prose-only response on the action pipeline', () => {
     const response = makeResponse({
       message: 'Aqui tienes una propuesta general.',
       actions: undefined,
@@ -42,7 +42,7 @@ describe('CoachEngine recovery heuristics', () => {
       },
     })
 
-    expect(shouldRetry(response)).toBe(false)
+    expect(shouldRetry(response)).toBe(true)
   })
 
   it('does not require multiple create_week actions anymore after a valid action response', () => {
@@ -74,7 +74,7 @@ describe('CoachEngine recovery heuristics', () => {
     expect(shouldRetry(response)).toBe(false)
   })
 
-  it('does not retry when no action was requested and no parse failure happened', () => {
+  it('retries an action-pipeline response that omits actions', () => {
     const response = makeResponse({
       message: 'Duerme mejor y mantente hidratado.',
       actions: undefined,
@@ -85,7 +85,7 @@ describe('CoachEngine recovery heuristics', () => {
       },
     })
 
-    expect(shouldRetry(response)).toBe(false)
+    expect(shouldRetry(response)).toBe(true)
   })
 
   it('retries when a full-plan response looks truncated even if actions markup is present', () => {
@@ -102,7 +102,7 @@ describe('CoachEngine recovery heuristics', () => {
     expect(shouldRetry(response)).toBe(true)
   })
 
-  it('returns a truncated action response with prose so local post-processing can repair simple requests', async () => {
+  it('fails safely when both action attempts are truncated', async () => {
     const provider: AIProvider = {
       name: 'mock',
       call: async (request) => ({
@@ -114,17 +114,71 @@ describe('CoachEngine recovery heuristics', () => {
       }),
     }
 
-    const response = await sendWithRecovery(provider, {
+    await expect(sendWithRecovery(provider, {
       systemPrompt: 'Responde con acciones.',
       userMessage: 'genera una sesion de pesas para hoy',
       requestClass: 'chat_action',
       traceId: 'trace-recovery',
+    })).rejects.toMatchObject({
+      code: 'parse_error',
+    })
+  })
+
+  it('retries prose-only action responses and keeps the recovered proposal', async () => {
+    let callCount = 0
+    const provider: AIProvider = {
+      name: 'mock',
+      call: async (request) => {
+        callCount += 1
+        return callCount === 1
+          ? {
+              text: 'He creado la sesión de fuerza para el lunes.',
+              provider: 'mock',
+              traceId: request.traceId,
+              requestClass: request.requestClass,
+            }
+          : {
+              text: 'Te propongo este cambio.<actions>[{"type":"add_session","reason":"Crear la sesión solicitada","targetDate":"2026-05-25","timeBlock":"PM","sessionType":"strength","title":"Fuerza con superseries","durationMin":60,"objective":"Fuerza general"}]</actions>',
+              provider: 'mock',
+              traceId: request.traceId,
+              requestClass: request.requestClass,
+            }
+      },
+    }
+
+    const response = await sendWithRecovery(provider, {
+      systemPrompt: 'Responde con acciones.',
+      userMessage: 'créala',
+      requestClass: 'chat_action',
+      traceId: 'trace-prose-recovery',
+    })
+
+    expect(callCount).toBe(2)
+    expect(response.retryUsed).toBe(true)
+    expect(response.actions).toHaveLength(1)
+    expect(response.actions?.[0]?.type).toBe('add_session')
+  })
+
+  it('returns a prose-only action response after the format retry for local repair', async () => {
+    const provider: AIProvider = {
+      name: 'mock',
+      call: async (request) => ({
+        text: 'He creado la sesión de fuerza para el lunes.',
+        provider: 'mock',
+        traceId: request.traceId,
+        requestClass: request.requestClass,
+      }),
+    }
+
+    const response = await sendWithRecovery(provider, {
+      systemPrompt: 'Responde con acciones.',
+      userMessage: 'créala',
+      requestClass: 'chat_action',
+      traceId: 'trace-prose-rejection',
     })
 
     expect(response.retryUsed).toBe(true)
-    expect(response.message).toContain('Te preparo una sesion de fuerza')
     expect(response.actions).toBeUndefined()
-    expect(response.meta?.actionParseFailed).toBe(true)
   })
 
   it('retries a truncated general answer with a concise complete response', async () => {

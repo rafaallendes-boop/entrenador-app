@@ -651,6 +651,32 @@ describe('actionPostProcessor', () => {
     expect(response.meta?.warnings).toContain('chat_action_without_actions_repaired')
   })
 
+  it('rebuilds the requested session when the user confirms it with "créala"', () => {
+    const response = postProcessCoachActions({
+      message: 'He creado la sesión.',
+      provider: 'mock',
+      traceId: 'trace-creation-confirmation',
+      requestClass: 'chat_action',
+      timestamp: 1,
+    }, makeContext([], {
+      recentMessages: [
+        { role: 'user', content: 'Créame una sesión de fuerza con superseries para el lunes de la próxima semana.' },
+        { role: 'coach', content: 'Aquí tienes la sesión de fuerza con superseries para el lunes, como una acción para revisar y aplicar.' },
+      ],
+    }), 'créala')
+
+    const action = response.actions?.[0]
+    expect(action).toMatchObject({
+      type: 'add_session',
+      targetDate: '2026-05-11',
+      sessionType: 'strength',
+      durationMin: 60,
+    })
+    expect(action?.exercises?.length).toBeGreaterThan(0)
+    expect(action?.exercises?.some((exercise) => exercise.supersetGroup != null)).toBe(true)
+    expect(response.meta?.warnings).toContain('chat_action_without_actions_repaired')
+  })
+
   it('builds requested weights tomorrow and avoids an occupied squash PM slot', () => {
     vi.setSystemTime(new Date('2026-06-07T12:00:00.000Z'))
     const squashPm = makeSession({
