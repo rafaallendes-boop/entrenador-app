@@ -1,6 +1,6 @@
 # Costos y latencia de la IA
 
-**Actualizado**: 26 de julio de 2026
+**Actualizado**: 9 de agosto de 2026
 **Reemplaza** la versión del 24 de abril de 2026, que proyectaba costos de la era
 Gemini y subestimaba el Plan Builder en cerca de un orden de magnitud.
 
@@ -16,7 +16,7 @@ Gemini y subestimaba el Plan Builder en cerca de un orden de magnitud.
 |---|---|---|
 | **Plan Builder async** | `plan_generation_jobs` + `plan_generation_attempts` (`016`), con tokens y `estimated_cost_usd` fechado (`pricing.ts`) | **Medido en producción** (2026-07-26) |
 | **Week Creator** | Loadtest propio (`scripts/loadtest-week-creator.mjs`) | Medido en su momento; no hay telemetría continua |
-| **Chat general / chat action** | `logCoachRequest` + persistencia en `coach_requests` (`018`) | **`018` aplicada; prueba de producción y precios pendientes.** Los tokens pueden persistirse cuando el proveedor los reporte; `estimated_cost_usd` es `null` mientras el modelo no esté en `MODEL_PRICES` |
+| **Chat general / chat action** | `logCoachRequest` + persistencia en `coach_requests` (`018`) | **`018` aplicada y precios cargados el 2026-08-09.** Las filas nuevas traen `estimated_cost_usd`; las del 05 al 09 se quedan en `null` porque el costo se resuelve al escribir. Falta la agregación sobre una ventana real |
 | **Resumen semanal / import** | Ninguna | Sin medir |
 
 No se proyecta un costo mensual total de la app hasta verificar la cobertura
@@ -161,9 +161,47 @@ Campaña completa: **US$2,5941** y ~30 min. Detalle, artefactos y SHA-256 en
 
 Lo aprovechable para la fase siguiente: `low` es la única palanca que mostró
 señal consistente, y su mecanismo es visible —12,3% menos tokens de salida—, no
-una coincidencia de latencia. Lo que falta para poder afirmar que ese efecto
-supera el ruido es un **control contra control** (C₂ vs C₁), que esta campaña
+una coincidencia de latencia. Lo que faltaba para poder afirmar que ese efecto
+supera el ruido era un **control contra control** (C₂ vs C₁), que esa campaña
 no corrió.
+
+### El control contra control se corrió (2026-08-09) y rechaza la regla
+
+`docs/superpowers/experiments/plan-builder-noise-floor-2026-08-09/`, US$1,7938.
+
+**Dos controles idénticos comparados entre sí dan `VEREDICTO: RECHAZADA`**, con
+cinco checks en falla. Un control no puede ser peor que sí mismo: lo que falló es
+la regla, no la corrida.
+
+Ruido pareado por caso (n=12), C₂ respecto de C₁:
+
+| Métrica | mín | máx | rango | SD |
+|---|---|---|---|---|
+| Primera semana | −13,5% | +13,9% | 27,5 pts | 8,7% |
+| Plan completo | −12,6% | +26,0% | 38,5 pts | 10,0% |
+
+Consecuencias directas sobre la tabla de arriba:
+
+- **El −10,2% / −13,6% de `low` cae dentro de la banda de ruido.** No es señal
+  demostrable con este instrumento.
+- **El `score.min = −7` que descartó a `medium` tampoco era evidencia:** dos
+  controles idénticos dieron **−13**.
+- **Los tres checks `*.p90 ≤ 0` de reparaciones fallan sobre ruido puro.** La
+  Fase 2 los anotó como «plausiblemente inalcanzable — no medido»; quedan
+  medidos e inalcanzables por construcción.
+
+El veredicto de la Fase 2 —`high` se queda— sigue siendo correcto. Lo que se
+invalida es el método que lo produjo.
+
+**No correr más variantes bajo esta regla:** el resultado sería ininterpretable.
+El trabajo pendiente es de diseño y no cuesta API — recalibrar barras contra el
+ruido medido, reemplazar los `p90 ≤ 0`, y hacer el cálculo de potencia para
+saber cuántos casos pareados hacen falta para detectar un 10% real.
+
+**Y una advertencia sobre el instrumento:** el manifiesto sintético da 15,0 s de
+primera semana y 20,8 s de plan completo, contra 24,2 s y 43,9 s de producción.
+Corre casi al doble de velocidad que el caso real, así que optimizar contra él
+puede no transferir.
 
 ## 6. Prompt caching: por qué todavía no aplica
 
@@ -223,13 +261,56 @@ original de 2.500 se dimensionó midiendo solo el contrato esqueleto y truncaba
 proveedor por env var, con fallback en cascada:
 `AI_PROVIDER_<CLASE>` → `AI_PROVIDER` → `'gemini'` como default del código.
 
-**El default del código no es lo que corre en producción.** Los valores
-efectivos viven en las env vars de Netlify y hay que confirmarlos con el owner
-antes de calcular cualquier costo de chat. Lo único verificado es que el **Plan
-Builder async no usa este camino**: va directo a Anthropic.
+**Mapa efectivo de producción** (confirmado por el owner el 2026-08-09):
 
-Pendiente operativo: documentar acá los `AI_PROVIDER_*` reales de producción.
-Sin eso, el costo del chat no es calculable.
+| Clase | Proveedor | Modelo efectivo | Tier |
+|---|---|---|---|
+| `chat_general` | gemini | `gemini-2.5-flash` | — |
+| `chat_action` | gemini | `gemini-2.5-flash` | — |
+| `weekly_summary` | gemini | `gemini-2.5-flash` | — |
+| `import_extract` | gemini | `gemini-2.5-flash` | — |
+| `week_creator` | openai | `gpt-4.1-mini` | **`priority`** |
+| `plan_builder_week` | claude | `claude-sonnet-4-6` | — |
+| `plan_builder_pair` | claude | `claude-sonnet-4-6` | — |
+
+`GEMINI_MODEL` no está definida, así que las cuatro clases Gemini caen al default
+del código, `gemini-2.5-flash` (`coach.ts:159`). `OPENAI_MODEL=gpt-5-mini` existe
+pero hoy **ninguna clase lo usa**: `week_creator` es la única clase OpenAI y tiene
+su propio `OPENAI_MODEL_WEEK_CREATOR`.
+
+**El hallazgo que corrige una suposición vieja de este documento:** el chat —la
+ruta de mayor volumen, con tope de 80 requests/día— **no corre en Claude**. Corre
+en Gemini 2.5 Flash, que es entre 6× y 10× más barato por token que Sonnet 4.6.
+Cualquier proyección previa que asumiera Sonnet para el chat sobreestimaba.
+
+**El tier importa.** `OPENAI_SERVICE_TIER_WEEK_CREATOR=priority` hace que
+`week_creator` cueste ~1,75× el precio estándar del mismo modelo. `MODEL_PRICES`
+distingue las dos filas por `serviceTier` desde el 2026-08-09; antes de eso la
+tabla no tenía forma de separarlas y habría subestimado esa clase en ~75%.
+
+### Precios cargados (verificados el 2026-08-09)
+
+| Modelo | Tier | Input | Output | Cache read |
+|---|---|---|---|---|
+| `gemini-2.5-flash` | — | $0,30 | $2,50 | $0,03 |
+| `gpt-4.1-mini` | — | $0,40 | $1,60 | $0,10 |
+| `gpt-4.1-mini` | `priority` | $0,70 | $2,80 | $0,175 |
+| `gpt-5-mini` | — | $0,25 | $2,00 | $0,025 |
+
+`effectiveFrom` es la fecha de **verificación**, no la de vigencia real del precio,
+que no consta en las páginas oficiales. Como el costo se calcula al escribir la
+fila, esto solo afecta hacia adelante.
+
+### Lo que todavía NO se puede afirmar
+
+**No hay un costo mensual del chat todavía, y no se va a estimar acá.** Las filas
+que `018` guardó entre el 2026-08-05 y el 2026-08-09 tienen
+`estimated_cost_usd = null` y **se quedan así**: el costo se resuelve al escribir,
+no al leer. Con los precios cargados, las filas nuevas sí traen número.
+
+Para cerrar backlog 6 falta correr la agregación sobre una ventana real y reportar
+cobertura en **dos** dimensiones —porcentaje de filas y porcentaje de tokens—,
+excluyendo los nulls. Una semana de uso normal alcanza.
 
 ## 9. Qué hacer con este documento
 

@@ -1506,10 +1506,21 @@ dificultad.
    del backlog: instrumento desplegado, metodo escrito y control congelado
    (`6c45885a`) contra el cual comparar. Linea base de produccion: 24.2 s hasta
    la primera semana, 43.9 s un plan de 4 semanas, concurrencia 3.
-   **Bloqueado por presupuesto, no por metodo:** la Fase 2 dejo pedido un
-   control-contra-control (C₂ vs C₁) antes de la proxima fase de velocidad, y
-   eso son dos corridas (~US$1,80 a US$0,90 cada una). Saldo de API al
-   2026-07-30: **~US$0,60**. Recargar antes de retomar.
+   **Bloqueado por METODO, no por presupuesto** *(actualizado 2026-08-09)*. El
+   control-contra-control que la Fase 2 dejo pedido **ya se corrio** (US$1,7938,
+   `docs/superpowers/experiments/plan-builder-noise-floor-2026-08-09/`) y su
+   resultado invalida la regla: **dos controles identicos comparados entre si dan
+   `RECHAZADA`**, con cinco checks en falla. El ruido pareado por caso va de
+   −13,5% a +13,9% en la primera semana y de −12,6% a +26,0% en el plan completo,
+   asi que el −10,2%/−13,6% de `low` y el `score.min = −7` de `medium` caen los
+   dos dentro del ruido: no eran evidencia. Los tres checks `p90 ≤ 0` de
+   reparaciones fallan sobre ruido puro — la Fase 2 los anoto como
+   «plausiblemente inalcanzable, no medido» y quedaron medidos.
+   **No correr mas variantes bajo esta regla:** el resultado seria
+   ininterpretable. Lo pendiente es diseno y no cuesta API — recalibrar barras
+   contra el ruido medido, reemplazar los `p90 ≤ 0`, calcular potencia, y decidir
+   si el manifiesto sintetico sigue sirviendo, dado que corre a 15,0 s / 20,8 s
+   contra 24,2 s / 43,9 s de produccion.
 3. **Plan Builder — calidad deportiva.** *(pausado 2026-07-31; la premisa no
    sobrevivio a la revision)* La rotacion coordinada (§16) esta medida y
    aceptada y los roles de partido (§17) estan commiteados; queda desplegar
@@ -1579,12 +1590,19 @@ dificultad.
    (`019`) y el resumen en `WeeklyView` también están implementados — ver §25**,
    con sus dos publicaciones legales registradas y no vigentes; queda todo el
    rollout. Detrás quedan solo desnivel y kilojoules.
-6. **Chat — latencia y costo.** *(persistencia implementada 2026-08-05, ver
-   §22; `018` aplicada 2026-08-05)* Ya no es trabajo de código: queda correr la
-   prueba de producción, verificar pérdida y latencia del rollout, y poblar
-   `MODEL_PRICES` con los modelos que realmente sirven el chat. Sin ese último
-   paso el costo sigue sin respuesta, aunque el usage reportado ya pueda quedar
-   guardado.
+6. **Chat — latencia y costo.** *(precios cargados 2026-08-09; `018` aplicada
+   2026-08-05, ver §22)* `MODEL_PRICES` ya cubre los modelos reales: el mapa de
+   produccion quedo confirmado y **el chat corre en `gemini-2.5-flash`, no en
+   Claude** — la ruta de mayor volumen era entre 6× y 10× mas barata por token de
+   lo que cualquier proyeccion previa asumia. Aparecio de paso un defecto: el
+   costo se resolvia solo por modelo, y `week_creator` corre en tier `priority`,
+   que cuesta ~1,75× el estandar del mismo `gpt-4.1-mini`; se habria subestimado
+   ~75%. `MODEL_PRICES` distingue ahora las dos filas por `serviceTier`, con match
+   exacto: un tier sin precio da `null` en vez de caer al estandar.
+   **Queda** correr la agregacion sobre una ventana real —una semana de uso
+   alcanza— y reportar cobertura en dos dimensiones, filas y tokens, excluyendo
+   los nulls. Las filas del 05 al 09 de agosto se quedan en `null` porque el costo
+   se calcula al escribir, no al leer.
 7. **Flags por plan** (Base / Coach Semanal / Avanzado). Necesarios en cuanto el
    piloto tenga mas de un tier conviviendo.
 8. **Pasarela de pago.** Deliberadamente al final. Para 1-3 clientes acompanados,

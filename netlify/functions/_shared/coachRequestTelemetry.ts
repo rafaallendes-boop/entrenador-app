@@ -60,6 +60,10 @@ export function resolveCoachRequestCostUsd(telemetry: CoachRequestTelemetry): nu
   return estimateCostUsd({
     model: telemetry.model,
     at: telemetry.createdAt,
+    // El tier ya viajaba en la telemetría y no se estaba usando: sin él,
+    // `week_creator` en `priority` se tarifaba al precio estándar, ~75% por
+    // debajo de lo que realmente cuesta.
+    serviceTier: telemetry.serviceTier,
     inputTokens: promptTokens,
     outputTokens: completionTokens,
     cacheReadTokens: telemetry.cacheReadInputTokens ?? 0,
