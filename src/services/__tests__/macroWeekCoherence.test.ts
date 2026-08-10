@@ -220,3 +220,44 @@ describe('macroWeekCoherence', () => {
     expect(buildSummary.blockGoal).not.toBe(peakSummary.blockGoal)
   })
 })
+
+describe('sin macroplan', () => {
+  const referenceDate = new Date('2026-04-13T10:00:00')
+
+  it('reporta not_applicable en vez de ok cuando no hay evento objetivo primario', () => {
+    const summary = buildMacroWeekCoherenceSummary({
+      athleteProfile: makeProfile({ goalEvents: [] }),
+      sessions: [makeSession('squash'), makeSession('strength', 50, 5)],
+      referenceDate,
+    })
+
+    // `ok` afirmaría que la semana calza con un bloque que nadie planificó.
+    expect(summary.coherenceStatus).toBe('not_applicable')
+  })
+
+  it('no produce issues de coherencia, porque cada issue afirma algo sobre un bloque', () => {
+    const summary = buildMacroWeekCoherenceSummary({
+      athleteProfile: makeProfile({ goalEvents: [] }),
+      // Carga alta y deportes variados: con macroplan esto sí genera issues.
+      sessions: [
+        makeSession('squash', 90, 9),
+        makeSession('squash', 90, 9),
+        makeSession('running', 80, 8),
+        makeSession('strength', 75, 8),
+      ],
+      referenceDate,
+    })
+
+    expect(summary.coherenceIssues).toEqual([])
+  })
+
+  it('sigue emitiendo ok o warning cuando el evento objetivo existe', () => {
+    const summary = buildMacroWeekCoherenceSummary({
+      athleteProfile: makeProfile(),
+      sessions: [makeSession('squash')],
+      referenceDate,
+    })
+
+    expect(summary.coherenceStatus).not.toBe('not_applicable')
+  })
+})

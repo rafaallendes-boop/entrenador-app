@@ -590,7 +590,7 @@ export default function SettingsPage() {
                   <p className="text-sm font-medium text-ink">{syncHeadline}</p>
                   <p className="mt-1 text-xs text-ink-muted leading-relaxed">{syncSupportText}</p>
                 </div>
-                <span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${syncSummary.toneClass}`}>
+                <span className={`shrink-0 whitespace-nowrap rounded-full px-2 py-1 text-[11px] font-semibold ${syncSummary.toneClass}`}>
                   {syncSummary.label}
                 </span>
               </div>
@@ -717,25 +717,25 @@ export default function SettingsPage() {
               </div>
               <button
                 onClick={() => void refreshBetaQualitySnapshot()}
-                className="rounded-xl bg-surface-raised px-3 py-2 text-xs font-semibold text-ink-muted transition-colors hover:bg-surface hover:text-ink"
+                className="shrink-0 whitespace-nowrap rounded-xl bg-surface-raised px-3 py-2 text-xs font-semibold text-ink-muted transition-colors hover:bg-surface hover:text-ink"
               >
                 Actualizar
               </button>
             </div>
             <div className="mb-3 rounded-xl border border-surface-border bg-surface-raised px-3 py-3">
-              <div className="flex items-start justify-between gap-3">
-                <div>
+              <div className="flex flex-wrap items-start gap-x-3 gap-y-3">
+                <div className="min-w-0 grow basis-56">
                   <p className="text-[10px] font-medium uppercase tracking-wider text-ink-faint">Beta quality local</p>
                   <p className="mt-1 text-xs leading-relaxed text-ink-muted">
                     Metadata local para revisar estabilidad sin guardar prompts ni respuestas completas.
                   </p>
                 </div>
-                <div className="flex shrink-0 flex-wrap justify-end gap-2">
+                <div className="flex w-full flex-col gap-2 sm:ml-auto sm:w-auto sm:flex-row">
                   {showDevTools && (
                     <button
                       onClick={() => void handleResetPlanBuilderUsage()}
                       disabled={isResettingPlanBuilderUsage}
-                      className="inline-flex items-center gap-2 rounded-xl bg-surface px-3 py-2 text-xs font-semibold text-brand-light transition-colors hover:bg-surface-border disabled:opacity-60"
+                      className="inline-flex items-center gap-2 whitespace-nowrap rounded-xl bg-surface px-3 py-2 text-xs font-semibold text-brand-light transition-colors hover:bg-surface-border disabled:opacity-60"
                     >
                       <RotateCcw size={13} />
                       {isResettingPlanBuilderUsage ? 'Reiniciando...' : 'Reset Plan Builder'}
@@ -744,7 +744,7 @@ export default function SettingsPage() {
                   <button
                     onClick={() => void handleExportBetaQuality()}
                     disabled={isExportingBetaQuality}
-                    className="inline-flex items-center gap-2 rounded-xl bg-brand px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-brand-light disabled:opacity-60"
+                    className="inline-flex items-center gap-2 whitespace-nowrap rounded-xl bg-brand px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-brand-light disabled:opacity-60"
                   >
                     <Download size={13} />
                     {isExportingBetaQuality ? 'Exportando...' : 'Exportar'}
@@ -903,7 +903,7 @@ export default function SettingsPage() {
               <div className="w-8 h-8 rounded-full bg-brand/15 flex items-center justify-center flex-shrink-0">
                 <Brain size={16} className="text-brand-light" />
               </div>
-              <div>
+              <div className="min-w-0 flex-1">
                 <h2 className="text-sm font-semibold text-ink">Memoria de RallyIQ</h2>
                 <p className="text-xs text-ink-muted mt-1 leading-relaxed">
                   Datos persistentes que RallyIQ debe considerar siempre: lesiones, preferencias, torneos o restricciones.
@@ -917,7 +917,7 @@ export default function SettingsPage() {
               placeholder="Ej: molestia rodilla derecha desde febrero, evitar fuerza pesada el dia antes de partido, proximo torneo en mayo..."
               className="w-full rounded-xl bg-surface-raised border border-surface-border px-3 py-2.5 text-sm text-ink placeholder:text-ink-faint resize-none focus:outline-none focus:ring-2 focus:ring-brand/40"
             />
-            <div className="mt-3 flex items-center justify-end gap-3">
+            <div className="mt-3 flex flex-wrap items-center justify-end gap-3">
               {memorySaved && (
                 <span className="text-xs text-emerald-400 font-medium">Memoria guardada</span>
               )}
@@ -941,7 +941,7 @@ export default function SettingsPage() {
               <div className="w-8 h-8 rounded-full bg-brand/15 flex items-center justify-center flex-shrink-0">
                 <User size={16} className="text-brand-light" />
               </div>
-              <div>
+              <div className="min-w-0 flex-1">
                 <h2 className="text-sm font-semibold text-ink">Perfil del atleta</h2>
                 <p className="text-xs text-ink-muted mt-1 leading-relaxed">
                   Datos estructurados para que RallyIQ proponga ritmos, cargas y semanas más precisos.
@@ -966,8 +966,8 @@ export default function SettingsPage() {
               onSave={handleSaveAthleteProfile}
             />
             <div className="mt-4 rounded-xl border border-surface-border bg-surface-raised px-3 py-3">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
+              <div className="flex flex-wrap items-start gap-x-3 gap-y-3">
+                <div className="min-w-0 grow basis-56">
                   <p className="text-sm font-semibold text-ink">Export de pruebas del perfil</p>
                   <p className="mt-1 text-xs leading-relaxed text-ink-muted">
                     Incluye perfil deportivo, disponibilidad, ritmos, cargas, evento objetivo y plan activo.
@@ -976,7 +976,7 @@ export default function SettingsPage() {
                 <button
                   onClick={() => void handleExportAthleteProfile()}
                   disabled={isExportingProfile}
-                  className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-surface px-3 py-2 text-xs font-semibold text-brand-light transition-colors hover:bg-surface-border disabled:opacity-60"
+                  className="ml-auto inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-xl bg-surface px-3 py-2 text-xs font-semibold text-brand-light transition-colors hover:bg-surface-border disabled:opacity-60"
                 >
                   <Download size={13} />
                   {isExportingProfile ? 'Exportando...' : 'Exportar perfil'}
@@ -1000,14 +1000,14 @@ export default function SettingsPage() {
           </Card>
 
           <Card className="p-4">
-            <div className="flex items-start justify-between gap-4 flex-wrap">
-              <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-start gap-x-4 gap-y-3">
+              <div className="min-w-0 grow basis-64">
                 <h2 className="text-sm font-semibold text-ink">Respaldo JSON</h2>
                 <p className="text-xs text-ink-muted mt-1 leading-relaxed">
                   Guarda una copia de seguridad o restaura tu información de entrenamiento y RallyIQ desde un archivo JSON.
                 </p>
               </div>
-              <div className="flex w-full flex-col sm:w-auto sm:flex-row gap-2">
+              <div className="flex w-full flex-col gap-2 sm:ml-auto sm:w-auto sm:flex-row">
                 <input
                   ref={importInputRef}
                   type="file"
@@ -1018,7 +1018,7 @@ export default function SettingsPage() {
                 <button
                   onClick={() => importInputRef.current?.click()}
                   disabled={isImporting}
-                  className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-surface-raised text-ink text-sm font-semibold hover:bg-surface transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="inline-flex items-center justify-center gap-2 whitespace-nowrap px-3 py-2 rounded-xl bg-surface-raised text-ink text-sm font-semibold hover:bg-surface transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   <Upload size={14} />
                   {isImporting ? 'Importando...' : 'Importar Respaldo'}
@@ -1026,7 +1026,7 @@ export default function SettingsPage() {
                 <button
                   onClick={() => void handleExport()}
                   disabled={isExporting}
-                  className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-brand text-white text-sm font-semibold hover:bg-brand-light disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+                  className="inline-flex items-center justify-center gap-2 whitespace-nowrap px-3 py-2 rounded-xl bg-brand text-white text-sm font-semibold hover:bg-brand-light disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
                 >
                   <Download size={14} />
                   {isExporting ? 'Exportando...' : 'Exportar Respaldo'}
@@ -1044,7 +1044,7 @@ export default function SettingsPage() {
             {importPreview && (
               <div className="mt-4 rounded-2xl border border-surface-border bg-surface-raised px-4 py-3 space-y-3">
                 <div className="flex items-start justify-between gap-3 flex-wrap">
-                  <div>
+                  <div className="min-w-0 grow basis-56">
                     <p className="text-sm font-semibold text-ink">Preview del backup</p>
                     <p className="text-xs text-ink-muted mt-1">
                       Exportado el {formatBackupDate(importPreview.importedAt)} · app {importPreview.importedFromAppVersion} · formato v{importPreview.version}
@@ -1162,7 +1162,7 @@ export default function SettingsPage() {
               <div className="w-8 h-8 rounded-full bg-brand/15 flex items-center justify-center flex-shrink-0">
                 <Bell size={16} className="text-brand-light" />
               </div>
-              <div>
+              <div className="min-w-0 flex-1">
                 <h2 className="text-sm font-semibold text-ink">Notificaciones y activacion</h2>
                 <p className="text-xs text-ink-muted mt-1 leading-relaxed">
                   Recordatorios de entrenamiento, cierre del día y recordatorios semanales para mantener la continuidad.
@@ -1246,7 +1246,7 @@ export default function SettingsPage() {
               <div className="w-8 h-8 rounded-full bg-amber-500/10 flex items-center justify-center flex-shrink-0">
                 <Trash2 size={16} className="text-amber-400" />
               </div>
-              <div>
+              <div className="min-w-0 flex-1">
                 <h2 className="text-sm font-semibold text-ink">Entrenamientos de RallyIQ</h2>
                 <p className="text-xs text-ink-muted mt-1 leading-relaxed">
                   Elimina sesiones creadas por RallyIQ sin borrar todo el bloque de entrenamiento.
@@ -1304,7 +1304,7 @@ export default function SettingsPage() {
                         type="checkbox"
                         checked={selected}
                         onChange={() => toggleCoachSessionSelection(session.id)}
-                        className="mt-1 h-4 w-4 rounded border-surface-border bg-surface"
+                        className="mt-1 h-4 w-4 shrink-0 rounded border-surface-border bg-surface"
                       />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -1348,7 +1348,7 @@ export default function SettingsPage() {
               <div className="w-8 h-8 rounded-full bg-red-500/10 flex items-center justify-center flex-shrink-0">
                 <ShieldAlert size={16} className="text-red-400" />
               </div>
-              <div>
+              <div className="min-w-0 flex-1">
                 <h2 className="text-sm font-semibold text-ink">Eliminar datos</h2>
                 <p className="text-xs text-ink-muted mt-1 leading-relaxed">
                   {user
@@ -1415,7 +1415,7 @@ export default function SettingsPage() {
                           setClearConfirm(false)
                           setClearStatus(null)
                         }}
-                        className="mt-1 h-4 w-4 rounded border-surface-border bg-surface"
+                        className="mt-1 h-4 w-4 shrink-0 rounded border-surface-border bg-surface"
                       />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -1532,7 +1532,7 @@ function NotificationPreferenceRow({
         type="checkbox"
         checked={checked}
         onChange={(event) => onChange(event.target.checked)}
-        className="mt-1 h-4 w-4 rounded border-surface-border bg-surface"
+        className="mt-1 h-4 w-4 shrink-0 rounded border-surface-border bg-surface"
       />
     </label>
   )

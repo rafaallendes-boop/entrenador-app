@@ -32,6 +32,8 @@ interface TrainingState {
   allWeekSummaries: WeekSummary[]
   isLoading: boolean
   loadedWeekStart: string | null
+  /** Latest week requested by the mounted surface, including an in-flight load. */
+  requestedWeekStart: string | null
 
   loadWeek: (weekStart: string) => Promise<void>
   loadAllSummaries: () => Promise<void>
@@ -74,6 +76,13 @@ export function shouldKeepDayLogInVisibleWeek(dateISO: string, loadedWeekStart: 
   return getWeekStartDate(dateISO) === loadedWeekStart
 }
 
+export function resolveWeekStartToRefresh(
+  state: Pick<TrainingState, 'requestedWeekStart' | 'loadedWeekStart'>,
+  fallbackWeekStart: string,
+): string {
+  return state.requestedWeekStart ?? state.loadedWeekStart ?? fallbackWeekStart
+}
+
 export const useTrainingStore = create<TrainingState>((set, get) => ({
   sessions: [],
   dayLogs: {},
@@ -81,6 +90,7 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
   allWeekSummaries: [],
   isLoading: false,
   loadedWeekStart: null,
+  requestedWeekStart: null,
 
   resetForAthleteSwitch: () => {
     latestWeekLoadRequestId += 1
@@ -92,12 +102,13 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
       allWeekSummaries: [],
       isLoading: false,
       loadedWeekStart: null,
+      requestedWeekStart: null,
     })
   },
 
   loadWeek: async (weekStart) => {
     const requestId = ++latestWeekLoadRequestId
-    set({ isLoading: true })
+    set({ isLoading: true, requestedWeekStart: weekStart })
     try {
       const sessions = await getSessionsForWeek(weekStart)
 

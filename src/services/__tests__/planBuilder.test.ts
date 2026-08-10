@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { addDays } from 'date-fns'
 import type { AthleteProfile, GoalEvent, PlanWizardConfig } from '../../types'
 import { db } from '../../db/db'
-import { buildPlanShell } from '../planBuilder/buildPlanShell'
+import { buildPlanShell, getCompetitionPlanWeekCount } from '../planBuilder/buildPlanShell'
 import { generatePlanWeeks } from '../planBuilder/generatePlan'
 import { repairGeneratedWeek } from '../planBuilder/repairWeek'
 import {
@@ -135,6 +135,33 @@ describe('planBuilder', () => {
       // Redondear hacia arriba para arreglar el caso de septiembre rompería
       // este, así que ambos quedan fijados.
       expect(totalWeeksBetween('2026-03-15', '2026-05-10')).toBe(8)
+    })
+
+    it('omite la semana en curso si ya no quedan días de entrenamiento habilitados', () => {
+      process.env.TZ = 'America/Santiago'
+      const now = new Date('2026-08-09T10:00:00') // domingo
+      const trainingDays: PlanWizardConfig['trainingDays'] = [
+        'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday',
+      ]
+
+      expect(getCompetitionPlanWeekCount('2026-09-11', trainingDays, now)).toBe(5)
+
+      const profile = makeProfile('2026-09-11')
+      const result = buildPlanShell({
+        athleteId: profile.id,
+        profile,
+        wizardConfig: { ...makeWizardConfig(), trainingDays },
+        goalEvent: profile.goalEvents![0] as GoalEvent,
+        now,
+      })
+      expect(result.plan.totalWeeks).toBe(5)
+      expect(result.weeks[0]?.weekStartDate).toBe('2026-08-10')
+    })
+
+    it('incluye la semana en curso si el día actual está habilitado', () => {
+      process.env.TZ = 'America/Santiago'
+      const now = new Date('2026-08-09T10:00:00') // domingo
+      expect(getCompetitionPlanWeekCount('2026-09-11', ['sunday'], now)).toBe(6)
     })
   })
 

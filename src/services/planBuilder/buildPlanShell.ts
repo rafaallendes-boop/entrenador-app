@@ -1,6 +1,7 @@
 import { addDays, addWeeks, differenceInCalendarDays } from 'date-fns'
 import type {
   AthleteProfile,
+  DayOfWeek,
   GoalEvent,
   MacroPlan,
   MacroPlanPhase,
@@ -116,9 +117,9 @@ function startOfLocalDay(date: Date): Date {
 function findFirstTrainingDateOnOrAfter(
   requestedDate: Date,
   eventDate: Date,
-  wizardConfig: PlanWizardConfig,
+  trainingDays: readonly DayOfWeek[],
 ): Date {
-  const allowedDays = new Set(wizardConfig.trainingDays)
+  const allowedDays = new Set(trainingDays)
   const start = startOfLocalDay(requestedDate)
   const end = startOfLocalDay(eventDate)
   const maxLookaheadDays = Math.max(0, differenceInCalendarDays(end, start))
@@ -129,6 +130,47 @@ function findFirstTrainingDateOnOrAfter(
   }
 
   return start
+}
+
+interface CompetitionPlanCalendarWindow {
+  firstTrainingDate: Date
+  firstWeekStart: Date
+  eventWeekStart: Date
+  totalWeeks: number
+}
+
+function resolveCompetitionPlanCalendarWindow(
+  eventDateISO: string,
+  trainingDays: readonly DayOfWeek[],
+  now: Date,
+): CompetitionPlanCalendarWindow {
+  const requestedStartDate = startOfLocalDay(now)
+  const eventDate = fromISO(eventDateISO)
+  const firstTrainingDate = findFirstTrainingDateOnOrAfter(requestedStartDate, eventDate, trainingDays)
+  const firstWeekStart = getWeekStart(firstTrainingDate)
+  const eventWeekStart = getWeekStart(eventDate)
+
+  // Calendar days, not elapsed milliseconds: both operands are local midnights,
+  // and a plan spanning a DST change is short (or long) by an hour.
+  const totalWeeks = Math.max(
+    1,
+    Math.floor(differenceInCalendarDays(eventWeekStart, firstWeekStart) / 7) + 1,
+  )
+
+  return { firstTrainingDate, firstWeekStart, eventWeekStart, totalWeeks }
+}
+
+/**
+ * Preview count used by the wizard. It intentionally shares the exact calendar
+ * window with buildPlanShell so a partial current week is only counted when it
+ * still contains an enabled training day.
+ */
+export function getCompetitionPlanWeekCount(
+  eventDateISO: string,
+  trainingDays: readonly DayOfWeek[],
+  now: Date = new Date(),
+): number {
+  return resolveCompetitionPlanCalendarWindow(eventDateISO, trainingDays, now).totalWeeks
 }
 
 function groupIntoPhases(weekPhases: MacroPlanPhase[]): PlanPhaseBlock[] {
@@ -155,23 +197,18 @@ export function buildPlanShell(input: BuildPlanShellInput): BuildPlanShellResult
   const { athleteId, profile, wizardConfig, goalEvent } = input
   const now = input.now ?? new Date()
   const requestedStartDate = startOfLocalDay(now)
-  const goalEventDate = fromISO(goalEvent.date)
   const macroSnapshot = input.macroPlan ?? computeMacroPlan(profile, now)
   if (!macroSnapshot) {
     throw new Error('No se puede generar el plan sin un MacroPlan base (falta evento principal).')
   }
 
-  const firstTrainingDate = findFirstTrainingDateOnOrAfter(requestedStartDate, goalEventDate, wizardConfig)
-  const eventWeekStart = getWeekStart(fromISO(goalEvent.date))
-  const uncappedFirstWeekStart = getWeekStart(firstTrainingDate)
-  // Calendar days, not elapsed milliseconds: both operands are local midnights,
-  // and a plan spanning a DST change is short (or long) by an hour. Dividing the
-  // raw span by 7*24h and truncating dropped a whole week from every plan that
-  // crossed a spring-forward transition.
-  const uncappedTotalWeeks = Math.max(
-    1,
-    Math.floor(differenceInCalendarDays(eventWeekStart, uncappedFirstWeekStart) / 7) + 1,
+  const calendarWindow = resolveCompetitionPlanCalendarWindow(
+    goalEvent.date,
+    wizardConfig.trainingDays,
+    now,
   )
+  const { eventWeekStart, totalWeeks: uncappedTotalWeeks } = calendarWindow
+  const uncappedFirstWeekStart = calendarWindow.firstWeekStart
   const totalWeeks = Math.min(MAX_COMPETITION_PLAN_WEEKS, uncappedTotalWeeks)
   const firstWeekStart =
     uncappedTotalWeeks > MAX_COMPETITION_PLAN_WEEKS

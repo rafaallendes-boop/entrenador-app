@@ -34,7 +34,7 @@ const WeeklyActionCenterCard = lazy(() => import('../components/week/WeeklyActio
 const ProposalDrawer = lazy(() => import('../components/chat/ProposalDrawer'))
 
 export default function WeeklyView() {
-  const { sessions, currentWeekSummary, dayLogs, isLoading, loadedWeekStart, loadWeek, generateCoachNote, deleteSession } = useTrainingStore()
+  const { sessions, currentWeekSummary, dayLogs, isLoading, loadedWeekStart, requestedWeekStart, loadWeek, generateCoachNote, deleteSession } = useTrainingStore()
   const { addProposal, acceptProposal, rejectProposal } = useCoachActionsStore()
   const { athleteProfile } = useCoachMemoryStore()
   const { currentWeekStart, selectedDate, setSelectedDate, setCurrentWeekStart } = useUIStore()
@@ -50,8 +50,9 @@ export default function WeeklyView() {
   const handledLaunchIntentKeyRef = useRef<string | null>(null)
 
   useEffect(() => {
-    loadWeek(currentWeekStart)
-  }, [currentWeekStart, loadWeek])
+    if (requestedWeekStart === currentWeekStart) return
+    void loadWeek(currentWeekStart)
+  }, [currentWeekStart, loadWeek, requestedWeekStart])
 
   const navigate = useNavigate()
   const weekDays = getWeekDays(fromISO(currentWeekStart))
@@ -59,10 +60,13 @@ export default function WeeklyView() {
   // El resumen semanal solo se genera para la semana en curso (el store lo exige).
   const isCurrentWeek = currentWeekStart === currentWeekStartISO()
   const canReviewCurrentWeek = isCurrentWeek && isWeeklyReviewWindowOpen(today)
-  const hasFreshCoachNote = hasFreshWeeklyCoachNote(currentWeekSummary)
 
+  const isLoadedWeekVisible = loadedWeekStart === currentWeekStart
+  const visibleSessions = isLoadedWeekVisible ? sessions : []
+  const visibleWeekSummary = isLoadedWeekVisible ? currentWeekSummary : null
+  const hasFreshCoachNote = hasFreshWeeklyCoachNote(visibleWeekSummary)
   const getSessionsForDay = (dateISO: string, block?: TimeBlock) =>
-    sessions
+    visibleSessions
       .filter((session) => session.date === dateISO && (!block || session.timeBlock === block))
       .sort((a, b) => a.timeBlock.localeCompare(b.timeBlock))
 
@@ -77,8 +81,9 @@ export default function WeeklyView() {
   })
 
   const selectedDayData = dayData.find((day) => day.iso === selectedDate) ?? dayData[0]
-  const weekLoaded = loadedWeekStart === currentWeekStart && !isLoading
-  const isWeekEmpty = weekLoaded && sessions.length === 0
+  const weekLoaded = loadedWeekStart === currentWeekStart && requestedWeekStart === currentWeekStart && !isLoading
+  const isWeekEmpty = weekLoaded && visibleSessions.length === 0
+  const isWeekTransitioning = loadedWeekStart !== currentWeekStart
   const macroWeekCoherence = useMacroWeekCoherence()
   const handleSelectWeeklyAction = useWeeklyActionNavigator({
     weeklyRule: macroWeekCoherence.weeklyRule,
@@ -94,17 +99,17 @@ export default function WeeklyView() {
     weeklyActionSummary,
     autoAdjustmentDraft,
   } = useWeeklySnapshot(currentWeekStart, {
-    sessions,
-    currentWeekSummary,
+    sessions: visibleSessions,
+    currentWeekSummary: visibleWeekSummary,
     todayDayLog: dayLogs[today],
     macroWeekCoherence,
     athleteProfile,
     today,
   })
-  const todaySessions = sessions.filter((session) => session.date === today)
+  const todaySessions = visibleSessions.filter((session) => session.date === today)
 
   const handleExport = () => {
-    downloadICS(sessions, `entrenador-${currentWeekStart}.ics`)
+    downloadICS(visibleSessions, `entrenador-${currentWeekStart}.ics`)
   }
 
   const handleGenerateCoachNote = useCallback(async () => {
@@ -307,7 +312,11 @@ export default function WeeklyView() {
               </div>
             </Card>
 
-            {selectedDayData.amSessions.length === 0 && selectedDayData.pmSessions.length === 0 ? (
+            {isWeekTransitioning ? (
+              <Card variant="panel" className="border-dashed py-10 text-center">
+                <p className="text-sm font-medium text-ink-muted">Cargando entrenamientos…</p>
+              </Card>
+            ) : selectedDayData.amSessions.length === 0 && selectedDayData.pmSessions.length === 0 ? (
               <Card variant="panel" className="border-dashed py-10 text-center">
                 <p className="font-mono text-2xl text-ink-faint/30">○</p>
                 <p className="mt-2 text-sm font-medium text-ink-muted">Día libre</p>
@@ -351,7 +360,7 @@ export default function WeeklyView() {
         <div className="min-w-0">
           <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
             <p className="font-display text-sm font-semibold uppercase tracking-wider text-ink-muted">Resumen semanal</p>
-            {currentWeekSummary && canReviewCurrentWeek && (
+            {visibleWeekSummary && canReviewCurrentWeek && (
               <button
                 type="button"
                 onClick={handleGenerateCoachNote}
@@ -390,7 +399,7 @@ export default function WeeklyView() {
             </Suspense>
             <MacroPhaseSummaryCard summary={macroWeekCoherence} />
             <WeeklyHrZonesCard weekDays={weekDays.map((day) => toISO(day))} />
-            {currentWeekSummary && <WeekSummaryCard summary={currentWeekSummary} />}
+            {visibleWeekSummary && <WeekSummaryCard summary={visibleWeekSummary} />}
           </div>
         </div>
       </div>
@@ -420,7 +429,7 @@ export default function WeeklyView() {
         <Suspense fallback={null}>
           <ProposalDrawer
             proposal={activeProposal}
-            existingSessions={sessions}
+            existingSessions={visibleSessions}
             onAccept={() => { void handleAcceptAutoAdjustment() }}
             onReject={handleCloseAutoAdjustment}
             onClose={handleCloseAutoAdjustment}

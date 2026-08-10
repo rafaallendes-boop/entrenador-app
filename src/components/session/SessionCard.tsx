@@ -1,6 +1,6 @@
 import { Clock, Flame, ChevronDown, ChevronUp, Layers, Trash2, Wind } from 'lucide-react'
 import { useState } from 'react'
-import type { Exercise, Session, SessionStatus, WhoopWorkout } from '../../types'
+import type { Exercise, Session, SessionStatus, SquashDrill, WhoopWorkout } from '../../types'
 import { SESSION_TYPE_CONFIG, SQUASH_SUBTYPE_LABELS } from '../../constants/sessionTypes'
 import { formatDuration } from '../../utils/format'
 import { getHeartRateTargetDisplay } from '../../utils/heartRate'
@@ -12,6 +12,7 @@ import { useTrainingStore } from '../../store/useTrainingStore'
 import { normalizeGeneratedProtocol } from '../../services/trainingProtocols'
 import { formatMobilityFocusAreas, normalizeMobilityTargetStructure } from '../../services/training/mobilitySessionLibrary'
 import { resolveSupersetLayout } from '../../services/training/supersetGroups'
+import { resolveSquashDrillGuidance } from '../../services/training/drillLibrary'
 
 const STATUS_CONFIG: Record<SessionStatus, { label: string; badge: string; icon: string }> = {
   planned:   { label: 'Planificado', badge: 'bg-surface-raised text-ink-faint border border-surface-border',       icon: '○' },
@@ -55,6 +56,12 @@ function summarizeExercises(exercises: Exercise[]): string {
   const base = `${exercises.length} ${exercises.length === 1 ? 'ejercicio' : 'ejercicios'}`
   if (groupCount === 0) return base
   return `${base} · ${groupCount} ${groupCount === 1 ? 'superserie' : 'superseries'}`
+}
+
+function SquashDrillGuidance({ drill }: { drill: SquashDrill }) {
+  const guidance = resolveSquashDrillGuidance(drill)
+  if (!guidance) return null
+  return <p className="mt-1 text-[11px] leading-snug text-ink-faint">{guidance}</p>
 }
 
 function WhoopSyncBadge() {
@@ -458,9 +465,7 @@ export default function SessionCard({ session, compact = false, onDelete, whoopW
                         <div className="flex items-start gap-2">
                           <span className="flex-1 text-xs font-medium leading-snug text-ink">{drill.name}</span>
                         </div>
-                        {drill.notes && (
-                          <p className="mt-1 text-[11px] leading-snug text-ink-faint">{drill.notes}</p>
-                        )}
+                        <SquashDrillGuidance drill={drill} />
                       </div>
                     ))}
                   </div>
@@ -482,11 +487,7 @@ export default function SessionCard({ session, compact = false, onDelete, whoopW
                     <div className="flex items-start gap-2">
                       <span className="flex-1 text-xs font-medium leading-snug text-ink">{drill.name}</span>
                     </div>
-                    {drill.notes && (
-                      <p className="mt-1 text-[11px] leading-snug text-ink-faint">
-                        {drill.notes}
-                      </p>
-                    )}
+                    <SquashDrillGuidance drill={drill} />
                   </div>
                 </div>
               ))}

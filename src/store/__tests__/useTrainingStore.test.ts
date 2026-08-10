@@ -13,7 +13,7 @@ vi.mock('../../services/ai/CoachEngine', () => ({
 }))
 
 import { db } from '../../db/db'
-import { resolveVisibleSessionsAfterUpdate, shouldKeepDayLogInVisibleWeek, useTrainingStore } from '../useTrainingStore'
+import { resolveVisibleSessionsAfterUpdate, resolveWeekStartToRefresh, shouldKeepDayLogInVisibleWeek, useTrainingStore } from '../useTrainingStore'
 import { setActiveAthleteId, setSelfAthleteId } from '../../services/athlete/activeAthlete'
 import { currentWeekStartISO } from '../../utils/date'
 import { CoachEngine } from '../../services/ai/CoachEngine'
@@ -68,6 +68,18 @@ describe('useTrainingStore visibility helpers', () => {
     expect(shouldKeepDayLogInVisibleWeek('2026-04-14', '2026-04-06')).toBe(false)
     expect(shouldKeepDayLogInVisibleWeek('2026-04-07', null)).toBe(false)
   })
+
+  it('refreshes the week most recently requested instead of forcing the calendar week', () => {
+    expect(resolveWeekStartToRefresh({
+      requestedWeekStart: '2026-08-17',
+      loadedWeekStart: '2026-08-10',
+    }, '2026-08-10')).toBe('2026-08-17')
+
+    expect(resolveWeekStartToRefresh({
+      requestedWeekStart: null,
+      loadedWeekStart: '2026-08-10',
+    }, '2026-08-03')).toBe('2026-08-10')
+  })
 })
 
 describe('addSession athlete stamping (Dexie real)', () => {
@@ -114,6 +126,7 @@ describe('generateCoachNote — solo semana actual (Dexie real)', () => {
       allWeekSummaries: [],
       isLoading: false,
       loadedWeekStart: null,
+      requestedWeekStart: null,
     })
   })
   afterEach(() => {
@@ -206,6 +219,7 @@ describe('toggleExercise completion (Dexie real)', () => {
       allWeekSummaries: [],
       isLoading: false,
       loadedWeekStart: null,
+      requestedWeekStart: null,
     })
   })
 

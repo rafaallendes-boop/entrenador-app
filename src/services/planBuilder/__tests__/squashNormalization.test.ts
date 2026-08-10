@@ -122,7 +122,7 @@ describe('normalización única de squash', () => {
     expect(afterKinds.filter((kind) => kind === 'technical')).toHaveLength(beforeKinds.length)
   })
 
-  it('no hereda notas ni executionMode del drill reemplazado', () => {
+  it('reemplaza la guía anterior por la explicación canónica del drill nuevo', () => {
     const source = squashSession('2026-08-10', TECHNICAL_DRILLS.map((name) => ({
       name,
       durationMin: 17,
@@ -133,12 +133,24 @@ describe('normalización única de squash', () => {
     const drills = squashSessions(result)[0]?.squashDetails?.drills ?? []
     // El hidratador anterior puede redistribuir duración para cerrar la sesión,
     // pero ningún detalle del drill viejo puede sobrevivir al reemplazo.
-    const replacements = drills.filter((drill) => drill.name !== TECHNICAL_B)
+    expect(drills.every((drill) => Boolean(drill.notes?.trim()))).toBe(true)
+    const replacements = drills.filter((drill) => drill.notes !== 'nota que pertenece al drill anterior')
     expect(replacements.length).toBeGreaterThan(0)
-    expect(replacements.every((drill) => drill.notes == null)).toBe(true)
+    expect(replacements.every((drill) =>
+      drill.notes === findSquashDrillByName(drill.name)?.description,
+    )).toBe(true)
     expect(replacements.every((drill) =>
       drill.executionMode === resolveDrillExecutionMode(findSquashDrillByName(drill.name)!),
     )).toBe(true)
+  })
+
+  it('completa guía faltante incluso cuando el drill ya era válido', () => {
+    const source = squashSession('2026-08-03', [{ name: TECHNICAL_A, durationMin: 15 }])
+    const result = repairGeneratedWeek([source], contextFor(0))
+    const drill = squashSessions(result)[0]?.squashDetails?.drills[0]
+
+    expect(drill?.notes).toBe(findSquashDrillByName(drill!.name)?.description)
+    expect(drill?.executionMode).toBe(resolveDrillExecutionMode(findSquashDrillByName(drill!.name)!))
   })
 
   it('reconstruye blocks a partir de los drills finales', () => {

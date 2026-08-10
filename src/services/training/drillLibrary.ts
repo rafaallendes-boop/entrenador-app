@@ -628,6 +628,13 @@ export function toSquashDrill(definition: SquashDrillDefinition, durationMin?: n
   }
 }
 
+/** Keeps legacy/persisted sessions useful even when an older repair dropped notes. */
+export function resolveSquashDrillGuidance(drill: Pick<SquashDrill, 'name' | 'notes'>): string | undefined {
+  const notes = drill.notes?.trim()
+  if (notes) return notes
+  return findSquashDrillByName(drill.name)?.description
+}
+
 export function normalizeSquashDrillKey(value: string): string {
   return value
     .trim()
