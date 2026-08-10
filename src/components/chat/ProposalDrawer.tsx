@@ -1,12 +1,13 @@
 import { CheckCircle2, Loader2, ThumbsDown, ThumbsUp, X, Zap } from 'lucide-react'
 import { useState } from 'react'
-import type { CoachProposal, CyclingDetails, ExerciseGroup, GeneratedProtocol, MobilityDetails, Session, SquashDetails, SquashSessionBlockKind, SquashSessionMode } from '../../types'
+import type { CoachProposal, CyclingDetails, ExerciseGroup, GeneratedProtocol, MobilityDetails, Session, SquashDetails, SquashDrill, SquashSessionBlockKind, SquashSessionMode } from '../../types'
 import { recordCoachFeedback } from '../../services/ai/aiTelemetry'
 import { isDevToolsEnabled } from '../../services/devTools'
 import { resolveStrengthExerciseBlock } from '../../services/training/strengthSessionStructure'
 import { formatMobilityFocusAreas, normalizeMobilityTargetStructure } from '../../services/training/mobilitySessionLibrary'
 import { formatHeartRateTarget } from '../../utils/heartRate'
 import { resolveSquashSessionMode } from '../../utils/squash'
+import { resolveSquashDrillGuidance } from '../../services/training/drillLibrary'
 
 const ACTION_LABEL: Record<string, string> = {
   skip_session: 'Saltar sesion',
@@ -47,6 +48,11 @@ const SQUASH_BLOCK_LABEL: Record<SquashSessionBlockKind, string> = {
 
 const SQUASH_PROPOSAL_GUIDANCE =
   'Orden y volumen orientativos: ajusta repeticiones, pausas y tiempo real segun cancha, nivel y sensaciones.'
+
+function formatSquashDrillGuidance(drill: SquashDrill): string {
+  const guidance = resolveSquashDrillGuidance(drill)
+  return guidance ? ` · ${guidance}` : ''
+}
 
 interface ProposalDrawerProps {
   proposal: CoachProposal
@@ -382,7 +388,7 @@ function renderProposalDetails(
                   {block.drills.slice(0, 3).map((drill, drillIndex) => (
                     <p key={`${block.kind}-${drillIndex}`} className="truncate text-[10px] text-ink-faint">
                       {drill.name}
-                      {drill.notes ? ` · ${drill.notes}` : ''}
+                      {formatSquashDrillGuidance(drill)}
                     </p>
                   ))}
                 </div>
@@ -393,7 +399,7 @@ function renderProposalDetails(
               {(item.squashDetails.drills ?? []).slice(0, 4).map((drill, drillIndex) => (
                 <p key={drillIndex} className="truncate text-[10px] text-ink-faint">
                   {drill.name}
-                  {drill.notes ? ` · ${drill.notes}` : ''}
+                  {formatSquashDrillGuidance(drill)}
                 </p>
               ))}
               {(item.squashDetails.drills?.length ?? 0) > 4 && (

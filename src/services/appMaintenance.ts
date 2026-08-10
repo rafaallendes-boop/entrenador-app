@@ -216,6 +216,7 @@ function syncStoresAfterClear(selection: LocalDataSelection): void {
       allWeekSummaries: [],
       isLoading: false,
       loadedWeekStart: null,
+      requestedWeekStart: null,
     })
     usePlanBuilderStore.setState({
       plan: null,

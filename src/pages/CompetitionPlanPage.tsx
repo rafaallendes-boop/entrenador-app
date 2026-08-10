@@ -12,7 +12,7 @@ import { useTrainingStore } from '../store/useTrainingStore'
 import { computeMacroPlan, getPrimaryGoalEvent, getPhaseLabel } from '../services/macroPlan'
 import { filterRowsToActiveScope } from '../services/athlete/activeScopeFilter'
 import { getActiveAthleteId, getSwitchEpoch } from '../services/athlete/activeAthlete'
-import { MAX_COMPETITION_PLAN_WEEKS } from '../services/planBuilder/buildPlanShell'
+import { getCompetitionPlanWeekCount, MAX_COMPETITION_PLAN_WEEKS } from '../services/planBuilder/buildPlanShell'
 import { closePlanCycle } from '../services/planBuilder/closePlanCycle'
 import { deletePlanCycle } from '../services/planBuilder/deletePlanCycle'
 import { getPlanWizardDefaultComplementarySports } from '../services/planningConstraints'
@@ -255,17 +255,20 @@ function phasesFromWeeks(weeks: number): string {
   return 'Semana de competencia'
 }
 
-function getPlanWindow(eventDate: string, now: Date = new Date()) {
+function getPlanWindow(eventDate: string, trainingDays: readonly DayOfWeek[], now: Date = new Date()) {
   const totalWeeksUntilEvent = weeksUntil(eventDate, now)
-  const effectivePlanWeeks = totalWeeksUntilEvent > 0
-    ? Math.min(MAX_COMPETITION_PLAN_WEEKS, totalWeeksUntilEvent + 1)
+  const uncappedPlanWeeks = totalWeeksUntilEvent > 0
+    ? getCompetitionPlanWeekCount(eventDate, trainingDays, now)
+    : 0
+  const effectivePlanWeeks = uncappedPlanWeeks > 0
+    ? Math.min(MAX_COMPETITION_PLAN_WEEKS, uncappedPlanWeeks)
     : 0
   const maxSelectableDate = addDaysToISO(now, MAX_COMPETITION_PLAN_WEEKS * 7)
 
   return {
     totalWeeksUntilEvent,
     effectivePlanWeeks,
-    exceedsMax: totalWeeksUntilEvent > MAX_COMPETITION_PLAN_WEEKS,
+    exceedsMax: uncappedPlanWeeks > MAX_COMPETITION_PLAN_WEEKS,
     isFuture: totalWeeksUntilEvent > 0,
     isValidDate: isStrictISODate(eventDate),
     maxSelectableDate,
@@ -383,7 +386,10 @@ export default function CompetitionPlanPage() {
     () => enabledSports.filter(s => s !== primarySportForEvent),
     [enabledSports, primarySportForEvent],
   )
-  const planWindow = useMemo(() => getPlanWindow(state.eventDate, now), [now, state.eventDate])
+  const planWindow = useMemo(
+    () => getPlanWindow(state.eventDate, state.trainingDays, now),
+    [now, state.eventDate, state.trainingDays],
+  )
 
   // Step validation
   const canContinue = useMemo(() => {

@@ -296,6 +296,10 @@ export function buildMacroWeekCoherenceSummary(args: {
 }): MacroWeekCoherenceSummary {
   const { athleteProfile, sessions, historicalSessions = [], referenceDate } = args
   const macroPlan = computeMacroPlan(athleteProfile, referenceDate)
+  // Sin evento objetivo primario no hay macroplan, y sin macroplan no hay bloque
+  // contra el cual medir coherencia. Cada issue afirma algo *sobre un bloque*
+  // ("este bloque lo marca como excluido"), así que ninguno puede ser verdadero.
+  const hasMacroPlan = macroPlan != null
   const phase = macroPlan?.currentPhase ?? 'base'
   const blockGoal = macroPlan?.headline ?? macroPlan?.blockFocus ?? 'Construir base general.'
   const primarySport = getPlanningPrimarySport(athleteProfile)
@@ -304,16 +308,18 @@ export function buildMacroWeekCoherenceSummary(args: {
   const targetDistributionBySport = buildTargetDistributionBySport(primarySport, allowedSports, sportDetails)
   const actualDistributionBySport = countSessionsBySport(sessions)
   const expectedSessionsBySport = buildExpectedSessionsBySport(phase, targetDistributionBySport, sportDetails)
-  const issues = buildCoherenceIssues({
-    phase,
-    blockGoal,
-    primarySport,
-    targetDistributionBySport,
-    actualDistributionBySport,
-    totalLoad: estimateTotalLoad(sessions),
-    historicalSessions,
-    sportDetails,
-  })
+  const issues = hasMacroPlan
+    ? buildCoherenceIssues({
+      phase,
+      blockGoal,
+      primarySport,
+      targetDistributionBySport,
+      actualDistributionBySport,
+      totalLoad: estimateTotalLoad(sessions),
+      historicalSessions,
+      sportDetails,
+    })
+    : []
 
   return {
     currentPhase: phase,
@@ -327,7 +333,9 @@ export function buildMacroWeekCoherenceSummary(args: {
     targetDistributionBySport,
     actualDistributionBySport,
     expectedSessionsBySport,
-    coherenceStatus: issues.length > 0 ? 'warning' : 'ok',
+    coherenceStatus: hasMacroPlan
+      ? (issues.length > 0 ? 'warning' : 'ok')
+      : 'not_applicable',
     coherenceIssues: issues,
   }
 }

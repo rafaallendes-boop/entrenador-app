@@ -1096,7 +1096,11 @@ export interface CoachProposalMetadata {
 export type PlanValidationStatus = 'ok' | 'warning'
 export type WeeklyPlanIntent = 'progress' | 'hold' | 'rotate' | 'deload' | 'unknown'
 export type PhaseSportTargetRole = 'primary' | 'support' | 'excluded'
-export type PhaseCoherenceStatus = 'ok' | 'warning'
+/**
+ * `not_applicable` es el estado sin macroplan: no hay bloque contra el cual medir
+ * coherencia, así que afirmar `ok` sería falso. No es un empate ni un warning suave.
+ */
+export type PhaseCoherenceStatus = 'ok' | 'warning' | 'not_applicable'
 
 export interface MacroWeekCoherenceSummary {
   currentPhase: MacroPlanPhase

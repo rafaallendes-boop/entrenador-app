@@ -81,6 +81,21 @@ describe('buildActionAlerts', () => {
     expect(alerts[0]?.target).toBe('week')
   })
 
+  it('no emite alerta de coherencia sin macroplan, aunque la semana esté cargada', () => {
+    const alerts = buildActionAlerts({
+      sessions: [
+        makeSession({ type: 'running', date: dateInWeek(0), status: 'completed' }),
+      ],
+      loadAnalytics: makeLoadAnalytics(),
+      // Mismo fixture, pero sin bloque contra el cual medir: los issues no pueden
+      // sobrevivir a la ausencia de macroplan.
+      macroWeekCoherence: { ...makeCoherenceSummary(), coherenceStatus: 'not_applicable', coherenceIssues: [] },
+      today: dateInWeek(0),
+    })
+
+    expect(alerts.some((alert) => alert.id === 'macro-week-coherence-warning')).toBe(false)
+  })
+
   it('creates a chat-directed high-priority alert when ACWR is at risk', () => {
     const alerts = buildActionAlerts({
       sessions: [],

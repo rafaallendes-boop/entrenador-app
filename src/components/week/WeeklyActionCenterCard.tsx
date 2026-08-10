@@ -1,4 +1,4 @@
-import { ArrowRight, CalendarRange, CheckCircle2, ClipboardList, MessageSquareText, Siren, TriangleAlert } from 'lucide-react'
+import { ArrowRight, CalendarRange, CheckCircle2, CircleDashed, ClipboardList, MessageSquareText, Siren, TriangleAlert } from 'lucide-react'
 import Card from '../ui/Card'
 import type { WeeklyActionItem, WeeklyActionSummary } from '../../types'
 
@@ -24,6 +24,7 @@ const STATUS_LABELS = {
   coherence: {
     ok: 'Coherencia ok',
     warning: 'Coherencia a revisar',
+    not_applicable: 'Sin macroplan',
   },
   weekState: {
     empty: 'Semana vacía',
@@ -31,6 +32,13 @@ const STATUS_LABELS = {
     needs_attention: 'Semana a corregir',
     on_track: 'Semana encaminada',
   },
+} as const
+
+/** Un check verde para `not_applicable` afirmaría conformidad con un bloque inexistente. */
+const COHERENCE_ICON = {
+  ok: CheckCircle2,
+  warning: TriangleAlert,
+  not_applicable: CircleDashed,
 } as const
 
 export default function WeeklyActionCenterCard({ summary, onSelectAction, onOpenAutoAdjustment }: WeeklyActionCenterCardProps) {
@@ -55,7 +63,7 @@ export default function WeeklyActionCenterCard({ summary, onSelectAction, onOpen
         <StatusPill icon={CalendarRange} label={STATUS_LABELS.adherence[summary.adherenceStatus]} />
         <StatusPill icon={ClipboardList} label={STATUS_LABELS.checkIn[summary.checkInStatus]} />
         <StatusPill
-          icon={summary.coherenceStatus === 'warning' ? TriangleAlert : CheckCircle2}
+          icon={COHERENCE_ICON[summary.coherenceStatus]}
           label={STATUS_LABELS.coherence[summary.coherenceStatus]}
         />
       </div>

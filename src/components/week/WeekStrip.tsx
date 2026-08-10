@@ -14,12 +14,14 @@ interface WeekStripProps {
 export default function WeekStrip({ showNav = true, onDayPress, weekStart }: WeekStripProps) {
   const { currentWeekStart, selectedDate, setSelectedDate, navigateWeek } = useUIStore()
   const sessions = useTrainingStore(s => s.sessions)
+  const loadedWeekStart = useTrainingStore(s => s.loadedWeekStart)
 
   const activeWeekStart = weekStart ?? currentWeekStart
   const weekDays = getWeekDays(fromISO(activeWeekStart))
+  const visibleSessions = loadedWeekStart === activeWeekStart ? sessions : []
 
   const getSessionsForDate = (dateISO: string) =>
-    sessions.filter(s => s.date === dateISO)
+    visibleSessions.filter(s => s.date === dateISO)
 
   return (
     <div className="px-4 py-3 md:px-0">

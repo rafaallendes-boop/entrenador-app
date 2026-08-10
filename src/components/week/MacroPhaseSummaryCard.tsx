@@ -1,6 +1,8 @@
-import { AlertTriangle, CheckCircle2, Flag, Layers3 } from 'lucide-react'
+import { AlertTriangle, ArrowRight, CheckCircle2, Flag, Layers3 } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import type { MacroWeekCoherenceSummary, SupportedSport } from '../../types'
 import { getPhaseLabel } from '../../services/macroPlan'
+import { ROUTES } from '../../constants/routes'
 import Card from '../ui/Card'
 
 const SPORT_LABELS: Record<SupportedSport, string> = {
@@ -21,7 +23,42 @@ interface MacroPhaseSummaryCardProps {
   summary: MacroWeekCoherenceSummary
 }
 
+/**
+ * Sin macroplan no hay fase, objetivo de bloque ni coherencia que mostrar: la card
+ * colapsa a una invitación. Vive acá adentro —y no como guarda en la página— para
+ * que ninguna superficie pueda montar por accidente la versión que inventa fase.
+ */
+function NoMacroPlanCard() {
+  const navigate = useNavigate()
+
+  return (
+    <Card className="p-4 md:p-5">
+      <button
+        type="button"
+        onClick={() => navigate(ROUTES.COMPETITION_PLAN)}
+        className="flex w-full items-center gap-3 text-left"
+      >
+        <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border border-brand/15 bg-brand/10">
+          <Flag size={15} className="text-brand-light" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-semibold text-ink">Sin plan de competencia</span>
+          <span className="mt-0.5 block text-xs text-ink-muted">
+            Define tu evento objetivo y RallyIQ arma las fases hasta ese día.
+          </span>
+        </span>
+        <span className="flex flex-shrink-0 items-center gap-1 whitespace-nowrap text-xs font-medium text-brand-light">
+          Crear plan
+          <ArrowRight size={13} />
+        </span>
+      </button>
+    </Card>
+  )
+}
+
 export default function MacroPhaseSummaryCard({ summary }: MacroPhaseSummaryCardProps) {
+  if (summary.coherenceStatus === 'not_applicable') return <NoMacroPlanCard />
+
   const sports = Array.from(new Set([
     ...(Object.keys(summary.targetDistributionBySport) as SupportedSport[]),
     ...(Object.keys(summary.actualDistributionBySport) as SupportedSport[]),

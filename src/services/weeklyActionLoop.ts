@@ -92,7 +92,8 @@ export function buildWeeklyActionSummary(input: WeeklyActionLoopInput): WeeklyAc
   const secondaryActions = deduped.slice(1, 3)
   const adherenceStatus = buildAdherenceStatus(input.currentWeekSummary, input.sessions, today)
   const checkInStatus = buildCheckInStatus(input.sessions, today, input.todayDayLog)
-  const coherenceStatus = input.macroWeekCoherence?.coherenceStatus ?? 'ok'
+  // Sin summary no sabemos si hay macroplan; `ok` afirmaría coherencia no verificada.
+  const coherenceStatus = input.macroWeekCoherence?.coherenceStatus ?? 'not_applicable'
   const weekState = buildWeekState({
     weekSessions,
     primaryAction,

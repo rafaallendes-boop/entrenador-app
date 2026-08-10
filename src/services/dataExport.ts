@@ -1457,7 +1457,9 @@ function optionalMacroWeekCoherenceSummary(value: unknown, path: string): MacroW
       targetDistributionBySport: {},
       actualDistributionBySport: {},
       expectedSessionsBySport: {},
-      coherenceStatus: 'ok',
+      // Un export viejo sin summary no permite afirmar coherencia: no se sabe si
+      // había macroplan al generarlo.
+      coherenceStatus: 'not_applicable',
       coherenceIssues: [],
     }
   }
@@ -1488,7 +1490,7 @@ function optionalMacroWeekCoherenceSummary(value: unknown, path: string): MacroW
         requireString(item, `${path}.expectedSessionsBySport.${key}`),
       ]),
     ) as Partial<Record<SupportedSport, string>>,
-    coherenceStatus: requireEnum(row.coherenceStatus, new Set(['ok', 'warning']), `${path}.coherenceStatus`) as MacroWeekCoherenceSummary['coherenceStatus'],
+    coherenceStatus: requireEnum(row.coherenceStatus, new Set(['ok', 'warning', 'not_applicable']), `${path}.coherenceStatus`) as MacroWeekCoherenceSummary['coherenceStatus'],
     coherenceIssues: optionalStringArray(row.coherenceIssues, `${path}.coherenceIssues`) ?? [],
   }
 }
@@ -2326,6 +2328,7 @@ function syncStoresAfterImport(preferredChatSessionId: string | null): void {
     allWeekSummaries: [],
     isLoading: false,
     loadedWeekStart: null,
+    requestedWeekStart: null,
   })
 
   // Import es account-global: limpiar TODAS las keys de sesión (legacy y por

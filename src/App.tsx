@@ -1,16 +1,24 @@
 import { BrowserRouter, Navigate, Routes, Route, useNavigate, useLocation } from 'react-router-dom'
 import { Component, lazy, Suspense, useEffect, type ErrorInfo, type ReactNode } from 'react'
+import { addDays } from 'date-fns'
 import AppShell from './components/layout/AppShell'
 import AuthGate from './components/auth/AuthGate'
 import ConsentGate from './components/legal/ConsentGate'
 import CoachScopeGuard from './components/layout/CoachScopeGuard'
 import { ROUTES } from './constants/routes'
 import { useAuthStore } from './store/useAuthStore'
-import { runFullSync, migrateLocalDataToCloud, prepareLocalDataForUser, hasInitialRemotePullCompleted, pullMemberships } from './services/syncService'
-import { useTrainingStore } from './store/useTrainingStore'
+import {
+  runFullSync,
+  migrateLocalDataToCloud,
+  prepareLocalDataForUser,
+  hasInitialRemotePullCompleted,
+  pullMemberships,
+  pullSessionsForDateRange,
+} from './services/syncService'
+import { resolveWeekStartToRefresh, useTrainingStore } from './store/useTrainingStore'
 import { useCoachMemoryStore } from './store/useCoachMemoryStore'
 import { usePlanBuilderStore } from './store/usePlanBuilderStore'
-import { currentWeekStartISO } from './utils/date'
+import { currentWeekStartISO, fromISO, toISO } from './utils/date'
 import { db } from './db/db'
 import { hasSkippedOnboarding, needsOnboarding } from './utils/onboarding'
 import { isSupabaseConfigured } from './services/auth'
@@ -243,7 +251,42 @@ export default function App() {
           if (cancelled) return
         }
 
+        // Prioriza los datos que el usuario está mirando. El sync completo también
+        // trae sesiones, pero incluye varias tablas y puede demorar en conexiones
+        // móviles. Este pull acotado permite hidratar el calendario primero.
+        const trainingStateBeforeSync = useTrainingStore.getState()
+        const priorityWeekStart = resolveWeekStartToRefresh(trainingStateBeforeSync, currentWeekStartISO())
+        const priorityWeekEnd = toISO(addDays(fromISO(priorityWeekStart), 6))
+        try {
+          await pullSessionsForDateRange(priorityWeekStart, priorityWeekEnd)
+        } catch (error) {
+          // El sync completo que sigue mantiene el retry y los diagnósticos
+          // habituales; un fallo de esta optimización no debe bloquearlo.
+          console.warn('[app] priority week pull failed', error)
+        }
+        if (cancelled) return
+
+        // La semana puede haber cambiado mientras el request estaba en vuelo.
+        // Releer el último destino evita volver a mostrar una semana anterior.
+        const trainingStateAfterPriorityPull = useTrainingStore.getState()
+        const weekStartAfterPriorityPull = resolveWeekStartToRefresh(
+          trainingStateAfterPriorityPull,
+          priorityWeekStart,
+        )
+        await trainingStateAfterPriorityPull.loadWeek(weekStartAfterPriorityPull)
+        if (cancelled) return
+
         await runFullSync(userId)
+        if (cancelled) return
+
+        // Refrescar el calendario antes de WHOOP y memoria: ninguno de esos pulls
+        // debe retrasar la aparición de entrenamientos recién sincronizados.
+        const trainingStateAfterSync = useTrainingStore.getState()
+        const weekStartAfterSync = resolveWeekStartToRefresh(trainingStateAfterSync, currentWeekStartISO())
+        await Promise.all([
+          trainingStateAfterSync.loadWeek(weekStartAfterSync),
+          trainingStateAfterSync.loadAllSummaries(),
+        ])
         if (cancelled) return
 
         await pullWorkouts()
@@ -258,12 +301,6 @@ export default function App() {
         useAuthStore.getState().setSyncDetails({
           memoryLoadedForSyncAt: syncBoundaryAt,
         })
-
-        const { loadWeek, loadAllSummaries } = useTrainingStore.getState()
-        await Promise.all([
-          loadWeek(currentWeekStartISO()),
-          loadAllSummaries(),
-        ])
       } catch (error) {
         const { loadMemory } = useCoachMemoryStore.getState()
         try {

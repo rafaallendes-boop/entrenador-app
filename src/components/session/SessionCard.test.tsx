@@ -234,6 +234,27 @@ describe('SessionCard squash match badges', () => {
     expect(html).toContain('1h')
     expect(html).not.toContain('14min')
   })
+
+  it('shows canonical guidance for a persisted squash drill with missing notes', () => {
+    render(
+      <SessionCard
+        session={makeSession({
+          squashDetails: {
+            trainingFocus: 'technical',
+            sessionMode: 'drill_session',
+            blocks: [
+              { kind: 'technical', drills: [{ name: 'Volea y vuelta a la T', durationMin: 10 }] },
+            ],
+            drills: [{ name: 'Volea y vuelta a la T', durationMin: 10 }],
+          },
+        })}
+      />,
+    )
+
+    fireEvent.click(screen.getByText('Sesion squash'))
+
+    expect(screen.getByText(/unir ataque temprano con recuperación real/i)).toBeTruthy()
+  })
 })
 
 describe('SessionCard Whoop badge', () => {

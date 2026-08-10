@@ -249,6 +249,7 @@ export function repairGeneratedWeek(
     measureSquashMatchRoles(sessions, meta)
     return { sessions: [], meta, failure: squashNormalization.failure }
   }
+  ensureSquashDrillGuidance(sessions)
   normalizeSquashDurationConsistency(sessions, meta)
 
   // 14. Una única proyección canónica de fuerza evita que dos mutadores se
@@ -1971,10 +1972,34 @@ function toReplacementSquashDrill(
   original: SquashDrill,
   replacement: NonNullable<ReturnType<typeof findSquashDrillByName>>,
 ): SquashDrill {
-  return {
-    name: replacement.name,
-    durationMin: original.durationMin,
-    executionMode: resolveDrillExecutionMode(replacement),
+  // Guidance from the old drill belongs to a different movement. Rehydrate the
+  // replacement from the canonical library so every rendered drill remains
+  // executable, not just named.
+  return toSquashDrill(replacement, original.durationMin)
+}
+
+function ensureSquashDrillGuidance(
+  sessions: CoachSessionProposal[],
+): void {
+  for (const session of sessions) {
+    const details = session.squashDetails
+    if (session.sessionType !== 'squash' || !details) continue
+
+    let changed = false
+    const drills = details.drills.map((drill) => {
+      const definition = findSquashDrillByName(drill.name)
+      if (!definition) return drill
+
+      const notes = drill.notes?.trim() ? drill.notes : definition.description
+      const executionMode = drill.executionMode ?? resolveDrillExecutionMode(definition)
+      if (notes === drill.notes && executionMode === drill.executionMode) return drill
+
+      changed = true
+      return { ...drill, notes, executionMode }
+    })
+
+    if (!changed) continue
+    setSquashDrillsAndBlocks(details, drills)
   }
 }
 
