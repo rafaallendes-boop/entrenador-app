@@ -9,6 +9,8 @@ import { useAuthStore } from '../store/useAuthStore'
 import { usePlanBuilderStore } from '../store/usePlanBuilderStore'
 import { supabase } from '../services/auth'
 import { getPrimaryGoalEvent } from '../services/macroPlan'
+import { buildDraftSignature } from '../services/planBuilder/draftSignature'
+import { goalEventWindowFromMacroPlan } from '../services/goalEventWindow'
 import { analyzePlanCommitImpact } from '../services/planBuilder/commitImpact'
 import { shouldDeleteEmptyShellDraft, shouldLoadMatchingDraftPlan } from '../services/planBuilder/draftAutoload'
 import { rowToTrainingPlan, rowToTrainingPlanWeek } from '../services/planBuilder/planRows'
@@ -450,14 +452,6 @@ function SportAthleteIllustration({ goalEvent, className }: { goalEvent: GoalEve
   return null
 }
 
-function buildDraftSignature(goalEventId: string, wizardConfig: PlanWizardConfig): string {
-  // Exclude timestamps so re-running the wizard with the same settings matches an existing draft.
-  const stableConfig: Partial<PlanWizardConfig> = { ...wizardConfig }
-  delete stableConfig.createdAt
-  delete stableConfig.updatedAt
-  return JSON.stringify({ goalEventId, wizardConfig: stableConfig })
-}
-
 async function fetchRemoteMatchingDraft(input: {
   athleteId: string
   goalEventId: string
@@ -478,7 +472,11 @@ async function fetchRemoteMatchingDraft(input: {
   const matchingPlans = ((planRows ?? []) as Record<string, unknown>[])
     .map(rowToTrainingPlan)
     .filter((candidate) => (
-      buildDraftSignature(candidate.goalEventId, candidate.wizardConfig) === input.expectedDraftSignature
+      buildDraftSignature({
+        goalEventId: candidate.goalEventId,
+        wizardConfig: candidate.wizardConfig,
+        event: goalEventWindowFromMacroPlan(candidate.macroSnapshot),
+      }) === input.expectedDraftSignature
     ))
     .sort((a, b) => b.updatedAt - a.updatedAt)
 
@@ -541,10 +539,18 @@ export default function PlanBuilderV2Page() {
 
   const goalEvent = getPrimaryGoalEvent(effectiveAthleteProfile)
   const expectedDraftSignature = effectiveAthleteProfile?.planWizardConfig && goalEvent
-    ? buildDraftSignature(goalEvent.id, effectiveAthleteProfile.planWizardConfig)
+    ? buildDraftSignature({
+        goalEventId: goalEvent.id,
+        wizardConfig: effectiveAthleteProfile.planWizardConfig,
+        event: goalEvent,
+      })
     : null
   const currentDraftSignature = plan
-    ? buildDraftSignature(plan.goalEventId, plan.wizardConfig)
+    ? buildDraftSignature({
+        goalEventId: plan.goalEventId,
+        wizardConfig: plan.wizardConfig,
+        event: goalEventWindowFromMacroPlan(plan.macroSnapshot),
+      })
     : null
   const hasGenerationProgress = Boolean(plan?.generationSummary?.jobId || plan?.generationSummary?.heartbeatAt) ||
     weeks.some((week) =>
@@ -603,7 +609,11 @@ export default function PlanBuilderV2Page() {
       if (cancelled) return
 
       const matchingPlan = existingPlans
-        .filter((candidate) => buildDraftSignature(candidate.goalEventId, candidate.wizardConfig) === expectedDraftSignature)
+        .filter((candidate) => buildDraftSignature({
+          goalEventId: candidate.goalEventId,
+          wizardConfig: candidate.wizardConfig,
+          event: goalEventWindowFromMacroPlan(candidate.macroSnapshot),
+        }) === expectedDraftSignature)
         .sort((a, b) => b.updatedAt - a.updatedAt)[0]
 
       if (matchingPlan) {

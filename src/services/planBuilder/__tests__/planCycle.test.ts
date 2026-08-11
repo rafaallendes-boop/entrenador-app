@@ -43,21 +43,21 @@ const plan = (fields: Partial<TrainingPlan>): TrainingPlan => ({
 describe('resolvePlanCycleState', () => {
   it('mantiene el día del evento dentro del ciclo', () => {
     expect(resolvePlanCycleState({
-      eventDateISO: '2026-08-15',
+      event: { date: '2026-08-15' },
       todayISO: '2026-08-15',
     })).toBe('upcoming')
   })
 
   it('entra en post_event el día siguiente', () => {
     expect(resolvePlanCycleState({
-      eventDateISO: '2026-08-15',
+      event: { date: '2026-08-15' },
       todayISO: '2026-08-16',
     })).toBe('post_event')
   })
 
   it('mantiene el orden calendario al cruzar DST', () => {
     expect(resolvePlanCycleState({
-      eventDateISO: '2026-09-07',
+      event: { date: '2026-09-07' },
       todayISO: '2026-09-05',
     })).toBe('upcoming')
   })
@@ -100,5 +100,25 @@ describe('comparePlanCanonicalRecency', () => {
 
     expect(rows.sort(comparePlanCanonicalRecency).map((row) => row.id))
       .toEqual(['newest', 'a', 'b', 'z', 'no-accept'])
+  })
+})
+
+describe('resolvePlanCycleState con evento multijornada', () => {
+  const window = { date: '2026-09-07', endDate: '2026-09-13' }
+
+  it('sigue en curso mientras el campeonato no termina', () => {
+    for (const today of ['2026-09-07', '2026-09-10', '2026-09-13']) {
+      expect(resolvePlanCycleState({ event: window, todayISO: today })).toBe('upcoming')
+    }
+  })
+
+  it('pasa a post-evento recién después del término', () => {
+    expect(resolvePlanCycleState({ event: window, todayISO: '2026-09-14' })).toBe('post_event')
+  })
+
+  it('un evento de un día conserva su comportamiento', () => {
+    const single = { date: '2026-09-07' }
+    expect(resolvePlanCycleState({ event: single, todayISO: '2026-09-07' })).toBe('upcoming')
+    expect(resolvePlanCycleState({ event: single, todayISO: '2026-09-08' })).toBe('post_event')
   })
 })

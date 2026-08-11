@@ -144,7 +144,7 @@ describe('planBuilder', () => {
         'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday',
       ]
 
-      expect(getCompetitionPlanWeekCount('2026-09-11', trainingDays, now)).toBe(5)
+      expect(getCompetitionPlanWeekCount({ date: '2026-09-11' }, trainingDays, now)).toBe(5)
 
       const profile = makeProfile('2026-09-11')
       const result = buildPlanShell({
@@ -161,7 +161,7 @@ describe('planBuilder', () => {
     it('incluye la semana en curso si el día actual está habilitado', () => {
       process.env.TZ = 'America/Santiago'
       const now = new Date('2026-08-09T10:00:00') // domingo
-      expect(getCompetitionPlanWeekCount('2026-09-11', ['sunday'], now)).toBe(6)
+      expect(getCompetitionPlanWeekCount({ date: '2026-09-11' }, ['sunday'], now)).toBe(6)
     })
   })
 

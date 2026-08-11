@@ -2,6 +2,10 @@ import { differenceInCalendarDays } from 'date-fns'
 import type { WeekSummary } from '../../types'
 import type { TrainingPlan } from '../../types/planBuilder'
 import { fromISO } from '../../utils/date'
+import {
+  resolveGoalEventWindow,
+  type GoalEventWindowInput,
+} from '../goalEventWindow'
 
 export type PlanCycleState = 'upcoming' | 'post_event'
 
@@ -33,14 +37,14 @@ export function comparePlanCanonicalRecency(a: TrainingPlan, b: TrainingPlan): n
  * following calendar day, independently of elapsed hours across DST changes.
  */
 export function resolvePlanCycleState(args: {
-  eventDateISO: string
+  event: GoalEventWindowInput
   todayISO: string
 }): PlanCycleState {
-  const daysToEvent = differenceInCalendarDays(
-    fromISO(args.eventDateISO),
-    fromISO(args.todayISO),
-  )
-  return daysToEvent < 0 ? 'post_event' : 'upcoming'
+  // El cierre del ciclo se mide contra el **término**: durante un campeonato de
+  // varios días el ciclo sigue en curso, no post-evento.
+  const { endDate } = resolveGoalEventWindow(args.event)
+  const daysToEnd = differenceInCalendarDays(fromISO(endDate), fromISO(args.todayISO))
+  return daysToEnd < 0 ? 'post_event' : 'upcoming'
 }
 
 /**

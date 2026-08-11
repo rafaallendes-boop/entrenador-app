@@ -9,7 +9,10 @@ import {
 } from '../../services/planBuilder/planCycle'
 import { deletePlanCycle } from '../../services/planBuilder/deletePlanCycle'
 import { getPhaseLabel } from '../../services/macroPlan'
-import { fromISO } from '../../utils/date'
+import {
+  formatGoalEventWindow,
+  goalEventWindowFromMacroPlan,
+} from '../../services/goalEventWindow'
 import ConfirmDialog from '../ui/ConfirmDialog'
 import type { WeekSummary } from '../../types'
 import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
@@ -34,12 +37,10 @@ interface CycleRow {
   avgAdherence: number | null
 }
 
-function formatEventDate(dateISO: string): string {
-  return fromISO(dateISO).toLocaleDateString('es-AR', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  })
+function formatEventDate(macroSnapshot: TrainingPlan['macroSnapshot']): string {
+  // Un ciclo archivado puede haber sido un campeonato de varios días: mostrar
+  // sólo el inicio lo haría indistinguible de un evento de un día.
+  return formatGoalEventWindow(goalEventWindowFromMacroPlan(macroSnapshot))
 }
 
 function selectCanonicalArchivedPlans(plans: TrainingPlan[]): TrainingPlan[] {
@@ -210,7 +211,7 @@ export function CycleHistory({ weekSummaries, onChanged }: {
                       fontFamily: T.fontMono,
                       fontSize: 10,
                     }}>
-                      {formatEventDate(plan.macroSnapshot.goalEventDate)}
+                      {formatEventDate(plan.macroSnapshot)}
                     </span>
                   </span>
                   <span style={{ textAlign: 'right', flexShrink: 0 }}>

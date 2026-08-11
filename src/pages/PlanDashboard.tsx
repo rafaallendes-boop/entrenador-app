@@ -7,6 +7,12 @@ import { db } from '../db/db'
 import { computeMacroPlan, getPrimaryGoalEvent, getPhaseLabel } from '../services/macroPlan'
 import { fromISO, todayISO } from '../utils/date'
 import {
+  formatGoalEventKeyDate,
+  formatGoalEventWindow,
+  resolveGoalEventWindow,
+  type GoalEventWindowInput,
+} from '../services/goalEventWindow'
+import {
   resolveCurrentPlanWeekNumber,
   resolvePlanStartDate,
   resolvePlanWeekNumber,
@@ -81,9 +87,12 @@ function daysToEvent(dateISO: string): number {
 }
 
 
-function formatEventDate(dateISO: string): string {
-  const d = fromISO(dateISO)
-  return d.toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' })
+/**
+ * El countdown sigue midiendo contra el inicio, pero la etiqueta debe describir
+ * la ventana completa: un campeonato de una semana no es "9 sep 2026".
+ */
+function formatEventDate(event: GoalEventWindowInput): string {
+  return formatGoalEventWindow(event)
 }
 
 function avg(nums: number[]): number {
@@ -154,12 +163,16 @@ function SportChip({ sport }: { sport: string }) {
 }
 
 // ── EventCountdown card ──────────────────────────────────────
-function EventCountdown({ title, dateISO, planStartISO }: {
-  title: string; dateISO: string; planStartISO?: string;
+function EventCountdown({ title, event, planStartISO }: {
+  title: string; event: GoalEventWindowInput; planStartISO?: string;
 }) {
-  const days = daysToEvent(dateISO)
+  const { startDate, endDate } = resolveGoalEventWindow(event)
+  const today = todayISO()
+  const isEventActive = today >= startDate && today <= endDate
+  const days = daysToEvent(startDate)
+  const daysToEnd = daysToEvent(endDate)
   const planStart = planStartISO ? fromISO(planStartISO) : null
-  const eventDate = fromISO(dateISO)
+  const eventDate = fromISO(startDate)
   const totalDays = planStart
     ? Math.ceil((eventDate.getTime() - planStart.getTime()) / (1000 * 60 * 60 * 24))
     : days * 2
@@ -212,17 +225,22 @@ function EventCountdown({ title, dateISO, planStartISO }: {
           {title}
         </div>
         <div style={{ fontFamily: T.fontMono, fontSize: 11, color: T.faint }}>
-          {formatEventDate(dateISO)}
+          {formatEventDate(event)}
+          {formatGoalEventKeyDate(event) && <> · {formatGoalEventKeyDate(event)}</>}
         </div>
         <div style={{ marginTop: 14, display: 'flex', alignItems: 'baseline', gap: 7 }}>
           <span style={{
-            fontFamily: T.fontDisp, fontSize: 44, fontWeight: 800,
+            fontFamily: T.fontDisp, fontSize: isEventActive ? 32 : 44, fontWeight: 800,
             color: T.brand, lineHeight: 1,
             fontVariantNumeric: 'tabular-nums',
           }}>
-            {days}
+            {isEventActive ? 'En curso' : days}
           </span>
-          <span style={{ fontSize: 13, color: T.muted }}>días restantes</span>
+          <span style={{ fontSize: 13, color: T.muted }}>
+            {isEventActive
+              ? (daysToEnd === 0 ? 'termina hoy' : `${daysToEnd} día${daysToEnd === 1 ? '' : 's'} para el término`)
+              : 'días restantes'}
+          </span>
         </div>
         <div style={{ marginTop: 12 }}>
           <ProgressBar value={elapsed} total={totalDays} color={T.brand} height={5} />
@@ -260,9 +278,9 @@ function KPIPill({ label, value, color = T.brand }: {
   )
 }
 
-function EventCompleted({ title, dateISO, summary }: {
+function EventCompleted({ title, event, summary }: {
   title: string
-  dateISO: string
+  event: GoalEventWindowInput
   summary: { weeksTrained: number; avgAdherence: number | null } | null
 }) {
   return (
@@ -310,7 +328,8 @@ function EventCompleted({ title, dateISO, summary }: {
           {title}
         </div>
         <div style={{ fontFamily: T.fontMono, fontSize: 11, color: T.faint }}>
-          {formatEventDate(dateISO)}
+          {formatEventDate(event)}
+          {formatGoalEventKeyDate(event) && <> · {formatGoalEventKeyDate(event)}</>}
         </div>
         <div style={{ marginTop: 14 }}>
           <ProgressBar value={1} total={1} color={T.lime} height={5} />
@@ -531,6 +550,8 @@ export default function PlanDashboard({ onEdit, onNewCycle }: {
       id: activeGeneratedPlan.goalEventId,
       title: activeGeneratedPlan.title,
       date: activeGeneratedPlan.macroSnapshot.goalEventDate,
+      endDate: activeGeneratedPlan.macroSnapshot.goalEventEndDate,
+      keyDate: activeGeneratedPlan.macroSnapshot.goalEventKeyDate,
       sport: activeGeneratedPlan.macroSnapshot.sportDetails.find((detail) => detail.role === 'primary')?.sport ?? 'squash',
       priority: 'primary' as const,
     }
@@ -569,7 +590,7 @@ export default function PlanDashboard({ onEdit, onNewCycle }: {
   }, [allWeekSummaries, today])
 
   const cycleState = primaryEvent
-    ? resolvePlanCycleState({ eventDateISO: primaryEvent.date, todayISO: today })
+    ? resolvePlanCycleState({ event: primaryEvent, todayISO: today })
     : 'upcoming'
   const currentPhase: MacroPlanPhase = cycleState === 'post_event'
     ? 'transition'
@@ -680,13 +701,13 @@ export default function PlanDashboard({ onEdit, onNewCycle }: {
         {cycleState === 'post_event' ? (
           <EventCompleted
             title={primaryEvent.title}
-            dateISO={primaryEvent.date}
+            event={primaryEvent}
             summary={activeGeneratedPlan ? cycleSummary : null}
           />
         ) : (
           <EventCountdown
             title={primaryEvent.title}
-            dateISO={primaryEvent.date}
+            event={primaryEvent}
             planStartISO={planStartISO}
           />
         )}

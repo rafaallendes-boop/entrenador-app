@@ -16,6 +16,7 @@ import type {
 import { fromISO, getWeekStart, toISO } from '../../utils/date'
 import { v4 as uuid } from '../../utils/uuid'
 import { computeMacroPlan, computeWeeksRemaining, resolvePhase } from '../macroPlan'
+import { resolveGoalEventWindow, type GoalEventWindowInput } from '../goalEventWindow'
 import { resolveConfiguredGenerationStrategy } from './generationState'
 
 export interface BuildPlanShellInput {
@@ -135,29 +136,37 @@ function findFirstTrainingDateOnOrAfter(
 interface CompetitionPlanCalendarWindow {
   firstTrainingDate: Date
   firstWeekStart: Date
-  eventWeekStart: Date
+  /** Semana del término; en un evento de un día también contiene el inicio. */
+  eventEndWeekStart: Date
   totalWeeks: number
 }
 
 function resolveCompetitionPlanCalendarWindow(
-  eventDateISO: string,
+  goalEvent: GoalEventWindowInput,
   trainingDays: readonly DayOfWeek[],
   now: Date,
 ): CompetitionPlanCalendarWindow {
+  const window = resolveGoalEventWindow(goalEvent)
   const requestedStartDate = startOfLocalDay(now)
-  const eventDate = fromISO(eventDateISO)
-  const firstTrainingDate = findFirstTrainingDateOnOrAfter(requestedStartDate, eventDate, trainingDays)
+  // La semana parcial se omite sólo si no queda ningún día habilitado antes de
+  // que termine la ventana. En un evento lunes→martes, cortar la búsqueda el
+  // lunes agregaba una semana vacía cuando el único día habilitado era martes.
+  const eventEndDate = fromISO(window.endDate)
+  const firstTrainingDate = findFirstTrainingDateOnOrAfter(requestedStartDate, eventEndDate, trainingDays)
   const firstWeekStart = getWeekStart(firstTrainingDate)
-  const eventWeekStart = getWeekStart(eventDate)
+  // El plan debe cubrir hasta la semana del **término**: un campeonato que cruza
+  // dos semanas calendario dejaría su última jornada fuera del plan si contamos
+  // sólo hasta la semana del inicio.
+  const eventEndWeekStart = getWeekStart(fromISO(window.endDate))
 
   // Calendar days, not elapsed milliseconds: both operands are local midnights,
   // and a plan spanning a DST change is short (or long) by an hour.
   const totalWeeks = Math.max(
     1,
-    Math.floor(differenceInCalendarDays(eventWeekStart, firstWeekStart) / 7) + 1,
+    Math.floor(differenceInCalendarDays(eventEndWeekStart, firstWeekStart) / 7) + 1,
   )
 
-  return { firstTrainingDate, firstWeekStart, eventWeekStart, totalWeeks }
+  return { firstTrainingDate, firstWeekStart, eventEndWeekStart, totalWeeks }
 }
 
 /**
@@ -166,11 +175,11 @@ function resolveCompetitionPlanCalendarWindow(
  * still contains an enabled training day.
  */
 export function getCompetitionPlanWeekCount(
-  eventDateISO: string,
+  goalEvent: GoalEventWindowInput,
   trainingDays: readonly DayOfWeek[],
   now: Date = new Date(),
 ): number {
-  return resolveCompetitionPlanCalendarWindow(eventDateISO, trainingDays, now).totalWeeks
+  return resolveCompetitionPlanCalendarWindow(goalEvent, trainingDays, now).totalWeeks
 }
 
 function groupIntoPhases(weekPhases: MacroPlanPhase[]): PlanPhaseBlock[] {
@@ -202,17 +211,19 @@ export function buildPlanShell(input: BuildPlanShellInput): BuildPlanShellResult
     throw new Error('No se puede generar el plan sin un MacroPlan base (falta evento principal).')
   }
 
+  const eventWindow = resolveGoalEventWindow(goalEvent)
+  const eventAlreadyEnded = toISO(requestedStartDate) > eventWindow.endDate
   const calendarWindow = resolveCompetitionPlanCalendarWindow(
-    goalEvent.date,
+    goalEvent,
     wizardConfig.trainingDays,
     now,
   )
-  const { eventWeekStart, totalWeeks: uncappedTotalWeeks } = calendarWindow
+  const { eventEndWeekStart, totalWeeks: uncappedTotalWeeks } = calendarWindow
   const uncappedFirstWeekStart = calendarWindow.firstWeekStart
   const totalWeeks = Math.min(MAX_COMPETITION_PLAN_WEEKS, uncappedTotalWeeks)
   const firstWeekStart =
     uncappedTotalWeeks > MAX_COMPETITION_PLAN_WEEKS
-      ? addWeeks(eventWeekStart, -(MAX_COMPETITION_PLAN_WEEKS - 1))
+      ? addWeeks(eventEndWeekStart, -(MAX_COMPETITION_PLAN_WEEKS - 1))
       : uncappedFirstWeekStart
   const planStartDate = uncappedTotalWeeks > MAX_COMPETITION_PLAN_WEEKS
     ? toISO(firstWeekStart)
@@ -227,13 +238,26 @@ export function buildPlanShell(input: BuildPlanShellInput): BuildPlanShellResult
       : i === 0
         ? now
         : weekStart
-    const remaining = computeWeeksRemaining(goalEvent.date, weekReferenceDate)
+    // Toda semana que intersecta la ventana es `race`. Sin esto la fase dependía
+    // del día de la semana del evento: un campeonato que empieza sábado dejaba
+    // su propia semana en `taper`.
+    const weekEnd = addDays(weekStart, 6)
+    const intersectsEvent = toISO(weekStart) <= eventWindow.endDate
+      && toISO(weekEnd) >= eventWindow.startDate
+    // Un plan armado cuando el evento ya terminó es post-evento aunque su
+    // primera semana todavía contenga la fecha: ahí manda el countdown, que
+    // resuelve `transition`.
+    if (intersectsEvent && !eventAlreadyEnded) {
+      weekPhases.push('race')
+      continue
+    }
+    const remaining = computeWeeksRemaining(eventWindow.startDate, weekReferenceDate)
     weekPhases.push(resolvePhaseForWeekOffset(remaining, primarySport))
   }
 
   const phases = groupIntoPhases(weekPhases)
   const calendarEndDate = toISO(addDays(addWeeks(firstWeekStart, totalWeeks - 1), 6))
-  const endDate = goalEvent.date >= planStartDate ? goalEvent.date : calendarEndDate
+  const endDate = eventWindow.endDate >= planStartDate ? eventWindow.endDate : calendarEndDate
 
   const allowedSports: SupportedSport[] = Array.from(
     new Set<SupportedSport>([

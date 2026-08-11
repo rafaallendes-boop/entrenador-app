@@ -246,3 +246,71 @@ describe('resolvePhase squash periodization', () => {
     }
   })
 })
+
+describe('macroPlan con evento multijornada', () => {
+  function multiDayProfile(): AthleteProfile {
+    return {
+      id: 'default',
+      updatedAt: Date.now(),
+      goalEvents: [{
+        id: 'goal-multi',
+        title: 'Nacional por equipos',
+        date: '2026-09-07',
+        endDate: '2026-09-13',
+        keyDate: '2026-09-10',
+        sport: 'squash',
+        priority: 'primary',
+      }],
+    }
+  }
+
+  it('cuenta las semanas contra el inicio, no contra el término', () => {
+    const plan = computeMacroPlan(multiDayProfile(), new Date('2026-08-24T09:00:00'))
+    expect(plan?.weeksRemaining).toBe(2)
+  })
+
+  it('mantiene race durante toda la ventana, no sólo el primer día', () => {
+    for (const today of ['2026-09-07', '2026-09-10', '2026-09-13']) {
+      const plan = computeMacroPlan(multiDayProfile(), new Date(`${today}T09:00:00`))
+      expect(plan?.currentPhase).toBe('race')
+      expect(plan?.weeksRemaining).toBe(0)
+    }
+  })
+
+  it('pasa a transition recién después del término', () => {
+    const plan = computeMacroPlan(multiDayProfile(), new Date('2026-09-14T09:00:00'))
+    expect(plan?.currentPhase).toBe('transition')
+    expect(plan?.weeksRemaining).toBeLessThan(0)
+  })
+
+  it('denormaliza la ventana completa en el snapshot', () => {
+    const plan = computeMacroPlan(multiDayProfile(), new Date('2026-08-24T09:00:00'))
+    expect(plan).toMatchObject({
+      goalEventDate: '2026-09-07',
+      goalEventEndDate: '2026-09-13',
+      goalEventKeyDate: '2026-09-10',
+    })
+    expect(plan?.timeline.flatMap((entry) => entry.eventMarkers).find((marker) => marker.id === 'goal-multi'))
+      .toMatchObject({
+        date: '2026-09-07',
+        endDate: '2026-09-13',
+        keyDate: '2026-09-10',
+      })
+  })
+
+  it('un evento de un día conserva su comportamiento y no inventa término', () => {
+    const plan = computeMacroPlan(makeProfile('2026-09-07'), new Date('2026-09-07T09:00:00'))
+    expect(plan?.currentPhase).toBe('race')
+    expect(plan?.weeksRemaining).toBe(0)
+    expect(plan?.goalEventEndDate).toBeUndefined()
+
+    const after = computeMacroPlan(makeProfile('2026-09-07'), new Date('2026-09-08T09:00:00'))
+    expect(after?.currentPhase).toBe('transition')
+  })
+
+  it('el marcador del evento sigue activo dentro de la ventana', () => {
+    const plan = computeMacroPlan(multiDayProfile(), new Date('2026-09-10T09:00:00'))
+    const marker = plan?.timeline.find((entry) => entry.phase === 'race')
+    expect(marker).toBeTruthy()
+  })
+})

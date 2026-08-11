@@ -699,7 +699,18 @@ export type GoalEventLevel = 'recreational' | 'competitive' | 'masters' | 'elite
 export interface GoalEvent {
   id: string
   title: string
+  /**
+   * Inicio de la ventana del evento. Se conserva el nombre por compatibilidad
+   * con datos existentes; un evento sin `endDate` dura un solo día.
+   *
+   * No compares esta fecha por tu cuenta: `resolveGoalEventWindow` es la única
+   * autoridad de ventana (`src/services/goalEventWindow.ts`).
+   */
   date: string            // ISO "YYYY-MM-DD"
+  /** Término inclusive. Ausente = evento de un día. */
+  endDate?: string
+  /** Día clave inclusive; debe caer dentro de la ventana. */
+  keyDate?: string
   sport: string           // free text aligned to SupportedSport when possible
   priority: 'primary' | 'secondary'
   notes?: string
@@ -762,7 +773,12 @@ export interface MacroPlanSportDetail {
 export interface MacroPlanEventMarker {
   id: string
   title: string
+  /** Inicio de la ventana; se conserva el nombre por compatibilidad. */
   date: string
+  /** Término inclusive. Ausente = marcador de un día. */
+  endDate?: string
+  /** Día competitivo clave dentro de la ventana. */
+  keyDate?: string
   sport?: SupportedSport
   priority: GoalEvent['priority']
   timing: MacroPlanEventTiming
@@ -781,7 +797,16 @@ export interface MacroPlanTimelineEntry {
 
 export interface MacroPlan {
   goalEventId: string
+  /** Inicio de la ventana. Alias compatible: los macroplanes previos sólo tienen esto. */
   goalEventDate: string   // ISO "YYYY-MM-DD" — denormalized for quick display
+  /**
+   * Término inclusive de la ventana. Opcional a propósito: los macroplanes ya
+   * persistidos no lo traen y no hay backfill, así que su ausencia significa
+   * evento de un día, igual que en `GoalEvent`.
+   */
+  goalEventEndDate?: string
+  /** Ancla competitiva declarada, dentro de la ventana. */
+  goalEventKeyDate?: string
   currentPhase: MacroPlanPhase
   weeksRemaining: number
   blockFocus: string      // human-readable focus for the current phase

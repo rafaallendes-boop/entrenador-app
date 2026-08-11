@@ -163,6 +163,67 @@ describe('buildOnboardingAthleteProfilePatch', () => {
   })
 })
 
+describe('preservación de la ventana del evento', () => {
+  function inputWith(existingProfile: AthleteProfile, goalEventDate: string) {
+    return {
+      existingProfile,
+      name: 'Rafa',
+      selectedSports: ['squash'] as const,
+      primarySport: 'squash' as const,
+      priority: 'performance' as const,
+      availableDays: ['lun'] as const,
+      doubleSessionDays: [] as const,
+      goalEventTitle: 'Nacional',
+      goalEventDate,
+      goalEventNotes: '',
+      availabilityNotes: '',
+      currentInjuries: '',
+      previousInjuries: '',
+      restrictions: '',
+      strengthNotes: '',
+      squat1RM: '',
+      deadlift1RM: '',
+      benchPress1RM: '',
+      overheadPress1RM: '',
+    }
+  }
+
+  const multiDayProfile: AthleteProfile = {
+    id: 'default',
+    updatedAt: 1,
+    goalEvents: [{
+      id: 'primary-1',
+      title: 'Nacional',
+      date: '2026-09-07',
+      endDate: '2026-09-13',
+      keyDate: '2026-09-10',
+      sport: 'squash',
+      priority: 'primary',
+    }],
+  }
+
+  it('conserva término y día clave cuando onboarding no expone esos campos', () => {
+    // Onboarding reconstruye el evento primario; sin esto, volver a pasar por
+    // onboarding colapsaba un campeonato de una semana a un evento de un día.
+    const patch = buildOnboardingAthleteProfilePatch(inputWith(multiDayProfile, '2026-09-07'))
+
+    expect(patch.goalEvents?.[0]).toMatchObject({
+      date: '2026-09-07',
+      endDate: '2026-09-13',
+      keyDate: '2026-09-10',
+    })
+  })
+
+  it('descarta la ventana anterior si el inicio deja de ser compatible', () => {
+    // Mover el inicio después del término guardado dejaría una ventana inválida.
+    const patch = buildOnboardingAthleteProfilePatch(inputWith(multiDayProfile, '2026-10-01'))
+
+    expect(patch.goalEvents?.[0]).toMatchObject({ date: '2026-10-01' })
+    expect(patch.goalEvents?.[0]?.endDate).toBeUndefined()
+    expect(patch.goalEvents?.[0]?.keyDate).toBeUndefined()
+  })
+})
+
 describe('parseOptionalKg', () => {
   it('accepts comma decimal kg values and rejects non-positive values', () => {
     expect(parseOptionalKg('100,5')).toBe(100.5)

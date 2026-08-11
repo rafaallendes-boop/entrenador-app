@@ -42,7 +42,7 @@ const TODAY = '2026-07-23'
 const PAST = '2026-07-20'
 const FUTURE = '2026-08-20'
 
-function profile(eventDate: string, eventId = 'event-1'): AthleteProfile {
+function profile(eventDate: string, eventId = 'event-1', eventEndDate?: string): AthleteProfile {
   return {
     id: 'ath_self',
     athleteId: 'ath_self',
@@ -51,6 +51,7 @@ function profile(eventDate: string, eventId = 'event-1'): AthleteProfile {
       id: eventId,
       title: 'Nacional de Squash',
       date: eventDate,
+      endDate: eventEndDate,
       sport: 'squash',
       priority: 'primary',
       eventType: 'tournament',
@@ -131,11 +132,12 @@ function summary(weekStartDate: string, adherencePct: number): WeekSummary {
 
 async function renderDashboard(input: {
   eventDate: string
+  eventEndDate?: string
   plan?: TrainingPlan | null
   weekSummaries?: WeekSummary[]
   onNewCycle?: (goalEventId: string) => void
 }) {
-  mocks.profile = profile(input.eventDate)
+  mocks.profile = profile(input.eventDate, 'event-1', input.eventEndDate)
   mocks.summaries = input.weekSummaries ?? []
   if (input.plan) {
     await db.trainingPlans.put(input.plan)
@@ -181,6 +183,35 @@ describe('PlanDashboard: cierre de ciclo', () => {
     expect(await screen.findByText(/días restantes/i)).toBeTruthy()
     expect(screen.getByTestId('dashboard-kpis')).toBeTruthy()
     expect(screen.getAllByTestId('phase-card')).toHaveLength(5)
+  })
+
+  it('durante un evento multijornada muestra el ciclo en curso hasta el término', async () => {
+    await renderDashboard({ eventDate: '2026-07-20', eventEndDate: '2026-07-25' })
+
+    expect((await screen.findAllByText('En curso')).length).toBeGreaterThan(0)
+    expect(screen.getByText(/2 días para el término/i)).toBeTruthy()
+    expect(screen.queryByText(/evento completado/i)).toBeNull()
+    expect(screen.queryByText(/días restantes/i)).toBeNull()
+  })
+
+  it('recupera la ventana completa desde el snapshot cuando el perfil no la trae', async () => {
+    mocks.profile = { id: 'ath_self', athleteId: 'ath_self', updatedAt: 1 }
+    const activePlan = generatedPlan({ endDate: '2026-07-25' })
+    activePlan.macroSnapshot = {
+      ...activePlan.macroSnapshot,
+      goalEventDate: '2026-07-20',
+      goalEventEndDate: '2026-07-25',
+      goalEventKeyDate: '2026-07-23',
+      currentPhase: 'race',
+      weeksRemaining: 0,
+    }
+    await db.trainingPlans.put(activePlan)
+
+    render(<PlanDashboard onEdit={vi.fn()} onNewCycle={vi.fn()} />)
+
+    expect((await screen.findAllByText('En curso')).length).toBeGreaterThan(0)
+    expect(screen.getByText(/20–25 jul 2026/i)).toBeTruthy()
+    expect(screen.getByText(/Día clave: 23 jul/i)).toBeTruthy()
   })
 
   it('post-evento muestra cinco fases completadas y Transición en curso', async () => {

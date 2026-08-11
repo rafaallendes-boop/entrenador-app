@@ -17,7 +17,11 @@ import type {
   SupportedSport,
 } from '../types'
 import { differenceInCalendarDays } from 'date-fns'
-import { isStrictISODate } from '../utils/date'
+import { isStrictISODate, toISO } from '../utils/date'
+import {
+  resolveGoalEventWindow,
+  type GoalEventWindowInput,
+} from './goalEventWindow'
 import { getAllowedPlanningSports, getPlanningPrimarySport } from './planningConstraints'
 import { normalizeSport } from '../utils/athlete'
 
@@ -551,7 +555,7 @@ export function computeMacroPlan(
   if (!event) return undefined
 
   const refDate = now ?? new Date()
-  const weeksRemaining = computeWeeksRemaining(event.date, refDate)
+  const weeksRemaining = computeWeeksRemainingForWindow(event, refDate)
   const primarySport = getPlanningPrimarySport(profile) ?? normalizeSport(event.sport)
   const currentPhase = resolvePhase(weeksRemaining, primarySport)
   const allowedSports = getAllowedPlanningSports(profile)
@@ -577,6 +581,8 @@ export function computeMacroPlan(
   return {
     goalEventId: event.id,
     goalEventDate: event.date,
+    goalEventEndDate: event.endDate,
+    goalEventKeyDate: event.keyDate,
     currentPhase,
     weeksRemaining,
     blockFocus,
@@ -612,6 +618,24 @@ export function getSecondaryGoalEvents(
   return profile.goalEvents
     .filter((event) => event.priority === 'secondary' && isValidGoalEvent(event))
     .sort((a, b) => a.date.localeCompare(b.date))
+}
+
+/**
+ * Semanas hasta el **inicio** del evento, con la ventana completa en cuenta:
+ * positivo antes, exactamente cero durante todo el campeonato y negativo sólo
+ * después del término.
+ *
+ * El cero durante la ventana es lo que hace que `resolvePhase` devuelva `race`
+ * los días intermedios; medir contra la fecha única los daba por pasados.
+ */
+export function computeWeeksRemainingForWindow(
+  event: GoalEventWindowInput,
+  refDate: Date,
+): number {
+  const { startDate, endDate } = resolveGoalEventWindow(event)
+  const todayISODate = toISO(refDate)
+  if (todayISODate >= startDate && todayISODate <= endDate) return 0
+  return computeWeeksRemaining(todayISODate > endDate ? endDate : startDate, refDate)
 }
 
 export function computeWeeksRemaining(eventDateISO: string, refDate: Date): number {
@@ -829,11 +853,14 @@ function intersectWeekRanges(
 }
 
 function toEventMarker(event: GoalEvent, refDate: Date): MacroPlanEventMarker {
-  const weeksFromReference = computeWeeksRemaining(event.date, refDate)
+  // Un evento en curso es `active` cualquiera de sus días, no sólo el primero.
+  const weeksFromReference = computeWeeksRemainingForWindow(event, refDate)
   return {
     id: event.id,
     title: event.title,
     date: event.date,
+    endDate: event.endDate,
+    keyDate: event.keyDate,
     sport: normalizeSport(event.sport),
     priority: event.priority,
     timing: weeksFromReference < 0 ? 'past' : weeksFromReference === 0 ? 'active' : 'upcoming',

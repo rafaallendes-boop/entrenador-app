@@ -45,6 +45,7 @@ import { v4 as uuid } from '../utils/uuid'
 import { canExportCoachNotesFor } from './athlete/coachNoteExportPolicy'
 import { getMembershipsForAccount } from './athlete/membershipCache'
 import { clearCoachPlanningHydrationRegistry } from './athlete/coachPlanningHydrationRegistry'
+import { validateGoalEventWindow } from './goalEventWindow'
 
 const BACKUP_APP_NAME = 'RallyIQ' as const
 const LEGACY_BACKUP_APP_NAME = 'Entrenador' as const
@@ -2154,10 +2155,20 @@ function optionalGoalEvents(value: unknown, path: string): GoalEvent[] | undefin
   const items = ensureArray(value, path)
   return items.map((item, index) => {
     const row = ensureRecord(item, `${path}[${index}]`)
+    const date = requireISODate(row.date, `${path}[${index}].date`)
+    const endDate = optionalISODate(row.endDate, `${path}[${index}].endDate`)
+    const keyDate = optionalISODate(row.keyDate, `${path}[${index}].keyDate`)
+    // El importador es borde de escritura: una ventana incoherente se rechaza
+    // acá en vez de degradarse en silencio como hace el resolver de lectura.
+    for (const issue of validateGoalEventWindow({ date, endDate, keyDate })) {
+      throw new Error(`${path}[${index}].${issue.field}: ${issue.message}`)
+    }
     return {
       id: requireString(row.id, `${path}[${index}].id`),
       title: requireString(row.title, `${path}[${index}].title`),
-      date: requireISODate(row.date, `${path}[${index}].date`),
+      date,
+      endDate,
+      keyDate,
       sport: requireString(row.sport, `${path}[${index}].sport`),
       priority: (row.priority == null
         ? 'primary'
@@ -2174,10 +2185,18 @@ function optionalMacroPlanEventMarkers(value: unknown, path: string): MacroPlanE
   if (value == null) return []
   return ensureArray(value, path).map((item, index) => {
     const row = ensureRecord(item, `${path}[${index}]`)
+    const date = requireISODate(row.date, `${path}[${index}].date`)
+    const endDate = optionalISODate(row.endDate, `${path}[${index}].endDate`)
+    const keyDate = optionalISODate(row.keyDate, `${path}[${index}].keyDate`)
+    for (const issue of validateGoalEventWindow({ date, endDate, keyDate })) {
+      throw new Error(`${path}[${index}].${issue.field}: ${issue.message}`)
+    }
     return {
       id: requireString(row.id, `${path}[${index}].id`),
       title: requireString(row.title, `${path}[${index}].title`),
-      date: requireISODate(row.date, `${path}[${index}].date`),
+      date,
+      endDate,
+      keyDate,
       sport: optionalEnum(row.sport, SUPPORTED_SPORTS, `${path}[${index}].sport`) as SupportedSport | undefined,
       priority: requireEnum(row.priority, GOAL_EVENT_PRIORITIES, `${path}[${index}].priority`) as GoalEvent['priority'],
       timing: requireEnum(row.timing, MACRO_PLAN_EVENT_TIMINGS, `${path}[${index}].timing`) as MacroPlanEventMarker['timing'],
@@ -2221,9 +2240,26 @@ function optionalMacroPlanTimeline(value: unknown, path: string): MacroPlanTimel
 function optionalMacroPlan(value: unknown, path: string): MacroPlan | undefined {
   if (value == null) return undefined
   const row = ensureRecord(value, path)
+  const goalEventDate = requireISODate(row.goalEventDate, `${path}.goalEventDate`)
+  const goalEventEndDate = optionalISODate(row.goalEventEndDate, `${path}.goalEventEndDate`)
+  const goalEventKeyDate = optionalISODate(row.goalEventKeyDate, `${path}.goalEventKeyDate`)
+  for (const issue of validateGoalEventWindow({
+    date: goalEventDate,
+    endDate: goalEventEndDate,
+    keyDate: goalEventKeyDate,
+  })) {
+    const field = issue.field === 'date'
+      ? 'goalEventDate'
+      : issue.field === 'endDate'
+        ? 'goalEventEndDate'
+        : 'goalEventKeyDate'
+    throw new Error(`${path}.${field}: ${issue.message}`)
+  }
   return {
     goalEventId: requireString(row.goalEventId, `${path}.goalEventId`),
-    goalEventDate: requireISODate(row.goalEventDate, `${path}.goalEventDate`),
+    goalEventDate,
+    goalEventEndDate,
+    goalEventKeyDate,
     currentPhase: requireEnum(row.currentPhase, MACRO_PLAN_PHASES, `${path}.currentPhase`) as MacroPlanPhase,
     weeksRemaining: requireFiniteNumber(row.weeksRemaining, `${path}.weeksRemaining`),
     blockFocus: requireString(row.blockFocus, `${path}.blockFocus`),

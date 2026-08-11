@@ -8,6 +8,7 @@ import type {
 } from '../types'
 import type { OnboardingDayKey } from './schedule'
 import { v4 as uuid } from './uuid'
+import { validateGoalEventWindow } from '../services/goalEventWindow'
 
 export type OnboardingAthleteProfilePatch = Partial<Omit<AthleteProfile, 'id' | 'updatedAt'>>
 
@@ -86,12 +87,26 @@ export function buildOnboardingAthleteProfilePatch(
   const otherEvents = (input.existingProfile?.goalEvents ?? []).filter((event) => event.priority !== 'primary')
   const eventTitle = input.goalEventTitle.trim()
   const eventDate = input.goalEventDate.trim()
+  // Onboarding no expone término ni día clave, pero reconstruye el evento
+  // primario: sin arrastrarlos, pasar de nuevo por onboarding colapsaba un
+  // campeonato multijornada a un evento de un día. Se conservan sólo mientras
+  // sigan formando una ventana válida con el inicio recién capturado.
+  const preservedWindow = existingPrimaryEvent
+    && validateGoalEventWindow({
+      date: eventDate,
+      endDate: existingPrimaryEvent.endDate,
+      keyDate: existingPrimaryEvent.keyDate,
+    }).length === 0
+    ? { endDate: existingPrimaryEvent.endDate, keyDate: existingPrimaryEvent.keyDate }
+    : {}
+
   const goalEvents = eventTitle && eventDate
     ? [
         {
           id: existingPrimaryEvent?.id ?? (input.createId ?? uuid)(),
           title: eventTitle,
           date: eventDate,
+          ...preservedWindow,
           sport: input.primarySport,
           priority: 'primary' as const,
           notes: trimToUndefined(input.goalEventNotes),

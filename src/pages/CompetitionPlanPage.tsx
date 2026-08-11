@@ -19,6 +19,11 @@ import { getPlanWizardDefaultComplementarySports } from '../services/planningCon
 import { getEnabledSports } from '../utils/athlete'
 import { isStrictISODate } from '../utils/date'
 import {
+  formatGoalEventKeyDate,
+  formatGoalEventWindow,
+  validateGoalEventWindow,
+} from '../services/goalEventWindow'
+import {
   DAY_OF_WEEK_ORDER,
   MAX_WEEKLY_SESSIONS,
   clampSessionsPerWeekToAvailability,
@@ -158,6 +163,9 @@ interface WizardState {
   eventType?: GoalEventType
   eventTitle: string
   eventDate: string
+  /** Vacío = evento de un día. */
+  eventEndDate: string
+  eventKeyDate: string
   objective?: GoalEventObjective
   competitiveLevel?: GoalEventLevel
   trainingDays: DayOfWeek[]
@@ -197,6 +205,8 @@ function initWizardState(
     eventType: existingEvent?.eventType,
     eventTitle: existingEvent?.title ?? '',
     eventDate: existingEvent?.date ?? '',
+    eventEndDate: existingEvent?.endDate ?? '',
+    eventKeyDate: existingEvent?.keyDate ?? '',
     objective: existingEvent?.objective,
     competitiveLevel: existingEvent?.competitiveLevel,
     trainingDays,
@@ -227,6 +237,8 @@ function initWizardStateForNewCycle(
     ...inherited,
     eventTitle: '',
     eventDate: '',
+    eventEndDate: '',
+    eventKeyDate: '',
     objective: undefined,
     fitnessLevel: undefined,
     fatigue: undefined,
@@ -255,10 +267,17 @@ function phasesFromWeeks(weeks: number): string {
   return 'Semana de competencia'
 }
 
-function getPlanWindow(eventDate: string, trainingDays: readonly DayOfWeek[], now: Date = new Date()) {
+function getPlanWindow(
+  eventDate: string,
+  trainingDays: readonly DayOfWeek[],
+  now: Date = new Date(),
+  eventEndDate?: string,
+) {
   const totalWeeksUntilEvent = weeksUntil(eventDate, now)
+  // El preview comparte la ventana exacta del shell: contar sólo hasta el
+  // inicio subestimaría un campeonato que cruza dos semanas calendario.
   const uncappedPlanWeeks = totalWeeksUntilEvent > 0
-    ? getCompetitionPlanWeekCount(eventDate, trainingDays, now)
+    ? getCompetitionPlanWeekCount({ date: eventDate, endDate: eventEndDate }, trainingDays, now)
     : 0
   const effectivePlanWeeks = uncappedPlanWeeks > 0
     ? Math.min(MAX_COMPETITION_PLAN_WEEKS, uncappedPlanWeeks)
@@ -387,15 +406,23 @@ export default function CompetitionPlanPage() {
     [enabledSports, primarySportForEvent],
   )
   const planWindow = useMemo(
-    () => getPlanWindow(state.eventDate, state.trainingDays, now),
-    [now, state.eventDate, state.trainingDays],
+    () => getPlanWindow(state.eventDate, state.trainingDays, now, state.eventEndDate || undefined),
+    [now, state.eventDate, state.eventEndDate, state.trainingDays],
   )
+  const goalEventWindowIsValid = useMemo(() => (
+    state.eventDate.length > 0
+    && validateGoalEventWindow({
+      date: state.eventDate,
+      endDate: state.eventEndDate || undefined,
+      keyDate: state.eventKeyDate || undefined,
+    }).length === 0
+  ), [state.eventDate, state.eventEndDate, state.eventKeyDate])
 
   // Step validation
   const canContinue = useMemo(() => {
     switch (step) {
       case 1: return !!state.eventType && state.eventTitle.trim().length > 0
-      case 2: return planWindow.isValidDate && planWindow.isFuture && !planWindow.exceedsMax
+      case 2: return goalEventWindowIsValid && planWindow.isFuture && !planWindow.exceedsMax
       case 3: return !!state.objective && !!state.competitiveLevel
       case 4: return state.trainingDays.length > 0 && !!state.sessionsPerWeek && !!state.sessionDurationMins
       case 5: return true  // complementary sports optional
@@ -403,7 +430,7 @@ export default function CompetitionPlanPage() {
       case 7: return true
       default: return true
     }
-  }, [planWindow.exceedsMax, planWindow.isFuture, planWindow.isValidDate, state, step])
+  }, [goalEventWindowIsValid, planWindow.exceedsMax, planWindow.isFuture, state, step])
 
   function goNext() {
     if (step < TOTAL_STEPS) setStep(s => s + 1)
@@ -488,7 +515,7 @@ export default function CompetitionPlanPage() {
   }
 
   async function handleGenerate() {
-    if (isSaving || !planWindow.isValidDate || !planWindow.isFuture || planWindow.exceedsMax) return
+    if (isSaving || !goalEventWindowIsValid || !planWindow.isFuture || planWindow.exceedsMax) return
     const athleteIdAtStart = getActiveAthleteId()
     const switchEpochAtStart = getSwitchEpoch()
     if (!athleteIdAtStart) return
@@ -502,6 +529,12 @@ export default function CompetitionPlanPage() {
         id: eventId,
         title: state.eventTitle.trim(),
         date: state.eventDate,
+        // Un término igual al inicio es un evento de un día: no se persiste,
+        // para que el dato guardado diga lo mismo que la UI mostró.
+        endDate: state.eventEndDate && state.eventEndDate !== state.eventDate
+          ? state.eventEndDate
+          : undefined,
+        keyDate: state.eventKeyDate || undefined,
         sport: primarySportForEvent ?? athleteProfile?.sportContext?.primarySport ?? 'squash',
         priority: 'primary' as const,
         notes: isNewCycle ? undefined : existingEvent?.notes,
@@ -764,20 +797,123 @@ function Step2EventDate({
   const today = new Date().toISOString().split('T')[0]
   const { totalWeeksUntilEvent, effectivePlanWeeks, exceedsMax, isFuture, maxSelectableDate } = planWindow
 
+  const hasRange = Boolean(state.eventEndDate) && state.eventEndDate !== state.eventDate
+  const draftEvent = {
+    date: state.eventDate,
+    endDate: state.eventEndDate || undefined,
+    keyDate: state.eventKeyDate || undefined,
+  }
+  const windowIssues = state.eventDate ? validateGoalEventWindow(draftEvent) : []
+  const keyDateLabel = formatGoalEventKeyDate(draftEvent)
+  const issueFor = (field: 'endDate' | 'keyDate') =>
+    windowIssues.find((issue) => issue.field === field)?.message
+
+  // Mover el inicio puede dejar término y día clave fuera de rango: se limpian
+  // en vez de guardarse inválidos y fallar recién al enviar.
+  const changeStart = (nextStart: string) => {
+    const keepsEnd = state.eventEndDate && state.eventEndDate >= nextStart
+    const nextEnd = keepsEnd ? state.eventEndDate : ''
+    const keepsKey = state.eventKeyDate
+      && state.eventKeyDate >= nextStart
+      && state.eventKeyDate <= (nextEnd || nextStart)
+    update({
+      eventDate: nextStart,
+      eventEndDate: nextEnd,
+      eventKeyDate: keepsKey ? state.eventKeyDate : '',
+    })
+  }
+
+  const changeEnd = (nextEnd: string) => {
+    const keepsKey = state.eventKeyDate
+      && state.eventKeyDate >= state.eventDate
+      && state.eventKeyDate <= (nextEnd || state.eventDate)
+    update({ eventEndDate: nextEnd, eventKeyDate: keepsKey ? state.eventKeyDate : '' })
+  }
+
   return (
     <div>
       <StepLabel step={2} />
       <Question>¿Cuándo es el evento?</Question>
       <Hint>La fecha es el ancla de todo el plan. Puedo ajustar si cambia después, pero el plan de competencia se limita a un máximo de 12 semanas.</Hint>
 
+      <label className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-ink-muted" htmlFor="event-start-date">
+        Inicio del evento
+      </label>
       <input
+        id="event-start-date"
         type="date"
         value={state.eventDate}
         min={today}
         max={maxSelectableDate}
-        onChange={e => update({ eventDate: e.target.value })}
-        className="w-full rounded-xl border border-surface-border bg-surface-raised px-3 py-2.5 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-brand/30 mb-4"
+        onChange={e => changeStart(e.target.value)}
+        className="w-full rounded-xl border border-surface-border bg-surface-raised px-3 py-2.5 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-brand/30"
       />
+
+      {state.eventDate && (
+        <div className="mt-3">
+          {!state.eventEndDate ? (
+            <button
+              type="button"
+              onClick={() => changeEnd(state.eventDate)}
+              className="text-xs font-medium text-brand-light underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-brand/30 rounded"
+            >
+              El evento dura varios días
+            </button>
+          ) : (
+            <>
+              <div className="flex items-end justify-between gap-3">
+                <label className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-ink-muted" htmlFor="event-end-date">
+                  Término del evento
+                </label>
+                <button
+                  type="button"
+                  onClick={() => update({ eventEndDate: '', eventKeyDate: '' })}
+                  className="mb-1.5 text-xs text-ink-muted underline underline-offset-4 focus:outline-none focus:ring-2 focus:ring-brand/30 rounded"
+                >
+                  Es de un día
+                </button>
+              </div>
+              <input
+                id="event-end-date"
+                type="date"
+                value={state.eventEndDate}
+                min={state.eventDate}
+                onChange={e => changeEnd(e.target.value)}
+                className="w-full rounded-xl border border-surface-border bg-surface-raised px-3 py-2.5 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-brand/30"
+              />
+              {issueFor('endDate') && (
+                <p role="alert" className="mt-1.5 text-xs text-rose-400">{issueFor('endDate')}</p>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* El día clave sólo existe dentro de una ventana de varios días. */}
+      {hasRange && !issueFor('endDate') && (
+        <div className="mt-3">
+          <label className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-ink-muted" htmlFor="event-key-date">
+            Día clave <span className="normal-case tracking-normal text-ink-muted/70">(opcional)</span>
+          </label>
+          <input
+            id="event-key-date"
+            type="date"
+            value={state.eventKeyDate}
+            min={state.eventDate}
+            max={state.eventEndDate}
+            onChange={e => update({ eventKeyDate: e.target.value })}
+            className="w-full rounded-xl border border-surface-border bg-surface-raised px-3 py-2.5 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-brand/30"
+          />
+          <p className="mt-1.5 text-xs text-ink-muted">
+            Día en que esperas los partidos más exigentes.
+          </p>
+          {issueFor('keyDate') && (
+            <p role="alert" className="mt-1.5 text-xs text-rose-400">{issueFor('keyDate')}</p>
+          )}
+        </div>
+      )}
+
+      <div className="mb-4" />
 
       {state.eventDate && isFuture && !exceedsMax && (
         <div className="rounded-xl border border-brand/20 bg-brand/5 px-4 py-3">
@@ -787,6 +923,12 @@ function Step2EventDate({
           <p className="text-xs text-ink-muted mt-0.5">
             Fases estimadas: <span className="text-brand-light">{phasesFromWeeks(effectivePlanWeeks)}</span>
           </p>
+          {windowIssues.length === 0 && (
+            <p className="mt-2 border-t border-brand/15 pt-2 text-xs text-ink-muted">
+              Evento: <span className="text-ink">{formatGoalEventWindow(draftEvent)}</span>
+              {keyDateLabel && <> · {keyDateLabel}</>}
+            </p>
+          )}
         </div>
       )}
       {state.eventDate && exceedsMax && (
@@ -801,7 +943,7 @@ function Step2EventDate({
           </div>
           <button
             type="button"
-            onClick={() => update({ eventDate: maxSelectableDate })}
+            onClick={() => changeStart(maxSelectableDate)}
             className="inline-flex items-center justify-center rounded-xl border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-xs font-semibold text-amber-200 transition-colors hover:bg-amber-400/15"
           >
             Usar máximo permitido
@@ -1209,6 +1351,13 @@ function Step7Summary({
   const durationLabel = SESSION_DURATION_OPTIONS.find(o => o.value === state.sessionDurationMins)?.label ?? '—'
 
   const phases = phasesFromWeeks(planWindow.effectivePlanWeeks)
+  const eventWindow = {
+    date: state.eventDate,
+    endDate: state.eventEndDate || undefined,
+    keyDate: state.eventKeyDate || undefined,
+  }
+  const eventWindowLabel = formatGoalEventWindow(eventWindow)
+  const eventKeyDateLabel = formatGoalEventKeyDate(eventWindow)
 
   return (
     <div>
@@ -1227,8 +1376,8 @@ function Step7Summary({
           {
             label: 'Fecha',
             value: planWindow.exceedsMax
-              ? `${state.eventDate} · ${planWindow.totalWeeksUntilEvent} semanas al evento (${planWindow.effectivePlanWeeks} generadas)`
-              : `${state.eventDate} · ${planWindow.effectivePlanWeeks} semanas incluyendo competencia`,
+              ? `${eventWindowLabel}${eventKeyDateLabel ? ` · ${eventKeyDateLabel}` : ''} · ${planWindow.totalWeeksUntilEvent} semanas al evento (${planWindow.effectivePlanWeeks} generadas)`
+              : `${eventWindowLabel}${eventKeyDateLabel ? ` · ${eventKeyDateLabel}` : ''} · ${planWindow.effectivePlanWeeks} semanas incluyendo competencia`,
           },
           { label: 'Objetivo', value: objectiveLabel },
           { label: 'Nivel', value: levelLabel },

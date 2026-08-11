@@ -359,4 +359,93 @@ describe('CompetitionPlanPage new_cycle', () => {
     expect(await screen.findByRole('region', { name: 'Ciclos anteriores' })).toBeTruthy()
     expect(mocks.loadAllSummaries).toHaveBeenCalled()
   })
+
+  describe('ventana del evento en el paso 2', () => {
+    async function reachStep2() {
+      await openNewCycle()
+      fireEvent.change(screen.getByPlaceholderText(/Torneo Master Otoño/i), {
+        target: { value: 'Nacional siguiente' },
+      })
+      continueWizard()
+      expect(await screen.findByText('Paso 2 de 7')).toBeTruthy()
+    }
+
+    it('parte como evento de un día y no ofrece día clave', async () => {
+      await reachStep2()
+      fireEvent.change(screen.getByLabelText('Inicio del evento'), {
+        target: { value: isoInDays(30) },
+      })
+
+      expect(screen.queryByLabelText('Término del evento')).toBeNull()
+      expect(screen.queryByLabelText(/Día clave/)).toBeNull()
+      expect(screen.getByRole('button', { name: 'El evento dura varios días' })).toBeTruthy()
+    })
+
+    it('revela el día clave sólo cuando el rango abarca más de un día', async () => {
+      await reachStep2()
+      fireEvent.change(screen.getByLabelText('Inicio del evento'), {
+        target: { value: isoInDays(30) },
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'El evento dura varios días' }))
+
+      // Término inicial = inicio: sigue siendo un solo día.
+      expect(screen.queryByLabelText(/Día clave/)).toBeNull()
+
+      fireEvent.change(screen.getByLabelText('Término del evento'), {
+        target: { value: isoInDays(36) },
+      })
+      expect(screen.getByLabelText(/Día clave/)).toBeTruthy()
+    })
+
+    it('descarta el día clave si mover el término lo deja fuera de la ventana', async () => {
+      await reachStep2()
+      fireEvent.change(screen.getByLabelText('Inicio del evento'), {
+        target: { value: isoInDays(30) },
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'El evento dura varios días' }))
+      fireEvent.change(screen.getByLabelText('Término del evento'), {
+        target: { value: isoInDays(36) },
+      })
+      fireEvent.change(screen.getByLabelText(/Día clave/), {
+        target: { value: isoInDays(35) },
+      })
+      expect((screen.getByLabelText(/Día clave/) as HTMLInputElement).value).toBe(isoInDays(35))
+
+      // Acortar el campeonato deja el día clave fuera: se limpia en vez de
+      // quedar guardado inválido y fallar recién al enviar.
+      fireEvent.change(screen.getByLabelText('Término del evento'), {
+        target: { value: isoInDays(32) },
+      })
+      expect((screen.getByLabelText(/Día clave/) as HTMLInputElement).value).toBe('')
+    })
+
+    it('no permite continuar con un término anterior al inicio', async () => {
+      await reachStep2()
+      fireEvent.change(screen.getByLabelText('Inicio del evento'), {
+        target: { value: isoInDays(30) },
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'El evento dura varios días' }))
+      fireEvent.change(screen.getByLabelText('Término del evento'), {
+        target: { value: isoInDays(29) },
+      })
+
+      expect(screen.getByRole('alert').textContent).toMatch(/anterior al inicio/i)
+      expect((screen.getByRole('button', { name: /continuar/i }) as HTMLButtonElement).disabled).toBe(true)
+    })
+
+    it('vuelve a un evento de un día y descarta la ventana', async () => {
+      await reachStep2()
+      fireEvent.change(screen.getByLabelText('Inicio del evento'), {
+        target: { value: isoInDays(30) },
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'El evento dura varios días' }))
+      fireEvent.change(screen.getByLabelText('Término del evento'), {
+        target: { value: isoInDays(36) },
+      })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Es de un día' }))
+      expect(screen.queryByLabelText('Término del evento')).toBeNull()
+      expect(screen.queryByLabelText(/Día clave/)).toBeNull()
+    })
+  })
 })
