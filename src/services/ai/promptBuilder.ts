@@ -617,6 +617,7 @@ function buildAdjustResponseInstructionsSection(
     '- objective: string corto',
     '- rpe: 1-10 opcional',
     '- subtype solo si realmente aplica',
+    '- Para squash, squashKind es obligatorio: control (pelota en solitario), technical (con partner), shadows (sin pelota) o match (con rival y marcador). Es modalidad, no foco: “control de longitud” puede seguir siendo technical.',
     '- runningType, cyclingDetails, mobilityDetails, squashDetails o exercises solo cuando el tipo lo requiera',
     '- Para strength, si cambias ejercicios, entrega exercises como array completo; reemplaza la sesión entera, no agregues solo una nota textual.',
     '',

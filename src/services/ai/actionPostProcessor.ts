@@ -1,4 +1,4 @@
-import type { ChatContext, CoachAction, CoachExerciseProposal, Session, SessionType, StrengthProfile, TimeBlock } from '../../types'
+import type { ChatContext, CoachAction, CoachExerciseProposal, Session, SessionType, SquashSessionBlockKind, StrengthProfile, TimeBlock } from '../../types'
 import { currentWeekStartISO, todayISO } from '../../utils/date'
 import { resolveStrengthExercise } from '../training/exerciseLibrary'
 import {
@@ -8,6 +8,8 @@ import {
 import { getTargetExerciseDensity, selectStrengthSession, type StrengthContext, type StrengthPhase, type StrengthSportProfile } from '../training/strengthSelector'
 import { enhanceStrengthSessionExercises, resolveStrengthExerciseBlock } from '../training/strengthSessionStructure'
 import { detectSupersetIntent, planSupersetGroups, shouldApplySupersetPolicy } from '../training/supersetPolicy'
+import { findSquashDrillByName, normalizeSquashDrillKey, resolveSquashDrillKind } from '../training/drillLibrary'
+import { hydrateSquashSession } from '../training/squashSessionHydrator'
 import type { CoachNormalizedResponse } from './types'
 
 const WEEKDAYS = [
@@ -113,6 +115,7 @@ export function postProcessCoachActions(
   )
   if (!sourceActions?.length) return response
 
+  const squashActionWarnings: SquashActionWarning[] = []
   const alignedActions = sourceActions.map((action) => {
     const dateAligned = resolvedDate ? alignActionDate(action, resolvedDate) : action
     const weekAligned = alignmentWeekStart
@@ -121,9 +124,19 @@ export function postProcessCoachActions(
     const requestAligned = alignSingleSessionSportToRequest(weekAligned, normalizedMessage, context)
     const runningAligned = completeRunningZone2Details(requestAligned, actionIntentText)
     const loadAligned = completeStrengthLoads(runningAligned, context, actionIntentText)
+    const targetSession = loadAligned.type === 'update_session'
+      ? findSessionByIdOrPrefix(loadAligned.sessionId, sessions) ?? affectedSession
+      : affectedSession
+    const squashAligned = completeSquashAction(
+      loadAligned,
+      context,
+      targetSession,
+      userMessage,
+    )
+    squashActionWarnings.push(...squashAligned.warnings)
 
-    if (loadAligned.type === 'add_session' && adjustmentIntent && affectedSession) {
-      return convertAddSessionToUpdateSession(loadAligned, affectedSession)
+    if (squashAligned.action.type === 'add_session' && adjustmentIntent && affectedSession) {
+      return convertAddSessionToUpdateSession(squashAligned.action, affectedSession)
     }
 
     const sessionActionsWithId = [
@@ -137,14 +150,14 @@ export function postProcessCoachActions(
       'replace_session_type'
     ]
     if (
-      sessionActionsWithId.includes(loadAligned.type) &&
+      sessionActionsWithId.includes(squashAligned.action.type) &&
       affectedSession &&
-      !resolvesKnownSession(loadAligned.sessionId, sessions)
+      !resolvesKnownSession(squashAligned.action.sessionId, sessions)
     ) {
-      return { ...loadAligned, sessionId: affectedSession.id }
+      return { ...squashAligned.action, sessionId: affectedSession.id }
     }
 
-    return loadAligned
+    return squashAligned.action
   })
   const { actions, removedCollidingAddSessionCount } = removeCollidingAddSessionActions(alignedActions, sessions)
   const baseMessage = repairedReplacementAction
@@ -153,16 +166,19 @@ export function postProcessCoachActions(
       && !repairedRequestedMoves
       ? response.message
       : buildFallbackActionMessage(actions, response.message)
-  const message = removedCollidingAddSessionCount > 0
+  const actionMessage = removedCollidingAddSessionCount > 0
     ? `${baseMessage}\n\nNo agregué ${removedCollidingAddSessionCount === 1 ? 'una sesión' : `${removedCollidingAddSessionCount} sesiones`} porque el bloque ya estaba ocupado.`
     : baseMessage
+  const message = squashActionWarnings.length > 0
+    ? `${actionMessage}\n\n${[...new Set(squashActionWarnings.map((warning) => warning.message))].join('\n')}`
+    : actionMessage
 
   return {
     ...response,
     actions,
     message,
     fallbackUsed: response.fallbackUsed || !response.actions?.length || Boolean(repairedReplacementAction) || repairedMissingRequestedActions || repairedRequestedMoves || removedCollidingAddSessionCount > 0,
-    meta: response.actions?.length && !repairedReplacementAction && !repairedMissingRequestedActions && !repairedRequestedMoves && removedCollidingAddSessionCount === 0
+    meta: response.actions?.length && !repairedReplacementAction && !repairedMissingRequestedActions && !repairedRequestedMoves && removedCollidingAddSessionCount === 0 && squashActionWarnings.length === 0
       ? response.meta
       : {
           ...response.meta,
@@ -171,15 +187,18 @@ export function postProcessCoachActions(
           likelyTruncated: false,
           warnings: [
             ...(response.meta?.warnings ?? []),
-            repairedReplacementAction
-              ? 'chat_action_delete_only_repaired_to_running_replacement'
+            ...(repairedReplacementAction
+              ? ['chat_action_delete_only_repaired_to_running_replacement']
               : repairedRequestedMoves
-                ? 'chat_action_move_sessions_reconciled'
+                ? ['chat_action_move_sessions_reconciled']
                 : repairedMissingRequestedActions
-                  ? 'chat_action_missing_requested_sessions_repaired'
+                  ? ['chat_action_missing_requested_sessions_repaired']
                   : removedCollidingAddSessionCount > 0
-                    ? 'chat_action_occupied_slot_actions_removed'
-                    : 'chat_action_without_actions_repaired',
+                    ? ['chat_action_occupied_slot_actions_removed']
+                    : !response.actions?.length
+                      ? ['chat_action_without_actions_repaired']
+                      : []),
+            ...squashActionWarnings.map((warning) => warning.code),
             ...(response.meta?.actionParseFailed || response.meta?.likelyTruncated
               ? ['chat_action_malformed_response_repaired']
               : []),
@@ -796,6 +815,241 @@ function buildFallbackActionMessage(actions: CoachAction[], originalMessage: str
   return originalMessage || 'Te propongo este cambio:'
 }
 
+interface SquashActionWarning {
+  code: string
+  message: string
+}
+
+function completeSquashAction(
+  action: CoachAction,
+  context: ChatContext,
+  currentSession: Session | undefined,
+  userMessage: string,
+): { action: CoachAction; warnings: SquashActionWarning[] } {
+  const isAdd = action.type === 'add_session'
+  const isUpdate = action.type === 'update_session'
+  if (!isAdd && !isUpdate) return { action, warnings: [] }
+
+  const nextType = isAdd ? action.sessionType : action.newType ?? currentSession?.type
+  if (nextType !== 'squash') return { action, warnings: [] }
+
+  const touchesSquash = isAdd || action.newType === 'squash'
+    || action.squashKind != null || action.squashDetails != null || action.subtype != null
+  if (!touchesSquash) return { action, warnings: [] }
+
+  const warnings: SquashActionWarning[] = []
+  const kindResolution = resolveSquashActionKind(action, currentSession)
+  const requestedKind = kindResolution.kind
+  if (kindResolution.warning) warnings.push(kindResolution.warning)
+
+  const explicitDetails = action.squashDetails
+  if (explicitDetails?.drills?.length) {
+    const compatibility = inspectSquashDrillCompatibility(explicitDetails.drills, requestedKind)
+    const explicitlyRequested = userExplicitlyRequestedSquashDrill(explicitDetails.drills, userMessage)
+
+    if (compatibility.incompatibleNames.length === 0 && (compatibility.knownCount > 0 || explicitlyRequested)) {
+      return {
+        action: {
+          ...action,
+          squashKind: requestedKind,
+          subtype: projectSquashActionSubtype(requestedKind, action.subtype),
+          squashDetails: {
+            ...explicitDetails,
+            sessionKind: requestedKind,
+            sessionMode: requestedKind === 'match'
+              ? action.subtype === 'competitive' ? 'competition_match' : 'practice_match'
+              : 'drill_session',
+          },
+        },
+        warnings,
+      }
+    }
+
+    if (compatibility.incompatibleNames.length > 0 && explicitlyRequested) {
+      warnings.push({
+        code: 'squash_explicit_drill_incompatible_preserved',
+        message: `Advertencia: conservé ${formatDrillNames(compatibility.incompatibleNames)} porque lo pediste explícitamente, pero no corresponde a la modalidad ${requestedKind}. Revísalo antes de aplicar.`,
+      })
+      return {
+        action: { ...action, squashKind: requestedKind },
+        warnings,
+      }
+    }
+
+    if (compatibility.incompatibleNames.length > 0) {
+      warnings.push({
+        code: 'squash_provider_drill_conflict_rehydrated',
+        message: `Alineé la sesión a modalidad ${requestedKind}: los drills propuestos no eran compatibles con esa modalidad.`,
+      })
+    }
+  }
+
+  const phase = resolveSquashActionPhase(context)
+  const sessions = getContextSessions(context)
+  const durationMin = isAdd
+    ? action.durationMin ?? 60
+    : action.newDurationMin ?? currentSession?.durationMin ?? 60
+  const objective = isAdd
+    ? action.objective ?? action.title ?? ''
+    : action.newObjective ?? currentSession?.objective ?? currentSession?.title ?? ''
+  const result = hydrateSquashSession({
+    kind: requestedKind,
+    durationMin,
+    phase,
+    fatigueLevel: resolveSquashActionFatigue(context),
+    goal: objective,
+    recentDrills: sessions.flatMap((session) => session.squashDetails?.drills.map((drill) => drill.name) ?? []),
+    competitionSoon: phase === 'taper',
+    competitiveLevel: resolveSquashActionCompetitiveLevel(context),
+    partnerAvailability: context.athleteProfile?.planWizardConfig?.partnerAvailability ?? 'either',
+    historicalSessions: sessions,
+    competitive: action.subtype === 'competitive',
+  })
+
+  for (const warning of result.warnings) {
+    warnings.push({
+      code: `squash_hydration_${warning.code}`,
+      message: warning.message,
+    })
+  }
+
+  const resolvedKind = result.details.sessionKind === 'mixed'
+    ? requestedKind
+    : result.details.sessionKind
+  return {
+    action: {
+      ...action,
+      squashKind: resolvedKind,
+      subtype: result.subtype,
+      squashDetails: result.details,
+    },
+    warnings,
+  }
+}
+
+function resolveSquashActionKind(
+  action: CoachAction,
+  currentSession: Session | undefined,
+): { kind: SquashSessionBlockKind; warning?: SquashActionWarning } {
+  if (action.squashKind) return { kind: action.squashKind }
+
+  const detailedKind = action.squashDetails?.sessionKind
+  if (detailedKind && detailedKind !== 'mixed') {
+    return {
+      kind: detailedKind,
+      warning: {
+        code: 'squash_kind_fallback_details',
+        message: `La acción no declaró squashKind; conservé la modalidad estructural ${detailedKind} de sus detalles.`,
+      },
+    }
+  }
+
+  const subtypeKind = squashKindFromSubtype(action.subtype)
+  if (subtypeKind) {
+    return {
+      kind: subtypeKind,
+      warning: {
+        code: 'squash_kind_fallback_subtype',
+        message: `La acción no declaró squashKind; usé la modalidad heredada ${subtypeKind} de subtype.`,
+      },
+    }
+  }
+
+  const currentKind = currentSession?.squashDetails?.sessionKind
+  if (currentKind && currentKind !== 'mixed') return { kind: currentKind }
+
+  return {
+    kind: 'technical',
+    warning: {
+      code: 'squash_kind_fallback_engine_default',
+      message: 'La acción de squash no declaró modalidad; se usó technical como fallback de compatibilidad.',
+    },
+  }
+}
+
+function squashKindFromSubtype(subtype: CoachAction['subtype']): SquashSessionBlockKind | undefined {
+  if (subtype === 'control') return 'control'
+  if (subtype === 'match' || subtype === 'competitive') return 'match'
+  if (subtype === 'training') return 'technical'
+  return undefined
+}
+
+function projectSquashActionSubtype(
+  kind: SquashSessionBlockKind,
+  current: CoachAction['subtype'],
+): NonNullable<CoachAction['subtype']> {
+  if (kind === 'control') return 'control'
+  if (kind === 'match') return current === 'competitive' ? 'competitive' : 'match'
+  return 'training'
+}
+
+function inspectSquashDrillCompatibility(
+  drills: NonNullable<CoachAction['squashDetails']>['drills'],
+  requestedKind: SquashSessionBlockKind,
+): { knownCount: number; incompatibleNames: string[] } {
+  let knownCount = 0
+  const incompatibleNames: string[] = []
+  for (const drill of drills) {
+    const definition = findSquashDrillByName(drill.name)
+    if (!definition) continue
+    knownCount++
+    const kind = resolveSquashDrillKind(definition)
+    const accessoryAllowed = kind === 'shadows' && requestedKind !== 'shadows'
+    if (kind !== requestedKind && !accessoryAllowed) incompatibleNames.push(drill.name)
+  }
+  return { knownCount, incompatibleNames }
+}
+
+function userExplicitlyRequestedSquashDrill(
+  drills: NonNullable<CoachAction['squashDetails']>['drills'],
+  userMessage: string,
+): boolean {
+  const normalizedMessage = normalizeText(userMessage)
+  const fuzzy = findSquashDrillByName(userMessage)
+  return drills.some((drill) => {
+    const definition = findSquashDrillByName(drill.name)
+    if (definition && fuzzy?.id === definition.id) return true
+
+    const names = [drill.name, definition?.name, ...(definition?.aliases ?? [])].filter(
+      (value): value is string => Boolean(value),
+    )
+    return names.some((name) => {
+      const normalizedName = normalizeText(name)
+      if (normalizedName.length >= 5 && normalizedMessage.includes(normalizedName)) return true
+      const tokens = normalizeSquashDrillKey(name).split('_').filter((token) => token.length >= 5)
+      return tokens.length > 0
+        && tokens.filter((token) => normalizedMessage.includes(token)).length >= Math.min(2, tokens.length)
+    })
+  })
+}
+
+function formatDrillNames(names: string[]): string {
+  if (names.length === 1) return `“${names[0]}”`
+  return names.map((name) => `“${name}”`).join(', ')
+}
+
+function resolveSquashActionPhase(context: ChatContext): 'base' | 'build' | 'peak' | 'taper' {
+  const phase = context.athleteProfile?.macroPlan?.currentPhase
+  if (phase === 'build' || phase === 'peak' || phase === 'taper') return phase
+  if (phase === 'race') return 'taper'
+  return 'base'
+}
+
+function resolveSquashActionFatigue(context: ChatContext): number {
+  const fatigue = context.athleteProfile?.planWizardConfig?.currentFatigue
+  if (fatigue === 'overloaded') return 9
+  if (fatigue === 'loaded') return 7
+  if (fatigue === 'normal') return 5
+  return 2
+}
+
+function resolveSquashActionCompetitiveLevel(context: ChatContext) {
+  const profile = context.athleteProfile
+  const event = profile?.goalEvents?.find((candidate) => candidate.id === profile.planWizardConfig?.goalEventId)
+    ?? profile?.goalEvents?.find((candidate) => candidate.priority === 'primary')
+  return event?.competitiveLevel
+}
+
 function completeStrengthLoads(
   action: CoachAction,
   context: ChatContext,
@@ -1029,6 +1283,7 @@ function convertAddSessionToUpdateSession(action: CoachAction, session: Session)
   if (action.rpe != null) next.newRpe = action.rpe
   if (action.sessionType && action.sessionType !== session.type) next.newType = action.sessionType
   if (action.subtype) next.subtype = action.subtype
+  if (action.squashKind) next.squashKind = action.squashKind
   if (action.runningType) next.runningType = action.runningType
   if (action.targetPaceMin) next.targetPaceMin = action.targetPaceMin
   if (action.targetPaceMax) next.targetPaceMax = action.targetPaceMax
@@ -1288,6 +1543,14 @@ function getContextSessions(context: ChatContext): Session[] {
   for (const session of context.plannedSessions ?? []) merged.set(session.id, session)
   for (const session of context.historicalSessions ?? []) merged.set(session.id, session)
   return [...merged.values()]
+}
+
+function findSessionByIdOrPrefix(sessionIdOrPrefix: string | undefined, sessions: Session[]): Session | undefined {
+  if (!sessionIdOrPrefix || sessionIdOrPrefix === 'ID_DE_8_CHARS') return undefined
+  const exact = sessions.find((session) => session.id === sessionIdOrPrefix)
+  if (exact) return exact
+  const matches = sessions.filter((session) => session.id.startsWith(sessionIdOrPrefix))
+  return matches.length === 1 ? matches[0] : undefined
 }
 
 function resolvesKnownSession(sessionIdOrPrefix: string | undefined, sessions: Session[]): boolean {

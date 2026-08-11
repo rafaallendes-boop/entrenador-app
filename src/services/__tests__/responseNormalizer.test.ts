@@ -164,6 +164,58 @@ describe('responseNormalizer', () => {
     warn.mockRestore()
   })
 
+  it('preserves squashKind and leaves compact squash add_session hydration to the local materializer', () => {
+    const response = normalizeResponse({
+      text: [
+        'Ajuste squash.',
+        '<actions>',
+        JSON.stringify([{
+          type: 'add_session',
+          reason: 'Trabajo cooperativo',
+          targetDate: '2026-04-09',
+          sessionType: 'squash',
+          squashKind: 'technical',
+          title: 'Squash técnico',
+          durationMin: 60,
+          timeBlock: 'PM',
+          objective: 'Control de longitud con partner',
+        }]),
+        '</actions>',
+      ].join('\n'),
+      provider: 'mock',
+      requestClass: 'chat_action',
+    })
+
+    expect(response.actions?.[0]).toMatchObject({
+      type: 'add_session',
+      squashKind: 'technical',
+    })
+    expect(response.actions?.[0].squashDetails).toBeUndefined()
+  })
+
+  it('preserves squashKind on update_session', () => {
+    const response = normalizeResponse({
+      text: [
+        '<actions>',
+        JSON.stringify([{
+          type: 'update_session',
+          sessionId: 'squash-123',
+          reason: 'Cambiar modalidad',
+          squashKind: 'control',
+        }]),
+        '</actions>',
+      ].join('\n'),
+      provider: 'mock',
+      requestClass: 'chat_action',
+    })
+
+    expect(response.actions?.[0]).toMatchObject({
+      type: 'update_session',
+      sessionId: 'squash-123',
+      squashKind: 'control',
+    })
+  })
+
   it('repairs add_session without durationMin using sport defaults', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
 

@@ -31,6 +31,7 @@ const VALID_ACTION_TYPES = new Set<CoachActionType>([
 const VALID_SESSION_TYPES = new Set(['squash', 'running', 'cycling', 'strength', 'mobility', 'recovery', 'nutrition'])
 const VALID_TIME_BLOCKS = new Set<TimeBlock>(['AM', 'PM'])
 const VALID_SQUASH_SUBTYPES = new Set<SquashSubtype>(['control', 'training', 'match', 'competitive', 'light'])
+const VALID_SQUASH_INTENT_KINDS = new Set<SquashSessionBlockKind>(['technical', 'control', 'shadows', 'match'])
 const VALID_RUNNING_TYPES = new Set<RunningType>(['z2', 'tempo', 'intervals', 'long'])
 const VALID_SQUASH_SESSION_MODES = new Set<SquashSessionMode>(['drill_session', 'practice_match', 'competition_match'])
 const VALID_SQUASH_SESSION_KINDS = new Set<SquashSessionKind>(['technical', 'control', 'shadows', 'match', 'mixed'])
@@ -106,6 +107,11 @@ export function normalizeSessionProposalDraft(
   }
 
   if (isRpe(record.rpe)) session.rpe = record.rpe
+  if (sessionType === 'squash' && isSquashIntentKind(record.squashKind)) {
+    session.squashKind = record.squashKind
+  } else if (record.squashKind != null) {
+    repairs.push('squashKind')
+  }
   const inferredSubtype = inferSquashSubtype(record.sessionType)
   if (isSquashSubtype(record.subtype)) session.subtype = record.subtype
   else if (sessionType === 'squash' && inferredSubtype) {
@@ -136,9 +142,10 @@ export function normalizeSessionProposalDraft(
     if (squashDetails) {
       session.squashDetails = squashDetails.details
       repairs.push(...squashDetails.repairs)
-    } else {
+    } else if (!session.squashKind) {
       // squashDetails ausente o irreparable: degradar a un detalle mínimo en vez de
-      // descartar la sesión completa; repairWeek la densifica después.
+      // descartar una respuesta legacy. Con `squashKind` explícito se conserva
+      // el borde compacto y el postprocesador/hidratador materializa localmente.
       repairs.push('squashDetails')
       session.squashDetails = {
         trainingFocus: 'technical',
@@ -602,6 +609,7 @@ function validateAction(obj: unknown): {
       if (typeof record.newDurationMin === 'number' && record.newDurationMin >= 5) action.newDurationMin = record.newDurationMin
       if (isSessionType(record.newType)) action.newType = record.newType
       if (isSquashSubtype(record.subtype)) action.subtype = record.subtype
+      if (isSquashIntentKind(record.squashKind)) action.squashKind = record.squashKind
       if (isRunningType(record.runningType)) action.runningType = record.runningType
       if (typeof record.targetPaceMin === 'string') action.targetPaceMin = record.targetPaceMin
       if (typeof record.targetPaceMax === 'string') action.targetPaceMax = record.targetPaceMax
@@ -638,6 +646,7 @@ function sessionProposalToActionFields(session: CoachSessionProposal): Partial<C
     objective: session.objective,
     rpe: session.rpe,
     subtype: session.subtype,
+    squashKind: session.squashKind,
     runningType: session.runningType,
     targetPaceMin: session.targetPaceMin,
     targetPaceMax: session.targetPaceMax,
@@ -712,6 +721,7 @@ function hasAnyUpdateField(action: CoachAction): boolean {
     action.newDurationMin != null ||
     action.newType != null ||
     action.subtype != null ||
+    action.squashKind != null ||
     action.runningType != null ||
     action.targetPaceMin != null ||
     action.targetPaceMax != null ||
@@ -966,6 +976,10 @@ function normalizeSquashBlocksDraft(value: unknown): SquashSessionBlock[] | null
 
 function isSessionType(value: unknown): value is CoachSessionProposal['sessionType'] {
   return typeof value === 'string' && VALID_SESSION_TYPES.has(value)
+}
+
+function isSquashIntentKind(value: unknown): value is SquashSessionBlockKind {
+  return typeof value === 'string' && VALID_SQUASH_INTENT_KINDS.has(value as SquashSessionBlockKind)
 }
 
 function normalizeSessionTypeDraft(value: unknown): SessionType | undefined {

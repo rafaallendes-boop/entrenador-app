@@ -1078,6 +1078,8 @@ export interface CoachAction {
   timeBlock?: TimeBlock
   objective?: string
   subtype?: SquashSubtype
+  /** Modalidad estructurada para add_session/update_session de squash. */
+  squashKind?: SquashSessionBlockKind
   runningType?: RunningType
   targetPaceMin?: string
   targetPaceMax?: string

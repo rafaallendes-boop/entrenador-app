@@ -77,6 +77,7 @@ const sessionFields = [
   field('rpe', 'INTEGER'),
   field('objective', 'STRING', { required: true }),
   field('subtype', 'STRING', { enumValues: ['training', 'match', 'competitive', 'control', 'light'] }),
+  field('squashKind', 'STRING', { enumValues: ['control', 'technical', 'shadows', 'match'] }),
   field('runningType', 'STRING', { enumValues: ['z2', 'tempo', 'intervals', 'long'] }),
   field('targetPaceMin', 'STRING'),
   field('targetPaceMax', 'STRING'),
@@ -256,12 +257,12 @@ function chatActionContract(
 
 export const ADD_SESSION_ACTION_CONTRACT: ActionContract = chatActionContract(
   'add_session',
-  () => '- add_session — targetDate, timeBlock, sessionType, title, durationMin, rpe?, objective?, subtype?, reason',
+  () => '- add_session — targetDate, timeBlock, sessionType, title, durationMin, rpe?, objective?, subtype?, squashKind? (obligatorio para squash), reason',
 )
 
 export const UPDATE_SESSION_ACTION_CONTRACT: ActionContract = chatActionContract(
   'update_session',
-  () => '- update_session — sessionId, reason, y solo los campos que cambian: newType, subtype, newTitle, newObjective, newRpe, newDurationMin, runningType, targetPaceMin, targetPaceMax, targetHrMin, targetHrMax, intervalStructure, cyclingDetails, mobilityDetails, squashDetails, exercises',
+  () => '- update_session — sessionId, reason, y solo los campos que cambian: newType, subtype, squashKind, newTitle, newObjective, newRpe, newDurationMin, runningType, targetPaceMin, targetPaceMax, targetHrMin, targetHrMax, intervalStructure, cyclingDetails, mobilityDetails, squashDetails, exercises',
 )
 
 export const MOVE_SESSION_ACTION_CONTRACT: ActionContract = chatActionContract(

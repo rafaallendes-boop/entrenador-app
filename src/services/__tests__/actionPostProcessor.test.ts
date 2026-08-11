@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ChatContext, CoachAction, Session } from '../../types'
 import type { CoachNormalizedResponse } from '../ai/types'
 import { postProcessCoachActions } from '../ai/actionPostProcessor'
+import { findSquashDrillByName, resolveSquashDrillKind } from '../training/drillLibrary'
 
 function makeSession(partial: Partial<Session> = {}): Session {
   return {
@@ -844,5 +845,140 @@ describe('actionPostProcessor', () => {
       'chat_action_without_actions_repaired',
       'chat_action_malformed_response_repaired',
     ]))
+  })
+
+  it('hydrates compact technical squash without reading “control de longitud” as modality', () => {
+    vi.setSystemTime(new Date('2026-05-04T12:00:00.000Z'))
+    const response = postProcessCoachActions(makeResponse([{
+      type: 'add_session',
+      reason: 'Trabajo cooperativo',
+      targetDate: '2026-05-05',
+      timeBlock: 'PM',
+      sessionType: 'squash',
+      squashKind: 'technical',
+      title: 'Squash técnico',
+      durationMin: 60,
+      objective: 'Construir control de longitud con ejecución limpia.',
+    }]), makeContext(), 'Agrega squash mañana para trabajar control de longitud con partner')
+
+    const action = response.actions?.[0]
+    expect(action).toMatchObject({ type: 'add_session', squashKind: 'technical', subtype: 'training' })
+    const kinds = action?.squashDetails?.drills.map((drill) =>
+      resolveSquashDrillKind(findSquashDrillByName(drill.name)!),
+    )
+    expect(kinds?.length).toBeGreaterThan(0)
+    expect(kinds?.every((kind) => kind === 'technical')).toBe(true)
+  })
+
+  it.each([
+    ['control', 'solo'],
+    ['technical', 'partner'],
+    ['shadows', 'solo'],
+    ['match', 'match'],
+  ] as const)('hydrates compact squashKind=%s with compatible execution', (squashKind, executionMode) => {
+    const context = squashKind === 'match'
+      ? makeContext([], {
+          athleteProfile: {
+            id: 'athlete-squash',
+            updatedAt: 1,
+            macroPlan: { currentPhase: 'build' } as never,
+          },
+        })
+      : makeContext()
+    const response = postProcessCoachActions(makeResponse([{
+      type: 'add_session',
+      reason: 'Modalidad explícita',
+      targetDate: '2026-05-05',
+      timeBlock: 'PM',
+      sessionType: 'squash',
+      squashKind,
+      title: 'Squash',
+      durationMin: 45,
+      objective: 'Trabajo específico.',
+    }]), context, 'Agrega una sesión de squash mañana')
+
+    const action = response.actions?.[0]
+    expect(action?.squashDetails?.sessionKind).toBe(squashKind)
+    expect(action?.squashDetails?.drills.length).toBeGreaterThan(0)
+    expect(action?.squashDetails?.drills.every((drill) => drill.executionMode === executionMode)).toBe(true)
+  })
+
+  it('preserves a known compatible drill requested for the declared modality', () => {
+    const drillName = 'Paralelas de derecha — 100'
+    const response = postProcessCoachActions(makeResponse([{
+      type: 'add_session',
+      reason: 'Petición explícita compatible',
+      targetDate: '2026-05-05',
+      timeBlock: 'PM',
+      sessionType: 'squash',
+      squashKind: 'control',
+      title: 'Squash control',
+      durationMin: 45,
+      squashDetails: {
+        trainingFocus: 'technical',
+        sessionMode: 'drill_session',
+        sessionKind: 'control',
+        drills: [{ name: drillName }],
+      },
+    }]), makeContext(), `Agrega squash mañana con ${drillName}`)
+
+    expect(response.actions?.[0].squashDetails?.drills.map((drill) => drill.name)).toEqual([drillName])
+    expect(response.actions?.[0].squashDetails?.sessionKind).toBe('control')
+    expect(response.meta?.warnings).toBeUndefined()
+  })
+
+  it('preserves an explicitly requested incompatible drill and emits an actionable warning', () => {
+    const drillName = 'Volea de control desde media cancha'
+    const response = postProcessCoachActions(makeResponse([{
+      type: 'add_session',
+      reason: 'Petición explícita',
+      targetDate: '2026-05-05',
+      timeBlock: 'PM',
+      sessionType: 'squash',
+      squashKind: 'control',
+      title: 'Squash control',
+      durationMin: 45,
+      squashDetails: {
+        trainingFocus: 'technical',
+        sessionMode: 'drill_session',
+        sessionKind: 'technical',
+        drills: [{ name: drillName }],
+      },
+    }]), makeContext(), `Agrega squash mañana con ${drillName}`)
+
+    expect(response.actions?.[0].squashDetails?.drills.map((drill) => drill.name)).toEqual([drillName])
+    expect(response.meta?.warnings).toContain('squash_explicit_drill_incompatible_preserved')
+    expect(response.message).toContain('Revísalo antes de aplicar')
+  })
+
+  it('preserves squashKind when add_session is converted to update_session', () => {
+    const current = makeSession({
+      id: 'squash-current-123',
+      type: 'squash',
+      title: 'Squash técnico',
+      squashDetails: {
+        trainingFocus: 'technical',
+        sessionMode: 'drill_session',
+        sessionKind: 'technical',
+        drills: [{ name: 'Tiros paralelos profundos' }],
+      },
+    })
+    const response = postProcessCoachActions(makeResponse([{
+      type: 'add_session',
+      reason: 'Cambiar modalidad',
+      targetDate: current.date,
+      timeBlock: current.timeBlock,
+      sessionType: 'squash',
+      squashKind: 'shadows',
+      title: 'Sombras',
+      durationMin: 40,
+    }]), makeContext([current]), 'Cambia la sesión de squash del viernes a sombras')
+
+    expect(response.actions?.[0]).toMatchObject({
+      type: 'update_session',
+      sessionId: current.id,
+      squashKind: 'shadows',
+      squashDetails: expect.objectContaining({ sessionKind: 'shadows' }),
+    })
   })
 })
