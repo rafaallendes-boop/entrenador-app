@@ -158,22 +158,24 @@ Para sesiones de 45-60 minutos, la app busca una densidad razonable y evita que 
 
 ### Squash
 
-El squash distingue mejor entre:
+El squash transporta una modalidad estructural de sesión, independiente del
+título, el objetivo y el foco deportivo:
 
-- sombras / pies
-- tecnica
-- control
-- juego condicionado / partner
-- partido final
+- `control`: pelota en solitario;
+- `technical`: trabajo cooperativo o condicionado con partner;
+- `shadows`: desplazamientos sin pelota;
+- `match`: juego con rival y marcador.
 
-Los drills pueden clasificarse por modalidad:
+Cada drill del catálogo declara además cómo se ejecuta:
 
 - `solo`
 - `partner`
-- `either`
 - `match`
 
-Si hay match, debe quedar al final.
+`either` no es una modalidad de drill: sólo representa que la disponibilidad de
+partner todavía no está definida. Plan Builder, Crear semana, chat, formulario
+y plantillas preservan la misma modalidad sin inferirla desde texto. Un partido
+puede ser una sesión dedicada o un bloque final, según su composición.
 
 ### Athlete Profile
 
@@ -585,7 +587,7 @@ Esto sirve para pruebas personales y beta interna. Para una beta externa, el sig
 - La calidad del coach debe seguir midiendose con E2E + uso real.
 - La telemetria persistente resumida sigue pendiente para una beta externa.
 - El sync requiere QA real multi-dispositivo antes de usuarios externos.
-- Whoop requiere aplicar la migracion `011`, smoke de produccion y consentimiento biometrico antes de exponerlo a terceros.
+- Whoop readiness/workouts ya están operativos; las zonas de FC requieren aplicar `019`, rollout por flags, reaceptación y smoke antes de exponer esa capa a terceros.
 - Los providers directos en browser son solo para dev; produccion debe usar proxy.
 - PDF import sigue siendo una parte pesada cuando se usa.
 - Notificaciones web tienen limites propios del navegador.
@@ -594,12 +596,13 @@ Esto sirve para pruebas personales y beta interna. Para una beta externa, el sig
 
 Prioridad actual:
 
-1. Aplicar y verificar la migracion `011` de Whoop en produccion.
-2. Completar el smoke de OAuth, sync, readiness, prefill y borrado de Whoop.
-3. Publicar consentimiento biometrico antes de exponer Whoop a terceros.
-4. Probar sync real entre desktop y mobile.
-5. Consolidar planes arquetipo y la calidad deportiva del coach.
-6. Recien despues invitar usuarios cercanos al piloto.
+1. Aplicar `019` y completar el rollout/smoke combinado de detalle y zonas de FC de Whoop.
+2. Completar A2.5 de squash: exposición competitiva semanal en base/taper sin mezclar modalidades.
+3. Probar convergencia real entre desktop y mobile y fijar los fallos en un harness E2E de dos clientes.
+4. Smokear Biblioteca, Planificación y la semana visible autenticadas sobre el bundle actual.
+5. Cerrar revisión jurídica, retención y reaceptación de las publicaciones Whoop nuevas.
+6. Consolidar tres planes arquetipo y la calidad deportiva del coach.
+7. Onboardear el primer cliente acompañado antes de construir pagos self-serve.
 
 ## Documentos Utiles
 

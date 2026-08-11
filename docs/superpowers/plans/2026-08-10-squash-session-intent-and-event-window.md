@@ -1,7 +1,7 @@
 # Squash: modalidad explícita y eventos multijornada — plan de implementación
 
 Fecha: 2026-08-10  
-Estado: borrador para aprobación; no ejecutar todavía  
+Estado: A0–A6 y verificación técnica de A7 completadas; A2.5 y rollout operativo pendientes. Proyecto B no iniciado.
 Spec: `docs/superpowers/specs/2026-08-10-squash-session-intent-and-event-window-design.md`
 
 ## Estrategia de entrega
@@ -39,12 +39,12 @@ Orden:
 
 **Pasos:**
 
-- [ ] Crear una propuesta squash con intención técnica, título de puntos
+- [x] Crear una propuesta squash con intención técnica, título de puntos
   condicionados y objetivo que incluya literalmente "control de longitud".
-- [ ] Confirmar que el comportamiento actual selecciona control/solo; el test
+- [x] Confirmar que el comportamiento actual selecciona control/solo; el test
   debe fallar contra la expectativa nueva.
-- [ ] Crear el mismo caso compacto para Crear semana.
-- [ ] No copiar el backup completo al repositorio; usar un fixture mínimo sin
+- [x] Crear el mismo caso compacto para Crear semana.
+- [x] No copiar el backup completo al repositorio; usar un fixture mínimo sin
   datos personales.
 
 ### Task A1 — Convertir el catálogo en autoridad explícita
@@ -61,28 +61,28 @@ Orden:
 
 **Pasos:**
 
-- [ ] Agregar `sessionKind` y hacer explícito `executionMode` en
+- [x] Agregar `sessionKind` y hacer explícito `executionMode` en
   `SquashDrillDefinition`.
-- [ ] Auditar todas las definiciones, una por una, contra la matriz del spec.
-- [ ] Reclasificar los tres drills cooperativos identificados como
+- [x] Auditar todas las definiciones, una por una, contra la matriz del spec.
+- [x] Reclasificar los tres drills cooperativos identificados como
   `technical/partner`.
-- [ ] Reclasificar técnicos `either` a `partner` cuando sus instrucciones
+- [x] Reclasificar técnicos `either` a `partner` cuando sus instrucciones
   requieren rotación o alimentación de otra persona.
-- [ ] Separar los tipos: `SquashDrillExecutionMode` acepta sólo
+- [x] Separar los tipos: `SquashDrillExecutionMode` acepta sólo
   `solo|partner|match`; `either` queda únicamente en
   `SquashPartnerAvailability`.
-- [ ] Agregar un invariant que prohíba `executionMode='either'` en toda
+- [x] Agregar un invariant que prohíba `executionMode='either'` en toda
   definición del catálogo.
-- [ ] Clasificar acondicionamiento sin pelota como `shadows/solo`.
-- [ ] Habilitar explícitamente los tres drills de sombras en taper mediante
+- [x] Clasificar acondicionamiento sin pelota como `shadows/solo`.
+- [x] Habilitar explícitamente los tres drills de sombras en taper mediante
   `phaseAppropriate`/metadata canónica y comprobar que pasan `isPhaseAllowed`.
-- [ ] Hacer que `resolveSquashDrillKind` y `resolveDrillExecutionMode` lean los
+- [x] Hacer que `resolveSquashDrillKind` y `resolveDrillExecutionMode` lean los
   campos explícitos.
-- [ ] Mantener temporalmente `partnerRequired`, con invariant que impida una
+- [x] Mantener temporalmente `partnerRequired`, con invariant que impida una
   contradicción con `executionMode`.
-- [ ] Agregar test de tabla que cubra el 100% del catálogo y conteos esperados
+- [x] Agregar test de tabla que cubra el 100% del catálogo y conteos esperados
   por modalidad.
-- [ ] Correr tests de selector, reemplazo, normalización y copy del catálogo.
+- [x] Correr tests de selector, reemplazo, normalización y copy del catálogo.
 
 **Salida:** catálogo coherente sin agregar drills nuevos.
 
@@ -101,20 +101,20 @@ semanas por unicidad de firma.
 
 **Pasos:**
 
-- [ ] Documentar el conteo ejecutable por fase después de A1; ese conteo es el
+- [x] Documentar el conteo ejecutable por fase después de A1; ese conteo es el
   baseline de capacidad.
-- [ ] Preparar y aprobar una tabla acotada de drills control/solo nuevos con
+- [x] Preparar y aprobar una tabla acotada de drills control/solo nuevos con
   nombre, instrucciones, protocolo, familia, intensidad y fases.
-- [ ] Cubrir como mínimo drives paralelos de derecha y revés, drops, media
+- [x] Cubrir como mínimo drives paralelos de derecha y revés, drops, media
   cancha, voleas y variaciones de volumen/objetivo sin duplicar sólo el nombre.
-- [ ] Alcanzar al menos nueve opciones control elegibles en build y peak y seis
+- [x] Alcanzar al menos nueve opciones control elegibles en build y peak y seis
   seguras para taper.
-- [ ] Verificar que todos los drills nuevos declaran `sessionKind=control` y
+- [x] Verificar que todos los drills nuevos declaran `sessionKind=control` y
   `executionMode=solo` y que ninguno usa `either`.
-- [ ] Simular planes de 4, 8 y 12 semanas con control recurrente y comprobar que
+- [x] Simular planes de 4, 8 y 12 semanas con control recurrente y comprobar que
   no repiten firmas consecutivas ni producen
   `quality.squash.signature_uniqueness_unresolved` por agotamiento del pool.
-- [ ] Confirmar que la selección sigue respetando fase, fatiga y rotación.
+- [x] Confirmar que la selección sigue respetando fase, fatiga y rotación.
 
 **Salida:** pool de control suficiente para aplicar A2 sin depender de mezcla de
 modalidades o reutilización inmediata.
@@ -133,19 +133,19 @@ modalidades o reutilización inmediata.
 
 **Pasos:**
 
-- [ ] Definir la entrada pura: `kind`, duración, objetivo/foco, fase, fatiga,
+- [x] Definir la entrada pura: `kind`, duración, objetivo/foco, fase, fatiga,
   historial, nivel competitivo y disponibilidad conocida.
-- [ ] Devolver `subtype`, `squashDetails`, advertencias y metadata de fallback.
-- [ ] Mantener `sessionKind` como modalidad principal aunque exista un accesorio
+- [x] Devolver `subtype`, `squashDetails`, advertencias y metadata de fallback.
+- [x] Mantener `sessionKind` como modalidad principal aunque exista un accesorio
   `shadows`.
-- [ ] Eliminar fallbacks `control -> technical` y `technical -> control` del
+- [x] Eliminar fallbacks `control -> technical` y `technical -> control` del
   selector cuando existe intención explícita.
-- [ ] Permitir reuso reciente de la misma modalidad antes que cruzar modalidad.
-- [ ] Formalizar las combinaciones de bloques permitidas y validarlas.
-- [ ] Probar control+shadows en ambos órdenes.
-- [ ] Probar técnico con partner, técnico+shadows, match y restricciones de
+- [x] Permitir reuso reciente de la misma modalidad antes que cruzar modalidad.
+- [x] Formalizar las combinaciones de bloques permitidas y validarlas.
+- [x] Probar control+shadows en ambos órdenes.
+- [x] Probar técnico con partner, técnico+shadows, match y restricciones de
   fase/fatiga.
-- [ ] Probar pool insuficiente y advertencia sin mezcla silenciosa.
+- [x] Probar pool insuficiente y advertencia sin mezcla silenciosa.
 
 ### Task A2.5 — Exposición competitiva semanal (pendiente, tras A2)
 
@@ -203,22 +203,22 @@ puede volverse dependiente de la fase.
 
 **Pasos:**
 
-- [ ] Agregar `squashKind` al contrato compacto y documentar sus cuatro valores
+- [x] Agregar `squashKind` al contrato compacto y documentar sus cuatro valores
   en el prompt.
-- [ ] Validar que toda sesión squash lo declare; mantener fallback compatible
+- [x] Validar que toda sesión squash lo declare; mantener fallback compatible
   para respuestas viejas o truncadas.
-- [ ] Sustituir la selección local duplicada por el hidratador compartido.
-- [ ] Eliminar `inferSquashDesiredKind` y búsquedas de palabras equivalentes.
-- [ ] Definir precedencia ante `squashDetails` detallado contradictorio: la
+- [x] Sustituir la selección local duplicada por el hidratador compartido.
+- [x] Eliminar `inferSquashDesiredKind` y búsquedas de palabras equivalentes.
+- [x] Definir precedencia ante `squashDetails` detallado contradictorio: la
   intención estructurada reconstruye detalles y genera warning.
-- [ ] Alinear título genérico sólo cuando el sistema lo creó; no reescribir copy
+- [x] Alinear título genérico sólo cuando el sistema lo creó; no reescribir copy
   explícito del usuario por substrings.
-- [ ] Incrementar versiones de schema/repair y agregar telemetría de fallback,
+- [x] Incrementar versiones de schema/repair y agregar telemetría de fallback,
   conflicto y pool insuficiente.
-- [ ] Tratar la tasa alta de fallback `missing squashKind -> technical` como
+- [x] Tratar la tasa alta de fallback `missing squashKind -> technical` como
   alerta de contrato/prompt; el fallback es resiliencia, no una ruta normal.
-- [ ] Hacer pasar la regresión "control de longitud" como `technical/partner`.
-- [ ] Correr los tests focalizados de Plan Builder y el set determinista de
+- [x] Hacer pasar la regresión "control de longitud" como `technical/partner`.
+- [x] Correr los tests focalizados de Plan Builder y el set determinista de
   squash.
 
 ### Task A4 — Integrar Crear semana con skeleton v2
@@ -241,14 +241,14 @@ Crear semana.
 
 **Pasos:**
 
-- [ ] Versionar `WeekCreatorSkeleton` a v2 y agregar `squashKind`.
-- [ ] Exigirlo para squash en parser/runtime y rechazarlo para otros deportes.
-- [ ] Mantener `focusKey` como foco semántico, no identidad.
-- [ ] Eliminar el mapeo de `focusKey` a subtype/modalidad de squash.
-- [ ] Delegar al hidratador compartido antes de descartar el skeleton tipado.
-- [ ] Aplicar las mismas invariantes a la ruta `detailed`.
-- [ ] Mantener `WEEK_CREATOR_CONTRACT=detailed` como rollback.
-- [ ] Actualizar tests de schema, parser, prompt, estrategia, engine e
+- [x] Versionar `WeekCreatorSkeleton` a v2 y agregar `squashKind`.
+- [x] Exigirlo para squash en parser/runtime y rechazarlo para otros deportes.
+- [x] Mantener `focusKey` como foco semántico, no identidad.
+- [x] Eliminar el mapeo de `focusKey` a subtype/modalidad de squash.
+- [x] Delegar al hidratador compartido antes de descartar el skeleton tipado.
+- [x] Aplicar las mismas invariantes a la ruta `detailed`.
+- [x] Mantener `WEEK_CREATOR_CONTRACT=detailed` como rollback.
+- [x] Actualizar tests de schema, parser, prompt, estrategia, engine e
   hidratación.
 
 ### Task A5 — Integrar creación individual por chat
@@ -269,16 +269,16 @@ Crear semana.
 
 **Pasos:**
 
-- [ ] Agregar `squashKind` a ambos contratos y a tipos/normalización.
-- [ ] Exigirlo en runtime para nuevas sesiones squash.
-- [ ] Hidratar localmente cuando el proveedor entrega sólo intención compacta.
-- [ ] Preservar drills concretos pedidos por el usuario cuando son conocidos y
+- [x] Agregar `squashKind` a ambos contratos y a tipos/normalización.
+- [x] Exigirlo en runtime para nuevas sesiones squash.
+- [x] Hidratar localmente cuando el proveedor entrega sólo intención compacta.
+- [x] Preservar drills concretos pedidos por el usuario cuando son conocidos y
   compatibles.
-- [ ] Emitir advertencia accionable ante un drill explícito incompatible; no
+- [x] Emitir advertencia accionable ante un drill explícito incompatible; no
   reemplazarlo silenciosamente.
-- [ ] Asegurar que convertir un `add_session` a `update_session` preserve la
+- [x] Asegurar que convertir un `add_session` a `update_session` preserve la
   modalidad.
-- [ ] Probar frases ambiguas y las cuatro modalidades.
+- [x] Probar frases ambiguas y las cuatro modalidades.
 
 ### Task A6 — Integrar formulario manual y plantillas
 
@@ -296,16 +296,16 @@ Crear semana.
 
 **Pasos:**
 
-- [ ] Reemplazar la etiqueta genérica de squash por el selector Modalidad:
+- [x] Reemplazar la etiqueta genérica de squash por el selector Modalidad:
   Control (solo), Técnico (con partner), Sombras y Partido.
-- [ ] Separar el contexto práctica/competencia cuando se elige Partido.
-- [ ] Filtrar los drills conocidos por modalidad.
-- [ ] Persistir la elección en `squashDetails.sessionKind` y proyectar un
+- [x] Separar el contexto práctica/competencia cuando se elige Partido.
+- [x] Filtrar los drills conocidos por modalidad.
+- [x] Persistir la elección en `squashDetails.sessionKind` y proyectar un
   `subtype` compatible.
-- [ ] Para sesiones nuevas e históricas, advertir siempre ante drills conocidos
+- [x] Para sesiones nuevas e históricas, advertir siempre ante drills conocidos
   incompatibles, permitir guardar y no borrar/reclasificar contenido.
-- [ ] Aceptar ejercicios personalizados sin metadata bajo la modalidad elegida.
-- [ ] Cubrir creación, edición y plantillas en tests.
+- [x] Aceptar ejercicios personalizados sin metadata bajo la modalidad elegida.
+- [x] Cubrir creación, edición y plantillas en tests.
 
 ### Task A7 — Verificación cruzada y rollout
 
@@ -313,18 +313,18 @@ Crear semana.
 
 **Pasos:**
 
-- [ ] Crear una matriz de integración con las cuatro modalidades por Plan
+- [x] Crear una matriz de integración con las cuatro modalidades por Plan
   Builder, Crear semana, chat y formulario.
-- [ ] Afirmar para cada salida `sessionKind`, tipos de bloque y
+- [x] Afirmar para cada salida `sessionKind`, tipos de bloque y
   `executionMode`.
-- [ ] Ejecutar tests focalizados, suite completa, typecheck y build.
-- [ ] Revisar import/export de sesiones y backups con `mixed` histórico.
+- [x] Ejecutar tests focalizados, suite completa, typecheck y build.
+- [x] Revisar import/export de sesiones y backups con `mixed` histórico.
 - [ ] Desplegar primero catálogo+hidratador, después los bordes versionados.
 - [ ] Monitorear fallback por falta de `squashKind`, contradicciones y pools
   insuficientes.
-- [ ] Ejecutar la simulación de control de 4, 8 y 12 semanas junto con quality
+- [x] Ejecutar la simulación de control de 4, 8 y 12 semanas junto con quality
   review para detectar regresiones de capacidad.
-- [ ] No eliminar compatibilidad heredada hasta que la telemetría muestre que
+- [x] No eliminar compatibilidad heredada hasta que la telemetría muestre que
   los contratos nuevos son estables.
 
 ## Proyecto B — evento multijornada
