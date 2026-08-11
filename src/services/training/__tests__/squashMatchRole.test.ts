@@ -55,11 +55,15 @@ describe('resolveSquashMatchRole', () => {
     }))).toBe('none')
   })
 
-  it('no es finisher sin ningún bloque previo no-match', () => {
+  it('no es finisher sin ningún bloque previo no-match: es un partido dedicado', () => {
+    // Un partido que es el único contenido es `standalone`, sea al mejor de 5 o
+    // al mejor de 3. Antes devolvía `none`, y eso lo dejaba sin la exención de
+    // densificación: se le agregaban drills de acompañamiento hasta volverlo una
+    // sesión mixta que nadie declaró, y en taper perdía la activación pre-evento.
     expect(resolveSquashMatchRole(details({
       drills: [{ name: BEST_OF_3 }],
       blocks: [{ kind: 'match', drills: [{ name: BEST_OF_3 }] }],
-    }))).toBe('none')
+    }))).toBe('standalone')
   })
 
   it('no es finisher si hay otro drill competitivo', () => {

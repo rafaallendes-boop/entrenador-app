@@ -144,7 +144,10 @@ export function selectSquashDrills(
   const basePool = withoutRecent.length >= 3 ? withoutRecent : byExecutionMode
 
   if (context.desiredKind) {
-    return selectSquashDrillsByDesiredKind(basePool, fallbackByExecutionMode, context, recentSet, progressionState)
+    // El pool tolerante conserva fase y fatiga: la única preferencia que se
+    // relaja es evitar un drill reciente. `fallbackByExecutionMode` no sirve
+    // acá porque no filtra por fase, y relajarla readmitiría partidos en base.
+    return selectSquashDrillsByDesiredKind(basePool, byExecutionMode, context, recentSet, progressionState)
   }
 
   const selected = pickDiverseDrills(basePool, context, recentSet, progressionState)
@@ -201,7 +204,7 @@ function scoreByFocusOverlap(
 
 function selectSquashDrillsByDesiredKind(
   basePool: SquashDrillDefinition[],
-  fallbackPool: SquashDrillDefinition[],
+  recentTolerantPool: SquashDrillDefinition[],
   context: SquashSelectionContext,
   recentSet: Set<string>,
   progressionState: SquashProgressionState,
@@ -209,11 +212,21 @@ function selectSquashDrillsByDesiredKind(
   const desiredKind = context.desiredKind!
 
   if (desiredKind === 'match' && context.partnerAvailability === 'solo') {
-    const selected = buildSingleKindSelection('control', basePool, context, recentSet, progressionState)
-    const fallback = selected.length > 0 ? selected : pickDiverseDrills(basePool, context, recentSet, progressionState)
+    // Redirección declarada, no silenciosa: un partido sin partner es
+    // inejecutable. El destino es control, y si control tampoco alcanza se
+    // entrega corto — caer a `pickDiverseDrills` readmitiría justamente los
+    // drills con partner que motivaron la redirección.
+    const selected = buildSingleKindSelection(
+      'control',
+      basePool,
+      recentTolerantPool,
+      context,
+      recentSet,
+      progressionState,
+    )
     return {
-      ...buildSelectionResult(fallback.slice(0, 5), context, progressionState),
-      selectionNote: 'desiredKind=match requiere partner; modalidad solo redirigida a control tecnico sin partido.',
+      ...buildSelectionResult(selected.slice(0, 5), context, progressionState),
+      selectionNote: 'desiredKind=match requiere partner; modalidad solo redirigida a control sin partido.',
     }
   }
 
@@ -228,29 +241,47 @@ function selectSquashDrillsByDesiredKind(
     if (selected.length >= 2) {
       return buildSelectionResult(selected, context, progressionState)
     }
-  } else {
-    const selected = buildSingleKindSelection(
-      desiredKind as SquashSessionBlockKind,
-      basePool,
-      context,
-      recentSet,
-      progressionState,
-    )
-    if (selected.length >= 2 || desiredKind === 'match') {
-      return buildSelectionResult(selected, context, progressionState)
+    return {
+      ...buildSelectionResult(selected, context, progressionState),
+      selectionNote: `desiredKind=${desiredKind} sin pool suficiente; se entrega la mezcla parcial disponible.`,
     }
   }
 
-  const fallback = pickDiverseDrills(fallbackPool, context, recentSet, progressionState)
+  const selected = buildSingleKindSelection(
+    desiredKind as SquashSessionBlockKind,
+    basePool,
+    recentTolerantPool,
+    context,
+    recentSet,
+    progressionState,
+  )
+  if (selected.length >= 2 || desiredKind === 'match') {
+    return buildSelectionResult(selected, context, progressionState)
+  }
+
+  // Pool agotado dentro de la modalidad pedida. Antes acá se llamaba a
+  // `pickDiverseDrills` sobre el pool completo, que devuelve cualquier
+  // modalidad: es el cruce silencioso que esta entrega elimina. Se entrega lo
+  // que haya de la modalidad correcta y se declara la insuficiencia.
   return {
-    ...buildSelectionResult(fallback.slice(0, 5), context, progressionState),
-    selectionNote: `desiredKind=${desiredKind} sin pool suficiente; se relajo al selector contextual actual.`,
+    ...buildSelectionResult(selected, context, progressionState),
+    selectionNote: `desiredKind=${desiredKind} sin pool suficiente; no se cruza de modalidad.`,
   }
 }
 
+/**
+ * Selección pura de una modalidad. Nunca cruza a otra.
+ *
+ * Antes, un pool corto caía a `['control','technical']` o a
+ * `['technical','control']`: una sesión de control terminaba con drills que
+ * exigen partner sin que nadie lo pidiera ni lo registrara. La única relajación
+ * admitida es reutilizar un drill reciente **de la misma modalidad**; agotar la
+ * modalidad se informa hacia arriba y lo resuelve el llamador, no el selector.
+ */
 function buildSingleKindSelection(
   kind: SquashSessionBlockKind,
   pool: SquashDrillDefinition[],
+  recentTolerantPool: SquashDrillDefinition[],
   context: SquashSelectionContext,
   recentSet: Set<string>,
   progressionState: SquashProgressionState,
@@ -261,17 +292,12 @@ function buildSingleKindSelection(
 
   if (selected.length >= Math.min(preferredCount, 2)) return selected
 
-  if (kind === 'control') {
-    return buildMixedKindSelection(['control', 'technical'], pool, context, recentSet, progressionState)
-  }
-  if (kind === 'shadows') {
-    return buildMixedKindSelection(['shadows', 'technical'], pool, context, recentSet, progressionState)
-  }
-  if (kind === 'technical') {
-    return buildMixedKindSelection(['technical', 'control'], pool, context, recentSet, progressionState)
-  }
+  // Reutilizar modalidad antes que mezclar: se afloja "evitar reciente", que es
+  // una preferencia, y no la modalidad, que es identidad.
+  const tolerantPool = filterBySessionKind(recentTolerantPool, kind, context)
+  const retried = pickKindDrills(tolerantPool, context, new Set<string>(), progressionState, preferredCount)
 
-  return selected
+  return retried.length > selected.length ? retried : selected
 }
 
 function buildMixedKindSelection(
@@ -300,9 +326,11 @@ function filterBySessionKind(
 ): SquashDrillDefinition[] {
   return drills.filter((drill) => {
     const drillKind = resolveSquashDrillKind(drill)
-    if (kind === 'control' && context.phase === 'taper') {
-      return drillKind === 'control' || drill.tags.includes('recovery_technical')
-    }
+    // Sin excepción por fase para control: la razón de existir de una sesión de
+    // control es que se puede hacer solo, y eso no cambia en taper. La excepción
+    // anterior admitía cualquier drill con `recovery_technical`, que tras la
+    // separación de modalidad son cooperativos: el día antes del torneo la
+    // activación terminaba exigiendo partner.
     if (kind === 'match' && context.phase === 'taper') {
       return drill.tags.includes('pre_match')
     }
@@ -492,6 +520,15 @@ export function filterByPhase(
   }
 }
 
+/**
+ * Filtra por la disponibilidad declarada del atleta.
+ *
+ * Ojo con el alcance: esto responde "¿tiene con quién jugar?", no "¿de qué tipo
+ * es la sesión?". La modalidad de la sesión la decide la intención estructural
+ * y se aplica antes; este filtro sólo recorta el pool resultante. Con
+ * `either` —el default, y en la práctica el único valor que llega hoy porque el
+ * wizard no captura disponibilidad— no recorta nada.
+ */
 export function filterByExecutionMode(
   drills: SquashDrillDefinition[],
   partnerAvailability: SquashPartnerAvailability = 'either',
@@ -502,12 +539,12 @@ export function filterByExecutionMode(
     const executionMode: SquashDrillExecutionMode = resolveDrillExecutionMode(drill)
     if (partnerAvailability === 'solo') {
       if (drill.partnerRequired) return false
-      return executionMode === 'solo' || executionMode === 'either'
+      return executionMode === 'solo'
     }
-    if (executionMode === 'solo') {
-      return resolveSquashDrillKind(drill) === 'shadows'
-    }
-    return executionMode === 'partner' || executionMode === 'either' || executionMode === 'match'
+    // Con partner disponible las sombras siguen siendo válidas: son el único
+    // contenido en solitario que complementa una sesión con otra persona.
+    if (executionMode === 'solo') return resolveSquashDrillKind(drill) === 'shadows'
+    return true
   })
 }
 

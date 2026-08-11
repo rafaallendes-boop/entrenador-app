@@ -248,6 +248,51 @@ describe('WeekCreatorLocalHydrator', () => {
     })
   })
 
+  /**
+   * A0 — regresión congelada: `focusKey` es foco deportivo, no modalidad.
+   *
+   * `inferSquashSubtypeFromFocus` (WeekCreatorLocalHydrator.ts:356) hace
+   * `/control/.test(key) => 'control'`. Es la segunda autoridad de modalidad por
+   * regex sobre string del proyecto, independiente de la de `repairWeek`. Un
+   * foco legítimo como `squash_length_control` sobre una sesión que se juega con
+   * partner la degradaba a volumen en solitario.
+   */
+  describe('A0 — focusKey no decide la modalidad de squash', () => {
+    function overlayWithFocus(focusKey: string, subtype?: 'training' | 'control' | 'match') {
+      const action: CoachAction = {
+        type: 'create_week',
+        reason: 'Semana compacta',
+        targetDate: TARGET_WEEK,
+        sessions: [session('2026-07-20', 'AM', 'squash', 'Squash rotación con partner', subtype)],
+      }
+      const skeleton: WeekCreatorSkeleton = {
+        type: 'create_week',
+        reason: 'Semana compacta',
+        targetDate: TARGET_WEEK,
+        sessions: [{
+          ...session('2026-07-20', 'AM', 'squash', 'Squash rotación con partner', subtype),
+          focusKey,
+        }],
+      }
+      return overlayWeekCreatorSkeletonIntent(action, skeleton)
+    }
+
+    it('focusKey squash_length_control no fuerza subtype control', () => {
+      const overlaid = overlayWithFocus('squash_length_control')
+      expect(overlaid.action.sessions?.[0]?.subtype).not.toBe('control')
+    })
+
+    it('un foco de precisión sobre trabajo con partner tampoco lo vuelve control', () => {
+      const overlaid = overlayWithFocus('squash_technical_control_precision')
+      expect(overlaid.action.sessions?.[0]?.subtype).not.toBe('control')
+    })
+
+    it('el subtype declarado explícitamente siempre gana sobre el focusKey', () => {
+      const overlaid = overlayWithFocus('squash_length_control', 'training')
+      expect(overlaid.action.sessions?.[0]?.subtype).toBe('training')
+    })
+  })
+
   it('hydrates the typed skeleton directly so focusKey survives the generic normalizer boundary', () => {
     const skeleton: WeekCreatorSkeleton = {
       type: 'create_week',

@@ -1991,7 +1991,11 @@ function ensureSquashDrillGuidance(
       if (!definition) return drill
 
       const notes = drill.notes?.trim() ? drill.notes : definition.description
-      const executionMode = drill.executionMode ?? resolveDrillExecutionMode(definition)
+      // El catálogo es la autoridad de modalidad, no la copia persistida en la
+      // fila. Preferir `drill.executionMode` dejaba que un `either` heredado
+      // —o un valor emitido por el modelo— sobreviviera para siempre por encima
+      // de la definición corregida.
+      const executionMode = resolveDrillExecutionMode(definition)
       if (notes === drill.notes && executionMode === drill.executionMode) return drill
 
       changed = true
@@ -2060,11 +2064,37 @@ function collectSquashDrillKeys(sessions: CoachSessionProposal[]): Set<string> {
 // stale text via `isSquashMatchIntent`, so a diversified match session gets
 // rebuilt as a match again and the diversification is silently undone. Keeping
 // the identity in sync with the new content is what makes the two passes agree.
+/**
+ * Títulos que produce el propio sistema. Se derivan de `buildSquashTitleFromKind`
+ * en vez de repetirse acá, para que agregar una variante no deje afuera a este
+ * conjunto en silencio.
+ */
+const GENERIC_SQUASH_TITLES: ReadonlySet<string> = new Set(
+  (['match', 'control', 'shadows', 'technical', 'mixed'] as SquashSessionKind[])
+    .flatMap((kind) => [
+      [],
+      ['shadows', 'control'],
+      ['technical', 'match'],
+      ['control', 'match'],
+    ].map((blockKinds) => normalizeText(buildSquashTitleFromKind(kind, blockKinds)))),
+)
+
 function realignSquashSessionIdentity(session: CoachSessionProposal, kind: SquashSessionKind): void {
   if (kind === 'match') return
   const blockKinds = [...new Set((session.squashDetails?.blocks ?? []).map((block) => block.kind))]
   session.subtype = resolveSquashSubtypeFromKind(kind, session.subtype)
-  session.title = buildSquashTitleFromKind(kind, blockKinds)
+
+  // Una realineación genérica puede reemplazar una identidad genérica que quedó
+  // obsoleta, pero no puede pisar una identidad contextual que sigue siendo
+  // compatible con el contenido: "Activación y Control Pre-Torneo" dice algo que
+  // "Control y Precisión" no dice, y se pierde para siempre si se sobreescribe.
+  // El mismo criterio que ya aplica la otra ruta de alineación de títulos.
+  const currentTitle = session.title ?? ''
+  const isGeneric = GENERIC_SQUASH_TITLES.has(normalizeText(currentTitle))
+  if (!currentTitle || isGeneric || shouldAlignSquashTitle(currentTitle, kind, blockKinds)) {
+    session.title = buildSquashTitleFromKind(kind, blockKinds)
+  }
+
   if (session.objective && SQUASH_MATCH_TEXT_PATTERN.test(normalizeText(session.objective))) {
     session.objective = buildSquashObjectiveFromKind(kind)
   }

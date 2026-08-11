@@ -245,3 +245,89 @@ describe('normalización única de squash', () => {
     expect(summarizeTaxonomy(result.meta.taxonomy)).toEqual(summarizeTaxonomy(baseline.meta.taxonomy))
   })
 })
+
+/**
+ * A0 — regresión congelada: la modalidad no se infiere de la prosa.
+ *
+ * Reproduce la sesión real del plan "Nacional country" (2026-08-19). El
+ * proveedor sólo emite el esqueleto (título, objetivo, subtype); los drills los
+ * elige `repairWeek`. Al buscar la subcadena "control" dentro de "control de
+ * longitud", una sesión de puntos condicionados —que se juega con partner—
+ * quedaba hidratada como volumen de repetición en solitario.
+ */
+describe('A0 — la modalidad de squash no se infiere del texto visible', () => {
+  function skeletonSquashSession(
+    overrides: Partial<CoachSessionProposal> = {},
+  ): CoachSessionProposal {
+    return buildSkeletonSessionForTest({
+      date: '2026-08-03',
+      timeBlock: 'PM',
+      sessionType: 'squash',
+      subtype: 'training',
+      title: 'Squash — Puntos Condicionados: Solo zona cruzada',
+      objective:
+        'Juego de puntos condicionados donde solo puntúan los golpes que aterrizan '
+        + 'en la zona cruzada del fondo. Estimula decisión táctica bajo presión de '
+        + 'marcador y control de longitud.',
+      durationMin: 60,
+      rpe: 8,
+      ...overrides,
+    })
+  }
+
+  function executionModes(session: CoachSessionProposal): string[] {
+    return (session.squashDetails?.drills ?? []).map((drill) => {
+      const definition = findSquashDrillByName(drill.name)
+      return definition ? resolveDrillExecutionMode(definition) : 'unknown'
+    })
+  }
+
+  it('una sesión de puntos condicionados no se convierte en control solo por decir "control de longitud"', () => {
+    const result = repairGeneratedWeek([skeletonSquashSession()], contextFor(0))
+    const session = squashSessions(result)[0]
+
+    expect(result.failure).toBeUndefined()
+    expect(session?.squashDetails?.sessionKind).toBe('technical')
+    expect(executionModes(session!)).not.toContain('solo')
+    expect(executionModes(session!).length).toBeGreaterThan(0)
+  })
+
+  it('la palabra "precisión" en el objetivo tampoco decide la modalidad', () => {
+    const result = repairGeneratedWeek([
+      skeletonSquashSession({
+        title: 'Squash — Rotación de paralelas con partner',
+        objective: 'Paralelas de fondo rotando, buscando precisión y profundidad sostenida.',
+      }),
+    ], contextFor(0))
+    const session = squashSessions(result)[0]
+
+    expect(session?.squashDetails?.sessionKind).toBe('technical')
+    expect(executionModes(session!)).not.toContain('solo')
+  })
+
+  it('sin señal estructural el default es technical y no depende del título', () => {
+    const neutral = repairGeneratedWeek([
+      skeletonSquashSession({ title: 'Squash', objective: 'Sesión de squash.' }),
+    ], contextFor(0))
+    const controlWord = repairGeneratedWeek([
+      skeletonSquashSession({ title: 'Squash', objective: 'Sesión de squash con control.' }),
+    ], contextFor(0))
+
+    expect(squashSessions(neutral)[0]?.squashDetails?.sessionKind)
+      .toBe(squashSessions(controlWord)[0]?.squashDetails?.sessionKind)
+  })
+
+  it('subtype=control sí es señal estructural legítima y sigue produciendo control solo', () => {
+    const result = repairGeneratedWeek([
+      skeletonSquashSession({
+        subtype: 'control',
+        title: 'Squash — Volumen de repetición',
+        objective: 'Series largas de repetición en solitario.',
+      }),
+    ], contextFor(0))
+    const session = squashSessions(result)[0]
+
+    expect(session?.squashDetails?.sessionKind).toBe('control')
+    expect(executionModes(session!).every((mode) => mode === 'solo')).toBe(true)
+  })
+})

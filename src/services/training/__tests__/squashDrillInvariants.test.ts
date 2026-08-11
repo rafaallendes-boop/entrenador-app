@@ -84,9 +84,9 @@ describe('invariantes de la librería de squash', () => {
       }))
       .sort((left, right) => left.id.localeCompare(right.id))
 
-    expect(table).toHaveLength(43)
-    expect(table.filter((row) => row.stableName !== null)).toHaveLength(29)
-    expect(table.filter((row) => row.stableDescription !== null)).toHaveLength(22)
+    expect(table).toHaveLength(49)
+    expect(table.filter((row) => row.stableName !== null)).toHaveLength(35)
+    expect(table.filter((row) => row.stableDescription !== null)).toHaveLength(28)
 
     await expect(`${JSON.stringify(table, null, 2)}\n`)
       .toMatchFileSnapshot('./__snapshots__/squashDrillInvariants.json')

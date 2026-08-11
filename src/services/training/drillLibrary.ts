@@ -19,69 +19,73 @@ export interface SquashDrillDefinition {
   intensity: DrillIntensity
   tags: string[]
   description: string
+  /**
+   * Modalidad de sesión a la que pertenece el drill. Obligatoria y explícita:
+   * antes se deducía de `category` y `tags`, y esa deducción era una segunda
+   * autoridad que podía contradecir a la del contenido.
+   */
+  sessionKind: SquashSessionBlockKind
+  /**
+   * Qué necesita el drill para ejecutarse. Obligatoria y explícita. `either` no
+   * es un valor posible: ver `SquashDrillExecutionMode` en types.
+   */
+  executionMode: SquashDrillExecutionMode
   intent?: DrillIntent
   constraints?: string[]
   progressionLevel?: DrillProgressionLevel
-  executionMode?: SquashDrillExecutionMode
   phaseAppropriate?: DrillPhase[]
   partnerRequired?: boolean
   /** Nombres canónicos anteriores, para datos históricos y búsqueda del catálogo. */
   aliases?: string[]
 }
 
-export function isSquashMatchDrill(value: Pick<SquashDrillDefinition, 'category' | 'tags'>): boolean {
-  return value.category === 'match' || value.tags.includes('match_play')
+/*
+ * Los tres predicados de abajo leen `sessionKind` y nada más.
+ *
+ * Derivaban de `category`/`tags`, y eso los convertía en autoridades paralelas a
+ * la modalidad declarada: un drill podía ser `technical/partner` en el catálogo
+ * y seguir contando como control en `utils/squash` y en `repairWeek`. Los tags
+ * siguen sirviendo para fase, fatiga, búsqueda y scoring; para identidad, no.
+ */
+export function isSquashMatchDrill(value: Pick<SquashDrillDefinition, 'sessionKind'>): boolean {
+  return value.sessionKind === 'match'
 }
 
-export function isControlDrill(value: Pick<SquashDrillDefinition, 'tags'>): boolean {
-  return value.tags.includes('control_session') || value.tags.includes('solo') || value.tags.includes('volume_reps')
+export function isControlDrill(value: Pick<SquashDrillDefinition, 'sessionKind'>): boolean {
+  return value.sessionKind === 'control'
 }
 
-export function isShadowsDrill(value: Pick<SquashDrillDefinition, 'category' | 'tags' | 'focus'>): boolean {
-  return value.category === 'physical' && (
-    value.tags.includes('ghosting') ||
-    value.tags.includes('footwork') ||
-    value.focus.includes('ghosting')
-  )
+export function isShadowsDrill(value: Pick<SquashDrillDefinition, 'sessionKind'>): boolean {
+  return value.sessionKind === 'shadows'
 }
 
+/**
+ * Lee la modalidad declarada. No deduce.
+ *
+ * La versión anterior la inferría de `tags`, y esa inferencia entraba en
+ * conflicto con la del contenido: `control_session` devolvía `either`, que en
+ * `filterByExecutionMode` pasa cualquier filtro, así que drills cooperativos
+ * quedaban disponibles para una sesión en solitario.
+ */
 export function resolveDrillExecutionMode(
-  definition: Pick<SquashDrillDefinition, 'category' | 'tags' | 'executionMode'>,
+  definition: Pick<SquashDrillDefinition, 'executionMode'>,
 ): SquashDrillExecutionMode {
-  if (definition.executionMode) return definition.executionMode
-  if (definition.category === 'match' || definition.tags.includes('match_play')) return 'match'
-  if (
-    definition.tags.includes('solo') ||
-    definition.tags.includes('volume_reps') ||
-    definition.tags.includes('ghosting') ||
-    definition.tags.includes('footwork')
-  ) {
-    return 'solo'
-  }
-  if (
-    definition.tags.includes('conditioned_game') ||
-    definition.tags.includes('multiball') ||
-    definition.tags.includes('practice')
-  ) {
-    return 'partner'
-  }
-  if (definition.tags.includes('control_session')) return 'either'
-  return 'either'
+  return definition.executionMode
 }
 
-export function resolveSquashDrillKind(definition: SquashDrillDefinition): SquashSessionBlockKind {
-  if (isSquashMatchDrill(definition)) return 'match'
-  if (isShadowsDrill(definition)) return 'shadows'
-  if (isControlDrill(definition)) return 'control'
-  return 'technical'
+/** Lee la modalidad declarada. No deduce desde `category` ni desde `tags`. */
+export function resolveSquashDrillKind(
+  definition: Pick<SquashDrillDefinition, 'sessionKind'>,
+): SquashSessionBlockKind {
+  return definition.sessionKind
 }
 
 export function orderSquashDrillsForSession<T extends { name: string }>(
   drills: T[],
   resolveDefinition: (drill: T) => SquashDrillDefinition | undefined = (drill) => findSquashDrillByName(drill.name),
 ): T[] {
-  const regular = drills.filter((drill) => !isSquashMatchDrill(resolveDefinition(drill) ?? { category: 'technical', tags: [] }))
-  const matches = drills.filter((drill) => isSquashMatchDrill(resolveDefinition(drill) ?? { category: 'technical', tags: [] }))
+  const regular = drills.filter((drill) => !isSquashMatchDrill(resolveDefinition(drill) ?? { sessionKind: 'technical' as const }))
+  const matches = drills.filter((drill) => isSquashMatchDrill(resolveDefinition(drill) ?? { sessionKind: 'technical' as const }))
   return [...regular, ...matches]
 }
 
@@ -98,6 +102,8 @@ export function orderSquashBlocksForSession<T extends { kind: SquashSessionBlock
 const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   {
     id: 'drive_parallel_depth',
+    sessionKind: 'technical',
+    executionMode: 'partner',
     name: 'Drives paralelos profundos',
     aliases: ['Tiros paralelos profundos'],
     category: 'technical',
@@ -111,6 +117,8 @@ const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   },
   {
     id: 'drive_crosscourt_length',
+    sessionKind: 'technical',
+    executionMode: 'partner',
     name: 'Drives cruzados profundos',
     aliases: ['Tiros cruzados profundos'],
     category: 'technical',
@@ -123,6 +131,8 @@ const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   },
   {
     id: 'drive_switch_parallel_cross',
+    sessionKind: 'technical',
+    executionMode: 'partner',
     name: 'Alternar drive paralelo y cruzado',
     aliases: ['Cambio de paralelo a cruzado'],
     category: 'technical',
@@ -134,6 +144,8 @@ const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   },
   {
     id: 'boast_to_straight_drive',
+    sessionKind: 'technical',
+    executionMode: 'partner',
     name: 'Boast y salida con drive paralelo',
     aliases: ['Boast y drive paralelo de salida'],
     category: 'technical',
@@ -145,6 +157,8 @@ const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   },
   {
     id: 'drop_and_counter_drop',
+    sessionKind: 'technical',
+    executionMode: 'partner',
     name: 'Drop y contra-drop por ambos lados',
     category: 'technical',
     focus: ['drop', 'touch', 'front_court'],
@@ -155,6 +169,8 @@ const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   },
   {
     id: 'solo_100_drops',
+    sessionKind: 'control',
+    executionMode: 'solo',
     name: 'Drops en solitario — 100 (50 por lado)',
     aliases: ['100 drops en solitario (50 por lado)'],
     category: 'technical',
@@ -168,6 +184,8 @@ const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   },
   {
     id: 'solo_100_mid_court_shots',
+    sessionKind: 'control',
+    executionMode: 'solo',
     name: 'Drives desde media cancha — 100',
     aliases: ['100 drives desde media cancha'],
     category: 'technical',
@@ -181,6 +199,8 @@ const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   },
   {
     id: 'solo_100_service_box',
+    sessionKind: 'control',
+    executionMode: 'solo',
     name: 'Drives al cuadro de saque — 100',
     aliases: ['100 drives al cuadro de saque'],
     category: 'technical',
@@ -194,6 +214,8 @@ const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   },
   {
     id: 'solo_100_parallels_back',
+    sessionKind: 'control',
+    executionMode: 'solo',
     name: 'Drives paralelos desde el fondo — 100',
     aliases: ['100 drives paralelos desde el fondo'],
     category: 'technical',
@@ -207,6 +229,8 @@ const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   },
   {
     id: 'mid_court_drops',
+    sessionKind: 'technical',
+    executionMode: 'partner',
     name: 'Drops desde media cancha',
     category: 'technical',
     focus: ['drop', 'transition', 'touch'],
@@ -219,18 +243,112 @@ const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   },
   {
     id: 'solo_volleys_only',
+    sessionKind: 'control',
+    executionMode: 'solo',
     name: 'Voleas en solitario',
     category: 'technical',
     focus: ['volley', 'control', 'timing'],
     intensity: 'low',
     tags: ['volley', 'control', 'timing', 'solo', 'control_session', 'base', 'build', 'taper'],
-    description: 'Volea sin dejar botar la pelota, manteniéndola frente a ti y por encima del tin (la placa metálica inferior). Objetivo: ganar timing y confianza tomando la pelota temprano. Clave: contactos limpios, cortos y controlados; no conviertas el ejercicio en pegar fuerte.',
+    description: 'Volea paralela sin dejar botar la pelota, manteniéndola frente a ti y por encima del tin (la placa metálica inferior). Objetivo: ganar timing y confianza tomando la pelota temprano. Clave: contactos limpios, cortos y controlados; no conviertas el ejercicio en pegar fuerte.',
     intent: 'control',
     constraints: ['Contactar la pelota delante del cuerpo', 'Completar series de 20 contactos sin perder control'],
     progressionLevel: 1,
   },
   {
+    id: 'solo_100_backhand_parallels',
+    sessionKind: 'control',
+    executionMode: 'solo',
+    name: 'Paralelas de revés — 100',
+    category: 'technical',
+    focus: ['drive', 'parallel', 'backhand', 'length'],
+    intensity: 'low',
+    tags: ['drive', 'parallel', 'backhand', 'length', 'solo', 'volume_reps', 'control_session', 'base', 'build', 'taper'],
+    description: 'Sin rival: juega 100 paralelas de revés desde el fondo, pegadas a la pared lateral. Objetivo: que tu lado menos cómodo sostenga el mismo largo que el drive. Clave: cuenta como buena solo la que pasa el cuadro de saque y queda a menos de una raqueta de la pared.',
+    intent: 'consistency',
+    constraints: ['La pelota debe llegar detrás del cuadro de saque', 'Mantener el mismo contacto durante toda la serie'],
+    progressionLevel: 1,
+    phaseAppropriate: ['base', 'build', 'peak', 'taper'],
+  },
+  {
+    id: 'solo_100_forehand_parallels',
+    sessionKind: 'control',
+    executionMode: 'solo',
+    name: 'Paralelas de derecha — 100',
+    category: 'technical',
+    focus: ['drive', 'parallel', 'forehand', 'length'],
+    intensity: 'low',
+    tags: ['drive', 'parallel', 'forehand', 'length', 'solo', 'volume_reps', 'control_session', 'base', 'build', 'taper'],
+    description: 'Sin rival: juega 100 paralelas de derecha desde el fondo, pegadas a la pared lateral. Objetivo: sostener el mismo largo lado a lado sin que la derecha se acelere. Clave: cuenta como buena solo la que pasa el cuadro de saque y queda a menos de una raqueta de la pared.',
+    intent: 'consistency',
+    constraints: ['La pelota debe llegar detrás del cuadro de saque', 'Mantener el mismo contacto durante toda la serie'],
+    progressionLevel: 1,
+    phaseAppropriate: ['base', 'build', 'peak', 'taper'],
+  },
+  {
+    id: 'solo_parallel_crosscourt_cycles',
+    sessionKind: 'control',
+    executionMode: 'solo',
+    name: 'Paralela de fondo y cruzada — 100 ciclos',
+    category: 'technical',
+    focus: ['drive', 'parallel', 'crosscourt', 'length'],
+    intensity: 'moderate',
+    tags: ['drive', 'parallel', 'crosscourt', 'length', 'solo', 'volume_reps', 'control_session', 'base', 'build', 'taper'],
+    description: 'Sin rival: juega una paralela profunda y, cuando la pelota vuelve, una cruzada al fondo contrario; repite el ciclo 100 veces. Objetivo: sostener largo cambiando de dirección, que en solitario solo se entrena alternando —una cruzada suelta no te vuelve a la mano—. Clave: la paralela te ordena la posición y la cruzada tiene que llegar detrás del cuadro de saque.',
+    intent: 'control',
+    constraints: ['Alternar siempre paralela y cruzada', 'Las dos direcciones deben terminar detrás del cuadro de saque'],
+    progressionLevel: 2,
+    phaseAppropriate: ['base', 'build', 'peak', 'taper'],
+  },
+  {
+    id: 'solo_volleys_straight_cross',
+    sessionKind: 'control',
+    executionMode: 'solo',
+    name: 'Volea paralela y volea cruzada — 100',
+    category: 'technical',
+    focus: ['volley', 'parallel', 'crosscourt', 'timing'],
+    intensity: 'moderate',
+    tags: ['volley', 'parallel', 'crosscourt', 'timing', 'control', 'solo', 'volume_reps', 'control_session', 'base', 'build', 'taper'],
+    description: 'Sin rival: alterna volea paralela y volea cruzada, 50 de cada una. Objetivo: controlar la dirección de la volea y no solo el contacto. Clave: es exigente; juega la cruzada como globo alto para que la pelota vuelva jugable, y si pierdes el ritmo vuelve a voleas paralelas.',
+    intent: 'control',
+    constraints: ['Jugar la cruzada alta para conservar el ciclo', 'Volver a volea paralela si se pierde el control'],
+    progressionLevel: 3,
+    phaseAppropriate: ['base', 'build', 'peak', 'taper'],
+  },
+  {
+    id: 'solo_boast_straight_drive_cycles',
+    sessionKind: 'control',
+    executionMode: 'solo',
+    name: 'Boast y paralela en solitario — 50 ciclos',
+    category: 'technical',
+    focus: ['boast', 'drive', 'parallel', 'movement'],
+    intensity: 'high',
+    tags: ['boast', 'drive', 'parallel', 'movement', 'solo', 'volume_reps', 'control_session', 'base', 'build'],
+    description: 'Sin rival: juega un boast —el golpe que va primero a la pared lateral—, corre al frente y sal con una paralela profunda; vuelve atrás y repite. Objetivo: unir el golpe de salida del rincón con el desplazamiento que de verdad exige. Clave: es exigente de piernas; si la paralela deja de llegar al fondo, corta la serie en vez de bajar la calidad.',
+    intent: 'consistency',
+    constraints: ['La paralela de salida debe llegar al fondo', 'Cortar la serie si se pierde la calidad del golpe'],
+    progressionLevel: 3,
+    phaseAppropriate: ['base', 'build', 'peak'],
+  },
+  {
+    id: 'solo_three_length_one_kill',
+    sessionKind: 'control',
+    executionMode: 'solo',
+    name: '3 paralelas de fondo + kill paralelo — 25 ciclos',
+    category: 'technical',
+    focus: ['drive', 'parallel', 'length', 'finish'],
+    intensity: 'moderate',
+    tags: ['drive', 'parallel', 'length', 'finish', 'solo', 'volume_reps', 'control_session', 'base', 'build'],
+    description: 'Sin rival: juega tres paralelas profundas seguidas y cierra la cuarta con un kill paralelo, bajo y rápido; repite 25 ciclos. Objetivo: entrenar la decisión de cerrar después de construir, no antes. Clave: las tres primeras tienen que llegar al fondo; si alguna queda corta, el ciclo no cuenta.',
+    intent: 'finishing',
+    constraints: ['Las tres paralelas previas deben llegar al fondo', 'El kill se juega paralelo y bajo, no cruzado'],
+    progressionLevel: 2,
+    phaseAppropriate: ['base', 'build', 'peak'],
+  },
+  {
     id: 'volley_control_midcourt',
+    sessionKind: 'technical',
+    executionMode: 'partner',
     name: 'Volea de control desde media cancha',
     category: 'technical',
     focus: ['volley', 'control', 'midcourt'],
@@ -241,6 +359,8 @@ const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   },
   {
     id: 'volley_pressure_front_wall',
+    sessionKind: 'technical',
+    executionMode: 'partner',
     name: 'Volea ofensiva desde media cancha',
     category: 'technical',
     focus: ['volley', 'pressure', 'attack'],
@@ -251,6 +371,8 @@ const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   },
   {
     id: 'volley_t_recover',
+    sessionKind: 'technical',
+    executionMode: 'partner',
     name: 'Volea y vuelta a la T',
     category: 'tactical',
     focus: ['volley', 't_control', 'recovery'],
@@ -263,6 +385,8 @@ const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   },
   {
     id: 't_control_long_short',
+    sessionKind: 'technical',
+    executionMode: 'partner',
     name: 'Patrón largo-corto desde la T',
     category: 'tactical',
     focus: ['t_control', 'long_short', 'pressure'],
@@ -273,6 +397,8 @@ const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   },
   {
     id: 'attack_from_t_first_ball',
+    sessionKind: 'technical',
+    executionMode: 'partner',
     name: 'Atacar la primera pelota cómoda desde la T',
     category: 'tactical',
     focus: ['t_control', 'attack', 'initiative'],
@@ -283,6 +409,8 @@ const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   },
   {
     id: 'pressure_back_corners',
+    sessionKind: 'technical',
+    executionMode: 'partner',
     name: 'Presión a esquinas de fondo',
     category: 'tactical',
     focus: ['pressure', 'back_court', 'length'],
@@ -293,6 +421,8 @@ const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   },
   {
     id: 'pressure_back_court',
+    sessionKind: 'technical',
+    executionMode: 'partner',
     name: 'Juego condicionado solo al fondo (intenso)',
     category: 'tactical',
     focus: ['conditioned_game', 'pressure', 'back_court'],
@@ -305,6 +435,8 @@ const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   },
   {
     id: 'pressure_three_quarters_court',
+    sessionKind: 'technical',
+    executionMode: 'partner',
     name: 'Ataque antes del fondo',
     aliases: ['Ataque desde tres cuartos de cancha'],
     category: 'tactical',
@@ -318,6 +450,8 @@ const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   },
   {
     id: 'conditioned_parallel_only',
+    sessionKind: 'technical',
+    executionMode: 'partner',
     name: 'Juego condicionado solo paralelo',
     category: 'tactical',
     focus: ['conditioned_game', 'parallel', 'order'],
@@ -328,6 +462,8 @@ const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   },
   {
     id: 'conditioned_long_only',
+    sessionKind: 'technical',
+    executionMode: 'partner',
     name: 'Juego condicionado solo al fondo',
     category: 'tactical',
     focus: ['conditioned_game', 'length', 'pressure'],
@@ -340,6 +476,8 @@ const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   },
   {
     id: 'conditioned_no_two_bounces',
+    sessionKind: 'technical',
+    executionMode: 'partner',
     name: 'Juego condicionado en media cancha',
     category: 'tactical',
     focus: ['conditioned_game', 'intensity', 'speed'],
@@ -351,6 +489,8 @@ const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   },
   {
     id: 'conditioned_forbidden_zone',
+    sessionKind: 'technical',
+    executionMode: 'partner',
     name: 'Juego condicionado con zona prohibida',
     category: 'tactical',
     focus: ['conditioned_game', 'targets', 'decision_making'],
@@ -362,6 +502,8 @@ const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   },
   {
     id: 'conditioned_boast_start',
+    sessionKind: 'technical',
+    executionMode: 'partner',
     name: 'Juego condicionado: el punto abre con boast',
     aliases: ['Punto que inicia con pared lateral'],
     category: 'tactical',
@@ -373,6 +515,8 @@ const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   },
   {
     id: 'front_back_transition',
+    sessionKind: 'technical',
+    executionMode: 'partner',
     name: 'Transición frente-fondo con vuelta a la T',
     category: 'tactical',
     focus: ['transition', 'recovery', 'court_coverage'],
@@ -383,6 +527,11 @@ const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   },
   {
     id: 'ghosting_4_corners',
+    sessionKind: 'shadows',
+    executionMode: 'solo',
+    // Movimiento corto: sirve como activacion en taper, a diferencia del
+    // acondicionamiento aerobico, que no entra en semana de competencia.
+    phaseAppropriate: ['base', 'build', 'peak', 'taper'],
     name: 'Ghosting a cuatro esquinas',
     category: 'physical',
     focus: ['ghosting', 'movement', 'conditioning'],
@@ -395,6 +544,11 @@ const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   },
   {
     id: 'ghosting_6_points',
+    sessionKind: 'shadows',
+    executionMode: 'solo',
+    // Movimiento corto: sirve como activacion en taper, a diferencia del
+    // acondicionamiento aerobico, que no entra en semana de competencia.
+    phaseAppropriate: ['base', 'build', 'peak', 'taper'],
     name: 'Ghosting a seis puntos',
     category: 'physical',
     focus: ['ghosting', 'movement', 'speed'],
@@ -405,6 +559,11 @@ const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   },
   {
     id: 'split_step_t_recovery',
+    sessionKind: 'shadows',
+    executionMode: 'solo',
+    // Movimiento corto: sirve como activacion en taper, a diferencia del
+    // acondicionamiento aerobico, que no entra en semana de competencia.
+    phaseAppropriate: ['base', 'build', 'peak', 'taper'],
     name: 'Split-step y vuelta a la T',
     category: 'physical',
     focus: ['footwork', 't_control', 'reaction'],
@@ -416,6 +575,8 @@ const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   },
   {
     id: 'rsa_short_bursts',
+    sessionKind: 'shadows',
+    executionMode: 'solo',
     name: 'Series cortas de velocidad en cancha (10-15 s)',
     aliases: ['RSA – sprints repetidos de 10-15 segundos'],
     category: 'physical',
@@ -427,6 +588,8 @@ const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   },
   {
     id: 'multiball_pressure_finishes',
+    sessionKind: 'technical',
+    executionMode: 'partner',
     name: 'Multibola para presionar y cerrar',
     category: 'physical',
     focus: ['multiball', 'pressure', 'finish'],
@@ -438,6 +601,8 @@ const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   },
   {
     id: 'defensive_high_lob_recovery',
+    sessionKind: 'technical',
+    executionMode: 'partner',
     name: 'Lob defensivo alto y recuperación',
     category: 'technical',
     focus: ['lob', 'recovery', 'back_court'],
@@ -450,6 +615,8 @@ const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   },
   {
     id: 'attacking_lob_change_of_pace',
+    sessionKind: 'technical',
+    executionMode: 'partner',
     name: 'Lob ofensivo como cambio de ritmo',
     category: 'technical',
     focus: ['lob', 'attack', 'variation'],
@@ -462,6 +629,8 @@ const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   },
   {
     id: 'attacking_boast_from_mid_court',
+    sessionKind: 'technical',
+    executionMode: 'partner',
     name: 'Boast ofensivo desde media cancha',
     category: 'technical',
     focus: ['boast', 'attack', 'mid_court'],
@@ -474,6 +643,8 @@ const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   },
   {
     id: 'attacking_boast_from_back_court',
+    sessionKind: 'technical',
+    executionMode: 'partner',
     name: 'Boast ofensivo desde el fondo',
     category: 'technical',
     focus: ['boast', 'attack', 'back_court'],
@@ -486,6 +657,8 @@ const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   },
   {
     id: 'front_court_angle_finish',
+    sessionKind: 'technical',
+    executionMode: 'partner',
     name: 'Definición con ángulo en zona delantera',
     category: 'technical',
     focus: ['angle', 'front_court', 'finish'],
@@ -498,6 +671,8 @@ const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   },
   {
     id: 'nick_pressure_closure',
+    sessionKind: 'technical',
+    executionMode: 'partner',
     name: 'Nick: cierre a la unión baja',
     category: 'technical',
     focus: ['nick', 'finish', 'precision'],
@@ -510,6 +685,8 @@ const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   },
   {
     id: 'continuous_squash_movement_base',
+    sessionKind: 'shadows',
+    executionMode: 'solo',
     name: 'Movimiento continuo en cancha a ritmo sostenido',
     aliases: ['Movimiento continuo de base aeróbica'],
     category: 'physical',
@@ -523,6 +700,8 @@ const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   },
   {
     id: 'extensive_aerobic_movement_intervals',
+    sessionKind: 'shadows',
+    executionMode: 'solo',
     name: 'Intervalos largos de movimiento en cancha',
     aliases: ['Intervalos aeróbicos en cancha'],
     category: 'physical',
@@ -536,6 +715,8 @@ const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   },
   {
     id: 'technical_recovery_length',
+    sessionKind: 'technical',
+    executionMode: 'partner',
     name: 'Peloteo profundo suave de recuperación',
     aliases: ['Largo controlado de baja carga'],
     category: 'technical',
@@ -547,6 +728,8 @@ const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   },
   {
     id: 'pre_match_activation_timing',
+    sessionKind: 'control',
+    executionMode: 'solo',
     name: 'Activación pre-partido de manos y pies',
     category: 'match',
     focus: ['activation', 'timing', 'confidence'],
@@ -557,6 +740,8 @@ const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   },
   {
     id: 'match_sim_points_short_sets',
+    sessionKind: 'match',
+    executionMode: 'match',
     name: 'Game a 11 con marcador real',
     category: 'match',
     focus: ['match_play', 'decision_making', 'pressure'],
@@ -567,6 +752,8 @@ const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   },
   {
     id: 'practice_match_five_games',
+    sessionKind: 'match',
+    executionMode: 'match',
     name: 'Partido de entrenamiento al mejor de 5 juegos',
     category: 'match',
     focus: ['match_play', 'decision_making', 'tactical_application'],
@@ -577,6 +764,8 @@ const RAW_SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [
   },
   {
     id: 'practice_match_best_of_3',
+    sessionKind: 'match',
+    executionMode: 'match',
     name: 'Partido de entrenamiento al mejor de 3 juegos',
     category: 'match',
     focus: ['match_play', 'pressure', 'competitive_rhythm'],
@@ -600,13 +789,15 @@ function inferDrillPhaseAppropriate(drill: SquashDrillDefinition): DrillPhase[] 
   return ['base', 'build']
 }
 
+/**
+ * Se deriva de `executionMode`, no de los tags.
+ *
+ * Derivarlo de tags lo convertía en una tercera autoridad de modalidad, capaz
+ * de contradecir a la declarada. Como consecuencia el campo ya no puede
+ * discrepar del catálogo, y queda sólo por compatibilidad de lectura.
+ */
 function inferPartnerRequired(drill: SquashDrillDefinition): boolean {
-  if (drill.partnerRequired != null) return drill.partnerRequired
-  if (drill.category === 'match') return true
-  if (drill.tags.includes('solo') || drill.tags.includes('ghosting') || drill.tags.includes('footwork')) return false
-  if (drill.tags.includes('practice') || drill.tags.includes('match_play') || drill.tags.includes('multiball')) return true
-  if (drill.tags.includes('conditioned_game')) return true
-  return false
+  return drill.executionMode === 'partner' || drill.executionMode === 'match'
 }
 
 function withDrillPhase2Metadata(drill: SquashDrillDefinition): SquashDrillDefinition {

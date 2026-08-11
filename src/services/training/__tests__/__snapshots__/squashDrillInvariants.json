@@ -21,8 +21,8 @@
       "build",
       "peak"
     ],
-    "partnerRequired": false,
-    "executionMode": "either",
+    "partnerRequired": true,
+    "executionMode": "partner",
     "family": "t_control_patterns",
     "blockKind": "technical",
     "stableName": "Atacar la primera pelota cómoda desde la T",
@@ -55,8 +55,8 @@
       "build",
       "peak"
     ],
-    "partnerRequired": false,
-    "executionMode": "either",
+    "partnerRequired": true,
+    "executionMode": "partner",
     "family": "pressure_back_court",
     "blockKind": "technical",
     "stableName": "Boast ofensivo desde el fondo",
@@ -89,8 +89,8 @@
       "build",
       "peak"
     ],
-    "partnerRequired": false,
-    "executionMode": "either",
+    "partnerRequired": true,
+    "executionMode": "partner",
     "family": "pressure_back_court",
     "blockKind": "technical",
     "stableName": "Boast ofensivo desde media cancha",
@@ -124,8 +124,8 @@
       "peak",
       "taper"
     ],
-    "partnerRequired": false,
-    "executionMode": "either",
+    "partnerRequired": true,
+    "executionMode": "partner",
     "family": "technical_general",
     "blockKind": "technical",
     "stableName": "Lob ofensivo como cambio de ritmo",
@@ -155,8 +155,8 @@
       "transition",
       "race"
     ],
-    "partnerRequired": false,
-    "executionMode": "either",
+    "partnerRequired": true,
+    "executionMode": "partner",
     "family": "drive_patterns",
     "blockKind": "technical",
     "stableName": null,
@@ -343,9 +343,9 @@
       "peak"
     ],
     "partnerRequired": false,
-    "executionMode": "either",
+    "executionMode": "solo",
     "family": "physical_general",
-    "blockKind": "technical",
+    "blockKind": "shadows",
     "stableName": null,
     "stableDescription": null
   },
@@ -378,8 +378,8 @@
       "transition",
       "race"
     ],
-    "partnerRequired": false,
-    "executionMode": "either",
+    "partnerRequired": true,
+    "executionMode": "partner",
     "family": "recovery_length",
     "blockKind": "technical",
     "stableName": "Lob defensivo alto y recuperación",
@@ -411,8 +411,8 @@
       "peak",
       "taper"
     ],
-    "partnerRequired": false,
-    "executionMode": "either",
+    "partnerRequired": true,
+    "executionMode": "partner",
     "family": "drive_patterns",
     "blockKind": "technical",
     "stableName": null,
@@ -446,8 +446,8 @@
       "peak",
       "taper"
     ],
-    "partnerRequired": false,
-    "executionMode": "either",
+    "partnerRequired": true,
+    "executionMode": "partner",
     "family": "drive_patterns",
     "blockKind": "technical",
     "stableName": null,
@@ -478,8 +478,8 @@
       "peak",
       "taper"
     ],
-    "partnerRequired": false,
-    "executionMode": "either",
+    "partnerRequired": true,
+    "executionMode": "partner",
     "family": "drive_patterns",
     "blockKind": "technical",
     "stableName": null,
@@ -510,10 +510,10 @@
       "transition",
       "race"
     ],
-    "partnerRequired": false,
-    "executionMode": "either",
+    "partnerRequired": true,
+    "executionMode": "partner",
     "family": "front_court_touch",
-    "blockKind": "control",
+    "blockKind": "technical",
     "stableName": "Drop y contra-drop por ambos lados",
     "stableDescription": null
   },
@@ -545,9 +545,9 @@
       "peak"
     ],
     "partnerRequired": false,
-    "executionMode": "either",
+    "executionMode": "solo",
     "family": "physical_general",
-    "blockKind": "technical",
+    "blockKind": "shadows",
     "stableName": null,
     "stableDescription": "Haz intervalos largos moviéndote entre la T, el frente y el fondo a ritmo controlado. Objetivo: sostener movimiento específico durante más tiempo sin perder técnica. Clave: termina cada bloque con la misma calidad de pasos con la que empezaste."
   },
@@ -573,8 +573,8 @@
       "build",
       "peak"
     ],
-    "partnerRequired": false,
-    "executionMode": "either",
+    "partnerRequired": true,
+    "executionMode": "partner",
     "family": "transition_patterns",
     "blockKind": "technical",
     "stableName": "Transición frente-fondo con vuelta a la T",
@@ -608,8 +608,8 @@
       "peak",
       "taper"
     ],
-    "partnerRequired": false,
-    "executionMode": "either",
+    "partnerRequired": true,
+    "executionMode": "partner",
     "family": "finishing",
     "blockKind": "technical",
     "stableName": "Definición con ángulo en zona delantera",
@@ -639,7 +639,8 @@
     "phaseAppropriate": [
       "base",
       "build",
-      "peak"
+      "peak",
+      "taper"
     ],
     "partnerRequired": false,
     "executionMode": "solo",
@@ -670,7 +671,8 @@
     "phaseAppropriate": [
       "base",
       "build",
-      "peak"
+      "peak",
+      "taper"
     ],
     "partnerRequired": false,
     "executionMode": "solo",
@@ -740,10 +742,10 @@
       "transition",
       "race"
     ],
-    "partnerRequired": false,
-    "executionMode": "either",
+    "partnerRequired": true,
+    "executionMode": "partner",
     "family": "front_court_touch",
-    "blockKind": "control",
+    "blockKind": "technical",
     "stableName": "Drops desde media cancha",
     "stableDescription": null
   },
@@ -804,8 +806,8 @@
       "build",
       "peak"
     ],
-    "partnerRequired": false,
-    "executionMode": "either",
+    "partnerRequired": true,
+    "executionMode": "partner",
     "family": "finishing",
     "blockKind": "technical",
     "stableName": "Nick: cierre a la unión baja",
@@ -894,10 +896,10 @@
       "taper",
       "race"
     ],
-    "partnerRequired": true,
-    "executionMode": "match",
+    "partnerRequired": false,
+    "executionMode": "solo",
     "family": "pre_match_activation",
-    "blockKind": "match",
+    "blockKind": "control",
     "stableName": "Activación pre-partido de manos y pies",
     "stableDescription": "Antes de competir, combina voleas suaves, paralelas profundas y salidas cortas desde la T. Objetivo: llegar con manos finas y piernas despiertas, no cansado. Clave: termina con ganas de jugar más; si quedas pesado, fue demasiado."
   },
@@ -923,8 +925,8 @@
       "build",
       "peak"
     ],
-    "partnerRequired": false,
-    "executionMode": "either",
+    "partnerRequired": true,
+    "executionMode": "partner",
     "family": "pressure_back_court",
     "blockKind": "technical",
     "stableName": "Presión a esquinas de fondo",
@@ -1021,11 +1023,52 @@
       "peak"
     ],
     "partnerRequired": false,
-    "executionMode": "either",
+    "executionMode": "solo",
     "family": "rsa",
-    "blockKind": "technical",
+    "blockKind": "shadows",
     "stableName": null,
     "stableDescription": null
+  },
+  {
+    "id": "solo_100_backhand_parallels",
+    "category": "technical",
+    "focus": [
+      "drive",
+      "parallel",
+      "backhand",
+      "length"
+    ],
+    "tags": [
+      "drive",
+      "parallel",
+      "backhand",
+      "length",
+      "solo",
+      "volume_reps",
+      "control_session",
+      "base",
+      "build",
+      "taper"
+    ],
+    "intensity": "low",
+    "intent": "consistency",
+    "constraints": [
+      "La pelota debe llegar detrás del cuadro de saque",
+      "Mantener el mismo contacto durante toda la serie"
+    ],
+    "progressionLevel": 1,
+    "phaseAppropriate": [
+      "base",
+      "build",
+      "peak",
+      "taper"
+    ],
+    "partnerRequired": false,
+    "executionMode": "solo",
+    "family": "solo_control_volume",
+    "blockKind": "control",
+    "stableName": "Paralelas de revés — 100",
+    "stableDescription": "Sin rival: juega 100 paralelas de revés desde el fondo, pegadas a la pared lateral. Objetivo: que tu lado menos cómodo sostenga el mismo largo que el drive. Clave: cuenta como buena solo la que pasa el cuadro de saque y queda a menos de una raqueta de la pared."
   },
   {
     "id": "solo_100_drops",
@@ -1065,6 +1108,47 @@
     "blockKind": "control",
     "stableName": null,
     "stableDescription": null
+  },
+  {
+    "id": "solo_100_forehand_parallels",
+    "category": "technical",
+    "focus": [
+      "drive",
+      "parallel",
+      "forehand",
+      "length"
+    ],
+    "tags": [
+      "drive",
+      "parallel",
+      "forehand",
+      "length",
+      "solo",
+      "volume_reps",
+      "control_session",
+      "base",
+      "build",
+      "taper"
+    ],
+    "intensity": "low",
+    "intent": "consistency",
+    "constraints": [
+      "La pelota debe llegar detrás del cuadro de saque",
+      "Mantener el mismo contacto durante toda la serie"
+    ],
+    "progressionLevel": 1,
+    "phaseAppropriate": [
+      "base",
+      "build",
+      "peak",
+      "taper"
+    ],
+    "partnerRequired": false,
+    "executionMode": "solo",
+    "family": "solo_control_volume",
+    "blockKind": "control",
+    "stableName": "Paralelas de derecha — 100",
+    "stableDescription": "Sin rival: juega 100 paralelas de derecha desde el fondo, pegadas a la pared lateral. Objetivo: sostener el mismo largo lado a lado sin que la derecha se acelere. Clave: cuenta como buena solo la que pasa el cuadro de saque y queda a menos de una raqueta de la pared."
   },
   {
     "id": "solo_100_mid_court_shots",
@@ -1184,6 +1268,125 @@
     "stableDescription": "Juega 100 drives hacia un objetivo visible dentro del cuadro de saque. Objetivo: darle una referencia concreta a tu profundidad. Clave: marca una zona con cono/cinta y cuenta como buena solo la pelota que cae o pasa por ahí; 50 repeticiones por lado."
   },
   {
+    "id": "solo_boast_straight_drive_cycles",
+    "category": "technical",
+    "focus": [
+      "boast",
+      "drive",
+      "parallel",
+      "movement"
+    ],
+    "tags": [
+      "boast",
+      "drive",
+      "parallel",
+      "movement",
+      "solo",
+      "volume_reps",
+      "control_session",
+      "base",
+      "build"
+    ],
+    "intensity": "high",
+    "intent": "consistency",
+    "constraints": [
+      "La paralela de salida debe llegar al fondo",
+      "Cortar la serie si se pierde la calidad del golpe"
+    ],
+    "progressionLevel": 3,
+    "phaseAppropriate": [
+      "base",
+      "build",
+      "peak"
+    ],
+    "partnerRequired": false,
+    "executionMode": "solo",
+    "family": "solo_control_volume",
+    "blockKind": "control",
+    "stableName": "Boast y paralela en solitario — 50 ciclos",
+    "stableDescription": "Sin rival: juega un boast —el golpe que va primero a la pared lateral—, corre al frente y sal con una paralela profunda; vuelve atrás y repite. Objetivo: unir el golpe de salida del rincón con el desplazamiento que de verdad exige. Clave: es exigente de piernas; si la paralela deja de llegar al fondo, corta la serie en vez de bajar la calidad."
+  },
+  {
+    "id": "solo_parallel_crosscourt_cycles",
+    "category": "technical",
+    "focus": [
+      "drive",
+      "parallel",
+      "crosscourt",
+      "length"
+    ],
+    "tags": [
+      "drive",
+      "parallel",
+      "crosscourt",
+      "length",
+      "solo",
+      "volume_reps",
+      "control_session",
+      "base",
+      "build",
+      "taper"
+    ],
+    "intensity": "moderate",
+    "intent": "control",
+    "constraints": [
+      "Alternar siempre paralela y cruzada",
+      "Las dos direcciones deben terminar detrás del cuadro de saque"
+    ],
+    "progressionLevel": 2,
+    "phaseAppropriate": [
+      "base",
+      "build",
+      "peak",
+      "taper"
+    ],
+    "partnerRequired": false,
+    "executionMode": "solo",
+    "family": "solo_control_volume",
+    "blockKind": "control",
+    "stableName": "Paralela de fondo y cruzada — 100 ciclos",
+    "stableDescription": "Sin rival: juega una paralela profunda y, cuando la pelota vuelve, una cruzada al fondo contrario; repite el ciclo 100 veces. Objetivo: sostener largo cambiando de dirección, que en solitario solo se entrena alternando —una cruzada suelta no te vuelve a la mano—. Clave: la paralela te ordena la posición y la cruzada tiene que llegar detrás del cuadro de saque."
+  },
+  {
+    "id": "solo_three_length_one_kill",
+    "category": "technical",
+    "focus": [
+      "drive",
+      "parallel",
+      "length",
+      "finish"
+    ],
+    "tags": [
+      "drive",
+      "parallel",
+      "length",
+      "finish",
+      "solo",
+      "volume_reps",
+      "control_session",
+      "base",
+      "build"
+    ],
+    "intensity": "moderate",
+    "intent": "finishing",
+    "constraints": [
+      "Las tres paralelas previas deben llegar al fondo",
+      "El kill se juega paralelo y bajo, no cruzado"
+    ],
+    "progressionLevel": 2,
+    "phaseAppropriate": [
+      "base",
+      "build",
+      "peak"
+    ],
+    "partnerRequired": false,
+    "executionMode": "solo",
+    "family": "solo_control_volume",
+    "blockKind": "control",
+    "stableName": "3 paralelas de fondo + kill paralelo — 25 ciclos",
+    "stableDescription": "Sin rival: juega tres paralelas profundas seguidas y cierra la cuarta con un kill paralelo, bajo y rápido; repite 25 ciclos. Objetivo: entrenar la decisión de cerrar después de construir, no antes. Clave: las tres primeras tienen que llegar al fondo; si alguna queda corta, el ciclo no cuenta."
+  },
+  {
     "id": "solo_volleys_only",
     "category": "technical",
     "focus": [
@@ -1222,6 +1425,48 @@
     "stableDescription": null
   },
   {
+    "id": "solo_volleys_straight_cross",
+    "category": "technical",
+    "focus": [
+      "volley",
+      "parallel",
+      "crosscourt",
+      "timing"
+    ],
+    "tags": [
+      "volley",
+      "parallel",
+      "crosscourt",
+      "timing",
+      "control",
+      "solo",
+      "volume_reps",
+      "control_session",
+      "base",
+      "build",
+      "taper"
+    ],
+    "intensity": "moderate",
+    "intent": "control",
+    "constraints": [
+      "Jugar la cruzada alta para conservar el ciclo",
+      "Volver a volea paralela si se pierde el control"
+    ],
+    "progressionLevel": 3,
+    "phaseAppropriate": [
+      "base",
+      "build",
+      "peak",
+      "taper"
+    ],
+    "partnerRequired": false,
+    "executionMode": "solo",
+    "family": "solo_control_volume",
+    "blockKind": "control",
+    "stableName": "Volea paralela y volea cruzada — 100",
+    "stableDescription": "Sin rival: alterna volea paralela y volea cruzada, 50 de cada una. Objetivo: controlar la dirección de la volea y no solo el contacto. Clave: es exigente; juega la cruzada como globo alto para que la pelota vuelva jugable, y si pierdes el ritmo vuelve a voleas paralelas."
+  },
+  {
     "id": "split_step_t_recovery",
     "category": "physical",
     "focus": [
@@ -1242,7 +1487,8 @@
     "phaseAppropriate": [
       "base",
       "build",
-      "peak"
+      "peak",
+      "taper"
     ],
     "partnerRequired": false,
     "executionMode": "solo",
@@ -1307,10 +1553,10 @@
       "transition",
       "race"
     ],
-    "partnerRequired": false,
-    "executionMode": "either",
+    "partnerRequired": true,
+    "executionMode": "partner",
     "family": "recovery_length",
-    "blockKind": "control",
+    "blockKind": "technical",
     "stableName": null,
     "stableDescription": "Pelotea profundo a ritmo suave, priorizando altura, largo y contacto limpio. Objetivo: recuperar sensaciones y soltar el cuerpo sin sumar fatiga. Clave: si sube la intensidad o empiezas a competir el punto, vuelve a bajar el ritmo."
   },
@@ -1339,8 +1585,8 @@
       "peak",
       "taper"
     ],
-    "partnerRequired": false,
-    "executionMode": "either",
+    "partnerRequired": true,
+    "executionMode": "partner",
     "family": "volley_patterns",
     "blockKind": "technical",
     "stableName": "Volea de control desde media cancha",
@@ -1369,8 +1615,8 @@
       "build",
       "peak"
     ],
-    "partnerRequired": false,
-    "executionMode": "either",
+    "partnerRequired": true,
+    "executionMode": "partner",
     "family": "volley_patterns",
     "blockKind": "technical",
     "stableName": "Volea ofensiva desde media cancha",
@@ -1400,8 +1646,8 @@
       "build",
       "peak"
     ],
-    "partnerRequired": false,
-    "executionMode": "either",
+    "partnerRequired": true,
+    "executionMode": "partner",
     "family": "volley_patterns",
     "blockKind": "technical",
     "stableName": "Volea y vuelta a la T",

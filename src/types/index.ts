@@ -263,13 +263,32 @@ export type SquashTrainingFocus = 'technical' | 'tactical' | 'physical' | 'condi
 export type SquashSessionMode = 'drill_session' | 'practice_match' | 'competition_match'
 export type SquashSessionKind = 'technical' | 'control' | 'shadows' | 'match' | 'mixed'
 export type SquashSessionBlockKind = Exclude<SquashSessionKind, 'mixed'>
-export type SquashDrillExecutionMode = 'solo' | 'partner' | 'either' | 'match'
+/**
+ * Modalidad de ejecución de una definición del catálogo.
+ *
+ * `either` NO está: era la puerta por la que volvía la ambigüedad que separa
+ * control (solitario) de técnico (con partner). Una definición siempre declara
+ * qué necesita. La disponibilidad del atleta —que sí admite "indistinto"— es
+ * `SquashPartnerAvailability`, un tipo distinto.
+ */
+export type SquashDrillExecutionMode = 'solo' | 'partner' | 'match'
+
+/**
+ * Superset tolerante para deserializar contenido anterior a la separación de
+ * modalidad. Sesiones, backups y plantillas persistidas pueden traer `either`;
+ * se acepta en lectura y se normaliza contra el catálogo. Nunca se escribe.
+ */
+export type SquashDrillExecutionModeLegacy = SquashDrillExecutionMode | 'either'
 
 export interface SquashDrill {
   name: string
   durationMin?: number
   notes?: string
-  executionMode?: SquashDrillExecutionMode
+  /**
+   * Tolera `either` porque hay sesiones persistidas que lo traen. La autoridad
+   * de modalidad es el catálogo, no esta copia: ver `resolveDrillExecutionMode`.
+   */
+  executionMode?: SquashDrillExecutionModeLegacy
 }
 
 export interface SquashSessionBlock {

@@ -1,4 +1,4 @@
-import type { CoachAction, CoachActionType, CoachExerciseProposal, CoachSessionProposal, CyclingDetails, GeneratedProtocol, MobilityDetails, RunningIntervalStructure, RunningType, SessionType, SquashDetails, SquashDrill, SquashDrillExecutionMode, SquashSessionBlock, SquashSessionBlockKind, SquashSessionKind, SquashSessionMode, SquashSubtype, SquashTrainingFocus, TimeBlock, WarmupSet } from '../../types'
+import type { CoachAction, CoachActionType, CoachExerciseProposal, CoachSessionProposal, CyclingDetails, GeneratedProtocol, MobilityDetails, RunningIntervalStructure, RunningType, SessionType, SquashDetails, SquashDrill, SquashDrillExecutionMode, SquashDrillExecutionModeLegacy, SquashSessionBlock, SquashSessionBlockKind, SquashSessionKind, SquashSessionMode, SquashSubtype, SquashTrainingFocus, TimeBlock, WarmupSet } from '../../types'
 import type { AIRawResponse, CoachNormalizedResponse, CreateWeekNormalizationDiagnostic } from './types'
 import {
   findSquashDrillByName,
@@ -35,7 +35,9 @@ const VALID_RUNNING_TYPES = new Set<RunningType>(['z2', 'tempo', 'intervals', 'l
 const VALID_SQUASH_SESSION_MODES = new Set<SquashSessionMode>(['drill_session', 'practice_match', 'competition_match'])
 const VALID_SQUASH_SESSION_KINDS = new Set<SquashSessionKind>(['technical', 'control', 'shadows', 'match', 'mixed'])
 const VALID_SQUASH_BLOCK_KINDS = new Set<SquashSessionBlockKind>(['technical', 'control', 'shadows', 'match'])
-const VALID_SQUASH_EXECUTION_MODES = new Set<SquashDrillExecutionMode>(['solo', 'partner', 'either', 'match'])
+// Acepta `either` sólo en lectura: hay sesiones y backups persistidos que lo
+// traen. El catálogo ya no lo emite y ninguna escritura nueva lo produce.
+const VALID_SQUASH_EXECUTION_MODES = new Set<SquashDrillExecutionModeLegacy>(['solo', 'partner', 'either', 'match'])
 const VALID_SQUASH_TRAINING_FOCUS = new Set(['technical', 'tactical', 'physical', 'conditioned_games'])
 const VALID_MOBILITY_CONTEXTS = new Set(['post_run', 'post_cycling', 'post_squash', 'post_strength', 'pre_training_activation', 'recovery', 'full_body', 'sport_specific'])
 const DEFAULT_SESSION_DURATION_MIN: Partial<Record<CoachSessionProposal['sessionType'], number>> = {
@@ -925,7 +927,18 @@ function normalizeSquashDrillDraft(value: unknown): SquashDrill | null {
   const drill: SquashDrill = { name: record.name.trim() }
   if (typeof record.durationMin === 'number') drill.durationMin = record.durationMin
   if (typeof record.notes === 'string') drill.notes = record.notes
-  if (typeof record.executionMode === 'string' && VALID_SQUASH_EXECUTION_MODES.has(record.executionMode as SquashDrillExecutionMode)) {
+  // Generación nueva nunca persiste `either`. Si el drill existe en el catálogo
+  // gana la modalidad canónica; si no existe y el modelo dijo `either`, se
+  // descarta el campo en vez de guardar un valor ambiguo. La tolerancia a
+  // `either` vive en import/deserialización, que es donde entra dato viejo.
+  const canonicalMode = findSquashDrillByName(drill.name)?.executionMode
+  if (canonicalMode) {
+    drill.executionMode = canonicalMode
+  } else if (
+    typeof record.executionMode === 'string'
+    && VALID_SQUASH_EXECUTION_MODES.has(record.executionMode as SquashDrillExecutionModeLegacy)
+    && record.executionMode !== 'either'
+  ) {
     drill.executionMode = record.executionMode as SquashDrillExecutionMode
   }
   return drill

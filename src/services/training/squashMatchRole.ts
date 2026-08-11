@@ -59,12 +59,13 @@ export function resolveSquashMatchRole(details: SquashDetails | undefined): Squa
   const competitive = drills.filter(isCompetitiveMatchDrill)
   if (competitive.length === 0) return 'none'
 
-  if (
-    drills.length === 1
-    && findSquashDrillByName(drills[0]!.name)?.id === SQUASH_STANDALONE_MATCH_ID
-  ) {
-    return 'standalone'
-  }
+  // Un partido que es el único contenido de la sesión es un partido dedicado,
+  // sea al mejor de 5 o al mejor de 3. Reconocer sólo el mejor de 5 hacía que un
+  // mejor de 3 dedicado cayera en `finisher`: perdía la exención de densificación
+  // de `getMinimumSquashDrillCount`, se le agregaban drills de acompañamiento y
+  // recién entonces pasaba a ser una sesión mixta que nadie declaró así.
+  // Sigue siendo un predicado puro de contenido: no mira fase ni calendario.
+  if (drills.length === 1 && competitive.length === 1) return 'standalone'
 
   // Sin bloques no hay forma de demostrar que el partido es el último ni que
   // existe un bloque previo no-match.
