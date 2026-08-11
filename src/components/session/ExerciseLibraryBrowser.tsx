@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { X } from 'lucide-react'
-import type { SessionType } from '../../types'
+import type { SessionType, SquashSessionBlockKind } from '../../types'
 import {
   getCatalogForSport,
   searchCatalog,
@@ -9,6 +9,7 @@ import {
 
 export interface ExerciseLibraryBrowserProps {
   sessionType: SessionType
+  squashKind?: SquashSessionBlockKind
   onAdd: (entry: CatalogEntry) => void
   onClose: () => void
 }
@@ -24,6 +25,7 @@ const INTENSITY_LABELS: Record<CatalogEntry['intensity'], string> = {
 
 export default function ExerciseLibraryBrowser({
   sessionType,
+  squashKind,
   onAdd,
   onClose,
 }: ExerciseLibraryBrowserProps) {
@@ -48,23 +50,23 @@ export default function ExerciseLibraryBrowser({
   }, [])
 
   const categories = useMemo(() => {
-    const catalog = getCatalogForSport(sessionType)
+    const catalog = getCatalogForSport(sessionType, squashKind)
     const sourceEntries = sourceFilter === 'all'
       ? catalog
       : catalog.filter((entry) => entry.source === sourceFilter)
     return Array.from(new Set(sourceEntries.map((entry) => entry.category)))
-  }, [sessionType, sourceFilter])
+  }, [sessionType, sourceFilter, squashKind])
 
   const entries = useMemo(() => {
     const base = query.trim()
-      ? searchCatalog(sessionType, query)
-      : getCatalogForSport(sessionType)
+      ? searchCatalog(sessionType, query, squashKind)
+      : getCatalogForSport(sessionType, squashKind)
 
     return base
       .filter((entry) => sourceFilter === 'all' || entry.source === sourceFilter)
       .filter((entry) => categoryFilter === 'all' || entry.category === categoryFilter)
       .filter((entry) => intensityFilter === 'all' || entry.intensity === intensityFilter)
-  }, [sessionType, query, sourceFilter, categoryFilter, intensityFilter])
+  }, [sessionType, squashKind, query, sourceFilter, categoryFilter, intensityFilter])
 
   const handleAdd = (entry: CatalogEntry) => {
     onAdd(entry)

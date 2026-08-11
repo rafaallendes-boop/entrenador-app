@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import ExerciseLibraryBrowser from './ExerciseLibraryBrowser'
 import { STRENGTH_EXERCISE_LIBRARY } from '../../services/training/exerciseLibrary'
+import { SQUASH_DRILL_LIBRARY } from '../../services/training/drillLibrary'
 
 afterEach(cleanup)
 
@@ -114,5 +115,22 @@ describe('ExerciseLibraryBrowser', () => {
     lastButton.focus()
     fireEvent.keyDown(dialog, { key: 'Tab' })
     expect(document.activeElement).toBe(screen.getByLabelText('Cerrar biblioteca'))
+  })
+
+  it('filtra los drills de squash por modalidad sin ocultar accesorios de fuerza', () => {
+    const control = SQUASH_DRILL_LIBRARY.find((drill) => drill.sessionKind === 'control')!
+    const technical = SQUASH_DRILL_LIBRARY.find((drill) => drill.sessionKind === 'technical')!
+    render(
+      <ExerciseLibraryBrowser
+        sessionType="squash"
+        squashKind="control"
+        onAdd={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    )
+
+    expect(screen.queryByText(control.name)).not.toBeNull()
+    expect(screen.queryByText(technical.name)).toBeNull()
+    expect(screen.queryByText(STRENGTH_EXERCISE_LIBRARY[0]!.name)).not.toBeNull()
   })
 })

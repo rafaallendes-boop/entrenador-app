@@ -1,5 +1,5 @@
 import { useId, useMemo, useState } from 'react'
-import type { SessionType } from '../../types'
+import type { SessionType, SquashSessionBlockKind } from '../../types'
 import {
   searchCatalog,
   type CatalogEntry,
@@ -9,6 +9,7 @@ interface ExerciseNameInputProps {
   index: number
   value: string
   sessionType: SessionType
+  squashKind?: SquashSessionBlockKind
   onChangeText: (value: string) => void
   onSelectEntry: (entry: CatalogEntry) => void
 }
@@ -22,6 +23,7 @@ export default function ExerciseNameInput({
   index,
   value,
   sessionType,
+  squashKind,
   onChangeText,
   onSelectEntry,
 }: ExerciseNameInputProps) {
@@ -29,8 +31,8 @@ export default function ExerciseNameInput({
   const [open, setOpen] = useState(false)
   const [highlighted, setHighlighted] = useState(0)
   const suggestions = useMemo(() => (
-    value.trim().length >= 2 ? searchCatalog(sessionType, value).slice(0, 6) : []
-  ), [sessionType, value])
+    value.trim().length >= 2 ? searchCatalog(sessionType, value, squashKind).slice(0, 6) : []
+  ), [sessionType, squashKind, value])
   const showList = open && suggestions.length > 0
   const listId = `exercise-suggestions-${generatedId}`
   const optionId = (position: number) => `${listId}-option-${position}`

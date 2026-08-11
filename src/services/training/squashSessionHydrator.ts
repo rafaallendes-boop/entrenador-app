@@ -78,6 +78,17 @@ const ALLOWED_ACCESSORIES: Record<SquashSessionBlockKind, SquashSessionBlockKind
   shadows: [],
 }
 
+/**
+ * Única regla de compatibilidad entre la modalidad principal y contenido
+ * conocido. La UI la usa para advertir sin borrar contenido histórico.
+ */
+export function isSquashDrillKindCompatible(
+  sessionKind: SquashSessionBlockKind,
+  drillKind: SquashSessionBlockKind,
+): boolean {
+  return drillKind === sessionKind || ALLOWED_ACCESSORIES[sessionKind].includes(drillKind)
+}
+
 function minimumDrillCount(kind: SquashSessionBlockKind, durationMin: number): number {
   // Un partido es una sola actividad: entrada en calor y peloteo pertenecen al
   // protocolo, no a una densificación artificial del contenido.
@@ -88,11 +99,11 @@ function minimumDrillCount(kind: SquashSessionBlockKind, durationMin: number): n
   return 2
 }
 
-function projectSubtype(
+export function projectSquashSubtype(
   kind: SquashSessionBlockKind,
-  input: SquashHydrationInput,
+  competitive = false,
 ): SquashSubtype {
-  if (kind === 'match') return input.competitive ? 'competitive' : 'match'
+  if (kind === 'match') return competitive ? 'competitive' : 'match'
   if (kind === 'control') return 'control'
   // Sombras y técnico comparten `training`; la carga ligera se expresa en
   // duración y RPE, no en la modalidad.
@@ -190,5 +201,5 @@ export function hydrateSquashSession(input: SquashHydrationInput): SquashHydrati
     blocks: orderedBlocks,
   }
 
-  return { subtype: projectSubtype(kind, input), details, warnings, fallback }
+  return { subtype: projectSquashSubtype(kind, input.competitive), details, warnings, fallback }
 }

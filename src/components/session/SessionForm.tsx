@@ -1,15 +1,19 @@
-import { useRef, useState, type FormEvent } from 'react'
+import { useMemo, useRef, useState, type FormEvent } from 'react'
 import { BookOpen, ChevronDown, ChevronUp, Link2, Plus, Trash2, X } from 'lucide-react'
 import { SESSION_TYPE_CONFIG } from '../../constants/sessionTypes'
 import type {
   MatchResult,
   RunningType,
   SessionType,
+  SquashSessionBlockKind,
   SquashSubtype,
   TimeBlock,
 } from '../../types'
 import type { CoachSessionDraft } from '../../services/athlete/coachSessionSerializer'
-import { EXERCISE_TYPES } from '../../services/athlete/coachSessionSerializer'
+import {
+  EXERCISE_TYPES,
+  resolveCoachSquashKind,
+} from '../../services/athlete/coachSessionSerializer'
 import {
   getCatalogForSport,
   toLibraryRef,
@@ -19,6 +23,14 @@ import type { ExerciseLibraryRef } from '../../types/exerciseLibraryRef'
 import { todayISO } from '../../utils/date'
 import { v4 as uuid } from '../../utils/uuid'
 import { normalizeSupersetGroups } from '../../services/training/supersetGroups'
+import {
+  findSquashDrillByName,
+  resolveSquashDrillKind,
+} from '../../services/training/drillLibrary'
+import {
+  isSquashDrillKindCompatible,
+  projectSquashSubtype,
+} from '../../services/training/squashSessionHydrator'
 import ExerciseLibraryBrowser from './ExerciseLibraryBrowser'
 import ExerciseNameInput from './ExerciseNameInput'
 
@@ -61,12 +73,11 @@ const RUNNING_TYPES: Array<{ value: RunningType; label: string }> = [
   { value: 'intervals', label: 'Intervalos' },
   { value: 'long', label: 'Long Run' },
 ]
-const SQUASH_SUBTYPES: Array<{ value: SquashSubtype; label: string }> = [
-  { value: 'training', label: 'Entrenamiento' },
+const SQUASH_KINDS: Array<{ value: SquashSessionBlockKind; label: string }> = [
+  { value: 'control', label: 'Control (solo)' },
+  { value: 'technical', label: 'Técnico (con partner)' },
+  { value: 'shadows', label: 'Sombras (sin pelota)' },
   { value: 'match', label: 'Partido' },
-  { value: 'competitive', label: 'Competitivo' },
-  { value: 'control', label: 'Control' },
-  { value: 'light', label: 'Suave' },
 ]
 const MATCH_RESULTS: Array<{ value: MatchResult; label: string }> = [
   { value: 'win', label: 'Gane' },
@@ -184,6 +195,8 @@ export default function SessionForm({
   onCancel,
 }: SessionFormProps) {
   const initialType = initialValues?.type ?? defaultSport
+  const initialSquashKind = initialValues?.squashKind
+    ?? resolveCoachSquashKind(undefined, initialValues?.subtype)
   const isTemplate = mode === 'template'
   const [type, setType] = useState<SessionType>(initialType)
   const [title, setTitle] = useState(initialValues?.title ?? TYPE_LABELS[initialType])
@@ -205,7 +218,10 @@ export default function SessionForm({
   const [paceMax, setPaceMax] = useState(initialValues?.runningTargets?.targetPaceMax ?? '')
   const [hrMin, setHrMin] = useState(String(initialValues?.runningTargets?.targetHrMin ?? ''))
   const [hrMax, setHrMax] = useState(String(initialValues?.runningTargets?.targetHrMax ?? ''))
-  const [squashSubtype, setSquashSubtype] = useState<SquashSubtype>(initialValues?.subtype ?? 'training')
+  const [squashSubtype, setSquashSubtype] = useState<SquashSubtype>(
+    initialValues?.subtype ?? projectSquashSubtype(initialSquashKind),
+  )
+  const [squashKind, setSquashKind] = useState<SquashSessionBlockKind>(initialSquashKind)
   const [opponent, setOpponent] = useState(initialValues?.opponent ?? '')
   const [matchResult, setMatchResult] = useState<MatchResult | ''>(initialValues?.matchResult ?? '')
   const [gamesWon, setGamesWon] = useState(String(initialValues?.gamesWon ?? ''))
@@ -231,9 +247,19 @@ export default function SessionForm({
   const showExercises = EXERCISE_TYPES.includes(type)
   const catalogEnabled = getCatalogForSport(type).length > 0
   const showRunningFields = type === 'running' || type === 'cycling'
-  const isSquashMatch = !isTemplate && type === 'squash' && (squashSubtype === 'match' || squashSubtype === 'competitive')
+  const hasSquashMatchModality = type === 'squash' && squashKind === 'match'
+  const isSquashMatch = !isTemplate && hasSquashMatchModality
   const showLocation = type === 'squash' || type === 'running' || type === 'cycling'
   const config = SESSION_TYPE_CONFIG[type]
+  const incompatibleSquashExercises = useMemo(() => {
+    if (type !== 'squash') return []
+    return exercises.filter((exercise) => {
+      if (exercise.libraryRef?.source !== 'squash_drill') return false
+      const definition = findSquashDrillByName(exercise.libraryRef.id)
+      return definition != null
+        && !isSquashDrillKindCompatible(squashKind, resolveSquashDrillKind(definition))
+    })
+  }, [exercises, squashKind, type])
 
   const handleTypeChange = (nextType: SessionType) => {
     const previousDefaultTitle = TYPE_LABELS[type]
@@ -251,6 +277,7 @@ export default function SessionForm({
     }
     if (nextType !== 'squash') {
       setSquashSubtype('training')
+      setSquashKind('technical')
       setOpponent('')
       setMatchResult('')
       setGamesWon('')
@@ -264,9 +291,13 @@ export default function SessionForm({
     if (isTemplate && !nameTouched) setTemplateName(nextTitle)
   }
 
-  const handleSquashSubtypeChange = (nextSubtype: SquashSubtype) => {
-    setSquashSubtype(nextSubtype)
-    if (nextSubtype !== 'match' && nextSubtype !== 'competitive') {
+  const handleSquashKindChange = (nextKind: SquashSessionBlockKind) => {
+    setSquashKind(nextKind)
+    setSquashSubtype(projectSquashSubtype(
+      nextKind,
+      nextKind === 'match' && squashSubtype === 'competitive',
+    ))
+    if (nextKind !== 'match') {
       setOpponent('')
       setMatchResult('')
       setGamesWon('')
@@ -399,6 +430,7 @@ export default function SessionForm({
       rpe: rpe === '' ? undefined : rpe,
       notes: notes.trim() || undefined,
       subtype: type === 'squash' ? squashSubtype : undefined,
+      squashKind: type === 'squash' ? squashKind : undefined,
       opponent: isSquashMatch ? opponent.trim() || undefined : undefined,
       matchResult: isSquashMatch && matchResult ? matchResult : undefined,
       gamesWon: isSquashMatch ? optionalNumber(gamesWon) : undefined,
@@ -495,22 +527,43 @@ export default function SessionForm({
 
           {type === 'squash' && (
             <div>
-              <span className="mb-2 block text-xs font-medium uppercase tracking-wider text-ink-muted">Subtipo</span>
+              <span className="mb-2 block text-xs font-medium uppercase tracking-wider text-ink-muted">Modalidad</span>
               <div className="flex flex-wrap gap-2">
-                {SQUASH_SUBTYPES.map((subtype) => (
+                {SQUASH_KINDS.map((kind) => (
                   <button
                     type="button"
-                    key={subtype.value}
-                    onClick={() => handleSquashSubtypeChange(subtype.value)}
-                    aria-pressed={squashSubtype === subtype.value}
+                    key={kind.value}
+                    onClick={() => handleSquashKindChange(kind.value)}
+                    aria-pressed={squashKind === kind.value}
                     className={`rounded-full border px-3 py-1.5 text-xs font-medium ${
-                      squashSubtype === subtype.value
+                      squashKind === kind.value
                         ? `${config.bgClass} ${config.textClass} ${config.borderClass}`
                         : 'border-surface-border bg-surface-raised text-ink-muted'
                     }`}
-                  >{subtype.label}</button>
+                  >{kind.label}</button>
                 ))}
               </div>
+              {hasSquashMatchModality && (
+                <div className="mt-3">
+                  <span className="mb-2 block text-xs font-medium uppercase tracking-wider text-ink-muted">
+                    Contexto del partido
+                  </span>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      aria-pressed={squashSubtype !== 'competitive'}
+                      onClick={() => setSquashSubtype('match')}
+                      className="rounded-full border border-surface-border px-3 py-1.5 text-xs font-medium"
+                    >Práctica</button>
+                    <button
+                      type="button"
+                      aria-pressed={squashSubtype === 'competitive'}
+                      onClick={() => setSquashSubtype('competitive')}
+                      className="rounded-full border border-surface-border px-3 py-1.5 text-xs font-medium"
+                    >Competencia</button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -625,6 +678,13 @@ export default function SessionForm({
 
           {showExercises && (
             <div>
+              {incompatibleSquashExercises.length > 0 && (
+                <p role="status" className="mb-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                  Hay drills conocidos incompatibles con la modalidad elegida: {' '}
+                  {incompatibleSquashExercises.map((exercise) => exercise.name).join(', ')}.
+                  Puedes guardar; no se borrará ni reclasificará el contenido.
+                </p>
+              )}
               <div className="mb-2 flex items-center justify-between">
                 <span className="text-xs font-medium uppercase text-ink-muted">{type === 'mobility' ? 'Ejercicios de movilidad' : 'Ejercicios'}</span>
                 <div className="flex flex-wrap items-center justify-end gap-3">
@@ -677,6 +737,7 @@ export default function SessionForm({
                           index={index}
                           value={exercise.name}
                           sessionType={type}
+                          squashKind={type === 'squash' ? squashKind : undefined}
                           onChangeText={(text) => updateExercise(exercise.id, 'name', text)}
                           onSelectEntry={(entry) => applyCatalogEntry(exercise.id, entry)}
                         />
@@ -733,6 +794,7 @@ export default function SessionForm({
       {libraryOpen && (
         <ExerciseLibraryBrowser
           sessionType={type}
+          squashKind={type === 'squash' ? squashKind : undefined}
           onAdd={addFromCatalog}
           onClose={() => setLibraryOpen(false)}
         />

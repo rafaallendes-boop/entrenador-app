@@ -10,12 +10,15 @@ import { v4 as uuid } from '../../utils/uuid'
 import { normalizeSupersetGroupId, normalizeSupersetGroups } from '../training/supersetGroups'
 import {
   buildCyclingDetailsDraft,
+  buildSquashDetailsDraft,
   draftToNewSessionFields,
   EXERCISE_TYPES,
+  resolveCoachSquashKind,
   resolveSquashTrainingFocus,
   type CoachSessionDraft,
   type CoachSessionPatch,
 } from './coachSessionSerializer'
+import { projectSquashSubtype } from '../training/squashSessionHydrator'
 
 function isExerciseType(type: string): boolean {
   return (EXERCISE_TYPES as readonly string[]).includes(type)
@@ -105,6 +108,9 @@ export function templateToDraft(
       rpe: payload.rpe,
       notes: payload.notes,
       subtype: payload.subtype,
+      squashKind: payload.type === 'squash'
+        ? resolveCoachSquashKind(payload.squashDetails, payload.subtype)
+        : undefined,
       runningTargets: payload.runningDetails
         ? {
             runningType: payload.runningDetails.runningType,
@@ -201,16 +207,20 @@ export function applyTemplateDraft(
 
   if (existing.type === 'squash') {
     next.subtype = draft.subtype
-    if (next.squashDetails) {
-      next.squashDetails = {
+    const squashKind = draft.squashKind
+      ?? resolveCoachSquashKind(next.squashDetails, draft.subtype)
+    const subtype = draft.subtype ?? projectSquashSubtype(squashKind)
+    next.squashDetails = next.squashDetails
+      ? {
         ...next.squashDetails,
+        sessionKind: squashKind,
         trainingFocus: resolveSquashTrainingFocus(
-          draft.subtype ?? 'training',
+          subtype,
           draft.objective ?? '',
         ),
-        sessionMode: squashSessionMode(draft.subtype),
+        sessionMode: squashSessionMode(subtype),
       }
-    }
+      : buildSquashDetailsDraft(squashKind, subtype, draft.objective ?? '')
   }
 
   if ((existing.type === 'running' || existing.type === 'cycling') && draft.runningTargets) {
@@ -261,6 +271,9 @@ export function templateDraftToPatch(
     rpe: openedPayload.rpe,
     notes: openedPayload.notes,
     subtype: openedPayload.subtype,
+    squashKind: openedPayload.type === 'squash'
+      ? resolveCoachSquashKind(openedPayload.squashDetails, openedPayload.subtype)
+      : undefined,
     runningTargets: openedPayload.runningDetails
       ? {
           runningType: openedPayload.runningDetails.runningType,
@@ -282,6 +295,7 @@ export function templateDraftToPatch(
     'rpe',
     'notes',
     'subtype',
+    'squashKind',
     'runningTargets',
     'exercises',
   ]
@@ -349,17 +363,26 @@ export function applyTemplatePatch(
   }
   if (
     latest.type === 'squash'
-    && (hasPatchKey(patch, 'subtype') || hasPatchKey(patch, 'objective'))
-    && next.squashDetails
+    && (
+      hasPatchKey(patch, 'subtype')
+      || hasPatchKey(patch, 'squashKind')
+      || hasPatchKey(patch, 'objective')
+    )
   ) {
-    next.squashDetails = {
-      ...next.squashDetails,
+    const squashKind = patch.squashKind
+      ?? resolveCoachSquashKind(next.squashDetails, next.subtype)
+    const subtype = next.subtype ?? projectSquashSubtype(squashKind)
+    next.squashDetails = next.squashDetails
+      ? {
+        ...next.squashDetails,
+        sessionKind: squashKind,
       trainingFocus: resolveSquashTrainingFocus(
-        next.subtype ?? 'training',
+        subtype,
         next.objective ?? '',
       ),
-      sessionMode: squashSessionMode(next.subtype),
-    }
+        sessionMode: squashSessionMode(subtype),
+      }
+      : buildSquashDetailsDraft(squashKind, subtype, next.objective ?? '')
   }
 
   if (

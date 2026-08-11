@@ -10,7 +10,7 @@ import {
 
 const draft: CoachSessionDraft = {
   date: '2026-07-14', timeBlock: 'AM', type: 'squash', title: 'Drills', durationMin: 60,
-  subtype: 'training', objective: 'volea',
+  subtype: 'training', squashKind: 'technical', objective: 'volea',
 }
 
 const planBuilderSession = {
@@ -38,6 +38,22 @@ describe('draftToNewSessionFields', () => {
     expect(fields.warmup).toBeDefined()
     expect(fields.cooldown).toBeDefined()
     expect(fields.squashDetails?.sessionMode).toBe('drill_session')
+    expect(fields.squashDetails?.sessionKind).toBe('technical')
+  })
+
+  it('persiste las cuatro modalidades con una proyección de subtype compatible', () => {
+    const cases = [
+      ['control', 'control'],
+      ['technical', 'training'],
+      ['shadows', 'training'],
+      ['match', 'match'],
+    ] as const
+
+    for (const [squashKind, subtype] of cases) {
+      const fields = draftToNewSessionFields({ ...draft, squashKind, subtype })
+      expect(fields.squashDetails?.sessionKind).toBe(squashKind)
+      expect(fields.subtype).toBe(subtype)
+    }
   })
 
   it('normaliza ejercicios y los crea incomplete', () => {
@@ -93,6 +109,16 @@ describe('applyCoachSessionPatch sin cambio de tipo', () => {
     expect(cleared.squashDetails?.trainingFocus).toBe('technical')
     expect(cleared.squashDetails?.drills).toEqual(planBuilderSession.squashDetails?.drills)
     expect(cleared.squashDetails?.blocks).toEqual(planBuilderSession.squashDetails?.blocks)
+  })
+
+  it('cambia la modalidad sin borrar ni reclasificar drills históricos', () => {
+    const result = applyCoachSessionPatch(planBuilderSession, {
+      squashKind: 'control', subtype: 'control',
+    })
+    expect(result.squashDetails?.sessionKind).toBe('control')
+    expect(result.subtype).toBe('control')
+    expect(result.squashDetails?.drills).toEqual(planBuilderSession.squashDetails?.drills)
+    expect(result.squashDetails?.blocks).toEqual(planBuilderSession.squashDetails?.blocks)
   })
 
   it('mergea running targets y preserva campos extra', () => {
@@ -224,6 +250,20 @@ describe('sessionToDraft y draftToPatch', () => {
     expect(draftToPatch({ ...converted, exercises: [] }, planBuilderSession)).toEqual({
       exercises: [],
     })
+  })
+
+  it('abre contenido mixed histórico con una modalidad editable sin leer texto', () => {
+    const mixed = {
+      ...planBuilderSession,
+      title: 'Partido escrito en el título',
+      objective: 'control de longitud',
+      squashDetails: {
+        ...planBuilderSession.squashDetails!,
+        sessionKind: 'mixed' as const,
+        blocks: [{ kind: 'shadows' as const, drills: [{ name: 'ghosting' }] }],
+      },
+    } as Session
+    expect(sessionToDraft(mixed).squashKind).toBe('technical')
   })
 
   it('con cambio de tipo emite el draft completo y conserva metadata no editable al aplicar', () => {

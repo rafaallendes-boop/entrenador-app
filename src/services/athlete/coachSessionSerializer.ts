@@ -7,6 +7,7 @@ import type {
   Session,
   SessionType,
   SquashDetails,
+  SquashSessionBlockKind,
   SquashSubtype,
   SquashTrainingFocus,
   TimeBlock,
@@ -15,6 +16,7 @@ import type { ExerciseLibraryRef } from '../../types/exerciseLibraryRef'
 import { fromISO, getWeekStart, toISO } from '../../utils/date'
 import { generateDefaultProtocols } from '../trainingProtocols'
 import { normalizeSupersetGroupId } from '../training/supersetGroups'
+import { projectSquashSubtype } from '../training/squashSessionHydrator'
 
 export interface CoachSessionDraft {
   date: string
@@ -27,6 +29,8 @@ export interface CoachSessionDraft {
   rpe?: number
   notes?: string
   subtype?: SquashSubtype
+  /** Modalidad explícita; `subtype` queda como proyección de compatibilidad. */
+  squashKind?: SquashSessionBlockKind
   opponent?: string
   matchResult?: MatchResult
   gamesWon?: number
@@ -52,6 +56,26 @@ export interface CoachSessionDraft {
 
 export type CoachSessionPatch = Partial<CoachSessionDraft>
 
+/** Lee datos estructurados solamente; nunca título, objetivo ni focusKey. */
+export function resolveCoachSquashKind(
+  details: SquashDetails | undefined,
+  subtype: SquashSubtype | undefined,
+): SquashSessionBlockKind {
+  const declared = details?.sessionKind
+  if (declared && declared !== 'mixed') return declared
+
+  if (declared === 'mixed') {
+    const mainKinds = Array.from(new Set(
+      (details?.blocks ?? []).map((block) => block.kind).filter((kind) => kind !== 'shadows'),
+    ))
+    if (mainKinds.length === 1) return mainKinds[0]!
+  }
+
+  if (subtype === 'control') return 'control'
+  if (subtype === 'match' || subtype === 'competitive') return 'match'
+  return 'technical'
+}
+
 export function sessionToDraft(session: Session): CoachSessionDraft {
   return {
     date: session.date,
@@ -64,6 +88,9 @@ export function sessionToDraft(session: Session): CoachSessionDraft {
     rpe: session.rpe,
     notes: session.notes,
     subtype: session.subtype,
+    squashKind: session.type === 'squash'
+      ? resolveCoachSquashKind(session.squashDetails, session.subtype)
+      : undefined,
     opponent: session.opponent,
     matchResult: session.matchResult,
     gamesWon: session.gamesWon,
@@ -179,7 +206,11 @@ export function resolveSquashTrainingFocus(
   return 'technical'
 }
 
-export function buildSquashDetailsDraft(subtype: SquashSubtype, objective: string): SquashDetails {
+export function buildSquashDetailsDraft(
+  kind: SquashSessionBlockKind,
+  subtype: SquashSubtype,
+  objective: string,
+): SquashDetails {
   return {
     trainingFocus: resolveSquashTrainingFocus(subtype, objective),
     sessionMode: subtype === 'competitive'
@@ -187,14 +218,19 @@ export function buildSquashDetailsDraft(subtype: SquashSubtype, objective: strin
       : subtype === 'match'
         ? 'practice_match'
         : 'drill_session',
+    sessionKind: kind,
     drills: [],
+    blocks: [],
   }
 }
 
 export const EXERCISE_TYPES: SessionType[] = ['squash', 'strength', 'mobility']
 
 function buildTypeDefaults(
-  draft: Pick<CoachSessionDraft, 'type' | 'subtype' | 'rpe' | 'objective' | 'runningTargets'>,
+  draft: Pick<
+    CoachSessionDraft,
+    'type' | 'subtype' | 'squashKind' | 'rpe' | 'objective' | 'runningTargets'
+  >,
 ): Partial<Session> {
   const runningType = draft.runningTargets?.runningType ?? 'z2'
   const protocols = generateDefaultProtocols({
@@ -216,7 +252,11 @@ function buildTypeDefaults(
         }
       : undefined,
     squashDetails: draft.type === 'squash'
-      ? buildSquashDetailsDraft(draft.subtype ?? 'training', draft.objective ?? '')
+      ? buildSquashDetailsDraft(
+          draft.squashKind ?? resolveCoachSquashKind(undefined, draft.subtype),
+          draft.subtype ?? projectSquashSubtype(draft.squashKind ?? 'technical'),
+          draft.objective ?? '',
+        )
       : undefined,
     cyclingDetails: draft.type === 'cycling'
       ? buildCyclingDetailsDraft(runningType, draft.objective ?? '')
@@ -328,6 +368,7 @@ export function applyCoachSessionPatch(existing: Session, patch: CoachSessionPat
     const draftLike = {
       type: patch.type!,
       subtype: patch.subtype,
+      squashKind: patch.squashKind,
       rpe: has('rpe') ? patch.rpe : existing.rpe,
       objective: has('objective') ? patch.objective : existing.objective,
       runningTargets: patch.runningTargets,
@@ -345,6 +386,15 @@ export function applyCoachSessionPatch(existing: Session, patch: CoachSessionPat
   }
 
   const next: Session = { ...existing, ...scalarPatch(patch) } as Session
+  if (existing.type === 'squash' && has('squashKind') && patch.squashKind) {
+    next.squashDetails = next.squashDetails
+      ? { ...next.squashDetails, sessionKind: patch.squashKind }
+      : buildSquashDetailsDraft(
+          patch.squashKind,
+          patch.subtype ?? next.subtype ?? projectSquashSubtype(patch.squashKind),
+          next.objective ?? '',
+        )
+  }
   if (existing.type === 'squash' && has('subtype')) {
     next.subtype = patch.subtype
     if (patch.subtype && next.squashDetails && patch.subtype !== existing.subtype) {

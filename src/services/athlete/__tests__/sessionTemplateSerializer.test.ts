@@ -92,10 +92,11 @@ describe('templateDraftToPayload', () => {
   it('genera protocolos y defaults deportivos', () => {
     const payload = templateDraftToPayload({
       date: '2026-07-14', timeBlock: 'AM', type: 'squash', title: 'Drills',
-      durationMin: 60, subtype: 'training', objective: 'volea',
+      durationMin: 60, subtype: 'training', squashKind: 'technical', objective: 'volea',
     })
     expect(payload.warmup).toBeDefined()
     expect(payload.squashDetails?.sessionMode).toBe('drill_session')
+    expect(payload.squashDetails?.sessionKind).toBe('technical')
     expect(payload).not.toHaveProperty('date')
   })
 
@@ -118,17 +119,30 @@ describe('applyTemplateDraft', () => {
       title: 'Editada',
       durationMin: 50,
       subtype: 'competitive',
+      squashKind: 'match',
       objective: 'estrategia de presión',
     }, originalsById)
     expect(next).toMatchObject({ title: 'Editada', durationMin: 50 })
     expect(next.squashDetails?.drills).toHaveLength(1)
     expect(next.squashDetails?.blocks).toHaveLength(1)
     expect(next.squashDetails?.sessionMode).toBe('competition_match')
+    expect(next.squashDetails?.sessionKind).toBe('match')
     expect(next.squashDetails?.trainingFocus).toBe('tactical')
     expect(next.warmup?.title).toBe('W')
     expect(next.exercises?.[0]).toMatchObject({
       name: 'Sentadilla', group: 'legs', targetPercent1RM: 80,
     })
+  })
+
+  it('conserva contenido rico al cambiar la modalidad de una plantilla', () => {
+    const { draft, originalsById } = templateToDraft(existing, '2026-07-14')
+    const next = applyTemplateDraft(existing, {
+      ...draft, squashKind: 'control', subtype: 'control',
+    }, originalsById)
+
+    expect(next.squashDetails?.sessionKind).toBe('control')
+    expect(next.squashDetails?.drills).toEqual(existing.squashDetails?.drills)
+    expect(next.squashDetails?.blocks).toEqual(existing.squashDetails?.blocks)
   })
 
   it('preserva intervalStructure al editar targets de running', () => {
@@ -193,7 +207,7 @@ describe('applyTemplateDraft', () => {
     expect(next.exercises?.[0].warmupSets).toEqual([{ reps: 5 }])
   })
 
-  it('no sintetiza contenido rico ausente al editar una plantilla squash', () => {
+  it('materializa la modalidad estructurada ausente al editar una plantilla squash heredada', () => {
     const payload = {
       type: 'squash' as const,
       timeBlock: 'AM' as const,
@@ -211,8 +225,12 @@ describe('applyTemplateDraft', () => {
       objective: 'presión y estrategia',
     }, originalsById)
 
-    expect(edited.squashDetails).toBeUndefined()
-    expect(patched.squashDetails).toBeUndefined()
+    expect(edited.squashDetails).toMatchObject({
+      sessionKind: 'technical', drills: [], blocks: [],
+    })
+    expect(patched.squashDetails).toMatchObject({
+      sessionKind: 'technical', drills: [], blocks: [],
+    })
   })
 })
 

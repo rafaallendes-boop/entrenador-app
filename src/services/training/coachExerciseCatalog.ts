@@ -1,4 +1,4 @@
-import type { SessionType } from '../../types'
+import type { SessionType, SquashSessionBlockKind } from '../../types'
 import type { ExerciseLibraryRef, ExerciseLibrarySource } from '../../types/exerciseLibraryRef'
 import { SQUASH_DRILL_LIBRARY, type DrillCategory } from './drillLibrary'
 import {
@@ -86,18 +86,38 @@ const STRENGTH_ENTRIES: CatalogEntry[] = STRENGTH_EXERCISE_LIBRARY.map((exercise
 }))
 
 /** Sesión de squash ve drills + fuerza (accesorio común); fuerza solo fuerza; el resto nada. */
-export function getCatalogForSport(type: SessionType): CatalogEntry[] {
-  if (type === 'squash') return [...SQUASH_ENTRIES, ...STRENGTH_ENTRIES]
+function filterSquashDrillsByKind(
+  entries: CatalogEntry[],
+  squashKind?: SquashSessionBlockKind,
+): CatalogEntry[] {
+  if (!squashKind) return entries
+  return entries.filter((entry) => {
+    if (entry.source !== 'squash_drill') return true
+    return SQUASH_DRILL_LIBRARY.find((drill) => drill.id === entry.libraryId)?.sessionKind === squashKind
+  })
+}
+
+export function getCatalogForSport(
+  type: SessionType,
+  squashKind?: SquashSessionBlockKind,
+): CatalogEntry[] {
+  if (type === 'squash') {
+    return filterSquashDrillsByKind([...SQUASH_ENTRIES, ...STRENGTH_ENTRIES], squashKind)
+  }
   if (type === 'strength') return STRENGTH_ENTRIES
   return []
 }
 
-export function searchCatalog(type: SessionType, query: string): CatalogEntry[] {
+export function searchCatalog(
+  type: SessionType,
+  query: string,
+  squashKind?: SquashSessionBlockKind,
+): CatalogEntry[] {
   const normalized = normalizeCatalogText(query)
   if (!normalized) return []
 
   const terms = normalized.split(/\s+/)
-  return getCatalogForSport(type).filter((entry) =>
+  return getCatalogForSport(type, squashKind).filter((entry) =>
     terms.every((term) => entry.searchText.includes(term)),
   )
 }

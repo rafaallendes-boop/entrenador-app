@@ -32,7 +32,9 @@ describe('SessionForm', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Agregar' }))
     expect(onSubmit).toHaveBeenCalledOnce()
     const value = onSubmit.mock.calls[0][0]
-    expect(value).toMatchObject({ type: 'squash' })
+    expect(value).toMatchObject({
+      type: 'squash', squashKind: 'technical', subtype: 'training',
+    })
     expect(value).not.toHaveProperty('status')
     expect(value).not.toHaveProperty('warmup')
     expect(value).not.toHaveProperty('squashDetails')
@@ -159,7 +161,7 @@ describe('SessionForm', () => {
         onCancel={vi.fn()}
       />,
     )
-    await userEvent.click(screen.getByRole('button', { name: 'Entrenamiento' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Técnico (con partner)' }))
     await userEvent.click(screen.getByRole('button', { name: 'Partido' }))
     await userEvent.click(screen.getByRole('button', { name: 'Guardar' }))
     expect(onSubmit.mock.calls[0][0]).toMatchObject({
@@ -179,6 +181,81 @@ describe('SessionForm', () => {
       />,
     )
     expect(screen.queryByLabelText('Games ganados')).not.toBeNull()
+  })
+
+  it('declara modalidad y proyecta un subtype compatible', async () => {
+    const onSubmit = vi.fn(async () => {})
+    render(<SessionForm defaultSport="squash" heading="Nueva" submitLabel="Guardar" onSubmit={onSubmit} onCancel={vi.fn()} />)
+
+    expect(screen.getByText('Modalidad')).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: 'Control (solo)' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar' }))
+
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      squashKind: 'control', subtype: 'control',
+    })
+  })
+
+  it('separa práctica de competencia cuando la modalidad es partido', async () => {
+    const onSubmit = vi.fn(async () => {})
+    render(<SessionForm defaultSport="squash" heading="Nueva" submitLabel="Guardar" onSubmit={onSubmit} onCancel={vi.fn()} />)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Partido' }))
+    expect(screen.getByText('Contexto del partido')).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: 'Competencia' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar' }))
+
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      squashKind: 'match', subtype: 'competitive',
+    })
+  })
+
+  it('advierte un drill conocido incompatible pero permite guardarlo intacto', async () => {
+    const technical = SQUASH_DRILL_LIBRARY.find((drill) => drill.sessionKind === 'technical')!
+    const onSubmit = vi.fn(async () => {})
+    render(
+      <SessionForm
+        initialValues={{
+          date: '2026-07-19', timeBlock: 'AM', type: 'squash', title: 'Control',
+          durationMin: 45, subtype: 'control', squashKind: 'control',
+          exercises: [{
+            id: 'known-1', name: technical.name, sets: 3, reps: '10',
+            libraryRef: { source: 'squash_drill', id: technical.id },
+          }],
+        }}
+        defaultSport="squash"
+        heading="Editar"
+        submitLabel="Guardar"
+        onSubmit={onSubmit}
+        onCancel={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByRole('status').textContent).toContain(technical.name)
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar' }))
+    expect(onSubmit.mock.calls[0][0].exercises[0]).toMatchObject({
+      name: technical.name,
+      libraryRef: { source: 'squash_drill', id: technical.id },
+    })
+  })
+
+  it('acepta ejercicios personalizados sin metadata bajo la modalidad elegida', () => {
+    render(
+      <SessionForm
+        initialValues={{
+          date: '2026-07-19', timeBlock: 'AM', type: 'squash', title: 'Control',
+          durationMin: 45, subtype: 'control', squashKind: 'control',
+          exercises: [{ id: 'custom-1', name: 'Mi patrón propio', sets: 3, reps: '10' }],
+        }}
+        defaultSport="squash"
+        heading="Editar"
+        submitLabel="Guardar"
+        onSubmit={vi.fn(async () => {})}
+        onCancel={vi.fn()}
+      />,
+    )
+
+    expect(screen.queryByRole('status')).toBeNull()
   })
 
   it('muestra ejercicios en squash y los envía en el draft', async () => {
