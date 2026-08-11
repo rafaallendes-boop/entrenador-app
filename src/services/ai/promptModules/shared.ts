@@ -2,10 +2,11 @@
  * Shared helpers used across per-sport prompt modules.
  */
 
-import type { ChatContext, Session, SupportedSport } from '../../../types'
+import type { ChatContext, GoalEvent, Session, SupportedSport } from '../../../types'
 import { isCompetitionSquashMatch } from '../../../utils/squash'
 import { todayISO } from '../../../utils/date'
 import { computeMacroPlan } from '../../macroPlan'
+import { resolveGoalEventWindow } from '../../goalEventWindow'
 
 // ─── Translation constants ──────────────────────────────────────────────────
 
@@ -282,9 +283,16 @@ export function explainPrioritySignals(session: Session, memory: string, today: 
 export function getNextGoalEventForSport(
   context: ChatContext,
   sport: string,
-): { date: string } | undefined {
+): GoalEvent | undefined {
   const today = todayISO()
   return [...(context.athleteProfile?.goalEvents ?? [])]
-    .filter(event => event.date >= today && event.sport === sport)
-    .sort((a, b) => a.date.localeCompare(b.date))[0]
+    .filter((event) => resolveGoalEventWindow(event).endDate >= today && event.sport === sport)
+    .sort((a, b) => {
+      const left = resolveGoalEventWindow(a)
+      const right = resolveGoalEventWindow(b)
+      const leftActive = left.startDate <= today && left.endDate >= today
+      const rightActive = right.startDate <= today && right.endDate >= today
+      if (leftActive !== rightActive) return leftActive ? -1 : 1
+      return left.startDate.localeCompare(right.startDate)
+    })[0]
 }

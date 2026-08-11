@@ -331,12 +331,12 @@ describe('WeekCreatorLocalHydrator', () => {
 
     expect(result.focusOverlayCount).toBe(5)
     // La modalidad llega declarada en el skeleton y sobrevive al mapper. A2.5
-    // posee el pool vacío de base como política semanal: materializa mejor de 3
-    // sin degradar a técnica ni pedirle al hidratador cruzar modalidad.
+    // La fase se resuelve para la semana objetivo (peak, a dos semanas del
+    // evento): materializa mejor de 5 sin degradar a técnica.
     const declaredMatch = sessions.find((candidate) => candidate.squashKind === 'match')
     expect(declaredMatch?.squashDetails?.drills.length).toBeGreaterThan(0)
     expect(findSquashDrillByName(declaredMatch?.squashDetails?.drills[0]?.name ?? '')?.id)
-      .toBe('practice_match_best_of_3')
+      .toBe('practice_match_five_games')
     expect(result.repairMeta?.squashKindDegradedCount).toBeUndefined()
     expect(result.repairMeta?.warnings.some((warning) => warning.code === 'squash_kind_degraded')).toBe(false)
     expect(sessions.find((candidate) => candidate.title === 'Fuerza base')?.objective)

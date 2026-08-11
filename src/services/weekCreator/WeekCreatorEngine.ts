@@ -62,6 +62,10 @@ import {
   hydrateWeekCreatorSkeleton,
   type WeekCreatorHydrationResult,
 } from './WeekCreatorLocalHydrator'
+import {
+  applyWeekCreatorEventContextToConfig,
+  resolveWeekCreatorEventContext,
+} from './WeekCreatorEventContext'
 
 const WEEK_CREATOR_RESPONSE_SCHEMA_CHAR_COUNT = JSON.stringify(WEEK_CREATOR_RESPONSE_SCHEMA).length
 const WEEK_CREATOR_SKELETON_SCHEMA_CHAR_COUNT = JSON.stringify(WEEK_CREATOR_SKELETON_RESPONSE_SCHEMA).length
@@ -181,7 +185,15 @@ export const WeekCreatorEngine = {
     }
 
     const dateWindow = resolveWeekCreatorDateWindow(options.targetWeekStart, options.today ?? todayISO())
-    const config = applyWeekCreatorDateWindowToConfig(baseConfig, dateWindow)
+    const dateWindowConfig = applyWeekCreatorDateWindowToConfig(baseConfig, dateWindow)
+    const eventContext = resolveWeekCreatorEventContext({
+      profile: context.athleteProfile,
+      targetWeekStart: options.targetWeekStart,
+      weekEndDate: dateWindow.weekEndDate,
+      planningStartDate: dateWindow.planningStartDate,
+      primarySport: dateWindowConfig.primarySport,
+    })
+    const config = applyWeekCreatorEventContextToConfig(dateWindowConfig, eventContext)
     const weekObjectives = options.weekObjectives
       ?? await resolveActivePlanWeekObjectives(options.targetWeekStart, context.athleteProfile?.id)
 

@@ -13,6 +13,7 @@ import type {
 import { calculateRunningAcwr, calculateSquashAcwr, calculateStrengthAcwr } from './loadAnalytics'
 import { computeMacroPlan, getPrimaryGoalEvent } from './macroPlan'
 import { buildMacroWeekCoherenceSummary } from './macroWeekCoherence'
+import { resolveGoalEventWindow } from './goalEventWindow'
 import { getAllowedPlanningSports, getPlanningPrimarySport, RESTRICTED_PLANNING_SPORTS } from './planningConstraints'
 import {
   deriveSquashProgressionState,
@@ -184,7 +185,11 @@ function buildWeeklyGoalSummary(actions: CoachAction[], primarySport: SupportedS
 function getCompetitionSoon(profile: AthleteProfile | null | undefined): boolean {
   const primaryGoalEvent = getPrimaryGoalEvent(profile)
   if (!primaryGoalEvent) return false
-  return differenceInCalendarDays(new Date(primaryGoalEvent.date), new Date()) <= 7
+  const { startDate, endDate } = resolveGoalEventWindow(primaryGoalEvent)
+  const now = new Date()
+  const daysToStart = differenceInCalendarDays(new Date(`${startDate}T00:00:00`), now)
+  const daysToEnd = differenceInCalendarDays(new Date(`${endDate}T00:00:00`), now)
+  return daysToEnd >= 0 && daysToStart <= 7
 }
 
 function inferCyclingIntent(profile: AthleteProfile | null | undefined): WeeklyPlanIntent {

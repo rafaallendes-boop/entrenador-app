@@ -11,6 +11,10 @@ import { buildWeekCreatorStructuredSystemPrompt, buildWeekCreatorSystemPrompt } 
 import { deriveWeekCreatorAthleteTier, type WeekCreatorAthleteTier, type WeekCreatorEffectiveConfig } from './WeekCreatorConfig'
 import { normalizeSport } from '../../utils/athlete'
 import { isWhoopPrefilled } from '../readiness/dayLogPrefillSave'
+import {
+  resolveWeekCreatorEventContext,
+  type WeekCreatorEventContext,
+} from './WeekCreatorEventContext'
 
 export interface WeekCreatorPromptInput {
   userMessage: string
@@ -46,12 +50,18 @@ export function buildWeekCreatorPrompt(
   const recentLogs = [...(context.weekDayLogs ?? [])]
     .sort((a, b) => b.date.localeCompare(a.date))
     .slice(0, 4)
-  const goalEvent = resolveGoalEvent(profile)
   const prioritySport = extractPrioritySport(input.userMessage, config.allowedSports)
   const createWeekContract = ACTION_CONTRACTS.create_week
   const planningStartDate = input.planningStartDate ?? input.targetWeekStart
   const weekEndDate = input.weekEndDate ?? addDaysIso(input.targetWeekStart, 6)
   const isPartialCurrentWeek = planningStartDate > input.targetWeekStart
+  const eventContext = resolveWeekCreatorEventContext({
+    profile,
+    targetWeekStart: input.targetWeekStart,
+    weekEndDate,
+    planningStartDate,
+    primarySport: config.primarySport,
+  })
 
   const lines = [
     `Solicitud del usuario: ${input.userMessage}`,
@@ -62,7 +72,7 @@ export function buildWeekCreatorPrompt(
       : '',
     '',
     buildProfileSummaryV2(profile, config),
-    buildGoalSummary(goalEvent, profile?.macroPlan?.currentPhase, profile?.macroPlan?.blockFocus, config.primarySport),
+    buildGoalSummary(eventContext, config.primarySport),
     buildWeekObjectivesBlock(profile, input.weekObjectives),
     buildConfigSummary(config),
     buildAthleteLevelRules(config),
@@ -72,7 +82,9 @@ export function buildWeekCreatorPrompt(
     !input.skeletonOutput && config.allowedSports.includes('strength')
       ? 'Si hay dos o más sesiones de fuerza, deben tener focos y ejercicios distintos; no repitas exactamente el mismo array exercises en más de una sesión.'
       : '',
-    input.skeletonOutput ? '' : buildSquashPhaseContentGuide(config, profile, goalEvent),
+    input.skeletonOutput && eventContext.phase !== 'race'
+      ? ''
+      : buildSquashPhaseContentGuide(config, eventContext),
     buildProgressionContext(config, recentHistory, recentLogs),
     buildCurrentWeekSessionsSummary(targetWeekSessions, input.targetWeekStart),
     buildRecentCoachAdviceSummary(context.recentMessages),
@@ -221,26 +233,41 @@ function buildRestrictionSummary(
 }
 
 function buildGoalSummary(
-  goalEvent: { title?: string; date?: string; sport?: string } | undefined,
-  currentPhase: string | undefined,
-  blockFocus: string | undefined,
+  eventContext: WeekCreatorEventContext,
   primarySport: SupportedSport | undefined,
 ): string {
   const parts: string[] = []
+  const goalEvent = eventContext.goalEvent
+  if (!goalEvent) {
+    return '## OBJETIVO COMPETITIVO\nNo hay evento competitivo activo; planifica una semana de entrenamiento general coherente con el perfil.'
+  }
   const goalSport = goalEvent?.sport ? normalizeSport(goalEvent.sport) : undefined
-  if (goalEvent?.title || goalEvent?.date) {
+  if (goalEvent && eventContext.window) {
     const eventLabel = goalSport && primarySport && goalSport !== primarySport
       ? 'Evento heredado/de plan anterior'
       : 'Evento objetivo'
-    parts.push(`${eventLabel}: ${goalEvent?.title ?? 'objetivo principal'}${goalEvent?.date ? ` (${goalEvent.date})` : ''}`)
+    const range = eventContext.window.startDate === eventContext.window.endDate
+      ? eventContext.window.startDate
+      : `${eventContext.window.startDate} a ${eventContext.window.endDate}`
+    parts.push(`${eventLabel}: ${goalEvent.title ?? 'objetivo principal'} (${range})`)
+    if (eventContext.window.keyDate) parts.push(`Día clave/ancla: ${eventContext.window.keyDate}`)
+    if (eventContext.timing) {
+      const timingLabel = eventContext.timing === 'active'
+        ? 'campeonato en curso'
+        : eventContext.timing === 'upcoming' ? 'próximo' : 'terminado'
+      parts.push(`Timing para esta semana: ${eventContext.timing} (${timingLabel})`)
+    }
   }
   if (goalEvent?.sport) parts.push(`Deporte del objetivo: ${goalEvent.sport}`)
   if (goalSport && primarySport && goalSport !== primarySport) {
     parts.push(`Deporte principal declarado actual: ${primarySport}`)
     parts.push(`No uses el evento ${goalSport} como restricción dura si el usuario pide una semana de ${primarySport}.`)
   }
-  if (currentPhase) parts.push(`Fase actual: ${currentPhase}`)
-  if (blockFocus) parts.push(`Foco del bloque: ${blockFocus}`)
+  parts.push(`Fase para la semana objetivo: ${eventContext.phase}`)
+  parts.push(`Foco del bloque: ${eventContext.blockFocus}`)
+  if (eventContext.timing === 'active') {
+    parts.push('La ventana sigue activa: NO describas esta semana como post-evento ni transición aunque el inicio ya haya pasado.')
+  }
   return parts.length > 0
     ? ['## OBJETIVO COMPETITIVO', parts.join(' · ')].join('\n')
     : '## OBJETIVO COMPETITIVO\nNo hay evento competitivo activo; planifica una semana de entrenamiento general coherente con el perfil.'
@@ -324,13 +351,15 @@ function deriveMacroWeeklyIntents(profile: ChatContext['athleteProfile']): strin
 
 function buildSquashPhaseContentGuide(
   config: WeekCreatorEffectiveConfig,
-  profile: ChatContext['athleteProfile'],
-  goalEvent: { title?: string; date?: string; sport?: string } | undefined,
+  eventContext: WeekCreatorEventContext,
 ): string {
-  if (config.primarySport !== 'squash' || !goalEvent) return ''
+  if (
+    config.primarySport !== 'squash'
+    || !eventContext.goalEvent
+    || !eventContext.appliesToPrimarySport
+  ) return ''
 
-  const phase = profile?.macroPlan?.currentPhase
-  if (!phase) return ''
+  const phase = eventContext.phase
 
   const guides: Record<typeof phase, string[]> = {
     base: [
@@ -352,8 +381,16 @@ function buildSquashPhaseContentGuide(
       '- Fuerza: 0-1 sesión neural corta; nada que genere DOMS.',
     ],
     race: [
-      '- Máximo 1-2 activaciones antes del torneo.',
-      '- Nada más el día del partido, salvo la competencia/partido objetivo.',
+      eventContext.anchorInsidePlanningWindow
+        ? `- Inserta UNA sola ancla squash match/competitive el ${eventContext.anchorDate}; no agregues otro match-play.`
+        : eventContext.anchorInsideTargetWeek
+          ? `- El ancla ${eventContext.anchorDate} ya pasó dentro de esta semana parcial; NO la recrees.`
+          : `- El ancla única ${eventContext.anchorDate} cae en otra semana; NO inventes una competencia en ésta.`,
+      '- Como máximo 2 apoyos: activación 10-20min RPE 2-4, toque technical 20-30min RPE 3-4 con partner o recuperación/movilidad 15-30min RPE 1-3.',
+      '- Prohibido: fuerza pesada, running de calidad, cycling de carga y match-play extra durante toda la ventana.',
+      eventContext.anchorInsidePlanningWindow
+        ? `- No programes una segunda sesión el día clave ${eventContext.anchorDate}.`
+        : '',
     ],
     transition: [
       '- Recuperación activa. RPE <= 5 en todo.',
@@ -567,16 +604,6 @@ function buildRecentCoachAdviceSummary(messages: ChatContext['recentMessages']):
 function clipForPrompt(value: string, maxLength: number): string {
   const compact = value.replace(/\s+/g, ' ').trim()
   return compact.length <= maxLength ? compact : `${compact.slice(0, maxLength - 1)}…`
-}
-
-function resolveGoalEvent(profile: ChatContext['athleteProfile']) {
-  if (!profile) return undefined
-  const goalEventId = profile.planWizardConfig?.goalEventId
-  if (goalEventId) {
-    const selected = profile.goalEvents?.find((event) => event.id === goalEventId)
-    if (selected) return selected
-  }
-  return profile.goalEvents?.find((event) => event.priority === 'primary') ?? profile.goalEvents?.[0]
 }
 
 function selectSessionsForTargetWeek(

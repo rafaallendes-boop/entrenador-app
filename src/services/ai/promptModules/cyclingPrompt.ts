@@ -24,6 +24,7 @@ import {
   getNextGoalEventForSport,
   addDaysToISO,
 } from './shared'
+import { resolveGoalEventWindow } from '../../goalEventWindow'
 
 // ─── Phase mapping ──────────────────────────────────────────────────────────
 
@@ -57,7 +58,12 @@ export function getCyclingSelectionContext(context: ChatContext): CyclingContext
   const role = sportProfile === 'cycling_primary' ? 'primary' : 'support'
 
   const nextCyclingEvent = getNextGoalEventForSport(context, 'cycling')
-  const competitionGap = nextCyclingEvent ? diffDays(today, nextCyclingEvent.date) : undefined
+  const eventWindow = nextCyclingEvent ? resolveGoalEventWindow(nextCyclingEvent) : undefined
+  const competitionGap = eventWindow
+    ? eventWindow.startDate <= today && eventWindow.endDate >= today
+      ? 0
+      : diffDays(today, eventWindow.startDate)
+    : undefined
   const daysToCompetition = typeof competitionGap === 'number' ? competitionGap : undefined
   const competitionSoon = typeof daysToCompetition === 'number' && daysToCompetition <= 7
 

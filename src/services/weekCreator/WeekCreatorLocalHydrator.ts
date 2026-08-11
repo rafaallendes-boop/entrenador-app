@@ -19,6 +19,7 @@ import { recordRepairAction } from '../planBuilder/repairTaxonomy'
 import type { WeekCreatorEffectiveConfig } from './WeekCreatorConfig'
 import { alignSessionsToScheduleConstraints, buildScheduleAwareConfig } from './scheduleConstraints'
 import type { WeekCreatorSkeleton, WeekCreatorSkeletonSession } from './weekCreatorSkeleton'
+import { resolveWeekCreatorEventContext } from './WeekCreatorEventContext'
 
 export type WeekCreatorHydrationStatus =
   | 'hydrated'
@@ -407,22 +408,36 @@ export function buildWeekCreatorHydrationRepairContext(
   const primarySport = input.config.primarySport ?? input.config.allowedSports[0] ?? 'squash'
   const now = Date.now()
   const weekEndDate = addDaysIso(input.targetWeekStart, 6)
-  const phase = profile.macroPlan?.currentPhase ?? 'base'
+  const eventContext = resolveWeekCreatorEventContext({
+    profile,
+    targetWeekStart: input.targetWeekStart,
+    weekEndDate,
+    planningStartDate: input.planningStartDate,
+    primarySport,
+  })
+  const phase = eventContext.phase
   const sportDetails = buildSportDetails(input.config.allowedSports, primarySport)
+  const goalEventId = eventContext.goalEvent?.id
+    ?? profile.planWizardConfig?.goalEventId
+    ?? 'week-creator'
   const macroSnapshot: MacroPlan = {
-    goalEventId: profile.planWizardConfig?.goalEventId ?? 'week-creator',
-    goalEventDate: weekEndDate,
+    goalEventId,
+    goalEventDate: eventContext.window?.startDate ?? weekEndDate,
+    goalEventEndDate: eventContext.window?.endDate,
+    goalEventKeyDate: eventContext.window?.keyDate,
     currentPhase: phase,
-    weeksRemaining: profile.macroPlan?.weeksRemaining ?? 0,
-    blockFocus: profile.macroPlan?.blockFocus ?? `Semana base de ${primarySport}`,
-    headline: profile.macroPlan?.headline ?? `Semana de ${primarySport}`,
+    weeksRemaining: eventContext.weeksRemaining,
+    blockFocus: eventContext.blockFocus,
+    headline: profile.macroPlan?.currentPhase === phase
+      ? profile.macroPlan.headline
+      : `Semana ${phase} de ${primarySport}`,
     timeline: [],
     sportDetails,
     secondaryEvents: [],
     computedAt: now,
   }
   const wizardConfig: PlanWizardConfig = {
-    goalEventId: profile.planWizardConfig?.goalEventId ?? 'week-creator',
+    goalEventId,
     trainingDays: input.config.trainingDays,
     sessionsPerWeek: input.config.sessionsPerWeek,
     sessionDurationMins: input.config.sessionDurationMins,

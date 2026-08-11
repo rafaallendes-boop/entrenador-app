@@ -39,4 +39,33 @@ describe('promptBuilder temporal anchoring guards', () => {
     expect(prompt).toContain('HOY es 18 jul 2026')
     expect(prompt).toContain('cualquier fecha anterior ya pasó')
   })
+
+  it('keeps a multiday championship active after its start date', () => {
+    vi.setSystemTime(new Date('2026-09-08T15:00:00'))
+    const prompt = buildCoachSystemPrompt({
+      recentSessions: [],
+      plannedSessions: [],
+      historicalSessions: [],
+      athleteProfile: {
+        id: 'athlete-window',
+        updatedAt: 0,
+        primarySport: 'squash',
+        goalEvents: [{
+          id: 'event-window',
+          title: 'Campeonato',
+          date: '2026-09-05',
+          endDate: '2026-09-11',
+          keyDate: '2026-09-09',
+          sport: 'squash',
+          priority: 'primary',
+        }],
+      },
+    }, { requestClass: 'chat_general' })
+
+    expect(prompt).toContain('═══ MACRO PLAN ═══')
+    expect(prompt).toContain('5–11 sep 2026')
+    expect(prompt).toContain('Día clave: 9 sep')
+    expect(prompt).toContain('Timing del evento: active')
+    expect(prompt).toContain('NO la describas como post-evento')
+  })
 })

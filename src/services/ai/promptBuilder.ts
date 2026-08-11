@@ -35,6 +35,12 @@ import { computeMacroPlan, getPrimaryGoalEvent, getPhaseLabel, formatWeeksRemain
 import { selectSquashDrills } from '../training/drillSelector'
 import { selectStrengthSession } from '../training/strengthSelector'
 import { listAvailableStrengthReferences } from '../training/strengthLoadPrescription'
+import {
+  formatGoalEventKeyDate,
+  formatGoalEventWindow,
+  goalEventWindowFromMacroPlan,
+  resolveGoalEventWindow,
+} from '../goalEventWindow'
 
 // ─── Per-sport modules ──────────────────────────────────────────────────────
 
@@ -458,9 +464,10 @@ function findAffectedSession(context: ChatContext, userMessage?: string): Sessio
 
 function hasCompetitionWithinDays(context: ChatContext, days: number): boolean {
   const today = todayISO()
+  const horizon = addDaysToISO(today, days)
   const goalEventSoon = (context.athleteProfile?.goalEvents ?? []).some((event) => {
-    const gap = diffDays(today, event.date)
-    return gap != null && gap >= 0 && gap <= days
+    const { startDate, endDate } = resolveGoalEventWindow(event)
+    return endDate >= today && startDate <= horizon
   })
 
   const competitiveSessionSoon = getAllContextSessions(context).some((session) => {
@@ -1084,9 +1091,17 @@ function buildMacroPlanSection(context: ChatContext, relevantSports?: Set<Suppor
 
   const event = getPrimaryGoalEvent(profile)
   const eventTitle = event?.title ?? 'evento principal'
+  const eventWindowInput = event ?? goalEventWindowFromMacroPlan(macroPlan)
+  const eventWindow = resolveGoalEventWindow(eventWindowInput)
+  const eventTiming = todayISO() < eventWindow.startDate
+    ? 'upcoming'
+    : todayISO() > eventWindow.endDate ? 'past' : 'active'
 
   const lines: string[] = ['═══ MACRO PLAN ═══']
-  lines.push(`Evento principal: ${eventTitle} (${macroPlan.goalEventDate})`)
+  lines.push(`Evento principal: ${eventTitle} (${formatGoalEventWindow(eventWindowInput)})`)
+  const keyDateLabel = formatGoalEventKeyDate(eventWindowInput)
+  if (keyDateLabel) lines.push(keyDateLabel)
+  lines.push(`Timing del evento: ${eventTiming}`)
   lines.push(`Fase actual: ${getPhaseLabel(macroPlan.currentPhase)}`)
   lines.push(`Semanas restantes: ${formatWeeksRemaining(macroPlan.weeksRemaining)}`)
   lines.push(`Foco del bloque: ${macroPlan.blockFocus}`)
@@ -1106,7 +1121,7 @@ function buildMacroPlanSection(context: ChatContext, relevantSports?: Set<Suppor
     lines.push('')
     lines.push('EVENTOS SECUNDARIOS RELEVANTES:')
     for (const eventMarker of macroPlan.secondaryEvents.slice(0, 3)) {
-      lines.push(`- ${eventMarker.title} (${eventMarker.date}) · ${eventMarker.timing}`)
+      lines.push(`- ${eventMarker.title} (${formatGoalEventWindow(eventMarker)}) · ${eventMarker.timing}`)
     }
   }
   lines.push('')
@@ -1114,6 +1129,7 @@ function buildMacroPlanSection(context: ChatContext, relevantSports?: Set<Suppor
   lines.push('- Usa esta información para ajustar recomendaciones de carga, volumen e intensidad.')
   lines.push('- NO redefinas fases ni crees bloques arbitrarios. Las fases son input del sistema.')
   lines.push('- Si estás en taper o race, prioriza frescura sobre desarrollo.')
+  lines.push('- Si el timing del evento es active, la ventana sigue en curso: NO la describas como post-evento ni transición aunque su inicio ya haya pasado.')
   lines.push('- Si estás en base o build, puedes progresar volumen e intensidad normalmente.')
   lines.push('- Si estás en transición (post-evento), prioriza recuperación activa y reset.')
 
@@ -1128,7 +1144,7 @@ function buildCoachMemorySection(context: ChatContext): string {
   const today = todayISO()
 
   return `═══ MEMORIA DEL ATLETA ═══
-(Memoria acumulada, puede haberse escrito días atrás. HOY es ${formatDateShort(today)} · ${getDayName(today)}; cualquier fecha anterior ya pasó — trátala como historial, no como evento próximo.)
+(Memoria acumulada, puede haberse escrito días atrás. HOY es ${formatDateShort(today)} · ${getDayName(today)}; cualquier fecha anterior ya pasó si era un día puntual, pero una ventana multijornada sigue activa hasta su término indicado en el macro plan.)
 ${memory}
 
 Extrae y aplica activamente cualquiera de estos elementos si aparecen:

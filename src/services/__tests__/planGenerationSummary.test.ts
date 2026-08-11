@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import type { AthleteProfile, CoachAction, Session } from '../../types'
 import { buildPlanGenerationSummary, validateGeneratedPlan } from '../planGenerationSummary'
@@ -230,5 +230,34 @@ describe('planGenerationSummary', () => {
     expect(summary?.weeklyIntent).toBeDefined()
     expect(summary?.weeklyGoalSummary).toBe('Build squash volume while maintaining strength')
     expect(summary?.macroWeekCoherence.weeklyRule.length).toBeGreaterThan(0)
+  })
+
+  it('keeps competitionSoon active until a multiday event actually ends', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-08T12:00:00'))
+    try {
+      const activeProfile = makeProfile({
+        goalEvents: [{
+          id: 'goal-squash',
+          title: 'Campeonato',
+          date: '2026-09-05',
+          endDate: '2026-09-11',
+          sport: 'squash',
+          priority: 'primary',
+        }],
+      })
+      const summary = buildPlanGenerationSummary({
+        athleteProfile: activeProfile,
+        actions: [createWeekAction([
+          { date: '2026-09-08', timeBlock: 'AM', sessionType: 'squash', title: 'Activación', durationMin: 20, rpe: 3 },
+          { date: '2026-09-09', timeBlock: 'PM', sessionType: 'strength', title: 'Fuerza suave', durationMin: 25, rpe: 3 },
+        ])],
+        historicalSessions,
+      })
+
+      expect(summary?.intentsBySport.strength).toBe('deload')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

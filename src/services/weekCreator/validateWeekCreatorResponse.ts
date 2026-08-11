@@ -8,6 +8,8 @@ import { filterSessionsToWeek, isStrictISODate, pickCreateWeekDiagnostic } from 
 import type { WeekCreatorEffectiveConfig } from './WeekCreatorConfig'
 import type { WeekCreatorValidationCode } from './WeekCreatorFailurePolicy'
 import { resolveDayScheduleConstraint } from './scheduleConstraints'
+import { resolveWeekCreatorEventContext } from './WeekCreatorEventContext'
+import { isSquashCompetitionSession } from '../planBuilder/eventWindowRules'
 
 /**
  * Fields where structural recursion stops. Their internal validation is owned
@@ -83,6 +85,16 @@ export function validateWeekCreatorResponse(
   const sessions = action.sessions as CoachSessionProposal[]
   const weekCheck = validateSessionWeekBoundaries(sessions, input.targetWeekStart, input.planningStartDate)
   if (weekCheck) return fail('invalid_week_dates', weekCheck, rawSessionCount, validSessionCount, droppedSessionCount)
+  const eventContext = resolveWeekCreatorEventContext({
+    profile: input.context.athleteProfile,
+    targetWeekStart: input.targetWeekStart,
+    weekEndDate: addDaysIso(input.targetWeekStart, 6),
+    planningStartDate: input.planningStartDate,
+    primarySport: input.config.primarySport,
+  })
+  const eventAnchorDate = eventContext.anchorInsidePlanningWindow
+    ? eventContext.anchorDate
+    : undefined
 
   if (sessions.length !== input.config.sessionsPerWeek) {
     const droppedInfo = droppedSessionCount && droppedSessionCount > 0
@@ -110,10 +122,10 @@ export function validateWeekCreatorResponse(
   const duplicateStrengthError = validateDuplicateStrengthSessions(sessions)
   if (duplicateStrengthError) return fail('duplicate_strength_content', duplicateStrengthError, rawSessionCount, validSessionCount, droppedSessionCount)
 
-  const dayError = validateAllowedDays(sessions, input.config)
+  const dayError = validateAllowedDays(sessions, input.config, eventAnchorDate)
   if (dayError) return fail('unavailable_day', dayError, rawSessionCount, validSessionCount, droppedSessionCount)
 
-  const timeConstraintError = validateScheduleTimeConstraints(sessions, input.config)
+  const timeConstraintError = validateScheduleTimeConstraints(sessions, input.config, eventAnchorDate)
   if (timeConstraintError) return fail('schedule_constraint', timeConstraintError, rawSessionCount, validSessionCount, droppedSessionCount)
 
   const sportError = validateAllowedSports(sessions, input.config)
@@ -310,9 +322,11 @@ function buildStrengthExerciseSignature(session: CoachSessionProposal): string |
 function validateAllowedDays(
   sessions: CoachSessionProposal[],
   config: WeekCreatorEffectiveConfig,
+  eventAnchorDate?: string,
 ): string | undefined {
   const allowedDays = new Set(config.trainingDays)
   for (const session of sessions) {
+    if (session.date === eventAnchorDate && isSquashCompetitionSession(session)) continue
     const day = isoDateToDayOfWeek(session.date)
     if (!day || !allowedDays.has(day)) {
       return `La sesión ${session.title} cae en un día no permitido por la configuración (${session.date}).`
@@ -324,8 +338,10 @@ function validateAllowedDays(
 function validateScheduleTimeConstraints(
   sessions: CoachSessionProposal[],
   config: WeekCreatorEffectiveConfig,
+  eventAnchorDate?: string,
 ): string | undefined {
   for (const session of sessions) {
+    if (session.date === eventAnchorDate && isSquashCompetitionSession(session)) continue
     const day = isoDateToDayOfWeek(session.date)
     if (!day) continue
     const constraint = resolveDayScheduleConstraint(config.scheduleConstraints, day)
