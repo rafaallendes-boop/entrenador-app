@@ -3,7 +3,7 @@
 Fecha: 2026-08-10  
 Actualizado: 2026-08-11
 
-Estado: A0–A7, incluida A2.5, completadas técnicamente; rollout operativo pendiente. Proyecto B no iniciado.
+Estado: A0–A7, incluida A2.5, completadas técnicamente; rollout operativo pendiente. B0–B3 completadas técnicamente; B4–B6 pendientes.
 
 Spec: `docs/superpowers/specs/2026-08-10-squash-session-intent-and-event-window-design.md`
 
@@ -377,11 +377,11 @@ Crear semana.
 
 **Pasos:**
 
-- [ ] Agregar `GoalEvent.endDate?` y `GoalEvent.keyDate?`.
-- [ ] Implementar resolver/validador inclusivo con fallback de evento de un día.
-- [ ] Agregar campos de snapshot macro manteniendo `goalEventDate` compatible.
-- [ ] Preservar campos en export/import y rechazar rangos inválidos.
-- [ ] Confirmar que datos viejos no requieren migración material.
+- [x] Agregar `GoalEvent.endDate?` y `GoalEvent.keyDate?`.
+- [x] Implementar resolver/validador inclusivo con fallback de evento de un día.
+- [x] Agregar campos de snapshot macro manteniendo `goalEventDate` compatible.
+- [x] Preservar campos en export/import y rechazar rangos inválidos.
+- [x] Confirmar que datos viejos no requieren migración material.
 
 ### Task B2 — Captura y presentación del rango
 
@@ -398,13 +398,13 @@ Crear semana.
 
 **Pasos:**
 
-- [ ] Capturar Inicio, Término y Día clave con validación inline.
-- [ ] Mantener la creación simple de un día cuando término está vacío.
-- [ ] Hacer que Onboarding preserve `endDate/keyDate` aunque inicialmente no
+- [x] Capturar Inicio, Término y Día clave con validación inline.
+- [x] Mantener la creación simple de un día cuando término está vacío.
+- [x] Hacer que Onboarding preserve `endDate/keyDate` aunque inicialmente no
   exponga los controles avanzados.
-- [ ] Mostrar rango y día clave en resumen, builder, dashboard e historial.
-- [ ] Incluir las tres fechas en la firma del draft para evitar autoload stale.
-- [ ] Preservar `endDate/keyDate` al editar desde cualquier superficie.
+- [x] Mostrar rango y día clave en resumen, builder, dashboard e historial.
+- [x] Incluir las tres fechas en la firma del draft para evitar autoload stale.
+- [x] Preservar `endDate/keyDate` al editar desde cualquier superficie.
 
 ### Task B3 — MacroPlan, shell y ciclo
 
@@ -421,16 +421,16 @@ Crear semana.
 
 **Pasos:**
 
-- [ ] Calcular countdown/taper contra inicio.
-- [ ] Mantener `race` durante toda la ventana y `transition` sólo después del
+- [x] Calcular countdown/taper contra inicio.
+- [x] Mantener `race` durante toda la ventana y `transition` sólo después del
   término.
-- [ ] Hacer que el shell termine en `endDate` y que toda semana intersectada sea
+- [x] Hacer que el shell termine en `endDate` y que toda semana intersectada sea
   `race`.
-- [ ] Exportar `resolveCompetitionPlanCalendarWindow` o moverla a un módulo
+- [x] Exportar `resolveCompetitionPlanCalendarWindow` o moverla a un módulo
   compartido para que preview y shell usen la misma implementación; no forkear
   la lógica al agregar el rango.
-- [ ] Usar `endDate` para cierre/CTA post-evento.
-- [ ] Actualizar capacidad y truncamiento de última semana sin romper evento de
+- [x] Usar `endDate` para cierre/CTA post-evento.
+- [x] Actualizar capacidad y truncamiento de última semana sin romper evento de
   un día.
 
 ### Task B4 — Prompt, fallback, repair y validación de semana de evento
