@@ -1,9 +1,13 @@
 # Smoke de producción — Proyecto A completo + Proyecto B0–B3
 
-Fecha objetivo: 2026-08-11  
-URL actual: `https://entrenadoralph.netlify.app/`  
-Commit mínimo esperado: `9946e7f`  
-Spec: `docs/superpowers/specs/2026-08-10-squash-session-intent-and-event-window-design.md`  
+Fecha objetivo: 2026-08-11
+
+URL actual: `https://entrenadoralph.netlify.app/`
+
+Commit mínimo esperado: `9946e7f`
+
+Spec: `docs/superpowers/specs/2026-08-10-squash-session-intent-and-event-window-design.md`
+
 Plan: `docs/superpowers/plans/2026-08-10-squash-session-intent-and-event-window.md`
 
 **Migraciones: ninguna.** Dexie sigue en v19 y no hay migración SQL asociada.
