@@ -191,9 +191,9 @@ export const WeekCreatorEngine = {
     const cohort = buildWeekCreatorCohort(context, config, options.targetWeekStart, dateWindow.planningStartDate)
     // Free-text medical restrictions still use the detailed provider contract.
     // Local selectors cannot safely infer exercise adaptations from arbitrary diagnoses.
-    const useSkeletonContract = resolveWeekCreatorContractStrategy() === 'skeleton_v1'
+    const useSkeletonContract = resolveWeekCreatorContractStrategy() === 'skeleton_v2'
       && !hasActiveMedicalRestrictions(context, config)
-    const weekCreatorContract = useSkeletonContract ? 'skeleton_v1' as const : 'detailed' as const
+    const weekCreatorContract = useSkeletonContract ? 'skeleton_v2' as const : 'detailed' as const
     // The detailed (medical) contract carries full per-sport detail and was
     // observed truncating at the skeleton-sized 2500 cap; give it headroom.
     const effectiveMaxTokens = resolveWeekCreatorMaxTokens(useSkeletonContract)

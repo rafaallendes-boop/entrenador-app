@@ -250,6 +250,9 @@ export function mapWeekCreatorSkeletonToAction(
       rpe: skeletonSession.rpe,
       title: skeletonSession.title,
       objective: skeletonSession.objective,
+      ...(skeletonSession.sessionType === 'squash' && skeletonSession.squashKind
+        ? { squashKind: skeletonSession.squashKind }
+        : {}),
       ...(skeletonSession.sessionType === 'squash' && skeletonSession.subtype
         ? { subtype: skeletonSession.subtype }
         : {}),
@@ -284,8 +287,11 @@ function applyFocusIntent(
     ...session,
     objective: appendSemanticIntent(session.objective, semanticIntent),
   }
-  if (session.sessionType === 'squash' && !session.subtype) {
-    overlaid.subtype = inferSquashSubtypeFromFocus(skeleton.focusKey)
+  // La modalidad viaja como dato desde el skeleton. `focusKey` vuelve a ser sólo
+  // foco deportivo: derivar de él el subtype convertía `squash_length_control`
+  // —un foco legítimo de una sesión con partner— en una sesión en solitario.
+  if (session.sessionType === 'squash' && skeleton.squashKind) {
+    overlaid.squashKind = skeleton.squashKind
   }
   if (session.sessionType === 'running' && !session.runningType) {
     overlaid.runningType = inferRunningTypeFromFocus(skeleton.focusKey)
@@ -294,10 +300,12 @@ function applyFocusIntent(
 }
 
 /**
- * The appended phrase is not decoration: repairWeek reads `objective` (and
- * `title`) to pick drills, blocks and protocols, so this is how focusKey steers
- * the local selectors. It is also persisted and shown to the athlete, so it has
- * to read as coach copy rather than as pipeline metadata.
+ * La frase agregada es copy para el atleta, no un canal de control.
+ *
+ * Antes SÍ dirigía a los selectores: `repairWeek` leía `objective` y `title`
+ * para elegir drills, así que inyectar texto acá era la forma de que `focusKey`
+ * influyera. Esa inferencia se eliminó —la modalidad viaja en `squashKind`—, de
+ * modo que esto sólo debe leerse como nota de entrenador.
  */
 function appendSemanticIntent(objective: string | undefined, semanticIntent: string): string {
   const base = objective?.trim()
@@ -353,14 +361,6 @@ function resolveFocusSemanticIntent(
   return mappings[sport]?.find(([pattern]) => pattern.test(key))?.[1]
 }
 
-function inferSquashSubtypeFromFocus(focusKey: string): CoachSessionProposal['subtype'] {
-  const key = normalizeFocusKey(focusKey)
-  if (/competition|competitive|torneo/.test(key)) return 'competitive'
-  if (/match|partido/.test(key)) return 'match'
-  if (/control/.test(key)) return 'control'
-  if (/light|recovery|activation|recuper|activacion/.test(key)) return 'light'
-  return 'training'
-}
 
 function inferRunningTypeFromFocus(focusKey: string): CoachSessionProposal['runningType'] {
   const key = normalizeFocusKey(focusKey)

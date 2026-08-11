@@ -2,6 +2,7 @@ import type { WeekCreatorSkeleton, WeekCreatorSkeletonSession } from './weekCrea
 import {
   WEEK_CREATOR_SKELETON_RUNNING_TYPES,
   WEEK_CREATOR_SKELETON_SESSION_TYPES,
+  WEEK_CREATOR_SKELETON_SQUASH_KINDS,
   WEEK_CREATOR_SKELETON_SQUASH_SUBTYPES,
   WEEK_CREATOR_SKELETON_TIME_BLOCKS,
 } from './weekCreatorSkeleton'
@@ -114,6 +115,17 @@ function validateSession(
   if (!isNonEmptyString(value.focusKey)) addIssue(issues, `${path}.focusKey`, value.focusKey == null ? 'missing_field' : 'invalid_type')
   if (!isNonEmptyString(value.title)) addIssue(issues, `${path}.title`, value.title == null ? 'missing_field' : 'invalid_type')
   if (!isNonEmptyString(value.objective)) addIssue(issues, `${path}.objective`, value.objective == null ? 'missing_field' : 'invalid_type')
+  // `squashKind` es obligatorio para squash y está prohibido en el resto. Es la
+  // autoridad de modalidad: aceptarlo ausente devolvería la decisión a `focusKey`.
+  if (value.sessionType === 'squash') {
+    if (value.squashKind == null) {
+      addIssue(issues, `${path}.squashKind`, 'missing_field')
+    } else if (!isMember(value.squashKind, WEEK_CREATOR_SKELETON_SQUASH_KINDS)) {
+      addIssue(issues, `${path}.squashKind`, 'invalid_value')
+    }
+  } else if (value.squashKind != null) {
+    addIssue(issues, `${path}.squashKind`, 'invalid_value')
+  }
   if (value.subtype != null && !isMember(value.subtype, WEEK_CREATOR_SKELETON_SQUASH_SUBTYPES)) {
     addIssue(issues, `${path}.subtype`, 'invalid_value')
   } else if (value.subtype != null && value.sessionType !== 'squash') {
@@ -136,6 +148,7 @@ function validateSession(
     focusKey: (value.focusKey as string).trim(),
     title: (value.title as string).trim(),
     objective: (value.objective as string).trim(),
+    ...(value.squashKind != null ? { squashKind: value.squashKind as NonNullable<WeekCreatorSkeletonSession['squashKind']> } : {}),
     ...(value.subtype != null ? { subtype: value.subtype as NonNullable<WeekCreatorSkeletonSession['subtype']> } : {}),
     ...(value.runningType != null ? { runningType: value.runningType as NonNullable<WeekCreatorSkeletonSession['runningType']> } : {}),
   }

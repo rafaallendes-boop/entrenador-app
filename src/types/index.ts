@@ -138,7 +138,7 @@ export interface AITechnicalResult {
   partialWeek?: boolean
   activeRestrictionsPresent?: boolean
   /** Versioned provider boundary used by Week Creator. */
-  weekCreatorContract?: 'skeleton_v1' | 'detailed'
+  weekCreatorContract?: 'skeleton_v2' | 'detailed'
   firstChunkAt?: number
   startedAt: number
   completedAt?: number

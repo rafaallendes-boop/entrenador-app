@@ -28,7 +28,8 @@ export function buildWeekCreatorSkeletonSystemPrompt(): string {
     'Devuelve exactamente una create_week con targetDate y la cantidad de sesiones solicitados.',
     'Respeta fechas, bloques AM/PM, deportes permitidos, carga, fatiga y restricciones médicas activas.',
     'Cada sesión incluye sólo date, timeBlock, sessionType, durationMin, rpe, focusKey, title y objective; subtype o runningType sólo cuando correspondan.',
-    'focusKey es una intención deportiva breve y estable para seleccionar contenido local (por ejemplo squash_control, strength_lower o running_z2).',
+    'focusKey es una intención deportiva breve y estable para seleccionar contenido local (por ejemplo squash_length, strength_lower o running_z2).',
+    'Sólo squash lleva squashKind, obligatorio: control (pelota en solitario), technical (con partner), shadows (sin pelota) o match (con rival). Es modalidad, no foco.',
     'No incluyas ejercicios, drills, estructuras, detalles deportivos, warmup ni cooldown: la app los hidrata y valida localmente.',
     'Si falta o sobra una sesión o un campo es inválido, corrígelo antes de responder. Sé compacto y no narres tu razonamiento.',
   ].join('\n')

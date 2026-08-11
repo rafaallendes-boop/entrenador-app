@@ -63,32 +63,32 @@ describe('WeekCreatorEngine phase 3 compact contract', () => {
       'validate',
     ])
     expect(debugRequest?.responseSchemaCharCount).toBe(JSON.stringify(WEEK_CREATOR_SKELETON_RESPONSE_SCHEMA).length)
-    expect(debugRequest?.weekCreatorContract).toBe('skeleton_v1')
+    expect(debugRequest?.weekCreatorContract).toBe('skeleton_v2')
     expect(debugRequest?.repairStats).toMatchObject({
-      repairedSessionCount: 3,
+      repairedSessionCount: 6,
       movedSessionCount: 0,
       addedFallbackCount: 0,
       droppedSessionCount: 0,
       filteredSportCount: 0,
       repairTaxonomyVersion: 2,
       hydrationActionCount: 0,
-      correctiveActionCount: 3,
+      correctiveActionCount: 6,
       structuralActionCount: 0,
       hydratedSessionsAffected: 0,
-      correctedSessionsAffected: 2,
+      correctedSessionsAffected: 3,
       structurallyRepairedSessionsAffected: 0,
       hydration: {
-        repairedSessionCount: 6,
+        repairedSessionCount: 7,
         movedSessionCount: 0,
         addedFallbackCount: 0,
         droppedSessionCount: 0,
         filteredSportCount: 0,
         repairTaxonomyVersion: 2,
         hydrationActionCount: 5,
-        correctiveActionCount: 1,
+        correctiveActionCount: 2,
         structuralActionCount: 0,
         hydratedSessionsAffected: 5,
-        correctedSessionsAffected: 1,
+        correctedSessionsAffected: 2,
         structurallyRepairedSessionsAffected: 0,
       },
     })
@@ -219,6 +219,8 @@ function baseSession(
     focusKey,
     title,
     objective: `Objetivo de ${title}.`,
+    // El contrato v2 exige la modalidad para squash y la prohíbe en el resto.
+    ...(sessionType === 'squash' ? { squashKind: 'technical' as const } : {}),
   }
 }
 

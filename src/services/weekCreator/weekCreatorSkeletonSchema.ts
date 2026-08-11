@@ -1,12 +1,13 @@
 import {
   WEEK_CREATOR_SKELETON_RUNNING_TYPES,
   WEEK_CREATOR_SKELETON_SESSION_TYPES,
+  WEEK_CREATOR_SKELETON_SQUASH_KINDS,
   WEEK_CREATOR_SKELETON_SQUASH_SUBTYPES,
   WEEK_CREATOR_SKELETON_TIME_BLOCKS,
 } from './weekCreatorSkeleton'
 
 /**
- * Provider-neutral schema for the compact Week Creator v1 response.
+ * Provider-neutral schema for the compact Week Creator v2 response.
  *
  * It intentionally uses only the JSON Schema/OpenAPI subset supported by the
  * app's OpenAI, Anthropic and Gemini schema normalizers. Gemini drops
@@ -38,6 +39,7 @@ export const WEEK_CREATOR_SKELETON_RESPONSE_SCHEMA: Record<string, unknown> = {
           focusKey: { type: 'STRING' },
           title: { type: 'STRING' },
           objective: { type: 'STRING' },
+          squashKind: { type: 'STRING', enum: WEEK_CREATOR_SKELETON_SQUASH_KINDS },
           subtype: { type: 'STRING', enum: WEEK_CREATOR_SKELETON_SQUASH_SUBTYPES },
           runningType: { type: 'STRING', enum: WEEK_CREATOR_SKELETON_RUNNING_TYPES },
         },

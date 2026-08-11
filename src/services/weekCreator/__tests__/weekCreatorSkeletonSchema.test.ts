@@ -41,6 +41,7 @@ describe('WEEK_CREATOR_SKELETON_RESPONSE_SCHEMA', () => {
       'focusKey',
       'title',
       'objective',
+      'squashKind',
       'subtype',
       'runningType',
     ])
@@ -118,6 +119,6 @@ describe('WEEK_CREATOR_SKELETON_RESPONSE_SCHEMA', () => {
     } satisfies WeekCreatorSkeleton
 
     expect(response.type).toBe('create_week')
-    expect(WEEK_CREATOR_SKELETON_VERSION).toBe('v1')
+    expect(WEEK_CREATOR_SKELETON_VERSION).toBe('v2')
   })
 })

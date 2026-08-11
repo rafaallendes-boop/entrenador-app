@@ -20,6 +20,7 @@ function makeSkeleton(): Record<string, unknown> {
       focusKey: 'squash_control',
       title: 'Control de la T',
       objective: 'Sostener precisión bajo fatiga moderada.',
+      squashKind: 'control',
       subtype: 'control',
     }],
   }

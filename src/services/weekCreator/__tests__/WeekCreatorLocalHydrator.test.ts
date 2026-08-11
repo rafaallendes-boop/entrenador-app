@@ -62,7 +62,7 @@ function skeletonAction(): CoachAction {
       session('2026-07-21', 'AM', 'strength', 'Fuerza base'),
       session('2026-07-22', 'AM', 'squash', 'Squash control', 'control'),
       session('2026-07-23', 'AM', 'cycling', 'Bici Z2'),
-      session('2026-07-24', 'AM', 'squash', 'Squash juego', 'match'),
+      session('2026-07-24', 'AM', 'squash', 'Squash juego', 'match', 'match'),
     ],
   }
 }
@@ -73,6 +73,7 @@ function session(
   sessionType: 'squash' | 'strength' | 'cycling',
   title: string,
   subtype?: 'training' | 'control' | 'match',
+  squashKind: 'control' | 'technical' | 'shadows' | 'match' = 'technical',
 ) {
   return {
     date,
@@ -83,6 +84,8 @@ function session(
     rpe: sessionType === 'cycling' ? 4 : 6,
     objective: `Objetivo de ${title}`,
     subtype,
+    // El contrato v2 exige la modalidad para squash y la prohíbe en el resto.
+    ...(sessionType === 'squash' ? { squashKind } : {}),
   }
 }
 
@@ -180,7 +183,7 @@ describe('WeekCreatorLocalHydrator', () => {
       reason: 'No debe hidratarse',
       targetDate: TARGET_WEEK,
       sessions: [{
-        ...session('2026-07-20', 'AM', 'squash', 'Squash intenso'),
+        ...session('2026-07-20', 'AM', 'squash', 'Squash intenso', undefined, 'match'),
         focusKey: 'squash_match_pressure',
       }],
     }
@@ -213,7 +216,7 @@ describe('WeekCreatorLocalHydrator', () => {
       reason: 'Semana compacta',
       targetDate: TARGET_WEEK,
       sessions: [
-        session('2026-07-20', 'AM', 'squash', 'Squash presión'),
+        session('2026-07-20', 'AM', 'squash', 'Squash presión', undefined, 'match'),
         {
           date: '2026-07-21',
           timeBlock: 'AM',
@@ -238,8 +241,10 @@ describe('WeekCreatorLocalHydrator', () => {
     const skeleton = parsed.ok ? parsed.skeleton : undefined
     const overlaid = overlayWeekCreatorSkeletonIntent(action, skeleton as WeekCreatorSkeleton)
     expect(overlaid.appliedCount).toBe(2)
+    // `focusKey` sigue enriqueciendo el objetivo, pero ya no decide la
+    // modalidad: eso viaja en `squashKind` y llega intacto a la propuesta.
     expect(overlaid.action.sessions?.[0]).toMatchObject({
-      subtype: 'match',
+      squashKind: 'match',
       objective: expect.stringContaining('partido y presión competitiva'),
     })
     expect(overlaid.action.sessions?.[1]).toMatchObject({
@@ -301,9 +306,9 @@ describe('WeekCreatorLocalHydrator', () => {
       sessions: [
         { ...session('2026-07-20', 'AM', 'squash', 'Squash técnico'), focusKey: 'squash_technical' },
         { ...session('2026-07-21', 'AM', 'strength', 'Fuerza base'), focusKey: 'strength_lower' },
-        { ...session('2026-07-22', 'AM', 'squash', 'Squash control'), focusKey: 'squash_control' },
+        { ...session('2026-07-22', 'AM', 'squash', 'Squash control', undefined, 'control'), focusKey: 'squash_control' },
         { ...session('2026-07-23', 'AM', 'cycling', 'Bici Z2'), focusKey: 'cycling_z2' },
-        { ...session('2026-07-24', 'AM', 'squash', 'Squash match'), focusKey: 'squash_match' },
+        { ...session('2026-07-24', 'AM', 'squash', 'Squash match', undefined, 'match'), focusKey: 'squash_match' },
       ],
     }
     const result = hydrateWeekCreatorSkeleton({
@@ -316,10 +321,14 @@ describe('WeekCreatorLocalHydrator', () => {
     const sessions = result.response.actions?.[0]?.sessions ?? []
 
     expect(result.focusOverlayCount).toBe(5)
-    expect(sessions.find((candidate) => candidate.subtype === 'match')).toMatchObject({
-      subtype: 'match',
-      squashDetails: expect.objectContaining({ sessionMode: 'practice_match' }),
-    })
+    // La modalidad llega declarada en el skeleton y sobrevive al mapper; hoy la
+    // semana se hidrata en fase base, donde el catálogo no tiene ningún drill de
+    // match elegible (0 en base y en taper, ver A2.5). La degradación a trabajo
+    // técnico es real y queda registrada en vez de pasar en silencio.
+    const declaredMatch = sessions.find((candidate) => candidate.squashKind === 'match')
+    expect(declaredMatch?.squashDetails?.drills.length).toBeGreaterThan(0)
+    expect(result.repairMeta?.squashKindDegradedCount).toBe(1)
+    expect(result.repairMeta?.warnings.some((warning) => warning.code === 'squash_kind_degraded')).toBe(true)
     expect(sessions.find((candidate) => candidate.title === 'Fuerza base')?.objective)
       .toContain('fuerza lower de tren inferior')
   })

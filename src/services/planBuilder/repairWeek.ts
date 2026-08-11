@@ -111,6 +111,8 @@ export interface RepairMeta {
   squashKindFallbackLegacySubtypeCount?: number
   squashKindFallbackDefaultCount?: number
   squashKindConflictCount?: number
+  /** La modalidad pedida no tenía contenido elegible en la fase. Ver A2.5. */
+  squashKindDegradedCount?: number
   squashPoolInsufficientCount?: number
   /** Observacionales: no entran en `countRepairsV2` ni en la taxonomía. */
   squashFinisherProposedCount?: number
@@ -706,7 +708,22 @@ function completeSquashDetails(
   }
 
   // Sin contenido utilizable en la modalidad pedida, se completa con técnica
-  // antes que inventar un finisher.
+  // antes que inventar un finisher o dejar la sesión vacía.
+  //
+  // Esto NO compensa la escasez de contenido: la registra. Hoy el caso real es
+  // `match` en base y en taper, donde el catálogo tiene 0 drills elegibles (ver
+  // A2.5). Degradar en silencio hacía que una sesión declarada como partido
+  // apareciera como técnica sin que nada lo dijera.
+  if (meta) {
+    meta.squashKindDegradedCount = (meta.squashKindDegradedCount ?? 0) + 1
+    meta.warnings.push({
+      code: 'squash_kind_degraded',
+      message: `"${session.title}" pidió ${intentKind} pero no hay contenido elegible en fase ${phase}; `
+        + 'se entrega trabajo técnico y queda registrado.',
+      sessionDate: session.date,
+    })
+  }
+
   applySquashSelection(session, withoutCompetitiveMatchContent(selectSquashDrills({
     fatigueLevel: fatigueToNumber(context.wizardConfig.currentFatigue),
     phase,

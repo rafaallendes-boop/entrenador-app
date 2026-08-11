@@ -1,4 +1,4 @@
-export type WeekCreatorContractStrategy = 'skeleton_v1' | 'detailed'
+export type WeekCreatorContractStrategy = 'skeleton_v2' | 'detailed'
 
 /**
  * Deployment rollback switch. The compact contract is the default; setting
@@ -10,5 +10,5 @@ export function resolveWeekCreatorContractStrategy(
 ): WeekCreatorContractStrategy {
   return configured?.trim().toLowerCase() === 'detailed'
     ? 'detailed'
-    : 'skeleton_v1'
+    : 'skeleton_v2'
 }
