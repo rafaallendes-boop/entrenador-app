@@ -1,7 +1,10 @@
 # Squash: modalidad explícita y eventos multijornada — plan de implementación
 
 Fecha: 2026-08-10  
-Estado: A0–A6 y verificación técnica de A7 completadas; A2.5 y rollout operativo pendientes. Proyecto B no iniciado.
+Actualizado: 2026-08-11
+
+Estado: A0–A7, incluida A2.5, completadas técnicamente; rollout operativo pendiente. Proyecto B no iniciado.
+
 Spec: `docs/superpowers/specs/2026-08-10-squash-session-intent-and-event-window-design.md`
 
 ## Estrategia de entrega
@@ -17,13 +20,14 @@ Orden:
 2. A1 — modelo e invariantes del catálogo;
 3. A1.5 — ampliar el pool de control;
 4. A2 — hidratador compartido;
-5. A3 — Plan Builder;
-6. A4 — Crear semana;
-7. A5 — chat;
-8. A6 — formulario manual y plantillas;
-9. A7 — prueba cruzada y rollout;
-10. B0–B6 — evento multijornada;
-11. C — ampliación de los otros pools, con spec de contenido separado.
+5. A2.5 — exposición competitiva semanal;
+6. A3 — Plan Builder;
+7. A4 — Crear semana;
+8. A5 — chat;
+9. A6 — formulario manual y plantillas;
+10. A7 — prueba cruzada y rollout;
+11. B0–B6 — evento multijornada;
+12. C — ampliación de los otros pools, con spec de contenido separado.
 
 ## Proyecto A — modalidad de squash en todos los flujos
 
@@ -147,7 +151,7 @@ modalidades o reutilización inmediata.
   fase/fatiga.
 - [x] Probar pool insuficiente y advertencia sin mezcla silenciosa.
 
-### Task A2.5 — Exposición competitiva semanal (pendiente, tras A2)
+### Task A2.5 — Exposición competitiva semanal (completada)
 
 **Objetivo:** garantizar una exposición competitiva por semana cuando squash es
 el deporte principal y es ejecutable. Es composición semanal, no modalidad de
@@ -185,6 +189,24 @@ elimina. La decisión es de contenido y de política semanal:
 
 `resolveSquashMatchRole` debe seguir siendo un predicado puro de contenido: no
 puede volverse dependiente de la fase.
+
+**Resultado (2026-08-11, `eed08af`):**
+
+- [x] Crear `resolveSquashWeeklyExposurePolicy` como decisión pura de semana,
+  separada del hidratador y del predicado de rol.
+- [x] Materializar mejor de 3 en base; mejor de 5 en build/peak con carga normal
+  y mejor de 3 bajo fatiga `loaded`.
+- [x] Limitar taper a tres o más días del evento y hacer que `race` cuente el
+  evento real sin agregar otro partido.
+- [x] Respetar los vetos de partner no disponible, restricción médica y fatiga
+  `overloaded`, con caps explícitos de duración y RPE.
+- [x] Reutilizar `hasSquashCompetitiveExposureContent` como única autoridad de
+  contenido y mantener `resolveSquashMatchRole` libre de fase/calendario.
+- [x] Evitar la degradación intermedia del hidratador cuando una intención
+  `match` es válida en base/taper.
+- [x] No confundir el evento sintético `week-creator` con una competencia real.
+- [x] Cubrir política e integración en Plan Builder y Crear semana, incluida la
+  idempotencia del repair y los vetos de seguridad.
 
 ### Task A3 — Integrar Plan Builder
 

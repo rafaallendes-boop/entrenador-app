@@ -597,7 +597,7 @@ Esto sirve para pruebas personales y beta interna. Para una beta externa, el sig
 Prioridad actual:
 
 1. Aplicar `019` y completar el rollout/smoke combinado de detalle y zonas de FC de Whoop.
-2. Completar A2.5 de squash: exposición competitiva semanal en base/taper sin mezclar modalidades.
+2. Desplegar y observar los contratos `squashKind` v2 y A2.5, ya cerrados técnicamente, antes de retirar compatibilidad legacy.
 3. Probar convergencia real entre desktop y mobile y fijar los fallos en un harness E2E de dos clientes.
 4. Smokear Biblioteca, Planificación y la semana visible autenticadas sobre el bundle actual.
 5. Cerrar revisión jurídica, retención y reaceptación de las publicaciones Whoop nuevas.

@@ -1,10 +1,10 @@
 # RallyIQ - Project Review and Roadmap
 
-Actualizado: 2026-08-10
+Actualizado: 2026-08-11
 
 Base de contraste:
 
-- **Squash — modalidad explícita implementada de punta a punta (2026-08-10, `5ba9554`…`b906aa7`):** ver §27. Los 49 drills tienen `sessionKind` y modo ejecutable explícitos; `either` queda fuera del catálogo; un hidratador compartido compone sin cruzar modalidades; y `squashKind` viaja por Plan Builder, Crear semana skeleton v2, chat, formulario, plantillas e import/export. Sin migraciones. Suite completa: **392 archivos / 3181 tests**, build, `tsc -b`, lint y `git diff --check` verdes. **Pendientes declarados:** A2.5 para exposición competitiva semanal —match sigue en 0 en base y taper— y rollout/monitoreo antes de retirar compatibilidad legacy.
+- **Squash — modalidad explícita y exposición semanal A2.5 implementadas (2026-08-10/11, `5ba9554`…`eed08af`):** ver §27. Los 49 drills tienen `sessionKind` y modo ejecutable explícitos; `either` queda fuera del catálogo; un hidratador compartido compone sin cruzar modalidades; y `squashKind` viaja por Plan Builder, Crear semana skeleton v2, chat, formulario, plantillas e import/export. A2.5 agrega mejor de 3 en base, regula build/peak por carga, limita taper a tres o más días del evento y hace que race cuente la competencia real, con vetos de partner, restricción médica y sobrecarga. Sin migraciones. Suite completa: **394 archivos / 3211 tests**, build, `tsc -b`, lint y `git diff --check` verdes. Pendiente rollout/monitoreo antes de retirar compatibilidad legacy.
 - **Semana y planificación endurecidas y mergeadas en `main` (2026-08-10, PR #11, `b3bb6c3` / merge `0059e6e`):** ver §26. La ausencia de macroplan pasa a ser `not_applicable` en vez de un falso `ok`; la card ofrece crear el plan sin ocultar carga/adherencia reales; la semana visible ya no reutiliza sesiones o resumen de otra semana durante un request; el arranque prioriza el pull de la semana solicitada antes del sync completo; el plan competitivo omite la semana parcial si ya no queda ningún día habilitado; y los drills de squash recuperan guía canónica aunque una fila persistida venga sin `notes`. Sin migraciones. Suite: 388 archivos / 3109 tests, `tsc -b`, lint y `git diff --check` verdes. Pendiente deploy/smoke; esto reduce el riesgo de estado obsoleto, pero **no sustituye** la validación real multi-dispositivo.
 - **Whoop — zonas de frecuencia cardíaca por entrenamiento implementadas (2026-08-08):** ver §25. Seis duraciones de zona y cobertura de medición por workout, con normalizador compartido como única autoridad de forma, migración `019` de aplicación manual, flag de ingestión `WHOOP_ZONES_ENABLED` que omite claves en vez de escribir null, guard de drift de columnas en tres ejes, rampa secuencial de un solo tono y dos publicaciones legales registradas y no vigentes. **Sin Dexie v20.** Suite: 385 archivos / 3087 tests. Pendiente todo el rollout, empezando por aplicar `019` antes del primer deploy.
 - **Whoop — detalle de entrenamientos y contexto del coach commiteados y pusheados (2026-08-07, `d91e21e`):** cada sesión auto-completada puede mostrar duración, strain, FC, distancia y ritmo elegible; `DayDetail` lista workouts no asociados; y el chat recibe hasta ocho entrenamientos `SCORED` de los últimos siete días, con asociación al plan y guardia explícita strain 0–21 vs esfuerzo 1–10. Sin migraciones: reutiliza `012` y Dexie v19. Code review cerrado con cinco hallazgos corregidos —uno de ellos, el envío de chat abortado, era una pérdida de mensaje real— y la suite quedó en 379 archivos / 3000 tests, typecheck, lint, build y `git diff --check` verdes. Pendientes operativos: deploy y smoke autenticado (`docs/superpowers/smokes/2026-08-07-whoop-workout-detail-smoke.md`).
@@ -41,7 +41,7 @@ Base de contraste:
 
 ## Resumen Ejecutivo
 
-RallyIQ esta en una etapa donde el core ya no es el cuello de botella principal. El motor de planificacion, Plan Builder async, calidad deportiva base, athlete scope foundation, claves naturales locales por atleta, write path remoto seguro para day/week, Athlete-Aware Core, Coach F2-lite Parte 2b, Whoop v1 + Workout Auto-Complete (ambas migraciones aplicadas), Coach Workspace con roster/Planificacion/Biblioteca, y Fase 0 de coaches landing (rutas legales publicas + landing `/coaches` de prelanzamiento) ya estan construidos. La Fase 0 de medicion del Plan Builder tambien esta cerrada: `quality_version = 2` es productiva, el bundle esta desplegado y una corrida real quedo verificada en `plan_generation_jobs` el 2026-07-26. La rotacion coordinada de fuerza y squash ya tiene su smoke `high` pagado y aceptado, y encima de ella viajan los roles de partido de squash; ambas tandas quedaron desplegadas el 2026-08-03 y resta su verificación post-deploy. Biblioteca y Planificacion tienen `015` y deploy aplicados; queda cerrar el smoke autenticado. El 2026-08-05 se sumaron las superseries de fuerza (§23), y el 2026-08-07 el dato de workouts Whoop dejó de servir solo para auto-completar: ya tiene detalle visible por sesión, residual por día y contexto objetivo de siete días para el coach (§24). El 2026-08-10 la experiencia semanal quedó endurecida en `main`: estados honestos sin macroplan, semana visible aislada durante cargas, sync inicial priorizado y ventana competitiva alineada con días entrenables (§26). Ese mismo día, la modalidad de squash pasó a ser un contrato estructural único en todas las fronteras (§27); queda A2.5 para resolver la exposición semanal de partido donde el catálogo no tiene capacidad. Estas entregas quedan a la espera de su verificación manual o rollout donde corresponda.
+RallyIQ esta en una etapa donde el core ya no es el cuello de botella principal. El motor de planificacion, Plan Builder async, calidad deportiva base, athlete scope foundation, claves naturales locales por atleta, write path remoto seguro para day/week, Athlete-Aware Core, Coach F2-lite Parte 2b, Whoop v1 + Workout Auto-Complete (ambas migraciones aplicadas), Coach Workspace con roster/Planificacion/Biblioteca, y Fase 0 de coaches landing (rutas legales publicas + landing `/coaches` de prelanzamiento) ya estan construidos. La Fase 0 de medicion del Plan Builder tambien esta cerrada: `quality_version = 2` es productiva, el bundle esta desplegado y una corrida real quedo verificada en `plan_generation_jobs` el 2026-07-26. La rotacion coordinada de fuerza y squash ya tiene su smoke `high` pagado y aceptado, y encima de ella viajan los roles de partido de squash; ambas tandas quedaron desplegadas el 2026-08-03 y resta su verificación post-deploy. Biblioteca y Planificacion tienen `015` y deploy aplicados; queda cerrar el smoke autenticado. El 2026-08-05 se sumaron las superseries de fuerza (§23), y el 2026-08-07 el dato de workouts Whoop dejó de servir solo para auto-completar: ya tiene detalle visible por sesión, residual por día y contexto objetivo de siete días para el coach (§24). El 2026-08-10 la experiencia semanal quedó endurecida en `main`: estados honestos sin macroplan, semana visible aislada durante cargas, sync inicial priorizado y ventana competitiva alineada con días entrenables (§26). Entre el 10 y el 11 de agosto, la modalidad de squash pasó a ser un contrato estructural único en todas las fronteras y A2.5 cerró la exposición semanal de partido sin degradar modalidad (§27). Estas entregas quedan a la espera de su verificación manual o rollout donde corresponda.
 
 Lo que queda antes de mostrar/cobrar con confianza se concentra en dos carriles:
 
@@ -57,7 +57,7 @@ Mi lectura como lider tecnico: el cambio principal entre hoy y hace dos dias es 
 
 ## Estado Actual En Una Frase
 
-RallyIQ ya opera multi-atleta en produccion, con Whoop readiness y Workout Auto-Complete operativos (`011`/`012` aplicados), Coach Workspace base (`/coach`) y rutas legales publicas + landing `/coaches` en vivo. El consentimiento in-app también está **activo**: `017` aplicada, ambas flags encendidas y smoke de persistencia/hidratación cerrado. `015` y Biblioteca/Planificacion ya estan desplegadas, `quality_version = 2` quedo verificada en `plan_generation_jobs`, la rotacion coordinada del Plan Builder ya paso su control `high` pagado, y las sesiones de fuerza soportan superseries reales de punta a punta. En `main`, la semana ya distingue ausencia de macroplan, bloquea datos visuales de otra semana durante cargas y prioriza el rango visible al sincronizar; la modalidad de squash ya es estructural de punta a punta; y Whoop agrega detalle y zonas de FC. Falta A2.5, deploy/smoke de estas capas y la validación real multi-dispositivo antes de describirlas como productivas para beta.
+RallyIQ ya opera multi-atleta en produccion, con Whoop readiness y Workout Auto-Complete operativos (`011`/`012` aplicados), Coach Workspace base (`/coach`) y rutas legales publicas + landing `/coaches` en vivo. El consentimiento in-app también está **activo**: `017` aplicada, ambas flags encendidas y smoke de persistencia/hidratación cerrado. `015` y Biblioteca/Planificacion ya estan desplegadas, `quality_version = 2` quedo verificada en `plan_generation_jobs`, la rotacion coordinada del Plan Builder ya paso su control `high` pagado, y las sesiones de fuerza soportan superseries reales de punta a punta. En `main`, la semana ya distingue ausencia de macroplan, bloquea datos visuales de otra semana durante cargas y prioriza el rango visible al sincronizar; la modalidad de squash y su exposición competitiva semanal ya son estructurales; y Whoop agrega detalle y zonas de FC. Faltan deploy/smoke de estas capas y la validación real multi-dispositivo antes de describirlas como productivas para beta.
 
 ## Porcentaje De Avance
 
@@ -1029,20 +1029,27 @@ conflicto, pool insuficiente y degradación. Crear semana usa skeleton v2, exige
 plantillas, serializers e import/export preservan la misma intención y permiten
 contenido personalizado sin reclasificarlo por texto.
 
+**Política semanal A2.5.** El pool físico sigue en 0/3/3/0 drills de partido
+elegibles para base/build/peak/taper y el hidratador no compensa esa escasez
+cruzando modalidad. `squashWeeklyExposurePolicy.ts` decide sobre la semana:
+mejor de 3 en base; mejor de 5 en build/peak con carga normal y mejor de 3 bajo
+fatiga `loaded`; taper sólo a tres o más días del evento; race usa la
+competencia real. Partner sólo, restricción médica y `overloaded` vetan la
+exposición. El repair materializa contenido canónico antes del hidratador,
+reutiliza `hasSquashCompetitiveExposureContent` y distingue el evento real del
+ancla sintética `week-creator`.
+
 **Verificación.** La matriz de frontera cubre las cuatro modalidades en Plan
 Builder, Crear semana, chat y formulario, además de serializers, plantillas,
-contenido histórico `mixed`, import/export y capacidad del catálogo. Cierre:
-**392 archivos / 3181 tests**, build, `tsc -b`, lint y `git diff --check`
-verdes. Commits: `5ba9554`, `090cd0b`, `ec56274`, `b3371b9`, `7adb4d5` y
-`b906aa7`. Sin migraciones de Supabase ni Dexie.
+contenido histórico `mixed`, import/export, capacidad del catálogo y política
+semanal por fase/veto. Cierre: **394 archivos / 3211 tests**, build, `tsc -b`,
+lint y `git diff --check` verdes. Commits: `5ba9554`, `090cd0b`, `ec56274`,
+`b3371b9`, `7adb4d5`, `b906aa7` y `eed08af`. Sin migraciones de Supabase ni
+Dexie.
 
-**Pendientes explícitos.** A2.5 sigue abierto: los drills de partido elegibles
-son 0/3/3/0 en base/build/peak/taper. La ausencia no se compensa dentro del
-hidratador porque eso reintroduciría el cruce que esta entrega elimina. La
-política semanal deberá habilitar mejor de 3 en base, limitar taper a tres o más
-días del evento y respetar vetos de partner, lesión y sobrecarga. Después quedan
-deploy, observación de los contadores y una ventana de compatibilidad legacy;
-el Proyecto B de eventos multijornada no forma parte de este cierre.
+**Pendientes explícitos.** Quedan deploy, observación de fallbacks, conflictos,
+pools cortos y degradaciones, y una ventana de compatibilidad legacy. El
+Proyecto B de eventos multijornada no forma parte de este cierre.
 
 ### Producto Publico Y Marca
 
@@ -1127,7 +1134,7 @@ el Proyecto B de eventos multijornada no forma parte de este cierre.
 
 Cierres tecnicos recientes:
 
-- Modalidad de squash A0–A7 técnica: **392 archivos / 3181 tests**, build, `tsc -b`, lint y `git diff --check` verdes; A2.5 y rollout operativo siguen abiertos.
+- Modalidad de squash A0–A7, incluida A2.5: **394 archivos / 3211 tests**, build, `tsc -b`, lint y `git diff --check` verdes; sólo sigue abierto el rollout operativo.
 - Semana/planificación PR #11: **388 archivos / 3109 tests**, `tsc -b`, lint y `git diff --check` verdes.
 - Plan Builder quality v2: `npm test` verde (298 archivos / 2162 tests); Fase 0 de medicion cerrada contra el control `6c45885a`.
 - Core athlete-aware / Coach F2-lite: `npm run lint`, `git diff --check`, `npm test` (139 archivos / 990 tests) y `npm run build` OK.
@@ -1639,10 +1646,10 @@ dificultad.
      `variantIndex` continúa sin aportar variedad, pero ya no son la autoridad
      estructural del rol.
 
-   El trabajo vigente ya no es "más variantes" genéricas: es A2.5 (§27), que
-   decide mejor de 3 o mejor de 5 desde composición semanal y fase sin convertir
-   el predicado de contenido en uno de calendario. Después se puede borrar la
-   maquinaria muerta y revisar si los drills de partido deben quedar fuera de
+   A2.5 quedó cerrada en `eed08af`: decide mejor de 3 o mejor de 5 desde
+   composición semanal y fase sin convertir el predicado de contenido en uno de
+   calendario. Como seguimiento no bloqueante se puede borrar la maquinaria
+   muerta de variantes y revisar si los drills de partido deben quedar fuera de
    `low_drill_variety`, como ya quedaron fuera de `low_drill_depth`.
 
    Sigue abierto y sin revisar: `low_drill_depth` legitimo en sesiones de
@@ -1732,12 +1739,11 @@ Orden recomendado (Athlete-Aware Core + Coach F2-lite Parte 2b + Whoop v1/Workou
    persistidos con las versiones vigentes, y reingreso desde incógnito resuelto
    por hidratación remota sin reaceptación en ~0,2 s. La mejora visual queda
    como backlog posterior; el comportamiento observado es correcto.
-2. **Completar A2.5 y desplegar la modalidad de squash (§27):** agregar la
-   política semanal de exposición competitiva sin fallback cruzado en el
-   hidratador; cubrir base con mejor de 3 y limitar taper por distancia al
-   evento, respetando vetos de seguridad. Después publicar los contratos v2 y
-   observar fallbacks, conflictos, pools cortos y degradaciones antes de retirar
-   compatibilidad legacy.
+2. **Desplegar y observar la modalidad de squash (§27):** A2.5 ya está cerrada
+   técnicamente en `eed08af`, con mejor de 3 en base, carga adaptada en
+   build/peak, límite de taper y vetos de seguridad sin fallback cruzado en el
+   hidratador. Falta publicar los contratos v2 y observar fallbacks, conflictos,
+   pools cortos y degradaciones antes de retirar compatibilidad legacy.
 3. **Cerrar el rollout combinado de Whoop y la semana:** confirmar flags de
    consentimiento, aplicar `019` antes del próximo deploy y publicar primero con
    `WHOOP_ZONES_ENABLED` apagado. Ejecutar
