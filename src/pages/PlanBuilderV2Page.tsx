@@ -10,7 +10,11 @@ import { usePlanBuilderStore } from '../store/usePlanBuilderStore'
 import { supabase } from '../services/auth'
 import { getPrimaryGoalEvent } from '../services/macroPlan'
 import { buildDraftSignature } from '../services/planBuilder/draftSignature'
-import { goalEventWindowFromMacroPlan } from '../services/goalEventWindow'
+import {
+  formatGoalEventKeyDate,
+  formatGoalEventWindow,
+  goalEventWindowFromMacroPlan,
+} from '../services/goalEventWindow'
 import { analyzePlanCommitImpact } from '../services/planBuilder/commitImpact'
 import { shouldDeleteEmptyShellDraft, shouldLoadMatchingDraftPlan } from '../services/planBuilder/draftAutoload'
 import { rowToTrainingPlan, rowToTrainingPlanWeek } from '../services/planBuilder/planRows'
@@ -538,6 +542,15 @@ export default function PlanBuilderV2Page() {
   const initializeLockRef = useRef<string | null>(null)
 
   const goalEvent = getPrimaryGoalEvent(effectiveAthleteProfile)
+  const goalEventDisplayLabel = goalEvent
+    ? [formatGoalEventWindow(goalEvent), formatGoalEventKeyDate(goalEvent)].filter(Boolean).join(' · ')
+    : null
+  const planEventDisplayLabel = plan
+    ? (() => {
+        const eventWindow = goalEventWindowFromMacroPlan(plan.macroSnapshot)
+        return [formatGoalEventWindow(eventWindow), formatGoalEventKeyDate(eventWindow)].filter(Boolean).join(' · ')
+      })()
+    : null
   const expectedDraftSignature = effectiveAthleteProfile?.planWizardConfig && goalEvent
     ? buildDraftSignature({
         goalEventId: goalEvent.id,
@@ -924,7 +937,7 @@ export default function PlanBuilderV2Page() {
               </h1>
               {plan && (
                 <p className="mt-1 text-xs text-ink-muted">
-                  {plan.totalWeeks} semanas · Inicio {plan.startDate} · Evento {plan.macroSnapshot.goalEventDate}
+                  {plan.totalWeeks} semanas · Inicio {plan.startDate} · Evento {planEventDisplayLabel}
                 </p>
               )}
               {(showPlanQualityDebug ? lastError : customerStatusMessage) && (
@@ -1014,7 +1027,9 @@ export default function PlanBuilderV2Page() {
             subtitle="Revisa el objetivo y crea un plan por semanas con control de carga, taper y sesiones clave."
             insight={launchInsight}
             weeksLabel={`${plan?.totalWeeks ?? weeks.length} semanas listas para preparar.`}
-            goalLabel={goalEvent ? `Evento objetivo: ${goalEvent.title} · ${goalEvent.date}` : 'Plan listo para preparar.'}
+            goalLabel={goalEvent && goalEventDisplayLabel
+              ? `Evento objetivo: ${goalEvent.title} · ${goalEventDisplayLabel}`
+              : 'Plan listo para preparar.'}
             isInitializing={isGenerating}
             isBackgroundGenerating={plan?.generationState === 'generating'}
             sport={getSportFromGoalEvent(goalEvent)}
