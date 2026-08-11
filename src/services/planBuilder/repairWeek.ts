@@ -1490,18 +1490,10 @@ function normalizeSquashDurationConsistency(sessions: CoachSessionProposal[], me
 
     const factor = session.durationMin / total
     const scaledDrills = scaleDurations(details.drills, factor, session.durationMin)
-    const scaledBlocks = details.blocks?.map((block) => {
-      const blockTarget = Math.max(3, Math.round((sumDurations(block.drills) * factor) / 2) * 2)
-      const drills = scaleDurations(block.drills, factor, blockTarget)
-      return {
-        ...block,
-        drills,
-        durationMin: sumDurations(drills),
-      }
-    })
-
-    details.drills = scaledDrills
-    details.blocks = fitBlockDurationsToTarget(scaledBlocks, session.durationMin)
+    // Escalar una sola representación y reconstruir la otra. Escalarlas por
+    // separado aplicaba dos redondeos distintos: el último drill podía quedar
+    // con 13 min en `drills[]` y 14 min dentro de `blocks[]`.
+    setSquashDrillsAndBlocks(details, scaledDrills)
     recordRepair(meta, 'corrective', sessionKeyOf(session))
     meta.warnings.push({
       code: 'squash_duration_aligned',
@@ -1509,24 +1501,6 @@ function normalizeSquashDurationConsistency(sessions: CoachSessionProposal[], me
       sessionDate: session.date,
     })
   }
-}
-
-function fitBlockDurationsToTarget<T extends { durationMin?: number }>(
-  blocks: T[] | undefined,
-  targetTotal: number,
-): T[] | undefined {
-  if (!blocks) return blocks
-  let overflow = sumDurations(blocks) - targetTotal
-  if (overflow <= 0) return blocks
-
-  const fitted = [...blocks]
-  for (let i = fitted.length - 1; i >= 0 && overflow > 0; i--) {
-    const current = fitted[i]!.durationMin ?? 0
-    const reduction = Math.min(overflow, Math.max(0, current - 3))
-    fitted[i] = { ...fitted[i]!, durationMin: current - reduction }
-    overflow -= reduction
-  }
-  return fitted
 }
 
 function sumDurations(items: Array<{ durationMin?: number }> | undefined): number {

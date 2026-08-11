@@ -9,7 +9,11 @@ import { getTargetExerciseDensity, selectStrengthSession, type StrengthContext, 
 import { enhanceStrengthSessionExercises, resolveStrengthExerciseBlock } from '../training/strengthSessionStructure'
 import { detectSupersetIntent, planSupersetGroups, shouldApplySupersetPolicy } from '../training/supersetPolicy'
 import { findSquashDrillByName, normalizeSquashDrillKey, resolveSquashDrillKind } from '../training/drillLibrary'
-import { hydrateSquashSession } from '../training/squashSessionHydrator'
+import {
+  hydrateSquashSession,
+  isSquashDrillKindCompatible,
+  projectSquashSubtype,
+} from '../training/squashSessionHydrator'
 import type { CoachNormalizedResponse } from './types'
 
 const WEEKDAYS = [
@@ -852,7 +856,7 @@ function completeSquashAction(
         action: {
           ...action,
           squashKind: requestedKind,
-          subtype: projectSquashActionSubtype(requestedKind, action.subtype),
+          subtype: projectSquashSubtype(requestedKind, action.subtype === 'competitive'),
           squashDetails: {
             ...explicitDetails,
             sessionKind: requestedKind,
@@ -974,15 +978,6 @@ function squashKindFromSubtype(subtype: CoachAction['subtype']): SquashSessionBl
   return undefined
 }
 
-function projectSquashActionSubtype(
-  kind: SquashSessionBlockKind,
-  current: CoachAction['subtype'],
-): NonNullable<CoachAction['subtype']> {
-  if (kind === 'control') return 'control'
-  if (kind === 'match') return current === 'competitive' ? 'competitive' : 'match'
-  return 'training'
-}
-
 function inspectSquashDrillCompatibility(
   drills: NonNullable<CoachAction['squashDetails']>['drills'],
   requestedKind: SquashSessionBlockKind,
@@ -994,8 +989,7 @@ function inspectSquashDrillCompatibility(
     if (!definition) continue
     knownCount++
     const kind = resolveSquashDrillKind(definition)
-    const accessoryAllowed = kind === 'shadows' && requestedKind !== 'shadows'
-    if (kind !== requestedKind && !accessoryAllowed) incompatibleNames.push(drill.name)
+    if (!isSquashDrillKindCompatible(requestedKind, kind)) incompatibleNames.push(drill.name)
   }
   return { knownCount, incompatibleNames }
 }

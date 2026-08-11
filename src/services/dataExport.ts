@@ -74,6 +74,7 @@ const SQUASH_TRAINING_FOCUSES = new Set(['technical', 'tactical', 'physical', 'c
 const SQUASH_SESSION_MODES = new Set(['drill_session', 'practice_match', 'competition_match'])
 const SQUASH_SESSION_KINDS = new Set(['technical', 'control', 'shadows', 'match', 'mixed'])
 const SQUASH_BLOCK_KINDS = new Set(['technical', 'control', 'shadows', 'match'])
+const SQUASH_DRILL_EXECUTION_MODES = new Set(['solo', 'partner', 'match', 'either'])
 const PROPOSAL_STATUSES = new Set(['pending', 'accepted', 'rejected', 'partial'])
 const SUPPORTED_SPORTS = new Set(['squash', 'running', 'strength', 'mobility', 'cycling'])
 const TRAINING_PRIORITIES = new Set(['performance', 'fitness', 'body_composition', 'return_to_play'])
@@ -1690,6 +1691,11 @@ function optionalSquashDetails(value: unknown, path: string): Session['squashDet
       name: requireString(drillRow.name, `${drillPath}.name`),
       durationMin: optionalFiniteNumber(drillRow.durationMin, `${drillPath}.durationMin`),
       notes: optionalString(drillRow.notes, `${drillPath}.notes`),
+      executionMode: optionalEnum(
+        drillRow.executionMode,
+        SQUASH_DRILL_EXECUTION_MODES,
+        `${drillPath}.executionMode`,
+      ) as NonNullable<Session['squashDetails']>['drills'][number]['executionMode'],
     }
   }
   const blocks = row.blocks == null
