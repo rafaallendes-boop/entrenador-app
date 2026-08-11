@@ -1184,11 +1184,20 @@ describe('WeekCreatorEngine', () => {
   })
 
   it('repairs duplicate squash drills locally instead of retrying the whole week', async () => {
+    // Las dos sesiones traen el mismo set COMPLETO para 60 min. Con un solo
+    // drill la densificación las completaba con contenido distinto —ahora que
+    // "evitar reciente" funciona de verdad— y el duplicado que este test existe
+    // para reparar dejaba de producirse.
     const duplicateSquashDetails = {
       trainingFocus: 'technical' as const,
       sessionMode: 'drill_session' as const,
       sessionKind: 'technical' as const,
-      drills: [{ name: 'Tiros paralelos profundos', durationMin: 20 }],
+      drills: [
+        { name: 'Tiros paralelos profundos', durationMin: 15 },
+        { name: 'Tiros cruzados profundos', durationMin: 15 },
+        { name: 'Cambio de paralelo a cruzado', durationMin: 15 },
+        { name: 'Volea de control desde media cancha', durationMin: 15 },
+      ],
     }
 
     mockProviderCall.mockImplementation(async (request: { requestClass: string; traceId: string }) => ({
@@ -1733,8 +1742,10 @@ describe('WeekCreatorEngine', () => {
       correctiveActionCount: 0,
       correctedSessionsAffected: 0,
       hydration: {
-        repairedSessionCount: 4,
-        correctiveActionCount: 4,
+        // Bajó de 4 a 3: con la modalidad declarada, el catálogo coherente y
+        // sin cruces de modalidad, la hidratación tiene menos que corregir.
+        repairedSessionCount: 3,
+        correctiveActionCount: 3,
         correctedSessionsAffected: 1,
       },
     })

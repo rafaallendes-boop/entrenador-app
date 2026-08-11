@@ -4,8 +4,12 @@
  * del coach o el JSON schema de la semana.
  */
 
-export const PLAN_BUILDER_PROMPT_VERSION = '2026-07-week-v1'
-export const PLAN_BUILDER_SCHEMA_VERSION = '2026-07-week-v1'
+// v2: el prompt exige `squashKind` por sesión de squash y define las cuatro
+// modalidades. Cambia lo que el proveedor debe emitir, así que no es comparable
+// con corridas v1.
+export const PLAN_BUILDER_PROMPT_VERSION = '2026-08-week-v2'
+// v2: `squashKind` agregado al contrato compacto.
+export const PLAN_BUILDER_SCHEMA_VERSION = '2026-08-week-v2'
 
 export interface PlanBuilderVariantDescriptor {
   provider: string

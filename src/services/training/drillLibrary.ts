@@ -80,6 +80,23 @@ export function resolveSquashDrillKind(
   return definition.sessionKind
 }
 
+/**
+ * Clave canónica de un drill, resuelta contra el catálogo.
+ *
+ * Acepta nombre canónico, alias o id y devuelve siempre la misma clave, así que
+ * dos referencias al mismo drill comparan iguales. Es la única forma correcta de
+ * comparar identidad de drills entre listas heterogéneas: `normalizeSquashDrillKey`
+ * sola no sirve porque para los 49 drills la clave del nombre difiere de la del
+ * id —los nombres son prosa en español y los ids snake_case en inglés—, así que
+ * comparar un lado por nombre contra el otro por id nunca coincide.
+ *
+ * Un valor desconocido cae a su clave normalizada: contenido libre sigue
+ * comparándose entre sí.
+ */
+export function resolveSquashDrillKey(value: string): string {
+  return findSquashDrillByName(value)?.id ?? normalizeSquashDrillKey(value)
+}
+
 export function orderSquashDrillsForSession<T extends { name: string }>(
   drills: T[],
   resolveDefinition: (drill: T) => SquashDrillDefinition | undefined = (drill) => findSquashDrillByName(drill.name),

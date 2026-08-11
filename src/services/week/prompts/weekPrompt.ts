@@ -192,6 +192,12 @@ export function buildWeekStructuredSystemPromptMinimal(): string {
     'Respeta exactamente el targetDate, el rango válido de fechas, los días permitidos, deportes permitidos y cantidad de sesiones pedida.',
     'Cada sesión debe ser válida: date ISO dentro de la semana, timeBlock AM/PM, sessionType permitido, title, objective, durationMin>=5 y rpe entero entre 1 y 10.',
     'Devuelve sólo el esqueleto semanal compacto. No incluyas exercises, squashDetails, cyclingDetails, mobilityDetails, intervalStructure, warmup ni cooldown: la app hidrata los detalles deportivos y agrega protocolos base al aceptar el plan.',
+    'Toda sesión con sessionType=squash DEBE declarar squashKind, que define la modalidad y decide qué drills elige la app:',
+    '  - control: volumen de repetición con pelota EN SOLITARIO (100 paralelas, 100 drops, 100 voleas). Sin rival.',
+    '  - technical: trabajo cooperativo o condicionado CON PARTNER (paralelas rotando, pasillos, cambios de lado, patrones).',
+    '  - shadows: desplazamiento o acondicionamiento en cancha SIN pelota.',
+    '  - match: partido o juego con marcador y rival.',
+    'squashKind es la modalidad, no el foco: una sesión technical puede tener por objetivo el control de longitud y sigue siendo technical. El título y el objetivo son texto descriptivo y no cambian la modalidad.',
     'No devuelvas menos sesiones que las pedidas. Si una sesión queda incompleta, corrígela antes de responder.',
   ].join('\n')
 }
@@ -230,6 +236,7 @@ export function buildWeekBatchStructuredSystemPromptMinimal(): string {
     'Cada create_week debe incluir type="create_week", targetDate (lunes YYYY-MM-DD), reason, sessions[] y weekObjectives[].',
     'Respeta el targetDate, rango válido, días permitidos, deportes permitidos y cantidad de sesiones pedida para cada semana.',
     'Cada sesión debe incluir date ISO, timeBlock AM/PM, sessionType, title, objective, durationMin>=5 y rpe entero entre 1 y 10.',
+    'Toda sesión con sessionType=squash DEBE declarar squashKind: control (repetición con pelota en solitario, sin rival), technical (cooperativo o condicionado con partner), shadows (sin pelota) o match (con marcador y rival). Es la modalidad, no el foco: una sesión technical puede buscar control de longitud y sigue siendo technical.',
     'Devuelve sólo esqueletos semanales compactos. No incluyas exercises, squashDetails, cyclingDetails, mobilityDetails, intervalStructure, warmup ni cooldown: la app hidrata esos detalles.',
     'Nunca mezcles sesiones de una semana dentro de la otra. Nunca devuelvas menos sesiones que las pedidas.',
   ].join('\n')

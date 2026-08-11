@@ -117,9 +117,11 @@ describe('normalización única de squash', () => {
     const afterKinds = squashSessions(result)[0]!.squashDetails!.drills.map((drill) =>
       resolveSquashDrillKind(findSquashDrillByName(drill.name)!),
     ).sort()
-    // La hidratación previa puede completar un drill de control; los slots
-    // existentes mantienen el kind técnico bajo la política estricta.
-    expect(afterKinds.filter((kind) => kind === 'technical')).toHaveLength(beforeKinds.length)
+    // Antes la hidratación completaba con un drill de control, y este test lo
+    // daba por bueno. Con la modalidad como dato estructural una sesión técnica
+    // se completa sólo con técnicos: no hay contaminación que tolerar.
+    expect(afterKinds.every((kind) => kind === 'technical')).toBe(true)
+    expect(afterKinds.length).toBeGreaterThanOrEqual(beforeKinds.length)
   })
 
   it('reemplaza la guía anterior por la explicación canónica del drill nuevo', () => {
@@ -315,6 +317,64 @@ describe('A0 — la modalidad de squash no se infiere del texto visible', () => 
 
     expect(squashSessions(neutral)[0]?.squashDetails?.sessionKind)
       .toBe(squashSessions(controlWord)[0]?.squashDetails?.sessionKind)
+  })
+
+  it('detalles contradictorios se reconstruyen desde squashKind y quedan registrados', () => {
+    // Propuesta bien formada —pasa `hasValidSquashDetails`— pero cuyo contenido
+    // contradice la modalidad declarada. Sin la detección de conflicto, esta
+    // sesión evitaba la reconstrucción por completo y conservaba trabajo en
+    // solitario bajo una intención de partner.
+    const source = buildSkeletonSessionForTest({
+      date: '2026-08-03',
+      timeBlock: 'AM',
+      sessionType: 'squash',
+      squashKind: 'technical',
+      title: 'Squash — Rotación con partner',
+      objective: 'Paralelas de fondo rotando.',
+      durationMin: 60,
+      rpe: 6,
+      squashDetails: {
+        trainingFocus: 'technical',
+        sessionMode: 'drill_session',
+        sessionKind: 'control',
+        drills: [
+          { name: 'Drives desde media cancha — 100', durationMin: 20 },
+          { name: 'Voleas en solitario', durationMin: 20 },
+        ],
+      },
+    })
+
+    const result = repairGeneratedWeek([source], contextFor(0))
+    const session = squashSessions(result)[0]
+
+    expect(session?.squashDetails?.sessionKind).toBe('technical')
+    expect(executionModes(session!).every((mode) => mode === 'partner')).toBe(true)
+    expect(result.meta.squashKindConflictCount).toBe(1)
+    expect(result.meta.warnings.some((warning) => warning.code === 'squash_kind_conflict')).toBe(true)
+  })
+
+  it('distingue el fallback por subtype heredado del fallback por default', () => {
+    const legacy = repairGeneratedWeek([
+      skeletonSquashSession({ subtype: 'control', title: 'Squash', objective: 'Volumen.' }),
+    ], contextFor(0))
+    const noSignal = repairGeneratedWeek([
+      skeletonSquashSession({ subtype: 'training', title: 'Squash', objective: 'Sesión.' }),
+    ], contextFor(0))
+
+    expect(legacy.meta.squashKindFallbackLegacySubtypeCount).toBe(1)
+    expect(legacy.meta.squashKindFallbackDefaultCount).toBeUndefined()
+    expect(noSignal.meta.squashKindFallbackDefaultCount).toBe(1)
+    expect(noSignal.meta.squashKindFallbackLegacySubtypeCount).toBeUndefined()
+  })
+
+  it('una sesión que declara squashKind no cuenta como fallback', () => {
+    const result = repairGeneratedWeek([
+      skeletonSquashSession({ squashKind: 'technical' }),
+    ], contextFor(0))
+
+    expect(result.meta.squashKindFallbackLegacySubtypeCount).toBeUndefined()
+    expect(result.meta.squashKindFallbackDefaultCount).toBeUndefined()
+    expect(result.meta.warnings.some((warning) => warning.code === 'squash_kind_fallback')).toBe(false)
   })
 
   it('subtype=control sí es señal estructural legítima y sigue produciendo control solo', () => {

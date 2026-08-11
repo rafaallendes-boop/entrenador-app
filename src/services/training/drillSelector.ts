@@ -18,6 +18,7 @@ import {
   normalizeSquashDrillKey,
   orderSquashDrillsForSession,
   resolveDrillExecutionMode,
+  resolveSquashDrillKey,
   resolveSquashDrillKind,
   SQUASH_DRILL_LIBRARY,
   type DrillCategory,
@@ -134,7 +135,11 @@ function isPhaseAllowed(drill: SquashDrillDefinition, phase: SquashSelectionPhas
 export function selectSquashDrills(
   context: SquashSelectionContext,
 ): SquashSelectionResult {
-  const recentSet = new Set(context.recentDrills.map(normalizeSquashDrillKey))
+  // Canonicalizado contra el catálogo: `recentDrills` llega con nombres
+  // (`extractRecentSquashDrills`) y se compara contra ids. Normalizar sólo el
+  // texto hacía que ninguna clave coincidiera nunca, y "evitar reciente"
+  // quedaba inerte para los 49 drills del catálogo.
+  const recentSet = new Set(context.recentDrills.map(resolveSquashDrillKey))
   const progressionState = deriveSquashProgressionState(context)
   const byFatigue = filterByFatigue(SQUASH_DRILL_LIBRARY, context)
   const byPhase = filterByPhase(byFatigue, context)
@@ -552,7 +557,7 @@ export function avoidRecentDrills(
   drills: SquashDrillDefinition[],
   recentDrills: Set<string>,
 ): SquashDrillDefinition[] {
-  return drills.filter((drill) => !recentDrills.has(normalizeSquashDrillKey(drill.id)))
+  return drills.filter((drill) => !recentDrills.has(resolveSquashDrillKey(drill.id)))
 }
 
 export function pickDiverseDrills(
@@ -699,7 +704,7 @@ function scoreDrills(
       }
       if (context.phase === 'taper' && drill.tags.includes('match_play') && drill.tags.includes('practice')) score -= 9
 
-      if (recentDrills.has(normalizeSquashDrillKey(drill.id))) score -= 10
+      if (recentDrills.has(resolveSquashDrillKey(drill.id))) score -= 10
 
       return { drill, score }
     })

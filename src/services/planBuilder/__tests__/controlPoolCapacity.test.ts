@@ -5,8 +5,10 @@ import {
   SQUASH_DRILL_LIBRARY,
   findSquashDrillByName,
   resolveDrillExecutionMode,
+  resolveSquashDrillKey,
   resolveSquashDrillKind,
 } from '../../training/drillLibrary'
+import { selectSquashDrills } from '../../training/drillSelector'
 import { repairGeneratedWeek } from '../repairWeek'
 import { buildRepairContextForTest, buildSkeletonSessionForTest } from './helpers/repairTestFixtures'
 
@@ -60,6 +62,48 @@ describe('capacidad del pool de control', () => {
       .filter((drill) => (drill.executionMode as string) === 'either')
 
     expect(ambiguous.map((drill) => drill.id)).toEqual([])
+  })
+})
+
+/**
+ * Identidad de drill al comparar "recientes".
+ *
+ * `recentDrills` llega con nombres (`extractRecentSquashDrills` lee sesiones) y
+ * el selector comparaba contra ids. Para los 49 drills la clave del nombre
+ * difiere de la del id, así que "evitar reciente" no excluía nada: el drill que
+ * la sesión ya tenía volvía como candidato, `completeSquashDrillSet` lo
+ * deduplicaba, y la semana quedaba por debajo del mínimo hasta que una segunda
+ * reparación la completaba por azar de ranking.
+ */
+describe('clave canónica de drill', () => {
+  const CANONICAL = 'Drives paralelos profundos'
+  const ALIAS = 'Tiros paralelos profundos'
+  const ID = 'drive_parallel_depth'
+
+  it('nombre, alias e id resuelven a la misma clave', () => {
+    expect(resolveSquashDrillKey(CANONICAL)).toBe(ID)
+    expect(resolveSquashDrillKey(ALIAS)).toBe(ID)
+    expect(resolveSquashDrillKey(ID)).toBe(ID)
+  })
+
+  it('los tres funcionan igual como drill reciente', () => {
+    const pick = (recent: string) => selectSquashDrills({
+      fatigueLevel: 4,
+      phase: 'build',
+      recentDrills: [recent],
+      goal: 'sostener largo',
+      competitionSoon: false,
+      desiredKind: 'technical',
+    }).drills.map((drill) => resolveSquashDrillKey(drill.name))
+
+    for (const reference of [CANONICAL, ALIAS, ID]) {
+      expect(pick(reference)).not.toContain(ID)
+    }
+  })
+
+  it('un nombre desconocido cae a su clave normalizada sin romper la comparación', () => {
+    expect(resolveSquashDrillKey('Ejercicio inventado del club'))
+      .toBe(resolveSquashDrillKey('ejercicio  inventado  del club'))
   })
 })
 

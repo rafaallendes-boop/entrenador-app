@@ -33,6 +33,11 @@ export const PLAN_BUILDER_WEEK_RESPONSE_SCHEMA: Record<string, unknown> = {
           rpe: { type: 'integer', minimum: 1, maximum: 10 },
           objective: { type: 'string' },
           subtype: { type: 'string', enum: ['training', 'match', 'competitive', 'control', 'light'] },
+          // Modalidad de squash. Obligatoria en runtime para sessionType=squash;
+          // no se puede exigir condicionalmente en JSON Schema, así que la
+          // validación vive en el normalizador. Sin este campo la modalidad
+          // volvería a decidirse leyendo el título y el objetivo.
+          squashKind: { type: 'string', enum: ['control', 'technical', 'shadows', 'match'] },
           runningType: { type: 'string', enum: ['z2', 'tempo', 'intervals', 'long'] },
         },
         required: ['date', 'timeBlock', 'sessionType', 'title', 'durationMin', 'rpe', 'objective'],

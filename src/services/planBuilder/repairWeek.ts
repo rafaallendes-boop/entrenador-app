@@ -7,6 +7,7 @@ import type {
   PlanWizardConfig,
   RunningIntervalStructure,
   RunningType,
+  SquashDetails,
   SquashDrill,
   SquashSessionBlock,
   SquashSessionBlockKind,
@@ -22,9 +23,11 @@ import {
   selectSquashDrillReplacement,
   selectSquashDrills,
   type SquashRelaxationLevel,
+  type SquashSelectionDesiredKind,
   type SquashSelectionPhase,
 } from '../training/drillSelector'
-import { findSquashDrillByName, isControlDrill, isShadowsDrill, isSquashMatchDrill, normalizeSquashDrillKey, orderSquashBlocksForSession, resolveDrillExecutionMode, resolveSquashDrillKind, toSquashDrill } from '../training/drillLibrary'
+import { hydrateSquashSession } from '../training/squashSessionHydrator'
+import { findSquashDrillByName, isControlDrill, isShadowsDrill, isSquashMatchDrill, normalizeSquashDrillKey, orderSquashBlocksForSession, resolveDrillExecutionMode, resolveSquashDrillKey, resolveSquashDrillKind, toSquashDrill } from '../training/drillLibrary'
 import {
   hasSquashCompetitiveExposureContent,
   isCompetitiveMatchDrill,
@@ -97,6 +100,18 @@ export interface RepairMeta {
   squashDrillRotationActionCount?: number
   squashDrillRotationSessionsAffected?: number
   squashDrillRotationOmittedCount?: number
+  /**
+   * Observacionales de modalidad de squash. No entran en `countRepairsV2`.
+   *
+   * `squashKindFallback*` mide incumplimiento del contrato: el proveedor debía
+   * declarar `squashKind`. Se separan las dos causas porque significan cosas
+   * distintas — un `subtype` heredado todavía es señal estructural del modelo,
+   * mientras que el default es ausencia total de señal.
+   */
+  squashKindFallbackLegacySubtypeCount?: number
+  squashKindFallbackDefaultCount?: number
+  squashKindConflictCount?: number
+  squashPoolInsufficientCount?: number
   /** Observacionales: no entran en `countRepairsV2` ni en la taxonomía. */
   squashFinisherProposedCount?: number
   squashFinisherPreservedCount?: number
@@ -505,8 +520,9 @@ function completeSportDetails(
     try {
       switch (session.sessionType) {
         case 'squash':
-          if (!hasValidSquashDetails(session)) {
-            completeSquashDetails(session, context, currentWeekSquashDrills)
+          recordSquashIntentTelemetry(session, meta)
+          if (!hasValidSquashDetails(session) || hasSquashKindConflict(session, meta)) {
+            completeSquashDetails(session, context, currentWeekSquashDrills, meta)
             recordRepair(meta, 'hydration', sessionKeyOf(session))
           } else if (hasUnresolvedSquashDrills(session)) {
             repairUnresolvedSquashDrills(session, context, currentWeekSquashDrills)
@@ -557,6 +573,69 @@ function completeSportDetails(
   }
 }
 
+/**
+ * Registra de dónde salió la modalidad. Sólo `declared` cumple el contrato: el
+ * prompt exige `squashKind` en toda sesión de squash. Una tasa alta de estos
+ * contadores es un defecto de prompt o de proveedor, no un modo de operación.
+ */
+function recordSquashIntentTelemetry(session: CoachSessionProposal, meta: RepairMeta): void {
+  const { source } = resolveSquashIntent(session)
+  if (source === 'declared') return
+
+  if (source === 'legacy_subtype') {
+    meta.squashKindFallbackLegacySubtypeCount = (meta.squashKindFallbackLegacySubtypeCount ?? 0) + 1
+  } else {
+    meta.squashKindFallbackDefaultCount = (meta.squashKindFallbackDefaultCount ?? 0) + 1
+  }
+  meta.warnings.push({
+    code: 'squash_kind_fallback',
+    message: source === 'legacy_subtype'
+      ? `"${session.title}" no declaró squashKind; se dedujo del subtype heredado.`
+      : `"${session.title}" no declaró squashKind ni subtype útil; se usó el default determinista.`,
+    sessionDate: session.date,
+  })
+}
+
+/**
+ * Detecta que los detalles ya hidratados contradigan la modalidad declarada.
+ *
+ * Sin esto, una propuesta detallada y bien formada evitaba la reconstrucción por
+ * completo: `squashKind` decía `technical` y la sesión conservaba drills en
+ * solitario porque `hasValidSquashDetails` sólo mira que los campos existan, no
+ * que digan lo mismo que la intención.
+ *
+ * La intención estructural gana: se reconstruyen los detalles y se registra.
+ */
+function hasSquashKindConflict(session: CoachSessionProposal, meta: RepairMeta): boolean {
+  if (!session.squashKind) return false
+  const details = session.squashDetails
+  if (!details || !Array.isArray(details.drills) || details.drills.length === 0) return false
+
+  const declared = session.squashKind
+  const contentKinds = new Set(
+    details.drills
+      .map((drill) => findSquashDrillByName(drill.name))
+      .filter((definition): definition is NonNullable<typeof definition> => definition != null)
+      .map((definition) => resolveSquashDrillKind(definition)),
+  )
+  if (contentKinds.size === 0) return false
+
+  // Las sombras son accesorio admitido de cualquier modalidad principal, así que
+  // su presencia no constituye contradicción.
+  contentKinds.delete('shadows')
+  if (contentKinds.size === 0) return false
+  if (contentKinds.size === 1 && contentKinds.has(declared)) return false
+
+  meta.squashKindConflictCount = (meta.squashKindConflictCount ?? 0) + 1
+  meta.warnings.push({
+    code: 'squash_kind_conflict',
+    message: `"${session.title}" declaró squashKind=${declared} pero traía contenido `
+      + `${[...contentKinds].join('/')}; se reconstruyen los detalles desde la intención.`,
+    sessionDate: session.date,
+  })
+  return true
+}
+
 function hasValidSquashDetails(session: CoachSessionProposal): boolean {
   const d = session.squashDetails
   if (!d) return false
@@ -573,6 +652,7 @@ function completeSquashDetails(
   session: CoachSessionProposal,
   context: RepairContext,
   recentDrills = extractRecentSquashDrills(context.previousWeek),
+  meta?: RepairMeta,
 ): void {
   // Una sesión que explícitamente es partido conserva la proyección standalone
   // histórica. El repair no crea finishers a partir de un esqueleto incompleto.
@@ -585,7 +665,49 @@ function completeSquashDetails(
   }
 
   const phase = mapPhase(context.week.phase) as SquashSelectionPhase
-  const selectionContext = {
+  const intentKind = resolveSquashIntentKind(session)
+
+  // Materialización por el hidratador compartido: la misma intención produce la
+  // misma sesión acá, en Crear semana, en el chat y en el formulario.
+  const hydration = hydrateSquashSession({
+    kind: intentKind === 'match' ? 'match' : intentKind as SquashSessionBlockKind,
+    durationMin: session.durationMin,
+    phase,
+    fatigueLevel: fatigueToNumber(context.wizardConfig.currentFatigue),
+    goal: buildLevelAwareGoal(context, context.profile.mainGoal ?? ''),
+    recentDrills,
+    competitionSoon: false,
+    competitiveLevel: deriveCompetitiveLevel(context),
+    partnerAvailability: context.wizardConfig.partnerAvailability ?? 'either',
+    competitive: session.subtype === 'competitive',
+  })
+
+  if (meta && hydration.warnings.some((warning) => warning.code === 'pool_insufficient')) {
+    meta.squashPoolInsufficientCount = (meta.squashPoolInsufficientCount ?? 0) + 1
+    meta.warnings.push({
+      code: 'squash_pool_insufficient',
+      message: `No hay suficientes drills de ${intentKind} para "${session.title}": se entrega corto en vez de mezclar modalidad.`,
+      sessionDate: session.date,
+    })
+  }
+
+  // El repair habilita y preserva finishers propuestos; no los compone. Si la
+  // hidratación trajo contenido competitivo para una sesión que no es partido
+  // dedicado, se retira antes de persistir.
+  const details = intentKind === 'match'
+    ? hydration.details
+    : withoutCompetitiveSquashContent(hydration.details)
+
+  if (details.drills.length > 0) {
+    session.subtype = hydration.subtype
+    setSquashDrillsAndBlocks(details, details.drills)
+    session.squashDetails = details
+    return
+  }
+
+  // Sin contenido utilizable en la modalidad pedida, se completa con técnica
+  // antes que inventar un finisher.
+  applySquashSelection(session, withoutCompetitiveMatchContent(selectSquashDrills({
     fatigueLevel: fatigueToNumber(context.wizardConfig.currentFatigue),
     phase,
     recentDrills,
@@ -593,20 +715,16 @@ function completeSquashDetails(
     competitionSoon: false,
     competitiveLevel: deriveCompetitiveLevel(context),
     partnerAvailability: context.wizardConfig.partnerAvailability ?? 'either',
-    desiredKind: mapSubtypeToDesiredKind(session.subtype) ?? inferSquashDesiredKind(session, recentDrills),
-  }
-  const selection = withoutCompetitiveMatchContent(selectSquashDrills(selectionContext))
-  if (selection.drills.length > 0) {
-    applySquashSelection(session, selection)
-    return
-  }
-
-  // Si el selector solo devolvió match drills para una sesión no dedicada,
-  // completar con técnica antes que inventar un finisher.
-  applySquashSelection(session, withoutCompetitiveMatchContent(selectSquashDrills({
-    ...selectionContext,
     desiredKind: 'technical',
   })))
+}
+
+function withoutCompetitiveSquashContent(details: SquashDetails): SquashDetails {
+  const drills = details.drills.filter((drill) => !isCompetitiveMatchDrill(drill))
+  if (drills.length === details.drills.length) return details
+  const next: SquashDetails = { ...details, drills, blocks: [] }
+  setSquashDrillsAndBlocks(next, drills)
+  return next
 }
 
 /** El repair habilita y preserva finishers propuestos; no los compone. */
@@ -751,7 +869,7 @@ function selectContextualSquashCompletion(
     competitionSoon: context.week.phase === 'taper' || context.week.phase === 'race',
     competitiveLevel: deriveCompetitiveLevel(context),
     partnerAvailability: context.wizardConfig.partnerAvailability ?? 'either',
-    desiredKind: mapSubtypeToDesiredKind(session.subtype) ?? inferSquashDesiredKind(session, recentDrills),
+    desiredKind: resolveSquashIntentKind(session),
   }
   const selection = selectSquashDrills(selectionContext)
   if (selection.drills.some((drill) => !isCompetitiveMatchDrill(drill))) return selection
@@ -2016,7 +2134,7 @@ function buildSquashRotationSelectionContext(session: CoachSessionProposal, cont
     competitionSoon: context.week.phase === 'taper' || context.week.phase === 'race',
     competitiveLevel: deriveCompetitiveLevel(context),
     partnerAvailability: context.wizardConfig.partnerAvailability ?? 'either',
-    desiredKind: mapSubtypeToDesiredKind(session.subtype) ?? inferSquashDesiredKind(session, []),
+    desiredKind: resolveSquashIntentKind(session),
   }
 }
 
@@ -2035,9 +2153,8 @@ function preservesCompetitiveExposure(
   })
 }
 
-function squashDrillKey(value: string): string {
-  return findSquashDrillByName(value)?.id ?? normalizeSquashDrillKey(value)
-}
+// Delega en el catálogo: una sola definición de identidad de drill.
+const squashDrillKey = resolveSquashDrillKey
 
 function canonicalSquashSignature(session: CoachSessionProposal): string {
   return getSquashSessionDrillKeys(session)
@@ -3248,6 +3365,17 @@ function getPlanPhaseDescriptors(context: RepairContext): TrainingPlan['phases']
   return context.plan.phases ?? []
 }
 
+/**
+ * Default cuando la sesión no declara modalidad ni trae un subtype que la
+ * implique. `technical` es el tipo más frecuente de sesión de squash.
+ *
+ * Que este default se use es señal de un contrato incumplido, no un camino
+ * normal: el prompt exige `squashKind` para toda sesión de squash. Una tasa
+ * alta de `squash_kind_fallback` en telemetría es un bug de prompt o de
+ * proveedor, y se investiga como tal.
+ */
+const DEFAULT_SQUASH_INTENT_KIND = 'technical' as const
+
 function mapSubtypeToDesiredKind(subtype?: string) {
   if (!subtype) return undefined
   if (subtype === 'match' || subtype === 'competitive') return 'match' as const
@@ -3256,18 +3384,33 @@ function mapSubtypeToDesiredKind(subtype?: string) {
   return undefined
 }
 
-function inferSquashDesiredKind(session: CoachSessionProposal, recentDrills: string[]) {
-  const text = `${session.title ?? ''} ${session.objective ?? ''}`
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
+/**
+ * Cascada de modalidad. Ningún paso lee `title`, `objective` ni `focusKey`.
+ *
+ * Reemplaza a `inferSquashDesiredKind`, que buscaba las subcadenas "control" y
+ * "precision" en el texto visible: un objetivo que dijera "control de longitud"
+ * convertía una sesión de partner en volumen en solitario.
+ *
+ * `subtype=training` no intenta adivinar: cae en el default determinista.
+ */
+function resolveSquashIntentKind(session: CoachSessionProposal): SquashSelectionDesiredKind {
+  return resolveSquashIntent(session).kind
+}
 
-  if (text.includes('control') || text.includes('precision')) return 'control' as const
-  if (text.includes('desplaz') || text.includes('movimiento') || text.includes('shadow') || text.includes('ghost')) return 'mixed-shadows-control' as const
-  if (text.includes('partido') || text.includes('match')) return 'match' as const
-  if (recentDrills.length >= 3 || text.includes('juego') || text.includes('condicionado')) return 'shadows' as const
-  if (recentDrills.length > 0) return 'control' as const
-  return undefined
+export type SquashIntentSource = 'declared' | 'legacy_subtype' | 'engine_default'
+
+/**
+ * Igual que `resolveSquashIntentKind`, pero informa de dónde salió la modalidad.
+ * La fuente es lo que permite distinguir un contrato cumplido de uno incumplido:
+ * `declared` es el camino esperado, y las otras dos son grados de degradación.
+ */
+function resolveSquashIntent(
+  session: CoachSessionProposal,
+): { kind: SquashSelectionDesiredKind; source: SquashIntentSource } {
+  if (session.squashKind) return { kind: session.squashKind, source: 'declared' }
+  const legacy = mapSubtypeToDesiredKind(session.subtype)
+  if (legacy) return { kind: legacy, source: 'legacy_subtype' }
+  return { kind: DEFAULT_SQUASH_INTENT_KIND, source: 'engine_default' }
 }
 
 function deriveRunningSportProfile(context: RepairContext): RunningSportProfile {

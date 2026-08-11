@@ -1037,6 +1037,16 @@ export interface CoachSessionProposal {
   rpe?: number
   objective?: string
   subtype?: SquashSubtype
+  /**
+   * Modalidad declarada de una sesión de squash. Autoridad de la composición.
+   *
+   * Es intención de frontera, no una segunda fuente persistida: el materializador
+   * la consume y la verdad canónica queda en `squashDetails.sessionKind`. Opcional
+   * en el tipo porque el objeto también representa otros deportes y porque hay
+   * respuestas antiguas sin el campo; en runtime se exige para squash y su
+   * ausencia cae por la cascada heredada, nunca por el texto de la sesión.
+   */
+  squashKind?: SquashSessionBlockKind
   runningType?: RunningType
   targetPaceMin?: string   // e.g. "5:00" — for running
   targetPaceMax?: string   // e.g. "5:30" — for running
