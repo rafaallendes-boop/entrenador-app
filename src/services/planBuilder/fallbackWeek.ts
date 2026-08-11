@@ -1,11 +1,12 @@
 import type { AthleteProfile, CoachSessionProposal, DayOfWeek, PlanWizardConfig, RunningType, SupportedSport } from '../../types'
 import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
-import { getExpectedSessionsForPlanWeek, getPlanWeekTrainingDates } from './dateRange'
+import { getExpectedSessionsForPlanWeek, getPlanWeekDateRange, getPlanWeekTrainingDates } from './dateRange'
 import { repairGeneratedWeek, type RepairResult } from './repairWeek'
 import type { PlanWeekDescriptor } from './blockIdentity'
 import { selectStrengthBlockTemplate } from '../training/strengthBlocks'
+import { resolvePlanEventWindow } from './eventWindowRules'
 
-type Slot = { date: string; timeBlock: 'AM' | 'PM' }
+type Slot = { date: string; timeBlock: 'AM' | 'PM'; role?: 'event_anchor' | 'support' }
 
 function isoDateToDayOfWeek(date: string): DayOfWeek | null {
   const parsed = new Date(`${date}T00:00:00.000Z`)
@@ -23,15 +24,26 @@ function canUseDoubleSessionOnDate(date: string, wizardConfig: PlanWizardConfig)
 
 function buildSlots(plan: TrainingPlan, week: TrainingPlanWeek, expected: number): Slot[] {
   const dates = getPlanWeekTrainingDates(plan, week)
-  if (expected <= 0 || dates.length === 0) return []
+  if (expected <= 0) return []
 
-  if (week.phase === 'race') {
-    // Race week: keep it calm and minimal. We don't know the exact competition day,
-    // so we don't try to schedule around it. At most 2 light single-session days —
-    // no doubles, no forced AM+PM on the event date.
-    const calmSlots = dates.slice(0, Math.min(expected, 2)).map((date) => ({ date, timeBlock: 'AM' as const }))
-    return calmSlots.length > 0 ? calmSlots : dates.slice(0, 1).map((date) => ({ date, timeBlock: 'AM' as const }))
+  if (week.phase === 'race' && getPrimarySport(plan) === 'squash') {
+    const { anchorDate } = resolvePlanEventWindow(plan)
+    const validRange = getPlanWeekDateRange(plan, week)
+    const anchorInsideWeek = anchorDate >= validRange.startDate && anchorDate <= validRange.endDate
+    const supportCount = Math.max(0, expected - (anchorInsideWeek ? 1 : 0))
+    const supportSlots: Slot[] = dates
+      .filter((date) => date !== anchorDate)
+      .slice(0, Math.min(supportCount, 2))
+      .map((date) => ({ date, timeBlock: 'AM', role: 'support' }))
+    const slots: Slot[] = anchorInsideWeek
+      ? [...supportSlots, { date: anchorDate, timeBlock: 'PM', role: 'event_anchor' }]
+      : supportSlots
+    return slots
+      .sort((left, right) => left.date.localeCompare(right.date) || left.timeBlock.localeCompare(right.timeBlock))
+      .slice(0, expected)
   }
+
+  if (dates.length === 0) return []
 
   const doubleDates = dates.filter((date) => canUseDoubleSessionOnDate(date, plan.wizardConfig))
   const strategicDoubleDate = pickStrategicDoubleDate(plan, week, expected, doubleDates)
@@ -197,7 +209,7 @@ function buildSquashPrimarySportSequence(plan: TrainingPlan, week: TrainingPlanW
 }
 
 function squashSubtype(index: number, phase: TrainingPlanWeek['phase'], weekIndex: number): CoachSessionProposal['subtype'] {
-  if (phase === 'race') return 'light'  // calm activation — competition day/time unknown
+  if (phase === 'race') return 'light'
   if (phase === 'taper') return index === 0 ? 'control' : 'light'
   const rotation: Array<NonNullable<CoachSessionProposal['subtype']>> = ['training', 'control', 'match', 'competitive']
   return rotation[(index + weekIndex) % rotation.length]
@@ -319,25 +331,46 @@ function buildSeedSession(
   week: TrainingPlanWeek,
   wizardConfig: PlanWizardConfig,
 ): CoachSessionProposal {
+  if (slot.role === 'event_anchor' && getPrimarySport(plan) === 'squash') {
+    return {
+      date: slot.date,
+      timeBlock: slot.timeBlock,
+      sessionType: 'squash',
+      title: 'Squash - Competencia Objetivo',
+      objective: 'Representar la única ancla del campeonato y reservar su carga competitiva en el calendario.',
+      durationMin: wizardConfig.sessionDurationMins,
+      rpe: 8,
+      subtype: 'competitive',
+      squashKind: 'match',
+    }
+  }
+
   const squashPrimary = getPrimarySport(plan) === 'squash'
-  const durationMin = sport === 'running' && squashPrimary
+  const durationMin = week.phase === 'race' && sport === 'squash'
+    ? Math.min(20, wizardConfig.sessionDurationMins)
+    : sport === 'running' && squashPrimary
     ? Math.min(40, wizardConfig.sessionDurationMins)
     : sport === 'mobility'
-      ? Math.min(45, wizardConfig.sessionDurationMins)
+      ? Math.min(week.phase === 'race' ? 30 : 45, wizardConfig.sessionDurationMins)
       : wizardConfig.sessionDurationMins
   const runningType = sport === 'running' ? runningTypeForWeek(plan, week) : undefined
   const subtype = sport === 'squash' ? squashSubtype(index, week.phase, week.weekIndex) : undefined
   const timeBlock = resolvePreferredTimeBlock(sport, subtype, slot.timeBlock)
 
+  const raceActivation = week.phase === 'race' && sport === 'squash'
+
   return {
     date: slot.date,
     timeBlock,
     sessionType: sport,
-    title: fallbackTitle(sport, index, plan, week),
+    title: raceActivation ? 'Squash - Activación de Campeonato' : fallbackTitle(sport, index, plan, week),
     durationMin,
-    rpe: sport === 'running' && squashPrimary ? 4 : fallbackRpe(sport, week),
-    objective: fallbackObjective(sport, week),
+    rpe: raceActivation ? 3 : sport === 'running' && squashPrimary ? 4 : fallbackRpe(sport, week),
+    objective: raceActivation
+      ? 'Activar timing y desplazamientos sin fatiga residual ni match-play adicional.'
+      : fallbackObjective(sport, week),
     subtype,
+    squashKind: raceActivation ? 'shadows' : undefined,
     runningType,
   }
 }
@@ -365,7 +398,9 @@ export function buildDeterministicWeek(input: {
   const sports = buildSportSequence(input.plan, input.week, slots.length)
   const sportCounts = new Map<SupportedSport, number>()
   const seedSessions = slots.map((slot, index) => {
-    const sport = sports[index] ?? 'mobility'
+    const sport = slot.role === 'event_anchor' && getPrimarySport(input.plan) === 'squash'
+      ? 'squash'
+      : sports[index] ?? 'mobility'
     const sportIndex = sportCounts.get(sport) ?? 0
     sportCounts.set(sport, sportIndex + 1)
     return buildSeedSession(sport, slot, sportIndex, input.plan, input.week, input.wizardConfig)

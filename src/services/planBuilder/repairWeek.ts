@@ -74,6 +74,15 @@ import {
   type RepairActionCategory,
   type RepairTaxonomyMeta,
 } from './repairTaxonomy'
+import {
+  EVENT_WINDOW_SUPPORT_CAPS,
+  MAX_EVENT_WINDOW_SUPPORTS_PER_WEEK,
+  isPlanEventAnchorDate,
+  isSquashCompetitionSession,
+  planWeekContainsEventAnchor,
+  resolveEventWindowSupportKind,
+  resolvePlanEventWindow,
+} from './eventWindowRules'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -195,7 +204,11 @@ export function repairGeneratedWeek(
       && resolveSquashMatchRole(session.squashDetails) === 'finisher',
   ).length
 
-  if (rawSessions.length === 0) {
+  const mustMaterializeRaceAnchor = context.week.phase === 'race'
+    && getPrimarySport(context) === 'squash'
+    && hasSquashGoalEvent(context)
+    && planWeekContainsEventAnchor(context.plan, context.week)
+  if (rawSessions.length === 0 && !mustMaterializeRaceAnchor) {
     measureSquashMatchRoles([], meta)
     return { sessions: [], meta }
   }
@@ -235,6 +248,7 @@ export function repairGeneratedWeek(
   normalizeSquashSemanticMetadata(sessions, meta, context)
   normalizeLateTaperSquashMatchPlay(sessions, context, meta)
   sessions = ensureSquashCompetitionMatchExposure(sessions, context, meta)
+  sessions = normalizeSquashEventWindow(sessions, context, meta)
 
   // 7. Keep squash drill/block timing aligned with the session duration.
   normalizeSquashDurationConsistency(sessions, meta)
@@ -265,6 +279,7 @@ export function repairGeneratedWeek(
   normalizeSquashSemanticMetadata(sessions, meta, context)
   normalizeLateTaperSquashMatchPlay(sessions, context, meta)
   sessions = ensureSquashCompetitionMatchExposure(sessions, context, meta)
+  sessions = normalizeSquashEventWindow(sessions, context, meta)
 
   // 13b. Política de rotación y corrección de firmas comparten una sola pasada.
   const squashNormalization = normalizeSquashSessionContent(sessions, context, meta)
@@ -344,6 +359,7 @@ function moveOutOfAllowedDaySessions(
   return sessions.map((s) => {
     const dayOfWeek = isoDateToDayOfWeek(s.date)
     if (dayOfWeek && allowedDays.has(dayOfWeek)) return s
+    if (isSquashRaceEventAnchorCandidate(s, context)) return s
 
     const available = findNearestAvailableDate(allowedDates, sessions, s.timeBlock, s.date, context.wizardConfig)
     if (available) {
@@ -468,6 +484,7 @@ function enforceDoubleSessionDayConstraints(
 function getSessionKeepPriority(context: RepairContext, session: CoachSessionProposal): number {
   const primarySport = getPrimarySport(context)
   let priority = 0
+  if (isSquashRaceEventAnchorCandidate(session, context)) priority += 1000
   if (session.sessionType === primarySport) priority += 100
   if (session.sessionType === 'squash' && (session.subtype === 'competitive' || session.subtype === 'match' || isSquashMatchIntent(session))) priority += 35
   if (session.sessionType === 'strength') priority += 20
@@ -697,7 +714,7 @@ function completeSquashDetails(
     // En race el evento real cuenta como exposición. Una sesión de match ya
     // declarada exactamente en el día del evento es el evento, no un partido
     // adicional de entrenamiento, y debe conservarse como tal.
-    if (context.week.phase === 'race' && session.date === getSquashEventDate(context)) {
+    if (context.week.phase === 'race' && session.date === getSquashEventAnchorDate(context)) {
       applySquashMatchDetails(session, 'competition_match')
       return
     }
@@ -1365,11 +1382,25 @@ function resolveSquashWeeklyExposureDecision(context: RepairContext): SquashWeek
   })
 }
 
-// Single source of truth for "event day", aligned with the validator
-// (`validateSquashCompetitionReadiness` uses macroSnapshot.goalEventDate). Falls
-// back to the plan end date if the macro snapshot lacks it.
+// El countdown de taper siempre apunta al INICIO de la ventana. El ancla puede
+// ser posterior y no debe retrasar la descarga previa al campeonato.
 function getSquashEventDate(context: RepairContext): string {
-  return context.plan.macroSnapshot?.goalEventDate ?? context.plan.endDate
+  return resolvePlanEventWindow(context.plan).startDate
+}
+
+function getSquashEventAnchorDate(context: RepairContext): string {
+  return resolvePlanEventWindow(context.plan).anchorDate
+}
+
+function isSquashRaceEventAnchorCandidate(
+  session: CoachSessionProposal,
+  context: RepairContext,
+): boolean {
+  return context.week.phase === 'race'
+    && getPrimarySport(context) === 'squash'
+    && hasSquashGoalEvent(context)
+    && planWeekContainsEventAnchor(context.plan, context.week)
+    && isPlanEventAnchorDate(context.plan, session.date)
 }
 
 function isSafeSquashCompetitionExposureDate(
@@ -1389,12 +1420,13 @@ function normalizeLateTaperSquashMatchPlay(
   if (context.week.phase !== 'taper' && context.week.phase !== 'race') return
 
   const eventDate = getSquashEventDate(context)
+  const anchorDate = getSquashEventAnchorDate(context)
   for (const session of sessions) {
     if (session.sessionType !== 'squash') continue
     // The event day itself IS the competition — never down-grade that session to
     // activation/control; the validator (squash.race_day) expects a match there.
-    if (session.date === eventDate) continue
-    if (daysBetween(session.date, eventDate) > 2) continue
+    if (context.week.phase === 'race' && session.date === anchorDate) continue
+    if (context.week.phase === 'taper' && daysBetween(session.date, eventDate) > 2) continue
     const role = resolveSquashMatchRole(session.squashDetails)
 
     if (role === 'finisher') {
@@ -1448,7 +1480,7 @@ function applyPreEventSquashActivationDetails(
     competitionSoon: true,
     competitiveLevel: deriveCompetitiveLevel(context),
     partnerAvailability: context.wizardConfig.partnerAvailability ?? 'either',
-    desiredKind: 'mixed-control-technical',
+    desiredKind: 'control',
   })
   const safeDrills = selection.drills.filter((drill) => {
     const definition = findSquashDrillByName(drill.name)
@@ -1457,6 +1489,7 @@ function applyPreEventSquashActivationDetails(
   const drills = safeDrills.length > 0 ? safeDrills : selection.drills
 
   session.subtype = 'control'
+  session.squashKind = 'control'
   session.title = 'Squash - Activación y Control Pre-Torneo'
   session.objective = 'Último toque de cancha: timing, longitud, precisión y confianza sin puntos largos ni fatiga residual.'
   session.durationMin = Math.min(session.durationMin, 35)
@@ -1464,12 +1497,238 @@ function applyPreEventSquashActivationDetails(
   const details: NonNullable<CoachSessionProposal['squashDetails']> = {
     trainingFocus: selection.trainingFocus,
     sessionMode: 'drill_session',
-    sessionKind: selection.sessionKind === 'match' ? 'control' : selection.sessionKind,
+    sessionKind: 'control',
     drills,
     blocks: [],
   }
   setSquashDrillsAndBlocks(details, drills)
   session.squashDetails = details
+}
+
+/**
+ * Proyección cerrada de una semana que intersecta el campeonato de squash:
+ * una sola ancla global y únicamente apoyos compatibles alrededor de ella.
+ */
+function normalizeSquashEventWindow(
+  sessions: CoachSessionProposal[],
+  context: RepairContext,
+  meta: RepairMeta,
+): CoachSessionProposal[] {
+  if (
+    context.week.phase !== 'race'
+    || getPrimarySport(context) !== 'squash'
+    || !hasSquashGoalEvent(context)
+  ) return sessions
+
+  const anchorDate = getSquashEventAnchorDate(context)
+  const anchorInsideWeek = planWeekContainsEventAnchor(context.plan, context.week)
+  let result = [...sessions]
+  let anchor: CoachSessionProposal | undefined
+
+  if (anchorInsideWeek) {
+    const onAnchorDate = result.filter((session) => session.date === anchorDate)
+    anchor = onAnchorDate.find((session) => session.sessionType === 'squash' && isSquashCompetitionSession(session))
+      ?? onAnchorDate.find((session) => session.sessionType === 'squash')
+      ?? result.find((session) => isSquashCompetitionSession(session))
+      ?? onAnchorDate[0]
+
+    if (!anchor) {
+      // Con cupo completo se reutiliza el apoyo de menor prioridad para no
+      // superar la cantidad efectiva. Si hay cupo, el ancla se agrega.
+      const expected = getExpectedSessionsForPlanWeek(context.plan, context.week)
+      anchor = result.length >= expected && result.length > 0
+        ? [...result].sort((left, right) =>
+            getSessionKeepPriority(context, left) - getSessionKeepPriority(context, right))[0]
+        : undefined
+
+      if (!anchor) {
+        anchor = {
+          date: anchorDate,
+          timeBlock: 'PM',
+          sessionType: 'squash',
+          title: 'Squash - Competencia Objetivo',
+          objective: 'Representar la única ancla del campeonato y reservar su carga competitiva.',
+          durationMin: context.wizardConfig.sessionDurationMins,
+          rpe: 8,
+          subtype: 'competitive',
+          squashKind: 'match',
+        }
+        result.push(anchor)
+        meta.addedFallbackCount++
+        recordTaxonomyOnly(meta, 'structural', sessionKeyOf(anchor))
+        meta.warnings.push({
+          code: 'event_window_anchor_added',
+          message: `Se agregó la única ancla competitiva del campeonato el ${anchorDate}.`,
+          sessionDate: anchorDate,
+        })
+      }
+    }
+
+    const anchorBefore = JSON.stringify(anchor)
+    projectSquashEventAnchor(anchor, anchorDate)
+    if (JSON.stringify(anchor) !== anchorBefore) {
+      recordRepair(meta, 'structural', sessionKeyOf(anchor))
+      meta.warnings.push({
+        code: 'event_window_anchor_aligned',
+        message: `Se alineó la competencia objetivo con su ancla única (${anchorDate}).`,
+        sessionDate: anchorDate,
+      })
+    }
+
+    const extrasOnAnchor = result.filter((session) => session !== anchor && session.date === anchorDate)
+    if (extrasOnAnchor.length > 0) {
+      result = result.filter((session) => !extrasOnAnchor.includes(session))
+      meta.droppedSessionCount += extrasOnAnchor.length
+      meta.warnings.push({
+        code: 'event_window_anchor_extra_dropped',
+        message: `Se retiraron ${extrasOnAnchor.length} sesiones extra del día clave ${anchorDate}.`,
+        sessionDate: anchorDate,
+      })
+    }
+  }
+
+  const normalized: CoachSessionProposal[] = []
+  for (const session of result) {
+    if (session === anchor) {
+      normalized.push(session)
+      continue
+    }
+
+    let support = session
+    if (isSquashCompetitionSession(support)) {
+      const previousTitle = support.title
+      const before = JSON.stringify(support)
+      applyPreEventSquashActivationDetails(support, context)
+      if (JSON.stringify(support) !== before) {
+        recordRepair(meta, 'corrective', sessionKeyOf(support))
+        meta.warnings.push({
+          code: 'event_window_extra_match_removed',
+          message: `Se cambió "${previousTitle}" a activación: la ventana admite una sola ancla y ningún match-play extra.`,
+          sessionDate: support.date,
+        })
+      }
+    } else if (
+      support.sessionType === 'strength'
+      || support.sessionType === 'running'
+      || support.sessionType === 'cycling'
+      || support.sessionType === 'nutrition'
+    ) {
+      support = buildEventWindowRecoverySession(support, context)
+      recordRepair(meta, 'corrective', sessionKeyOf(support))
+      meta.warnings.push({
+        code: 'event_window_incompatible_load_replaced',
+        message: `Se reemplazó carga incompatible por recuperación durante el campeonato (${support.date}).`,
+        sessionDate: support.date,
+      })
+    }
+
+    if (
+      support.sessionType === 'squash'
+      && context.wizardConfig.partnerAvailability === 'solo'
+      && resolveEventWindowSupportKind(support) === 'technical_touch'
+    ) {
+      const before = JSON.stringify(support)
+      applyPreEventSquashActivationDetails(support, context)
+      if (JSON.stringify(support) !== before) {
+        recordRepair(meta, 'corrective', sessionKeyOf(support))
+        meta.warnings.push({
+          code: 'event_window_partner_support_replaced',
+          message: `Se cambió "${support.title}" a control porque el atleta no tiene partner disponible.`,
+          sessionDate: support.date,
+        })
+      }
+    }
+
+    const supportKind = resolveEventWindowSupportKind(support)
+    if (!supportKind) {
+      const previousType = support.sessionType
+      support = buildEventWindowRecoverySession(support, context)
+      recordRepair(meta, 'corrective', sessionKeyOf(support))
+      meta.warnings.push({
+        code: 'event_window_unknown_support_replaced',
+        message: `Se reemplazó el apoyo ${previousType} por recuperación compatible con el campeonato.`,
+        sessionDate: support.date,
+      })
+    }
+
+    const resolvedKind = resolveEventWindowSupportKind(support) ?? 'recovery'
+    const caps = EVENT_WINDOW_SUPPORT_CAPS[resolvedKind]
+    const durationMin = Math.max(caps.minDurationMin, Math.min(support.durationMin, caps.maxDurationMin))
+    const rpe = Math.max(caps.minRpe, Math.min(support.rpe ?? caps.maxRpe, caps.maxRpe))
+    if (durationMin !== support.durationMin || rpe !== support.rpe) {
+      support = { ...support, durationMin, rpe }
+      recordRepair(meta, 'corrective', sessionKeyOf(support))
+      meta.warnings.push({
+        code: 'event_window_support_capped',
+        message: `Se limitó ${support.title} a ${durationMin}min / RPE ${rpe} durante el campeonato.`,
+        sessionDate: support.date,
+      })
+    }
+    normalized.push(support)
+  }
+
+  const supports = normalized
+    .filter((session) => session !== anchor)
+    .sort((left, right) => left.date.localeCompare(right.date) || left.timeBlock.localeCompare(right.timeBlock))
+  const keptSupports = supports.slice(0, MAX_EVENT_WINDOW_SUPPORTS_PER_WEEK)
+  const droppedSupportCount = supports.length - keptSupports.length
+  if (droppedSupportCount > 0) {
+    meta.droppedSessionCount += droppedSupportCount
+    meta.warnings.push({
+      code: 'event_window_support_limit',
+      message: `Se recortaron ${droppedSupportCount} apoyos: durante el campeonato se permiten máximo ${MAX_EVENT_WINDOW_SUPPORTS_PER_WEEK} por semana.`,
+    })
+  }
+
+  return [...(anchor ? [anchor] : []), ...keptSupports]
+    .sort((left, right) => left.date.localeCompare(right.date) || left.timeBlock.localeCompare(right.timeBlock))
+}
+
+function projectSquashEventAnchor(session: CoachSessionProposal, anchorDate: string): void {
+  session.date = anchorDate
+  session.timeBlock = 'PM'
+  session.sessionType = 'squash'
+  session.durationMin = Math.max(session.durationMin || 0, 45)
+  session.rpe = Math.max(session.rpe ?? 8, 7)
+  session.squashKind = 'match'
+  session.subtype = 'competitive'
+  session.exercises = undefined
+  session.runningType = undefined
+  session.intervalStructure = undefined
+  session.cyclingDetails = undefined
+  session.mobilityDetails = undefined
+  applySquashMatchDetails(session, 'competition_match')
+  session.title = 'Squash - Competencia Objetivo'
+  session.objective = 'Representar la única ancla del campeonato y reservar su carga competitiva en el calendario.'
+}
+
+function buildEventWindowRecoverySession(
+  session: CoachSessionProposal,
+  context: RepairContext,
+): CoachSessionProposal {
+  const recovery: CoachSessionProposal = {
+    date: session.date,
+    timeBlock: session.timeBlock,
+    sessionType: 'mobility',
+    title: 'Movilidad y Recuperación de Campeonato',
+    objective: 'Facilitar recuperación entre jornadas sin agregar fatiga residual.',
+    durationMin: Math.max(
+      EVENT_WINDOW_SUPPORT_CAPS.recovery.minDurationMin,
+      Math.min(session.durationMin, EVENT_WINDOW_SUPPORT_CAPS.recovery.maxDurationMin),
+    ),
+    rpe: Math.max(
+      EVENT_WINDOW_SUPPORT_CAPS.recovery.minRpe,
+      Math.min(session.rpe ?? 3, EVENT_WINDOW_SUPPORT_CAPS.recovery.maxRpe),
+    ),
+    metadata: session.metadata,
+  }
+  try {
+    completeMobilityDetails(recovery, context)
+  } catch {
+    // La propuesta base sigue siendo ejecutable; el validator informará si
+    // faltan detalles de movilidad.
+  }
+  return recovery
 }
 
 function contextlessSquashMatchMode(session: CoachSessionProposal): 'practice_match' | 'competition_match' {
@@ -2653,6 +2912,9 @@ function normalizeCompetitionTaperLoad(
   if (context.week.phase !== 'taper' && context.week.phase !== 'race') return sessions
 
   const cappedSessions = sessions.map((session) => {
+    if (isSquashRaceEventAnchorCandidate(session, context) && isSquashCompetitionSession(session)) {
+      return session
+    }
     const daysToEvent = daysBetween(session.date, context.plan.endDate)
     const finalWeek = daysToEvent <= 6
     const caps = getTaperSessionCaps(session.sessionType, finalWeek)
@@ -3012,6 +3274,9 @@ function balanceSessionCount(
     const trimPriority = getTrimPriority(context)
     const primarySport = getPrimarySport(context)
     result.sort((a, b) => {
+      const anchorDifference = Number(isSquashRaceEventAnchorCandidate(a, context))
+        - Number(isSquashRaceEventAnchorCandidate(b, context))
+      if (anchorDifference !== 0) return anchorDifference
       const pa = trimPriority[a.sessionType] ?? (a.sessionType === primarySport ? 10 : 5)
       const pb = trimPriority[b.sessionType] ?? (b.sessionType === primarySport ? 10 : 5)
       return pa - pb

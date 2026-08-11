@@ -211,7 +211,7 @@ describe('taxonomy coverage guard', () => {
       .filter(({ line }) => /meta\.addedFallbackCount\s*(\+\+|\+=)/.test(line))
       .filter(({ line }) => !line.startsWith('//'))
 
-    expect(fallbackMutations).toHaveLength(3)
+    expect(fallbackMutations).toHaveLength(4)
     for (const mutation of fallbackMutations) {
       const window = lines.slice(mutation.lineNumber - 1, mutation.lineNumber + 4).join('\n')
       expect(window).toMatch(

@@ -83,7 +83,8 @@ describe('A2.5 — exposición competitiva semanal en el repair', () => {
 
   it('en race el evento real cuenta y no agrega match-play de entrenamiento', () => {
     const { result } = repairedSingle('race')
-    expect(hasSquashCompetitiveExposureContent(result.sessions[0]?.squashDetails)).toBe(false)
+    expect(result.sessions[0]?.date).toBe('2026-08-09')
+    expect(hasSquashCompetitiveExposureContent(result.sessions[0]?.squashDetails)).toBe(true)
     expect(result.meta.warnings.map((warning) => warning.code))
       .not.toContain('squash_competition_match_added')
   })

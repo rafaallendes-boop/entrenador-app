@@ -9,6 +9,7 @@ import { resolveBlockPositions, type PlanWeekDescriptor } from './blockIdentity'
 import { collectAllStrengthKeys, collectCountableKeys } from './strengthRoleContract'
 import { validatePlan, validatePlanWeek } from './validator'
 import { isReadyWeek } from './weekUtils'
+import { isPlanEventAnchorDate, isSquashCompetitionSession } from './eventWindowRules'
 
 export type PlanQualityGrade = 'excellent' | 'good' | 'needs_review' | 'poor'
 
@@ -114,13 +115,16 @@ function strengthDensityTarget(durationMin: number): number {
   return 3
 }
 
-function getSportCompletenessIssues(week: TrainingPlanWeek): PlanValidationIssue[] {
+function getSportCompletenessIssues(plan: TrainingPlan, week: TrainingPlanWeek): PlanValidationIssue[] {
   const issues: PlanValidationIssue[] = []
 
   for (const session of week.sessions) {
     if (week.phase === 'taper' || week.phase === 'race') {
       const durationCap = getTaperDurationCap(session.sessionType)
-      if (session.durationMin > durationCap) {
+      const isEventAnchor = week.phase === 'race'
+        && isPlanEventAnchorDate(plan, session.date)
+        && isSquashCompetitionSession(session)
+      if (!isEventAnchor && session.durationMin > durationCap) {
         issues.push(issue({
           severity: 'warning',
           code: 'quality.taper.session_too_long',
@@ -846,7 +850,7 @@ export function reviewPlanQuality(
   const weekReviews = sortedWeeks.map((week) => {
     const issues = [
       ...validatePlanWeek(plan, week),
-      ...getSportCompletenessIssues(week),
+      ...getSportCompletenessIssues(plan, week),
       ...getDistributionIssues(plan, week),
       ...getHardSessionClusterIssues(week),
       ...getGenerationReliabilityIssues(week, qualityVersion),

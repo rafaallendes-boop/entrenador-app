@@ -1,5 +1,6 @@
 import type { DayOfWeek, PlanWizardConfig } from '../../types'
 import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
+import { planWeekContainsEventAnchor, resolvePlanEventWindow } from './eventWindowRules'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -76,7 +77,15 @@ export function getPlanWeekSessionCapacity(plan: TrainingPlan, week: TrainingPla
 }
 
 export function getExpectedSessionsForPlanWeek(plan: TrainingPlan, week: TrainingPlanWeek): number {
-  const baseExpected = Math.min(plan.wizardConfig.sessionsPerWeek, getPlanWeekSessionCapacity(plan, week))
+  let capacity = getPlanWeekSessionCapacity(plan, week)
+  const primarySport = plan.macroSnapshot.sportDetails.find((detail) => detail.role === 'primary')?.sport
+  if (week.phase === 'race' && primarySport === 'squash' && planWeekContainsEventAnchor(plan, week)) {
+    const anchorDate = resolvePlanEventWindow(plan).anchorDate
+    const anchorAlreadyUsesTrainingCapacity = getPlanWeekTrainingDates(plan, week).includes(anchorDate)
+    if (!anchorAlreadyUsesTrainingCapacity) capacity += 1
+  }
+
+  const baseExpected = Math.min(plan.wizardConfig.sessionsPerWeek, capacity)
   if (baseExpected <= 0) return 0
   if (week.phase !== 'taper' && week.phase !== 'race') return baseExpected
 

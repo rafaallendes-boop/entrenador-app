@@ -5,6 +5,7 @@ import { ACTION_CONTRACTS } from '../../ai/prompt/core/outputContract'
 import { buildStrengthLoadPack } from '../../ai/prompt/packs/quality/strengthLoad'
 import { renderActionAsProse } from '../../ai/prompt/renderers/proseSchema'
 import { getExpectedSessionsForPlanWeek, getPlanWeekDateRange } from '../../planBuilder/dateRange'
+import { resolvePlanEventWindow } from '../../planBuilder/eventWindowRules'
 import { renderPlanBuilderRecentContext, type PlanBuilderRecentContext } from '../../planBuilder/recentContextRender'
 
 export interface WeekPromptInput {
@@ -256,6 +257,7 @@ export function buildWeekUserPrompt(input: WeekPromptInput): string {
     .map(([sport, load]) => `${sport}: ${load}`)
     .join(', ')
   const days = wizardConfig.trainingDays.join(', ')
+  const eventWindow = resolvePlanEventWindow(plan)
 
   const allowsStrength = allowed.includes('strength')
   const strengthLoadSection = allowsStrength
@@ -265,7 +267,7 @@ export function buildWeekUserPrompt(input: WeekPromptInput): string {
 
   return [
     `Generar semana ${week.weekIndex + 1} de ${plan.totalWeeks} del plan "${plan.title}".`,
-    `Evento principal: ${plan.macroSnapshot.goalEventDate} · Fase: ${PHASE_LABEL[week.phase] ?? week.phase}`,
+    `Evento principal: ${formatEventWindowForPrompt(eventWindow.startDate, eventWindow.endDate)} · Ancla competitiva: ${eventWindow.anchorDate} · Fase: ${PHASE_LABEL[week.phase] ?? week.phase}`,
     `Semana que empieza el lunes ${week.weekStartDate}.`,
     `Rango válido para sesiones de esta semana: ${validRange.startDate} a ${validRange.endDate}. No programes entrenamientos antes de ${validRange.startDate} ni después de ${validRange.endDate}.`,
     `Foco del bloque: ${plan.phases.find((p) => week.weekIndex >= p.startWeekIndex && week.weekIndex <= p.endWeekIndex)?.blockFocus ?? ''}`,
@@ -462,6 +464,7 @@ export function buildWeekBatchUserPrompt(input: WeekBatchPromptInput): string {
   const allowed = allowedSportsList(plan, wizardConfig)
   const days = wizardConfig.trainingDays.join(', ')
   const primarySport = getPrimarySport(plan)
+  const eventWindow = resolvePlanEventWindow(plan)
   const anyStrength = allowed.includes('strength')
     && weeks.some((w) => (w.targetLoadBySport.strength ?? 0) > 0)
   const weeksText = weeks.map((week) => {
@@ -490,7 +493,7 @@ export function buildWeekBatchUserPrompt(input: WeekBatchPromptInput): string {
 
   return [
     `Generar dos semanas consecutivas del plan "${plan.title}".`,
-    `Evento principal: ${plan.macroSnapshot.goalEventDate}.`,
+    `Evento principal: ${formatEventWindowForPrompt(eventWindow.startDate, eventWindow.endDate)} · Ancla competitiva: ${eventWindow.anchorDate}.`,
     '',
     briefAthlete(profile),
     '',
@@ -544,11 +547,27 @@ function buildStrengthStructureSection(): string {
 
 function buildRaceWeekRule(plan: TrainingPlan, week: TrainingPlanWeek): string[] {
   if (week.phase !== 'race') return []
+  const { startDate, endDate, anchorDate } = resolvePlanEventWindow(plan)
+  const validRange = getPlanWeekDateRange(plan, week)
+  const anchorInsideWeek = anchorDate >= validRange.startDate && anchorDate <= validRange.endDate
+  const primarySport = getPrimarySport(plan)
+  if (primarySport !== 'squash') {
+    return [
+      `- Regla crítica de semana Race: esta semana intersecta la ventana inclusiva ${startDate} a ${endDate}.`,
+      anchorInsideWeek
+        ? `- Marca UNA sola ancla de ${primarySport ?? 'competencia'} el ${anchorDate}; representa el evento completo.`
+        : `- El ancla única del evento es ${anchorDate} y cae en otra semana; no inventes una segunda competencia.`,
+      '- Alrededor del evento prioriza activación y recuperación; evita carga que comprometa el rendimiento competitivo.',
+    ]
+  }
   return [
-    `- Regla crítica de semana Race: marca el evento principal el ${plan.macroSnapshot.goalEventDate} como sesión/competencia si cae dentro de esta semana.`,
-    '- Si el deporte principal es squash, el día del evento debe ser squash match/competencia; no programes running/cycling ese mismo día.',
-    '- Incluye 1-2 activaciones cortas antes del evento en días permitidos previos al evento; no pongas toda la semana después del evento.',
-    '- Después del evento usa solo recuperación o movilidad suave. El objetivo de la fase es llegar fresco al evento, no empezar el plan post-evento.',
+    `- Regla crítica de semana Race: esta semana intersecta la ventana inclusiva ${startDate} a ${endDate}.`,
+    anchorInsideWeek
+      ? `- Inserta UNA sola ancla squash match/competitive el ${anchorDate}. Esa ancla representa el campeonato completo; no agregues otro match-play.`
+      : `- El ancla única del campeonato es ${anchorDate} y cae en otra semana. NO inventes match/competencia en esta semana.`,
+    '- Además del ancla admite como máximo 2 apoyos por semana calendario: activación 10-20min RPE 2-4 (shadows/control), toque técnico 20-30min RPE 3-4 (technical con partner) o recuperación/movilidad 15-30min RPE 1-3.',
+    '- Prohibido durante race: fuerza pesada, running de intervalos/tempo/long, ciclismo de carga y match-play extra de entrenamiento.',
+    `- El ${anchorDate} no recibe una segunda sesión. Reserva esa fecha completa para la competencia representada por el ancla.`,
   ]
 }
 
@@ -598,9 +617,13 @@ function buildSquashCompetitionRules(plan: TrainingPlan, week: TrainingPlanWeek)
 
   if (week.phase === 'race') {
     return [
-      '- Regla race squash: el evento manda. Devuelve una sesión squash match/competitive el día del torneo y, como máximo, movilidad/activación muy suave alrededor. No agregues running/cycling de soporte.',
+      '- Regla race squash: respeta el ancla única indicada por la regla de ventana. Fuera de ella usa sólo los apoyos cortos permitidos; no agregues running/cycling, fuerza ni otro match-play.',
     ]
   }
 
   return []
+}
+
+function formatEventWindowForPrompt(startDate: string, endDate: string): string {
+  return startDate === endDate ? startDate : `${startDate} a ${endDate}`
 }

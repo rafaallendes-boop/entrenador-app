@@ -536,7 +536,7 @@ describe('reviewPlanQuality', () => {
     expect(getExpectedSessionsForPlanWeek(plan, week7DaysOut)).toBe(4)
   })
 
-  it('rejects race-day running and requires a squash match event session', () => {
+  it('reserves the event anchor and requires exactly one squash competition session', () => {
     const plan: TrainingPlan = {
       ...makePlan(),
       startDate: '2026-06-01',
@@ -583,8 +583,9 @@ describe('reviewPlanQuality', () => {
     const review = reviewPlanQuality(plan, [week])
 
     expect(getExpectedSessionsForPlanWeek(plan, week)).toBe(2)
-    expect(review.issues.some((item) => item.code === 'squash.race_day.non_squash')).toBe(true)
-    expect(review.issues.some((item) => item.code === 'squash.race_day.missing_event')).toBe(true)
+    expect(review.issues.some((item) => item.code === 'squash.event_window.anchor_extra_session')).toBe(true)
+    expect(review.issues.some((item) => item.code === 'squash.event_window.incompatible_support')).toBe(true)
+    expect(review.issues.some((item) => item.code === 'squash.event_window.anchor_count')).toBe(true)
   })
 
   it('flags repeated strength templates across adjacent weeks', () => {

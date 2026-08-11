@@ -1,6 +1,15 @@
 import type { CoachSessionProposal, DayOfWeek, SupportedSport } from '../../types'
 import type { PlanValidationIssue, TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import { getExpectedSessionsForPlanWeek, getPlanWeekDateRange } from './dateRange'
+import {
+  EVENT_WINDOW_SUPPORT_CAPS,
+  MAX_EVENT_WINDOW_SUPPORTS_PER_WEEK,
+  isPlanEventAnchorDate,
+  isSquashCompetitionSession,
+  planWeekContainsEventAnchor,
+  resolveEventWindowSupportKind,
+  resolvePlanEventWindow,
+} from './eventWindowRules'
 
 export interface ValidatePlanInput {
   plan: TrainingPlan
@@ -143,7 +152,10 @@ function validateWeekConstraints(plan: TrainingPlan, week: TrainingPlanWeek): Pl
     }
 
     const dayOfWeek = isoDateToDayOfWeek(session.date)
-    if (dayOfWeek && !expectedDays.has(dayOfWeek)) {
+    const isSquashEventAnchor = week.phase === 'race'
+      && getPrimarySport(plan) === 'squash'
+      && isPlanEventAnchorDate(plan, session.date)
+    if (dayOfWeek && !expectedDays.has(dayOfWeek) && !isSquashEventAnchor) {
       issues.push({
         severity: 'warning',
         code: 'week.sessions.out_of_allowed_day',
@@ -328,12 +340,10 @@ function getPrimarySport(plan: TrainingPlan): SupportedSport | undefined {
 function validateSquashCompetitionReadiness(plan: TrainingPlan, week: TrainingPlanWeek): PlanValidationIssue[] {
   const issues: PlanValidationIssue[] = []
   if (week.status !== 'draft' && week.status !== 'accepted') return issues
-  if (!Array.isArray(week.sessions) || week.sessions.length === 0) return issues
   if (getPrimarySport(plan) !== 'squash') return issues
 
-  const validRange = getPlanWeekDateRange(plan, week)
-  const eventDate = plan.macroSnapshot.goalEventDate
-  const eventInsideWeek = eventDate >= validRange.startDate && eventDate <= validRange.endDate
+  const { anchorDate } = resolvePlanEventWindow(plan)
+  const anchorInsideWeek = planWeekContainsEventAnchor(plan, week)
 
   for (const session of week.sessions) {
     if (session.sessionType === 'running' || session.sessionType === 'cycling') {
@@ -368,37 +378,84 @@ function validateSquashCompetitionReadiness(plan: TrainingPlan, week: TrainingPl
 
     }
 
+    if (week.phase !== 'race') continue
+
+    const isAnchor = session.date === anchorDate && isSquashCompetitionSession(session)
+    if (session.date === anchorDate && !isAnchor) {
+      issues.push({
+        severity: 'error',
+        code: 'squash.event_window.anchor_extra_session',
+        message: `El día clave ${anchorDate} debe quedar reservado para la única ancla competitiva; retira ${session.title}.`,
+        weekIndex: week.weekIndex,
+      })
+    }
+    if (isAnchor) continue
+
+    if (isSquashCompetitionSession(session)) {
+      issues.push({
+        severity: 'error',
+        code: 'squash.event_window.extra_match',
+        message: `La ventana ya está representada por el ancla ${anchorDate}; ${session.title} (${session.date}) agrega match-play de entrenamiento no permitido.`,
+        weekIndex: week.weekIndex,
+      })
+      continue
+    }
+
+    const supportKind = resolveEventWindowSupportKind(session)
+    if (!supportKind) {
+      issues.push({
+        severity: 'error',
+        code: 'squash.event_window.incompatible_support',
+        message: `Durante el campeonato ${session.title} (${session.date}) debe ser activación, toque técnico corto o recuperación; ${session.sessionType} no es un apoyo compatible.`,
+        weekIndex: week.weekIndex,
+      })
+      continue
+    }
+
+    const caps = EVENT_WINDOW_SUPPORT_CAPS[supportKind]
+    const rpe = session.rpe ?? caps.maxRpe
+    if (supportKind === 'technical_touch' && plan.wizardConfig.partnerAvailability === 'solo') {
+      issues.push({
+        severity: 'error',
+        code: 'squash.event_window.technical_partner_required',
+        message: `${session.title} (${session.date}) requiere partner, pero el wizard declara disponibilidad solo.`,
+        weekIndex: week.weekIndex,
+      })
+    }
     if (
-      week.phase === 'race'
-      && session.date === eventDate
-      && session.sessionType !== 'squash'
-      && session.sessionType !== 'mobility'
-      && session.sessionType !== 'recovery'
+      session.durationMin < caps.minDurationMin
+      || session.durationMin > caps.maxDurationMin
+      || rpe < caps.minRpe
+      || rpe > caps.maxRpe
     ) {
       issues.push({
-        // Warning (not error): race week is intentionally calm/minimal; we don't force-schedule
-        // around the exact event day since its timing within the week may be unknown.
-        severity: 'warning',
-        code: 'squash.race_day.non_squash',
-        message: `El día del torneo (${eventDate}) no debe incluir ${session.sessionType}; reserva esa fecha para competencia/activación específica de squash.`,
+        severity: 'error',
+        code: 'squash.event_window.support_out_of_bounds',
+        message: `${session.title} (${session.date}) excede el rango de ${supportKind}: ${caps.minDurationMin}-${caps.maxDurationMin}min, RPE ${caps.minRpe}-${caps.maxRpe}.`,
         weekIndex: week.weekIndex,
       })
     }
   }
 
-  if (week.phase === 'race' && eventInsideWeek) {
-    const hasEventSquash = week.sessions.some((session) =>
-      session.date === eventDate
-      && session.sessionType === 'squash'
-      && (session.subtype === 'match' || session.subtype === 'competitive' || session.squashDetails?.sessionKind === 'match'),
-    )
-    if (!hasEventSquash) {
+  if (week.phase === 'race') {
+    const anchors = week.sessions.filter((session) =>
+      session.date === anchorDate && isSquashCompetitionSession(session))
+    if (anchorInsideWeek && anchors.length !== 1) {
       issues.push({
-        // Warning (not error): race week is kept calm without forcing a 'match' session on a
-        // specific day; the competition itself provides the competitive event.
-        severity: 'warning',
-        code: 'squash.race_day.missing_event',
-        message: `La semana de carrera debe marcar el torneo de squash el ${eventDate} como sesión match/competitiva.`,
+        severity: 'error',
+        code: 'squash.event_window.anchor_count',
+        message: `La semana que contiene ${anchorDate} debe tener exactamente una ancla squash match/competitive; tiene ${anchors.length}.`,
+        weekIndex: week.weekIndex,
+      })
+    }
+
+    const supportCount = week.sessions.filter((session) =>
+      !(session.date === anchorDate && isSquashCompetitionSession(session))).length
+    if (supportCount > MAX_EVENT_WINDOW_SUPPORTS_PER_WEEK) {
+      issues.push({
+        severity: 'error',
+        code: 'squash.event_window.too_many_supports',
+        message: `La semana ${week.weekIndex + 1} tiene ${supportCount} apoyos durante el campeonato; el máximo es ${MAX_EVENT_WINDOW_SUPPORTS_PER_WEEK}.`,
         weekIndex: week.weekIndex,
       })
     }
