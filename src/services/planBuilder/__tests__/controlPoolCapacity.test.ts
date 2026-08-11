@@ -69,7 +69,7 @@ describe('capacidad del pool de control', () => {
  * Identidad de drill al comparar "recientes".
  *
  * `recentDrills` llega con nombres (`extractRecentSquashDrills` lee sesiones) y
- * el selector comparaba contra ids. Para los 49 drills la clave del nombre
+ * el selector comparaba contra ids. Para los 54 drills la clave del nombre
  * difiere de la del id, así que "evitar reciente" no excluía nada: el drill que
  * la sesión ya tenía volvía como candidato, `completeSquashDrillSet` lo
  * deduplicaba, y la semana quedaba por debajo del mínimo hasta que una segunda

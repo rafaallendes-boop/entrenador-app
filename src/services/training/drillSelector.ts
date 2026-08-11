@@ -138,7 +138,7 @@ export function selectSquashDrills(
   // Canonicalizado contra el catálogo: `recentDrills` llega con nombres
   // (`extractRecentSquashDrills`) y se compara contra ids. Normalizar sólo el
   // texto hacía que ninguna clave coincidiera nunca, y "evitar reciente"
-  // quedaba inerte para los 49 drills del catálogo.
+  // quedaba inerte para los 54 drills del catálogo.
   const recentSet = new Set(context.recentDrills.map(resolveSquashDrillKey))
   const progressionState = deriveSquashProgressionState(context)
   const byFatigue = filterByFatigue(SQUASH_DRILL_LIBRARY, context)

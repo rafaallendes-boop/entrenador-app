@@ -51,6 +51,18 @@ const REWRITTEN_DESCRIPTION_IDS = new Set([
 ])
 
 /**
+ * Progresiones añadidas después de la entrega de copy de julio. Quedan fuera
+ * del snapshot histórico, pero tienen su propio contrato de contenido.
+ */
+const POST_COPY_DELIVERY_IDS = new Set([
+  'conditioned_full_lane_per_side',
+  'back_court_parallel_cross_on_volley',
+  'two_wall_volley_cross_straight_reply',
+  'two_wall_volley_cross_drop_option',
+  'two_wall_volley_cross_front_direction_choice',
+])
+
+/**
  * Guard de la entrega de copy (spec 2026-07-31).
  *
  * Congela todo lo que esta entrega NO puede tocar: los campos que no son texto
@@ -64,6 +76,7 @@ const REWRITTEN_DESCRIPTION_IDS = new Set([
 describe('invariantes de la librería de squash', () => {
   it('solo cambian los nombres, descripciones y aliases previstos', async () => {
     const table = SQUASH_DRILL_LIBRARY
+      .filter((drill) => !POST_COPY_DELIVERY_IDS.has(drill.id))
       .map((drill) => ({
         id: drill.id,
         category: drill.category,
