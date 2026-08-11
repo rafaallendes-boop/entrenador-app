@@ -1,10 +1,10 @@
-# Smoke de producción — Proyecto A completo + Proyecto B0–B3
+# Smoke de producción — Proyectos A y B completos
 
-Fecha objetivo: 2026-08-11
+Fecha objetivo: 2026-08-12
 
 URL actual: `https://entrenadoralph.netlify.app/`
 
-Commit mínimo esperado: `9946e7f`
+Commit mínimo esperado: `2b00e6e` (o un descendiente).
 
 Spec: `docs/superpowers/specs/2026-08-10-squash-session-intent-and-event-window-design.md`
 
@@ -20,17 +20,20 @@ Este runbook valida:
 
 - Proyecto A completo: catálogo, hidratador, exposición competitiva, Plan
   Builder, Crear semana, chat, formulario, plantillas y compatibilidad;
-- Proyecto B0–B3: modelo de ventana, captura/presentación, firma del draft,
-  macroplan, shell y cierre de ciclo contra el término.
+- Proyecto B0–B5: modelo de ventana, captura/presentación, firma del draft,
+  macroplan, shell, cierre de ciclo, generación/repair/validator/fallback y
+  contexto de Chat/Crear semana.
 
-No valida todavía B4–B6. En particular, **no usar este smoke para aprobar las
-reglas internas de carga de un campeonato multijornada**: ancla única, máximo
-dos apoyos, prohibiciones de carga durante la ventana, repair, fallback y
-quality review siguen pendientes en B4. Para no mezclar alcances:
+El propio runbook completa B6. Para limitar consumo, usa **un solo plan pagado
+corto**, con un campeonato cercano que cruza dos semanas. Ese
+mismo plan cubre Plan Builder de A y la generación multijornada de B. El flujo
+completo usa tres solicitudes de Chat y dos de Crear semana; no repetir salvo
+que exista un hallazgo reproducible.
 
-1. el plan pagado de A usa un evento de **un solo día**;
-2. la prueba multijornada de B llega hasta el shell y no pulsa el botón naranja
-   **Crear plan**.
+La verificación de Whoop con `WHOOP_ZONES_ENABLED=true` no consume IA y está en
+`docs/superpowers/smokes/2026-08-08-whoop-hr-zones-smoke.md`. Ejecutarla contra
+el mismo bundle, sin mezclar sus requisitos SQL con A/B: **A/B no agrega
+migraciones**.
 
 ## Reglas de corte
 
@@ -44,6 +47,9 @@ Detener y marcar **RECHAZADO** si ocurre cualquiera de estos casos:
   de forma explícita;
 - una sesión nueva queda con `executionMode="either"`;
 - una semana `race` agrega un partido extra además del evento;
+- una semana `race` contiene más de dos apoyos, carga prohibida o un apoyo fuera
+  de sus topes;
+- el día clave contiene otra sesión además del ancla competitiva;
 - un campeonato pasa a `transition` antes del día siguiente a su término;
 - el shell omite una de las semanas calendario que toca el campeonato;
 - mover inicio/término reutiliza el shell anterior;
@@ -57,8 +63,8 @@ no aprobar el smoke completo hasta repetirlos.
 ## Preparación
 
 - [ ] **P1.** Confirmar en Netlify que el deploy está **Published** y corresponde
-  al commit `9946e7f` o a un descendiente que contenga esos cuatro commits:
-  `b52aa5a`, `70ff0fc`, `d8e3c4f`, `9946e7f`.
+  al commit anotado arriba o a un descendiente. Debe incluir `66be4be` y el
+  commit del paquete B4+B5; no basta `9946e7f`.
 
 - [ ] **P2.** Abrir la URL en una ventana incógnita, iniciar sesión y hacer hard
   refresh. Registrar el bundle servido:
@@ -70,15 +76,15 @@ curl -fsSL https://entrenadoralph.netlify.app/ \
 ```
 
 - [ ] **P3.** Usar uno o, idealmente, dos atletas descartables: `SMOKE-A` para
-  generación y `SMOKE-B` para el rango. Crear un ciclo nuevo puede cerrar el
-  ciclo anterior; no usar un atleta real con un plan activo.
+  formulario/chat y `SMOKE-B` para rango y el único plan pagado. Crear un ciclo
+  nuevo puede cerrar el ciclo anterior; no usar un atleta real con plan activo.
 
 - [ ] **P4.** Desde Ajustes, exportar un respaldo antes de empezar. Anotar nombre
   y hora del archivo. No ejecutar una importación destructiva en una cuenta con
   datos reales.
 
-- [ ] **P5.** Confirmar saldo del proveedor antes de los casos de Chat, Crear
-  semana y Plan Builder. Este documento no asume que el saldo histórico siga
+- [ ] **P5.** Confirmar saldo para un plan corto, tres solicitudes de Chat y dos
+  de Crear semana. Este documento no asume que el saldo histórico siga
   disponible.
 
 - [ ] **P6.** Abrir DevTools → Network, activar **Preserve log**, y abrir también
@@ -219,20 +225,15 @@ Crear cuatro sesiones manuales de squash en días futuros distintos.
 
 ## Caso A3 — Chat: las cuatro intenciones estructuradas
 
-Enviar y aprobar las propuestas una por una, en fechas libres:
+Enviar **una sola solicitud** que pida las cuatro acciones en fechas libres:
 
-> Agrega una sesión de control de squash en solitario de 45 minutos, con
-> repeticiones de paralelas y drops.
+> Agrega cuatro sesiones de squash en días futuros distintos: una de control en
+> solitario de 45 minutos con paralelas y drops; una técnica con partner de 60
+> minutos para control de longitud y decisiones en el pasillo; una de sombras
+> sin pelota de 30 minutos RPE 5; y un partido de práctica al mejor de 5 juegos.
 
-> Agrega una sesión técnica con partner de 60 minutos para trabajar control de
-> longitud y decisiones en el pasillo.
-
-> Agrega una sesión de sombras sin pelota de 30 minutos, RPE 5.
-
-> Agrega un partido de práctica de squash al mejor de 5 juegos.
-
-- [ ] **A3.1.** El drawer de cada propuesta muestra la modalidad esperada antes
-  de aplicar.
+- [ ] **A3.1.** La respuesta contiene cuatro propuestas y el drawer de cada una
+  muestra la modalidad esperada antes de aplicar.
 
 - [ ] **A3.2.** La técnica con “control de longitud” queda `technical` y usa
   contenido `partner`; no se convierte a `control`.
@@ -272,24 +273,31 @@ Enviar y aprobar las propuestas una por una, en fechas libres:
 
 ## Caso A5 — Plan Builder y exposición competitiva A2.5
 
-Este es el caso de mayor costo. Usar `SMOKE-A` y un evento **de un solo día**.
-Para cubrir Base → Build → Peak → Taper, elegir **Usar máximo permitido** en el
-wizard (hasta 12 semanas), partner disponible, fatiga normal y squash principal.
+Este es el caso de mayor costo y se ejecuta **una sola vez**. Usar `SMOKE-B` y
+el campeonato corto de B1. Elegir el inicio de plan más tardío permitido o la
+opción equivalente que deje sólo 1–2 semanas, partner disponible, fatiga normal
+y squash principal. Si el preview supera 3 semanas, volver atrás y acercar el
+evento; no pagar un plan largo para este smoke.
 
-- [ ] **A5.1.** Antes de **Crear plan**, el resumen muestra un evento de un día y
-  el número esperado de semanas.
+Orden operativo: antes de pulsar **Crear plan**, saltar a B1 y completar
+B1.1–B1.7 y las mutaciones de firma B2.4–B2.5. Volver aquí para pagar una sola
+generación; después completar A6 y el resto de B2–B5 con ese mismo plan.
+
+- [ ] **A5.1.** Antes de **Crear plan**, el resumen muestra el rango multijornada,
+  día clave y sólo 1–2 semanas.
 
 - [ ] **A5.2.** Generar el plan, esperar estado completo y no aceptar semanas con
   error. Registrar `plan_id`, `job_id`, costo y cantidad de intentos.
 
-- [ ] **A5.3.** Revisar visualmente al menos una semana de cada fase disponible.
-  En sesiones squash se cumplen las mismas modalidades que en A1–A4.
+- [ ] **A5.3.** Revisar visualmente todas las semanas del plan corto. En sesiones
+  squash se cumplen las mismas modalidades que en A1–A4. La matriz completa de
+  fases Base/Build/Peak/Taper queda cubierta por Gate 0, no por más gasto.
 
-- [ ] **A5.4.** Exposición competitiva por fase:
+- [ ] **A5.4.** En las fases que existan en este plan:
 
-  - Base: mejor de 3;
-  - Build/Peak normal: mejor de 5;
-  - Build/Peak con carga `loaded`, si aparece naturalmente: mejor de 3;
+  - Base, si aparece: mejor de 3;
+  - Build/Peak normal, si aparece: mejor de 5;
+  - Build/Peak con carga `loaded`, sólo si aparece naturalmente: mejor de 3;
   - Taper: solo si queda a tres o más días del evento;
   - Race: el evento cubre la exposición; no aparece un match adicional.
 
@@ -345,14 +353,15 @@ Completar con evidencia de A1–A5:
 
 ## Caso B1 — Captura, validación y presentación de ventana
 
-Usar `SMOKE-B`. Como ejemplo vigente para esta ejecución:
+Usar `SMOKE-B`. Como ejemplo vigente para la ejecución del 12 de agosto:
 
-- inicio: sábado `2026-09-05`;
-- término: martes `2026-09-08`;
-- día clave: lunes `2026-09-07`.
+- inicio: miércoles `2026-08-12`;
+- término: martes `2026-08-18`;
+- día clave: lunes `2026-08-17`.
 
-Si esas fechas ya pasaron al repetir el smoke, usar el próximo sábado→martes y
-un día clave intermedio.
+Si esas fechas ya pasaron al repetir el smoke, usar una ventana que empiece hoy,
+termine el martes posterior al próximo lunes y tenga ese lunes como día clave.
+Así se cubren dos semanas y el estado `active` sin esperar ni cambiar el reloj.
 
 - [ ] **B1.1.** En el wizard pulsar **El evento dura varios días**. Aparecen
   Inicio, Término y Día clave con el texto de ayuda correcto.
@@ -370,7 +379,7 @@ un día clave intermedio.
   día**. Término y día clave desaparecen y el evento vuelve a la semántica
   legacy de un día.
 
-- [ ] **B1.6.** Restaurar el rango 5→8 con clave 7. Completar el wizard hasta la
+- [ ] **B1.6.** Restaurar el rango 12→18 con clave 17. Completar el wizard hasta la
   vista previa, **sin pulsar Crear plan**.
 
 - [ ] **B1.7.** El launch deck y el resumen muestran el rango y `Día clave`, sin
@@ -380,7 +389,7 @@ un día clave intermedio.
 ## Caso B2 — Shell, firma del draft y semanas `race`
 
 - [ ] **B2.1.** El preview anuncia exactamente el mismo número de semanas que el
-  shell creado. Un sábado→martes cruza dos semanas calendario: ambas deben
+  shell creado. La ventana cruza dos semanas calendario: ambas deben
   existir en el shell.
 
 - [ ] **B2.2.** El plan termina el martes 8, no el sábado 5. La última semana no
@@ -390,12 +399,12 @@ un día clave intermedio.
   `race`, incluida la semana del inicio aunque el sábado esté a más de cero días
   desde su lunes.
 
-- [ ] **B2.4.** Volver al wizard y mover solo el término a `2026-09-15`. El
+- [ ] **B2.4.** Volver al wizard y mover solo el término a `2026-08-25`. El
   resumen, la cantidad de semanas, `plan.endDate` y el shell deben cambiar. No
   debe reaparecer el shell anterior por autoload.
 
-- [ ] **B2.5.** Volver a `2026-09-08`. El shell visible debe corresponder otra
-  vez a esa ventana, sin datos del término 15. Si término es exactamente igual
+- [ ] **B2.5.** Volver a `2026-08-18`. El shell visible debe corresponder otra
+  vez a esa ventana, sin datos del término 25. Si término es exactamente igual
   a inicio, debe firmar igual que no declarar término y no regenerar por una
   diferencia redundante.
 
@@ -456,9 +465,134 @@ editar Dexie para simularlos en producción.
   fecha única en UI/snapshot, semana del evento `race` y `transition` solo
   después de esa fecha.
 
+## Caso B4 — Generación, repair, validator y fallback dentro de la ventana
+
+Ejecutar después de generar el único plan pagado de A5. No provocar fallos del
+proveedor para forzar fallback: el fallback determinista está cubierto en Gate
+0. Si ocurre de forma natural, la misma auditoría debe quedar verde.
+
+- [ ] **B4.1.** Las dos semanas que intersectan la ventana son `race`. Entre
+  ambas existe exactamente una sesión squash match/competitive en el día clave;
+  no aparece otra competencia ni match-play de entrenamiento.
+
+- [ ] **B4.2.** Cada semana `race` tiene como máximo dos apoyos además del ancla:
+
+  - activación `shadows/control`: 10–20 min, RPE 2–4;
+  - toque `technical`: 20–30 min, RPE 3–4 y requiere partner;
+  - movilidad/recovery: 15–30 min, RPE 1–3.
+
+- [ ] **B4.3.** No hay fuerza, running, cycling ni nutrition en las semanas
+  `race`; no hay una segunda sesión en el día clave.
+
+- [ ] **B4.4.** Ejecutar este helper de solo lectura. Todas las columnas de
+  problema deben ser `0` y `anchorCount` debe ser `1` global:
+
+```js
+function smokeIsCompetition(session) {
+  const details = session.squashDetails
+  return session.sessionType === 'squash' && (
+    session.squashKind === 'match'
+    || session.subtype === 'match'
+    || session.subtype === 'competitive'
+    || details?.sessionKind === 'match'
+    || details?.sessionMode === 'practice_match'
+    || details?.sessionMode === 'competition_match'
+    || details?.blocks?.some((block) => block.kind === 'match')
+  )
+}
+
+function smokeSupportRule(session) {
+  if (session.sessionType === 'mobility' || session.sessionType === 'recovery') {
+    return { kind: 'recovery', min: 15, max: 30, minRpe: 1, maxRpe: 3 }
+  }
+  if (session.sessionType !== 'squash' || smokeIsCompetition(session)) return null
+  const kinds = new Set(session.squashDetails?.blocks?.map((block) => block.kind) ?? [])
+  const kind = session.squashDetails?.sessionKind ?? session.squashKind
+  if (kind === 'technical' || kinds.has('technical')) {
+    return { kind: 'technical', min: 20, max: 30, minRpe: 3, maxRpe: 4 }
+  }
+  if (
+    kind === 'control' || kind === 'shadows'
+    || kinds.has('control') || kinds.has('shadows')
+    || session.subtype === 'light' || session.subtype === 'control'
+  ) {
+    return { kind: 'activation', min: 10, max: 20, minRpe: 2, maxRpe: 4 }
+  }
+  return null
+}
+
+const bRaceWeeks = bWeeks.filter((week) => week.phase === 'race')
+const bAnchorDate = bPlan.macroSnapshot?.goalEventKeyDate
+  ?? bPlan.macroSnapshot?.goalEventDate
+const bAllRaceSessions = bRaceWeeks.flatMap((week) => week.sessions)
+
+console.log({
+  anchorDate: bAnchorDate,
+  anchorCount: bAllRaceSessions.filter((session) =>
+    session.date === bAnchorDate && smokeIsCompetition(session)).length,
+})
+
+console.table(bRaceWeeks.map((week) => {
+  const anchors = week.sessions.filter((session) =>
+    session.date === bAnchorDate && smokeIsCompetition(session))
+  const supports = week.sessions.filter((session) => !anchors.includes(session))
+  return {
+    week: week.weekIndex + 1,
+    sessions: week.sessions.length,
+    anchors: anchors.length,
+    supports: supports.length,
+    extraMatches: supports.filter(smokeIsCompetition).length,
+    incompatible: supports.filter((session) => !smokeSupportRule(session)).length,
+    outOfCaps: supports.filter((session) => {
+      const rule = smokeSupportRule(session)
+      const rpe = session.rpe ?? rule?.maxRpe
+      return rule && (
+        session.durationMin < rule.min || session.durationMin > rule.max
+        || rpe < rule.minRpe || rpe > rule.maxRpe
+      )
+    }).length,
+    anchorExtras: week.sessions.filter((session) =>
+      session.date === bAnchorDate && !anchors.includes(session)).length,
+  }
+}))
+```
+
+- [ ] **B4.5.** Revisar `generationMeta`: sin loops, repair repetitivo ni error
+  final. Si `fallbackUsed=true`, B4.1–B4.4 deben cumplirse igual y se registra
+  como evidencia; un fallback aislado no invalida por sí solo el contrato.
+
+## Caso B5 — Crear semana, chat y resúmenes con ventana completa
+
+- [ ] **B5.1. Crear semana.** Pedir una semana para la semana que contiene el
+  día clave. Antes de aplicar, la propuesta tiene máximo dos sesiones totales:
+  una única ancla el día clave y como máximo un apoyo compatible. No recrea una
+  competencia en la otra semana `race`.
+
+- [ ] **B5.2. Costo/retry.** En Beta Quality o la traza de Network, la solicitud
+  anterior termina en un intento salvo un error real del proveedor. No hay un
+  retry causado por pedir 5 sesiones y validar 2 después del repair.
+
+- [ ] **B5.3. Semana parcial.** Si el día clave ya pasó cuando se repita el
+  smoke, Crear semana no vuelve a insertarlo. Si todavía no pasó, marcar este
+  borde **NO REPRODUCIBLE EN TIEMPO REAL**; Gate 0 lo cubre.
+
+- [ ] **B5.4. Chat.** Enviar una sola pregunta: `¿En qué fase estoy y cómo debo
+  manejar la carga durante mi campeonato actual?` La respuesta reconoce el
+  rango completo y el campeonato en curso; no lo llama post-evento porque el
+  inicio ya haya pasado.
+
+- [ ] **B5.5. Resumen.** La propuesta/resumen semanal prioriza descarga o
+  mantenimiento durante toda la ventana. No recomienda progresar fuerza,
+  running o cycling como si el evento hubiera terminado.
+
+- [ ] **B5.6. Evento heredado.** Si existe un evento viejo de otro deporte y el
+  deporte principal actual es squash, Crear semana lo etiqueta como heredado y
+  no crea un partido de squash en su fecha. Si no existe un fixture real, marcar
+  **NO REPRODUCIBLE**; Gate 0 cubre el caso determinista.
+
 ## Caso B-compatibilidad — Backup y round trip de ventana
 
-- [ ] **BC.1.** Exportar un respaldo después de B1–B3. Buscar el evento
+- [ ] **BC.1.** Exportar un respaldo después de B1–B5. Buscar el evento
   `SMOKE-B`: conserva `date`, `endDate` y `keyDate`.
 
 - [ ] **BC.2.** El macro snapshot del plan conserva `goalEventDate`,
@@ -480,11 +614,10 @@ editar Dexie para simularlos en producción.
   eventos, planes ni plantillas athlete-scoped.
 - [ ] **V3.** Eliminar únicamente sesiones/plantillas `SMOKE` si son
   descartables. No borrar el respaldo ni el plan hasta guardar la evidencia.
-- [ ] **V4.** No pulsar **Crear plan** para el evento multijornada de B antes de
-  que B4 esté implementado y desplegado.
-- [ ] **V5.** Si todo A está verde, A puede darse por desplegado. B0–B3 puede
-  permanecer habilitado para captura/shell, pero la generación multijornada no
-  se aprueba hasta B4–B6.
+- [ ] **V4.** Confirmar que sólo se pagó un plan corto, tres solicitudes de Chat
+  y dos de Crear semana, salvo retry real documentado.
+- [ ] **V5.** Si A y B están verdes, aprobar ambos rollouts. Si falla una regla
+  B4/B5, no aprobar generación multijornada aunque captura y shell funcionen.
 
 ## Resultado
 
@@ -497,10 +630,10 @@ _(completar al ejecutar)_
 - Respaldo previo:
 - Solicitudes IA / costo:
 - Casos A aprobados:
-- Casos B0–B3 aprobados:
+- Casos B0–B5 aprobados:
 - Casos no reproducibles:
 - Casos no ejecutados por seguridad/saldo:
 - Hallazgos con pasos y evidencia:
 - Veredicto A: **APROBADO / APROBADO PARCIAL / RECHAZADO**
-- Veredicto B0–B3: **APROBADO / APROBADO PARCIAL / RECHAZADO**
-- Autorización para seguir con B4: **SÍ / NO**
+- Veredicto B: **APROBADO / APROBADO PARCIAL / RECHAZADO**
+- Veredicto Whoop zones (runbook separado): **APROBADO / PARCIAL / NO EJECUTADO**

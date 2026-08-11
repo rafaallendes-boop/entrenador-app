@@ -3,7 +3,7 @@
 Fecha: 2026-08-10  
 Actualizado: 2026-08-11
 
-Estado: A0–A7, incluida A2.5, completadas técnicamente; rollout operativo pendiente. B0–B3 completadas técnicamente; B4–B6 pendientes.
+Estado: A0–A7, incluida A2.5, completadas técnicamente; rollout operativo pendiente. B0–B5 completadas técnicamente; B6 pendiente de smoke y rollout.
 
 Spec: `docs/superpowers/specs/2026-08-10-squash-session-intent-and-event-window-design.md`
 
@@ -446,16 +446,16 @@ Crear semana.
 
 **Pasos:**
 
-- [ ] Reemplazar reglas de "día de evento" por reglas de ventana inclusiva.
-- [ ] Insertar un único ancla competitiva en `keyDate ?? startDate`.
-- [ ] Evitar duplicar el ancla cuando el rango cruza semanas.
-- [ ] Permitir máximo dos apoyos semanales compatibles dentro del evento.
-- [ ] Impedir fuerza pesada, running de calidad, cycling de carga y match-play
+- [x] Reemplazar reglas de "día de evento" por reglas de ventana inclusiva.
+- [x] Insertar un único ancla competitiva en `keyDate ?? startDate`.
+- [x] Evitar duplicar el ancla cuando el rango cruza semanas.
+- [x] Permitir máximo dos apoyos semanales compatibles dentro del evento.
+- [x] Impedir fuerza pesada, running de calidad, cycling de carga y match-play
   extra en toda la ventana.
-- [ ] Aplicar caps de duración/RPE de activación, toque técnico y recuperación.
-- [ ] Alinear repair, validator y quality review con el mismo resolver de
+- [x] Aplicar caps de duración/RPE de activación, toque técnico y recuperación.
+- [x] Alinear repair, validator y quality review con el mismo resolver de
   ventana.
-- [ ] Probar fallback determinista, no sólo respuestas del proveedor.
+- [x] Probar fallback determinista, no sólo respuestas del proveedor.
 
 ### Task B5 — Contexto de chat y resúmenes
 
@@ -470,20 +470,20 @@ Crear semana.
 
 **Pasos:**
 
-- [ ] Mostrar rango, timing activo y día clave en contexto del coach.
-- [ ] Evitar que el coach llame "post-evento" a un día dentro del campeonato.
-- [ ] Pasar inicio, término, timing activo y día clave al prompt de Crear semana
+- [x] Mostrar rango, timing activo y día clave en contexto del coach.
+- [x] Evitar que el coach llame "post-evento" a un día dentro del campeonato.
+- [x] Pasar inicio, término, timing activo y día clave al prompt de Crear semana
   y resolver su fase local con la misma ventana.
-- [ ] Actualizar copy de resumen y recomendaciones de semana race.
-- [ ] Auditar todos los accesos directos a `.date`/`goalEventDate` y clasificarlos
+- [x] Actualizar copy de resumen y recomendaciones de semana race.
+- [x] Auditar todos los accesos directos a `.date`/`goalEventDate` y clasificarlos
   como inicio, término, ancla o display.
 
 ### Task B6 — Verificación y rollout
 
 **Pasos:**
 
-- [ ] Ejecutar la matriz B0 en macro, shell, validator, repair, fallback y UI.
-- [ ] Ejecutar suite completa, typecheck y build.
+- [x] Ejecutar la matriz B0 automatizada en macro, shell, validator, repair y fallback.
+- [x] Ejecutar suite completa, typecheck y build.
 - [ ] Probar manualmente evento de un día y multijornada desde creación hasta
   aceptación del plan.
 - [ ] Verificar import/export de un backup viejo y uno con rango.
