@@ -251,7 +251,10 @@ function buildGoalSummary(
       : `${eventContext.window.startDate} a ${eventContext.window.endDate}`
     parts.push(`${eventLabel}: ${goalEvent.title ?? 'objetivo principal'} (${range})`)
     if (eventContext.window.keyDate) parts.push(`Día clave/ancla: ${eventContext.window.keyDate}`)
-    if (eventContext.timing) {
+    // Un evento heredado de otro deporte no gobierna esta semana: anunciarlo
+    // como "campeonato en curso" contradice la fase declarada y la propia
+    // instrucción de no tratarlo como restricción dura.
+    if (eventContext.timing && eventContext.appliesToPrimarySport) {
       const timingLabel = eventContext.timing === 'active'
         ? 'campeonato en curso'
         : eventContext.timing === 'upcoming' ? 'próximo' : 'terminado'
@@ -265,7 +268,7 @@ function buildGoalSummary(
   }
   parts.push(`Fase para la semana objetivo: ${eventContext.phase}`)
   parts.push(`Foco del bloque: ${eventContext.blockFocus}`)
-  if (eventContext.timing === 'active') {
+  if (eventContext.timing === 'active' && eventContext.appliesToPrimarySport) {
     parts.push('La ventana sigue activa: NO describas esta semana como post-evento ni transición aunque el inicio ya haya pasado.')
   }
   return parts.length > 0

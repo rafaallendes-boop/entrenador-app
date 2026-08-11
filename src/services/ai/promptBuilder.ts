@@ -1098,9 +1098,15 @@ function buildMacroPlanSection(context: ChatContext, relevantSports?: Set<Suppor
     : todayISO() > eventWindow.endDate ? 'past' : 'active'
 
   const lines: string[] = ['═══ MACRO PLAN ═══']
-  lines.push(`Evento principal: ${eventTitle} (${formatGoalEventWindow(eventWindowInput)})`)
+  // La etiqueta legible es para el atleta; el ISO es para el modelo, que debe
+  // emitir fechas ISO y no puede derivarlas de "5–11 sep" (sin año en el día
+  // clave). Antes de la ventana este bloque ya exponía `goalEventDate` en ISO.
+  const isoWindow = eventWindow.startDate === eventWindow.endDate
+    ? eventWindow.startDate
+    : `${eventWindow.startDate} a ${eventWindow.endDate}`
+  lines.push(`Evento principal: ${eventTitle} (${formatGoalEventWindow(eventWindowInput)}) [ISO ${isoWindow}]`)
   const keyDateLabel = formatGoalEventKeyDate(eventWindowInput)
-  if (keyDateLabel) lines.push(keyDateLabel)
+  if (keyDateLabel && eventWindow.keyDate) lines.push(`${keyDateLabel} [ISO ${eventWindow.keyDate}]`)
   lines.push(`Timing del evento: ${eventTiming}`)
   lines.push(`Fase actual: ${getPhaseLabel(macroPlan.currentPhase)}`)
   lines.push(`Semanas restantes: ${formatWeeksRemaining(macroPlan.weeksRemaining)}`)
@@ -1121,7 +1127,11 @@ function buildMacroPlanSection(context: ChatContext, relevantSports?: Set<Suppor
     lines.push('')
     lines.push('EVENTOS SECUNDARIOS RELEVANTES:')
     for (const eventMarker of macroPlan.secondaryEvents.slice(0, 3)) {
-      lines.push(`- ${eventMarker.title} (${formatGoalEventWindow(eventMarker)}) · ${eventMarker.timing}`)
+      const markerWindow = resolveGoalEventWindow(eventMarker)
+      const markerIso = markerWindow.startDate === markerWindow.endDate
+        ? markerWindow.startDate
+        : `${markerWindow.startDate} a ${markerWindow.endDate}`
+      lines.push(`- ${eventMarker.title} (${formatGoalEventWindow(eventMarker)}) [ISO ${markerIso}] · ${eventMarker.timing}`)
     }
   }
   lines.push('')

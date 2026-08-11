@@ -90,7 +90,12 @@ export function getExpectedSessionsForPlanWeek(plan: TrainingPlan, week: Trainin
   if (week.phase !== 'taper' && week.phase !== 'race') return baseExpected
 
   const daysToEventFromWeekStart = Math.round((dateToUtcMs(plan.endDate) - dateToUtcMs(getPlanWeekDateRange(plan, week).startDate)) / DAY_MS)
-  if (week.phase === 'race') return Math.min(baseExpected, 2)
+  // El ancla no consume el cupo de apoyos: el prompt pide una competencia más
+  // un máximo de dos apoyos, así que la semana que la contiene espera tres.
+  if (week.phase === 'race') {
+    const anchorInWeek = primarySport === 'squash' && planWeekContainsEventAnchor(plan, week)
+    return Math.min(baseExpected, anchorInWeek ? 3 : 2)
+  }
   if (daysToEventFromWeekStart <= 13) return Math.min(baseExpected, 4)
   if (daysToEventFromWeekStart <= 20) return Math.min(baseExpected, Math.max(3, plan.wizardConfig.sessionsPerWeek - 2))
   if (daysToEventFromWeekStart <= 27) return Math.min(baseExpected, Math.max(4, plan.wizardConfig.sessionsPerWeek - 1))

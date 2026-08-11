@@ -6,6 +6,7 @@ import {
   MAX_EVENT_WINDOW_SUPPORTS_PER_WEEK,
   isPlanEventAnchorDate,
   isSquashCompetitionSession,
+  planEventAppliesToSquash,
   planWeekContainsEventAnchor,
   resolveEventWindowSupportKind,
   resolvePlanEventWindow,
@@ -197,6 +198,9 @@ function validateWeekConstraints(plan: TrainingPlan, week: TrainingPlanWeek): Pl
 
 function validateSportDistributionForWeek(plan: TrainingPlan, week: TrainingPlanWeek): PlanValidationIssue[] {
   const issues: PlanValidationIssue[] = []
+  // Hueco preexistente, no introducido por la ventana: sin esto una fila con
+  // `sessions` ausente hacía lanzar a `validatePlanWeek` entero.
+  if (!Array.isArray(week.sessions)) return issues
   const allowed = new Set<string>(
     [
       ...plan.macroSnapshot.sportDetails.map((d) => d.sport),
@@ -340,7 +344,11 @@ function getPrimarySport(plan: TrainingPlan): SupportedSport | undefined {
 function validateSquashCompetitionReadiness(plan: TrainingPlan, week: TrainingPlanWeek): PlanValidationIssue[] {
   const issues: PlanValidationIssue[] = []
   if (week.status !== 'draft' && week.status !== 'accepted') return issues
+  if (!Array.isArray(week.sessions)) return issues
   if (getPrimarySport(plan) !== 'squash') return issues
+  // Mismo gate que `normalizeSquashEventWindow`: sin esto el validator exigía
+  // un ancla de squash que el repair, correctamente, nunca iba a construir.
+  if (!planEventAppliesToSquash(plan)) return issues
 
   const { anchorDate } = resolvePlanEventWindow(plan)
   const anchorInsideWeek = planWeekContainsEventAnchor(plan, week)

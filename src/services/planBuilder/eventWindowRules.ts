@@ -38,6 +38,21 @@ export function resolvePlanEventWindow(plan: TrainingPlan): PlanEventWindow {
   }
 }
 
+/**
+ * `true` cuando las reglas de ventana de squash aplican a este plan.
+ *
+ * El repair ya se abstiene si el evento objetivo es de otro deporte; sin este
+ * gate el validator exigía un ancla squash que el repair nunca iba a construir,
+ * y la semana quemaba reintentos sin poder aceptarse jamás.
+ */
+export function planEventAppliesToSquash(plan: TrainingPlan): boolean {
+  const eventSport = plan.macroSnapshot?.goalEventSport
+  // Snapshot anterior a esta denormalización: se conserva el comportamiento
+  // previo en vez de inventar un deporte que no fue registrado.
+  if (!eventSport) return true
+  return eventSport === 'squash'
+}
+
 export function isPlanEventAnchorDate(plan: TrainingPlan, isoDate: string): boolean {
   return resolvePlanEventWindow(plan).anchorDate === isoDate
 }

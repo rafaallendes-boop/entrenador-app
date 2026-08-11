@@ -583,6 +583,7 @@ export function computeMacroPlan(
     goalEventDate: event.date,
     goalEventEndDate: event.endDate,
     goalEventKeyDate: event.keyDate,
+    goalEventSport: normalizeSport(event.sport),
     currentPhase,
     weeksRemaining,
     blockFocus,

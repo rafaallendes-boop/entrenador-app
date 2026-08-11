@@ -1385,6 +1385,9 @@ function resolveSquashWeeklyExposureDecision(context: RepairContext): SquashWeek
 // El countdown de taper siempre apunta al INICIO de la ventana. El ancla puede
 // ser posterior y no debe retrasar la descarga previa al campeonato.
 function getSquashEventDate(context: RepairContext): string {
+  // `macroSnapshot` no está garantizado —`hasSquashGoalEvent` lo lee con `?.`—,
+  // así que se conserva el fallback al término del plan.
+  if (!context.plan.macroSnapshot?.goalEventDate) return context.plan.endDate
   return resolvePlanEventWindow(context.plan).startDate
 }
 
@@ -1627,13 +1630,14 @@ function normalizeSquashEventWindow(
       && context.wizardConfig.partnerAvailability === 'solo'
       && resolveEventWindowSupportKind(support) === 'technical_touch'
     ) {
+      const previousPartnerTitle = support.title
       const before = JSON.stringify(support)
       applyPreEventSquashActivationDetails(support, context)
       if (JSON.stringify(support) !== before) {
         recordRepair(meta, 'corrective', sessionKeyOf(support))
         meta.warnings.push({
           code: 'event_window_partner_support_replaced',
-          message: `Se cambió "${support.title}" a control porque el atleta no tiene partner disponible.`,
+          message: `Se cambió "${previousPartnerTitle}" a control porque el atleta no tiene partner disponible.`,
           sessionDate: support.date,
         })
       }
@@ -1654,15 +1658,27 @@ function normalizeSquashEventWindow(
     const resolvedKind = resolveEventWindowSupportKind(support) ?? 'recovery'
     const caps = EVENT_WINDOW_SUPPORT_CAPS[resolvedKind]
     const durationMin = Math.max(caps.minDurationMin, Math.min(support.durationMin, caps.maxDurationMin))
-    const rpe = Math.max(caps.minRpe, Math.min(support.rpe ?? caps.maxRpe, caps.maxRpe))
-    if (durationMin !== support.durationMin || rpe !== support.rpe) {
+    // Completar un `rpe` ausente es hidratación, no corrección: contarlo como
+    // reparación infla `countRepairsV2`, que es justo lo que penaliza
+    // `quality_version = 2`. Mismo defecto ya corregido para `sessionMode`.
+    const rpeWasDeclared = support.rpe != null
+    const defaultRpe = Math.round((caps.minRpe + caps.maxRpe) / 2)
+    const rpe = rpeWasDeclared
+      ? Math.max(caps.minRpe, Math.min(support.rpe!, caps.maxRpe))
+      : defaultRpe
+    const durationChanged = durationMin !== support.durationMin
+    const rpeChanged = rpeWasDeclared && rpe !== support.rpe
+    if (durationChanged || rpeChanged) {
       support = { ...support, durationMin, rpe }
       recordRepair(meta, 'corrective', sessionKeyOf(support))
       meta.warnings.push({
         code: 'event_window_support_capped',
-        message: `Se limitó ${support.title} a ${durationMin}min / RPE ${rpe} durante el campeonato.`,
+        message: `Se limitó ${support.title} a ${durationMin}min / RPE ${rpe} en la semana del campeonato.`,
         sessionDate: support.date,
       })
+    }
+    else if (!rpeWasDeclared) {
+      support = { ...support, durationMin, rpe }
     }
     normalized.push(support)
   }

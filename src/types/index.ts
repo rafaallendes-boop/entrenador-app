@@ -807,6 +807,13 @@ export interface MacroPlan {
   goalEventEndDate?: string
   /** Ancla competitiva declarada, dentro de la ventana. */
   goalEventKeyDate?: string
+  /**
+   * Deporte del evento objetivo. Denormalizado como las fechas para que el
+   * validator —que sólo recibe el plan— aplique el mismo gate que el repair.
+   * Ausente en snapshots anteriores: ahí se conserva el comportamiento previo,
+   * que decide sólo por el deporte principal.
+   */
+  goalEventSport?: SupportedSport
   currentPhase: MacroPlanPhase
   weeksRemaining: number
   blockFocus: string      // human-readable focus for the current phase
