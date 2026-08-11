@@ -41,6 +41,8 @@ interface ListedTemplate {
 export default function CoachLibraryPanel() {
   const lastSuccessfulSyncAt = useAuthStore((state) => state.syncDetails.lastSuccessfulSyncAt)
   const lastErrorAt = useAuthStore((state) => state.syncDetails.lastErrorAt)
+  const lastErrorEntity = useAuthStore((state) => state.syncDetails.lastErrorEntity)
+  const pendingTables = useAuthStore((state) => state.syncDetails.pendingTables)
   const [templates, setTemplates] = useState<ListedTemplate[]>([])
   const [loading, setLoading] = useState(true)
   const [editor, setEditor] = useState<EditorState | null>(null)
@@ -134,6 +136,7 @@ export default function CoachLibraryPanel() {
 
   const showStaleNotice = lastErrorAt != null
     && (lastSuccessfulSyncAt == null || lastErrorAt > lastSuccessfulSyncAt)
+    && (lastErrorEntity === 'session_templates' || pendingTables.includes('session_templates'))
 
   return (
     <section aria-label="Biblioteca de plantillas">

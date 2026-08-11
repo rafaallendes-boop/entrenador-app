@@ -61,6 +61,70 @@ describe('ProxyProvider streaming fallback', () => {
     expect(response.streamed).toBe(false)
   })
 
+  it('retries without streaming when the server reports an empty provider stream', async () => {
+    const emptyStreamError = [
+      JSON.stringify({
+        type: 'error',
+        error: 'El provider devolvió una respuesta vacía.',
+        errorCode: 'parse_error',
+      }),
+      '',
+    ].join('\n')
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(emptyStreamError, {
+        status: 200,
+        headers: { 'Content-Type': 'application/x-ndjson' },
+      }))
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify({ text: 'Whoop registró una carga baja.', provider: 'gemini', traceId: 'trace-1' }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ))
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    const response = await new ProxyProvider().call(makeRequest())
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock.mock.calls[0]?.[1]?.body).toContain('"stream":true')
+    expect(fetchMock.mock.calls[1]?.[1]?.body).toContain('"stream":false')
+    expect(response).toMatchObject({
+      text: 'Whoop registró una carga baja.',
+      streamed: false,
+    })
+  })
+
+  it('does not retry a parse error after streaming visible content', async () => {
+    const partialStream = [
+      JSON.stringify({ type: 'chunk', chunk: 'Respuesta parcial' }),
+      JSON.stringify({
+        type: 'error',
+        truncated: true,
+        error: 'El provider devolvió una respuesta incompleta.',
+        errorCode: 'parse_error',
+      }),
+      '',
+    ].join('\n')
+    const fetchMock = vi.fn().mockResolvedValue(new Response(partialStream, {
+      status: 200,
+      headers: { 'Content-Type': 'application/x-ndjson' },
+    }))
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    const response = await new ProxyProvider().call(makeRequest())
+
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(response).toMatchObject({
+      text: 'Respuesta parcial',
+      streamed: true,
+      truncated: true,
+      errorClass: 'parse_error',
+    })
+  })
+
   it('normalizes unauthorized proxy responses', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(
       JSON.stringify({ error: 'Sesión requerida para usar el coach.', errorCode: 'unauthorized' }),

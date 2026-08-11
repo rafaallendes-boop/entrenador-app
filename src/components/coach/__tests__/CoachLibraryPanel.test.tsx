@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
   syncDetails: {
     lastSuccessfulSyncAt: null as number | null,
     lastErrorAt: null as number | null,
+    lastErrorEntity: null as string | null,
+    pendingTables: [] as string[],
   },
 }))
 
@@ -45,6 +47,8 @@ describe('CoachLibraryPanel', () => {
     mocks.update.mockResolvedValue(undefined)
     mocks.syncDetails.lastSuccessfulSyncAt = null
     mocks.syncDetails.lastErrorAt = null
+    mocks.syncDetails.lastErrorEntity = null
+    mocks.syncDetails.pendingTables = []
   })
   afterEach(cleanup)
 
@@ -77,6 +81,8 @@ describe('CoachLibraryPanel', () => {
   it('mantiene Dexie utilizable tras un fallo de sync y recarga al próximo sync exitoso', async () => {
     mocks.syncDetails.lastSuccessfulSyncAt = 10
     mocks.syncDetails.lastErrorAt = 20
+    mocks.syncDetails.lastErrorEntity = 'session_templates'
+    mocks.syncDetails.pendingTables = ['session_templates']
     mocks.list.mockResolvedValue([supported])
     const view = render(<CoachLibraryPanel />)
 
@@ -87,8 +93,23 @@ describe('CoachLibraryPanel', () => {
 
     mocks.syncDetails.lastSuccessfulSyncAt = 30
     mocks.syncDetails.lastErrorAt = null
+    mocks.syncDetails.lastErrorEntity = null
+    mocks.syncDetails.pendingTables = []
     view.rerender(<CoachLibraryPanel />)
     await vi.waitFor(() => expect(mocks.list).toHaveBeenCalledTimes(2))
+    expect(screen.queryByText(/No se pudo actualizar desde el servidor/)).toBeNull()
+  })
+
+  it('no atribuye a Biblioteca un fallo de sincronización de otra tabla', async () => {
+    mocks.syncDetails.lastSuccessfulSyncAt = 10
+    mocks.syncDetails.lastErrorAt = 20
+    mocks.syncDetails.lastErrorEntity = 'training_plans'
+    mocks.syncDetails.pendingTables = ['training_plans']
+    mocks.list.mockResolvedValue([supported])
+
+    render(<CoachLibraryPanel />)
+
+    expect(await screen.findByText('Volea')).toBeTruthy()
     expect(screen.queryByText(/No se pudo actualizar desde el servidor/)).toBeNull()
   })
 

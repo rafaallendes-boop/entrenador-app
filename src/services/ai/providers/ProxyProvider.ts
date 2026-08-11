@@ -350,13 +350,18 @@ export class ProxyProvider implements AIProvider {
   }
 
   private shouldRetryWithoutStreaming(error: unknown): boolean {
-    return error instanceof AIProviderError
-      && error.retryable
-      && (
-        error.code === 'timeout'
-        || error.code === 'server_error'
-        || error.code === 'unknown'
-      )
+    if (!(error instanceof AIProviderError)) return false
+
+    // An empty streaming response is a transport-level failure, not malformed
+    // coach content. `call()` only reaches this branch before the first chunk,
+    // so retrying without streaming cannot duplicate text in the UI.
+    if (error.code === 'parse_error') return true
+
+    return error.retryable && (
+      error.code === 'timeout'
+      || error.code === 'server_error'
+      || error.code === 'unknown'
+    )
   }
 
   private normalizeUnexpectedError(
