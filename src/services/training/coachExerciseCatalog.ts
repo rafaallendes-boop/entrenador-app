@@ -1,6 +1,7 @@
 import type { SessionType, SquashSessionBlockKind } from '../../types'
 import type { ExerciseLibraryRef, ExerciseLibrarySource } from '../../types/exerciseLibraryRef'
 import { SQUASH_DRILL_LIBRARY, type DrillCategory } from './drillLibrary'
+import { isSquashDrillKindCompatible } from './squashSessionHydrator'
 import {
   STRENGTH_EXERCISE_LIBRARY,
   type ExerciseCategory,
@@ -93,7 +94,10 @@ function filterSquashDrillsByKind(
   if (!squashKind) return entries
   return entries.filter((entry) => {
     if (entry.source !== 'squash_drill') return true
-    return SQUASH_DRILL_LIBRARY.find((drill) => drill.id === entry.libraryId)?.sessionKind === squashKind
+    const drillKind = SQUASH_DRILL_LIBRARY.find((drill) => drill.id === entry.libraryId)?.sessionKind
+    // Misma autoridad que la advertencia del formulario: filtrar por igualdad
+    // estricta ocultaba accesorios que el formulario aceptaría sin advertir.
+    return drillKind != null && isSquashDrillKindCompatible(squashKind, drillKind)
   })
 }
 

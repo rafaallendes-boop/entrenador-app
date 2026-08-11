@@ -35,6 +35,10 @@ function squashSession(
 
 function contextFor(weekIndex = 0) {
   const context = buildRepairContextForTest({ primarySport: 'squash', sessionsPerWeek: 2 })
+  // Esta suite aísla normalización/rotación. A2.5 se cubre en su suite propia;
+  // sin evento squash activo no debe convertir una de estas sesiones en match.
+  context.profile.goalEvents = []
+  context.plan.goalEventId = ''
   context.plan = {
     ...context.plan,
     totalWeeks: 2,

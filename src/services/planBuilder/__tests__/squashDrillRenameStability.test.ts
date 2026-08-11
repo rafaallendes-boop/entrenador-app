@@ -57,7 +57,12 @@ describe('estabilidad ante el renombre de drills', () => {
   })
 
   it('el repair toma las mismas decisiones de deduplicación', () => {
-    const context = () => buildRepairContextForTest({ primarySport: 'squash', sessionsPerWeek: 2 })
+    const context = () => {
+      const value = buildRepairContextForTest({ primarySport: 'squash', sessionsPerWeek: 2 })
+      value.profile.goalEvents = []
+      value.plan.goalEventId = ''
+      return value
+    }
     const withOld = repairGeneratedWeek(duplicateWeek(OLD_NAMES), context())
     const withNew = repairGeneratedWeek(duplicateWeek(NEW_NAMES), context())
 
@@ -77,9 +82,12 @@ describe('estabilidad ante el renombre de drills', () => {
   })
 
   it('el repair no reescribe un nombre viejo que ya resuelve', () => {
+    const context = buildRepairContextForTest({ primarySport: 'squash', sessionsPerWeek: 1 })
+    context.profile.goalEvents = []
+    context.plan.goalEventId = ''
     const repaired = repairGeneratedWeek(
       [squashSession('2026-08-03', OLD_NAMES)],
-      buildRepairContextForTest({ primarySport: 'squash', sessionsPerWeek: 1 }),
+      context,
     )
     const names = (repaired.sessions[0]?.squashDetails?.drills ?? []).map((drill) => drill.name)
     expect(names).toContain('Tiros paralelos profundos')

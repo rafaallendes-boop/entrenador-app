@@ -232,6 +232,31 @@ describe('applyTemplateDraft', () => {
       sessionKind: 'technical', drills: [], blocks: [],
     })
   })
+
+  it('editar sólo el objetivo no colapsa una plantilla mixed heredada', () => {
+    const payload = {
+      type: 'squash' as const,
+      timeBlock: 'AM' as const,
+      title: 'Squash mixto',
+      durationMin: 60,
+      subtype: 'training' as const,
+      squashDetails: {
+        trainingFocus: 'technical' as const,
+        sessionMode: 'drill_session' as const,
+        sessionKind: 'mixed' as const,
+        drills: [],
+        blocks: [
+          { kind: 'control' as const, drills: [] },
+          { kind: 'technical' as const, drills: [] },
+        ],
+      },
+    }
+    const { originalsById } = templateToDraft(payload, '2026-07-14')
+
+    const patched = applyTemplatePatch(payload, { objective: 'otro objetivo' }, originalsById)
+
+    expect(patched.squashDetails?.sessionKind).toBe('mixed')
+  })
 })
 
 describe('patch concurrente', () => {

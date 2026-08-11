@@ -210,6 +210,22 @@ describe('SessionForm', () => {
     })
   })
 
+  it('distingue visualmente el contexto de partido seleccionado', async () => {
+    render(<SessionForm defaultSport="squash" heading="Nueva" submitLabel="Guardar" onSubmit={vi.fn(async () => {})} onCancel={vi.fn()} />)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Partido' }))
+    const practice = screen.getByRole('button', { name: 'Práctica' })
+    const competition = screen.getByRole('button', { name: 'Competencia' })
+
+    // aria-pressed ya distinguía para lectores de pantalla; para quien ve la
+    // pantalla las dos píldoras eran idénticas.
+    expect(practice.className).not.toBe(competition.className)
+
+    await userEvent.click(competition)
+    expect(screen.getByRole('button', { name: 'Competencia' }).className)
+      .not.toBe(screen.getByRole('button', { name: 'Práctica' }).className)
+  })
+
   it('advierte un drill conocido incompatible pero permite guardarlo intacto', async () => {
     const technical = SQUASH_DRILL_LIBRARY.find((drill) => drill.sessionKind === 'technical')!
     const onSubmit = vi.fn(async () => {})

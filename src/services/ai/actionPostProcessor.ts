@@ -173,8 +173,11 @@ export function postProcessCoachActions(
   const actionMessage = removedCollidingAddSessionCount > 0
     ? `${baseMessage}\n\nNo agregué ${removedCollidingAddSessionCount === 1 ? 'una sesión' : `${removedCollidingAddSessionCount} sesiones`} porque el bloque ya estaba ocupado.`
     : baseMessage
-  const message = squashActionWarnings.length > 0
-    ? `${actionMessage}\n\n${[...new Set(squashActionWarnings.map((warning) => warning.message))].join('\n')}`
+  const userFacingSquashWarnings = [...new Set(
+    squashActionWarnings.filter((warning) => warning.userFacing).map((warning) => warning.message),
+  )]
+  const message = userFacingSquashWarnings.length > 0
+    ? `${actionMessage}\n\n${userFacingSquashWarnings.join('\n')}`
     : actionMessage
 
   return {
@@ -822,6 +825,8 @@ function buildFallbackActionMessage(actions: CoachAction[], originalMessage: str
 interface SquashActionWarning {
   code: string
   message: string
+  /** Sólo los avisos accionables llegan al chat; los códigos de fallback quedan en telemetría. */
+  userFacing?: boolean
 }
 
 function completeSquashAction(
@@ -832,6 +837,9 @@ function completeSquashAction(
 ): { action: CoachAction; warnings: SquashActionWarning[] } {
   const isAdd = action.type === 'add_session'
   const isUpdate = action.type === 'update_session'
+  if (action.type === 'create_week') {
+    return completeSquashCreateWeek(action, context, userMessage)
+  }
   if (!isAdd && !isUpdate) return { action, warnings: [] }
 
   const nextType = isAdd ? action.sessionType : action.newType ?? currentSession?.type
@@ -845,6 +853,19 @@ function completeSquashAction(
   const kindResolution = resolveSquashActionKind(action, currentSession)
   const requestedKind = kindResolution.kind
   if (kindResolution.warning) warnings.push(kindResolution.warning)
+
+  // Un `update_session` que no trae modalidad ni contenido nuevo, y que resuelve
+  // a la modalidad ya persistida, no tiene nada que rehidratar: recomponer el
+  // contenido acá borraría los drills que el atleta ya tenía planificados.
+  if (
+    isUpdate
+    && action.squashKind == null
+    && action.squashDetails == null
+    && currentSession?.squashDetails != null
+    && requestedKind === currentSession.squashDetails.sessionKind
+  ) {
+    return { action, warnings: [] }
+  }
 
   const explicitDetails = action.squashDetails
   if (explicitDetails?.drills?.length) {
@@ -873,9 +894,17 @@ function completeSquashAction(
       warnings.push({
         code: 'squash_explicit_drill_incompatible_preserved',
         message: `Advertencia: conservé ${formatDrillNames(compatibility.incompatibleNames)} porque lo pediste explícitamente, pero no corresponde a la modalidad ${requestedKind}. Revísalo antes de aplicar.`,
+        userFacing: true,
       })
+      // La modalidad sólo persiste por `squashDetails.sessionKind`: ningún
+      // consumidor del store lee `action.squashKind`. Estamparla sólo en la
+      // acción guardaría la sesión bajo otra modalidad que la anunciada.
       return {
-        action: { ...action, squashKind: requestedKind },
+        action: {
+          ...action,
+          squashKind: requestedKind,
+          squashDetails: { ...explicitDetails, sessionKind: requestedKind },
+        },
         warnings,
       }
     }
@@ -884,6 +913,7 @@ function completeSquashAction(
       warnings.push({
         code: 'squash_provider_drill_conflict_rehydrated',
         message: `Alineé la sesión a modalidad ${requestedKind}: los drills propuestos no eran compatibles con esa modalidad.`,
+        userFacing: true,
       })
     }
   }
@@ -931,6 +961,119 @@ function completeSquashAction(
   }
 }
 
+/**
+ * `create_week` comparte el borde compacto de `squashKind` con las acciones de
+ * sesión, pero no pasa por el materializador de éstas: sin esto una sesión que
+ * declara modalidad y omite detalles llega a la validación del store sin
+ * `squashDetails` y hace fallar la semana entera.
+ */
+function completeSquashCreateWeek(
+  action: CoachAction,
+  context: ChatContext,
+  userMessage: string,
+): { action: CoachAction; warnings: SquashActionWarning[] } {
+  if (!action.sessions?.length) return { action, warnings: [] }
+
+  const warnings: SquashActionWarning[] = []
+  const phase = resolveSquashActionPhase(context)
+  const contextSessions = getContextSessions(context)
+  const recentDrills = contextSessions.flatMap(
+    (candidate) => candidate.squashDetails?.drills?.map((drill) => drill.name) ?? [],
+  )
+  const sessions = action.sessions.map((session) => {
+    if (session.sessionType !== 'squash') return session
+
+    const detailedKind = session.squashDetails?.sessionKind !== 'mixed'
+      ? session.squashDetails?.sessionKind
+      : undefined
+    const subtypeKind = squashKindFromSubtype(session.subtype)
+    const kind = session.squashKind ?? detailedKind ?? subtypeKind ?? 'technical'
+    if (!session.squashKind) {
+      warnings.push({
+        code: detailedKind
+          ? 'squash_kind_fallback_details'
+          : subtypeKind
+            ? 'squash_kind_fallback_subtype'
+            : 'squash_kind_fallback_engine_default',
+        message: detailedKind
+          ? `La sesión "${session.title}" no declaró squashKind; conservé ${detailedKind} desde sus detalles.`
+          : subtypeKind
+            ? `La sesión "${session.title}" no declaró squashKind; usé ${subtypeKind} desde subtype.`
+            : `La sesión "${session.title}" no declaró modalidad; se usó technical como fallback de compatibilidad.`,
+      })
+    }
+
+    const explicitDetails = session.squashDetails
+    if (explicitDetails?.drills?.length) {
+      const compatibility = inspectSquashDrillCompatibility(explicitDetails.drills, kind)
+      const explicitlyRequested = userExplicitlyRequestedSquashDrill(explicitDetails.drills, userMessage)
+      const preserve = compatibility.incompatibleNames.length === 0
+        ? compatibility.knownCount > 0 || explicitlyRequested
+        : explicitlyRequested
+
+      if (preserve) {
+        if (compatibility.incompatibleNames.length > 0) {
+          warnings.push({
+            code: 'squash_explicit_drill_incompatible_preserved',
+            message: `Advertencia: conservé ${formatDrillNames(compatibility.incompatibleNames)} porque lo pediste explícitamente, pero no corresponde a la modalidad ${kind}. Revísalo antes de aplicar.`,
+            userFacing: true,
+          })
+        }
+        const details = {
+          ...explicitDetails,
+          sessionKind: kind,
+          sessionMode: kind === 'match'
+            ? session.subtype === 'competitive' ? 'competition_match' as const : 'practice_match' as const
+            : 'drill_session' as const,
+        }
+        recentDrills.push(...details.drills.map((drill) => drill.name))
+        return {
+          ...session,
+          squashKind: kind,
+          subtype: projectSquashSubtype(kind, session.subtype === 'competitive'),
+          squashDetails: details,
+        }
+      }
+
+      warnings.push({
+        code: compatibility.incompatibleNames.length > 0
+          ? 'squash_provider_drill_conflict_rehydrated'
+          : 'squash_provider_drill_unresolved_rehydrated',
+        message: compatibility.incompatibleNames.length > 0
+          ? `Alineé la sesión "${session.title}" a modalidad ${kind}: los drills propuestos no eran compatibles.`
+          : `Alineé la sesión "${session.title}" a modalidad ${kind}: los drills propuestos no se resolvieron en el catálogo.`,
+        userFacing: compatibility.incompatibleNames.length > 0,
+      })
+    }
+
+    const result = hydrateSquashSession({
+      kind,
+      durationMin: session.durationMin ?? 60,
+      phase,
+      fatigueLevel: resolveSquashActionFatigue(context),
+      goal: session.objective ?? session.title ?? '',
+      recentDrills,
+      competitionSoon: phase === 'taper',
+      competitiveLevel: resolveSquashActionCompetitiveLevel(context),
+      partnerAvailability: context.athleteProfile?.planWizardConfig?.partnerAvailability ?? 'either',
+      historicalSessions: contextSessions,
+      competitive: session.subtype === 'competitive',
+    })
+    for (const warning of result.warnings) {
+      warnings.push({ code: `squash_hydration_${warning.code}`, message: warning.message })
+    }
+    recentDrills.push(...result.details.drills.map((drill) => drill.name))
+    return {
+      ...session,
+      squashKind: result.details.sessionKind === 'mixed' ? kind : result.details.sessionKind,
+      subtype: result.subtype,
+      squashDetails: result.details,
+    }
+  })
+
+  return { action: { ...action, sessions }, warnings }
+}
+
 function resolveSquashActionKind(
   action: CoachAction,
   currentSession: Session | undefined,
@@ -948,8 +1091,15 @@ function resolveSquashActionKind(
     }
   }
 
+  const currentKind = currentSession?.squashDetails?.sessionKind
+  const persistedKind = currentKind && currentKind !== 'mixed' ? currentKind : undefined
   const subtypeKind = squashKindFromSubtype(action.subtype)
-  if (subtypeKind) {
+
+  // `subtype` es una proyección con pérdida: `technical` y `shadows` colapsan
+  // ambos en `training`. Por eso sólo puede decidir cuando contradice la
+  // modalidad persistida; si apenas la repite, no aporta información nueva y
+  // la sesión guardada es la evidencia más fuerte.
+  if (subtypeKind && (!persistedKind || subtypeKind !== squashKindFromSubtype(projectSquashSubtype(persistedKind)))) {
     return {
       kind: subtypeKind,
       warning: {
@@ -959,8 +1109,7 @@ function resolveSquashActionKind(
     }
   }
 
-  const currentKind = currentSession?.squashDetails?.sessionKind
-  if (currentKind && currentKind !== 'mixed') return { kind: currentKind }
+  if (persistedKind) return { kind: persistedKind }
 
   return {
     kind: 'technical',

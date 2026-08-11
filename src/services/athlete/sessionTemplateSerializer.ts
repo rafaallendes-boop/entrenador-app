@@ -369,20 +369,29 @@ export function applyTemplatePatch(
       || hasPatchKey(patch, 'objective')
     )
   ) {
+    // Un patch que sólo cambia el objetivo no declara modalidad. Recomputarla
+    // igual colapsaba una plantilla `mixed` heredada, porque
+    // `resolveCoachSquashKind` nunca devuelve `mixed` y cae a `subtype`.
+    const declaresModality = hasPatchKey(patch, 'squashKind') || hasPatchKey(patch, 'subtype')
     const squashKind = patch.squashKind
-      ?? resolveCoachSquashKind(next.squashDetails, next.subtype)
-    const subtype = next.subtype ?? projectSquashSubtype(squashKind)
+      ?? (declaresModality
+        ? resolveCoachSquashKind(next.squashDetails, next.subtype)
+        : next.squashDetails?.sessionKind ?? resolveCoachSquashKind(next.squashDetails, next.subtype))
+    const subtype = next.subtype ?? projectSquashSubtype(
+      squashKind === 'mixed' ? 'technical' : squashKind,
+    )
     next.squashDetails = next.squashDetails
       ? {
-        ...next.squashDetails,
-        sessionKind: squashKind,
-      trainingFocus: resolveSquashTrainingFocus(
-        subtype,
-        next.objective ?? '',
-      ),
-        sessionMode: squashSessionMode(subtype),
-      }
-      : buildSquashDetailsDraft(squashKind, subtype, next.objective ?? '')
+          ...next.squashDetails,
+          sessionKind: squashKind,
+          trainingFocus: resolveSquashTrainingFocus(subtype, next.objective ?? ''),
+          sessionMode: squashSessionMode(subtype),
+        }
+      : buildSquashDetailsDraft(
+          squashKind === 'mixed' ? 'technical' : squashKind,
+          subtype,
+          next.objective ?? '',
+        )
   }
 
   if (

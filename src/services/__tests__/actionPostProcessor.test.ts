@@ -981,4 +981,162 @@ describe('actionPostProcessor', () => {
       squashDetails: expect.objectContaining({ sessionKind: 'shadows' }),
     })
   })
+
+  describe('modalidad de squash en update_session sin intención nueva', () => {
+    function shadowsSession(): Session {
+      return makeSession({
+        id: 'squash-shadows-1',
+        type: 'squash',
+        title: 'Sombras',
+        durationMin: 40,
+        subtype: 'training',
+        squashDetails: {
+          trainingFocus: 'physical',
+          sessionMode: 'drill_session',
+          sessionKind: 'shadows',
+          drills: [{ name: 'Sombras por esquinas', durationMin: 40 }],
+        },
+      })
+    }
+
+    it('conserva la modalidad persistida cuando subtype solo repite su proyección', () => {
+      const current = shadowsSession()
+      const response = postProcessCoachActions(makeResponse([{
+        type: 'update_session',
+        sessionId: current.id,
+        reason: 'acortar',
+        newDurationMin: 30,
+        subtype: 'training',
+      }]), makeContext([current]), 'Deja la sesión de sombras del miércoles en 30 minutos')
+
+      expect(response.actions?.[0]).not.toMatchObject({ squashKind: 'technical' })
+      expect(response.actions?.[0]?.squashDetails).toBeUndefined()
+    })
+
+    it('aplica la modalidad nueva cuando subtype sí contradice la persistida', () => {
+      const current = shadowsSession()
+      const response = postProcessCoachActions(makeResponse([{
+        type: 'update_session',
+        sessionId: current.id,
+        reason: 'cambiar a partido',
+        subtype: 'match',
+      }]), makeContext([current]), 'Cambia la sesión del miércoles a partido')
+
+      expect(response.actions?.[0]).toMatchObject({
+        squashKind: 'match',
+        squashDetails: expect.objectContaining({ sessionKind: 'match' }),
+      })
+    })
+
+    it('no filtra códigos internos de fallback al mensaje del usuario', () => {
+      const current = shadowsSession()
+      const response = postProcessCoachActions(makeResponse([{
+        type: 'update_session',
+        sessionId: current.id,
+        reason: 'cambiar a partido',
+        subtype: 'match',
+      }]), makeContext([current]), 'Cambia la sesión del miércoles a partido')
+
+      expect(response.message).not.toContain('fallback de compatibilidad')
+      expect(response.message).not.toContain('no declaró squashKind')
+    })
+  })
+
+  describe('modalidad de squash en create_week', () => {
+    it('materializa squashDetails cuando la sesión sólo declara squashKind', () => {
+      const response = postProcessCoachActions(makeResponse([{
+        type: 'create_week',
+        reason: 'semana nueva',
+        sessions: [{
+          date: '2026-05-05',
+          timeBlock: 'AM',
+          sessionType: 'squash',
+          title: 'Control',
+          durationMin: 45,
+          squashKind: 'control',
+        }],
+      } as CoachAction]), makeContext([]), 'Arma la semana con una sesión de control')
+
+      expect(response.actions?.[0]?.sessions?.[0]?.squashDetails).toMatchObject({
+        sessionKind: 'control',
+      })
+      expect(response.actions?.[0]?.sessions?.[0]?.squashDetails?.drills?.length ?? 0)
+        .toBeGreaterThan(0)
+    })
+
+    it('rehidrata detalles del proveedor que contradicen squashKind', () => {
+      const response = postProcessCoachActions(makeResponse([{
+        type: 'create_week',
+        reason: 'semana nueva',
+        sessions: [{
+          date: '2026-05-05',
+          timeBlock: 'AM',
+          sessionType: 'squash',
+          title: 'Control',
+          durationMin: 45,
+          squashKind: 'control',
+          squashDetails: {
+            trainingFocus: 'technical',
+            sessionMode: 'drill_session',
+            sessionKind: 'technical',
+            drills: [{ name: 'Boast ofensivo desde el fondo', durationMin: 45 }],
+          },
+        }],
+      }]), makeContext([]), 'Arma una semana con una sesión de control')
+
+      const session = response.actions?.[0]?.sessions?.[0]
+      expect(session?.squashDetails?.sessionKind).toBe('control')
+      expect(session?.squashDetails?.drills.every((drill) =>
+        resolveSquashDrillKind(findSquashDrillByName(drill.name)!) === 'control',
+      )).toBe(true)
+      expect(response.meta?.warnings).toContain('squash_provider_drill_conflict_rehydrated')
+      expect(response.message).toContain('Alineé la sesión')
+    })
+
+    it('acumula los drills hidratados para evitar repetidos dentro de la semana', () => {
+      const response = postProcessCoachActions(makeResponse([{
+        type: 'create_week',
+        reason: 'semana nueva',
+        sessions: [
+          {
+            date: '2026-05-05', timeBlock: 'AM', sessionType: 'squash',
+            title: 'Control 1', durationMin: 45, squashKind: 'control',
+          },
+          {
+            date: '2026-05-07', timeBlock: 'AM', sessionType: 'squash',
+            title: 'Control 2', durationMin: 45, squashKind: 'control',
+          },
+        ],
+      }]), makeContext([]), 'Arma una semana con dos sesiones distintas de control')
+
+      const sessions = response.actions?.[0]?.sessions ?? []
+      const first = new Set(sessions[0]?.squashDetails?.drills.map((drill) => drill.name) ?? [])
+      const second = sessions[1]?.squashDetails?.drills.map((drill) => drill.name) ?? []
+      expect(second.every((name) => !first.has(name))).toBe(true)
+    })
+  })
+
+  describe('drill explícito incompatible', () => {
+    it('estampa la modalidad pedida en squashDetails, no sólo en la acción', () => {
+      const response = postProcessCoachActions(makeResponse([{
+        type: 'add_session',
+        reason: 'pedido explícito',
+        targetDate: '2026-05-05',
+        timeBlock: 'AM',
+        sessionType: 'squash',
+        squashKind: 'control',
+        title: 'Control',
+        durationMin: 45,
+        squashDetails: {
+          trainingFocus: 'technical',
+          sessionMode: 'drill_session',
+          drills: [{ name: 'Boast ofensivo desde el fondo', durationMin: 45 }],
+        },
+      }]), makeContext([]), 'Agrega control el lunes con boast ofensivo desde el fondo')
+
+      const action = response.actions?.[0]
+      expect(action?.squashKind).toBe('control')
+      expect(action?.squashDetails?.sessionKind).toBe('control')
+    })
+  })
 })

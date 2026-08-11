@@ -78,6 +78,27 @@ describe('coachExerciseCatalog', () => {
     expect(toLibraryRef(entry)).toEqual({ source: entry.source, id: entry.libraryId })
   })
 
+  it('el picker ofrece los accesorios de sombras que el hidratador acepta', () => {
+    // El formulario sólo advierte por `isSquashDrillKindCompatible`, que admite
+    // sombras como accesorio: filtrar por igualdad estricta escondía del
+    // explorador drills que el propio formulario aceptaría sin advertencia.
+    for (const kind of ['control', 'technical', 'match'] as const) {
+      const drills = getCatalogForSport('squash', kind)
+        .filter((entry) => entry.source === 'squash_drill')
+        .map((entry) => SQUASH_DRILL_LIBRARY.find((drill) => drill.id === entry.libraryId)!)
+      expect(drills.some((drill) => drill.sessionKind === 'shadows')).toBe(true)
+      expect(drills.every((drill) => drill.sessionKind === kind || drill.sessionKind === 'shadows')).toBe(true)
+    }
+  })
+
+  it('sombras no ofrece accesorios de otras modalidades', () => {
+    const drills = getCatalogForSport('squash', 'shadows')
+      .filter((entry) => entry.source === 'squash_drill')
+      .map((entry) => SQUASH_DRILL_LIBRARY.find((drill) => drill.id === entry.libraryId)!)
+    expect(drills.length).toBeGreaterThan(0)
+    expect(drills.every((drill) => drill.sessionKind === 'shadows')).toBe(true)
+  })
+
   it('las etiquetas de categoría de fuerza son las del spec', () => {
     const categories = new Set(getCatalogForSport('strength').map((entry) => entry.category))
     for (const category of categories) {

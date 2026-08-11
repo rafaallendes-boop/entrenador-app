@@ -79,6 +79,10 @@ const SQUASH_KINDS: Array<{ value: SquashSessionBlockKind; label: string }> = [
   { value: 'shadows', label: 'Sombras (sin pelota)' },
   { value: 'match', label: 'Partido' },
 ]
+const MATCH_CONTEXTS: Array<{ label: string; competitive: boolean }> = [
+  { label: 'Práctica', competitive: false },
+  { label: 'Competencia', competitive: true },
+]
 const MATCH_RESULTS: Array<{ value: MatchResult; label: string }> = [
   { value: 'win', label: 'Gane' },
   { value: 'loss', label: 'Perdi' },
@@ -549,18 +553,22 @@ export default function SessionForm({
                     Contexto del partido
                   </span>
                   <div className="flex gap-2">
-                    <button
-                      type="button"
-                      aria-pressed={squashSubtype !== 'competitive'}
-                      onClick={() => setSquashSubtype('match')}
-                      className="rounded-full border border-surface-border px-3 py-1.5 text-xs font-medium"
-                    >Práctica</button>
-                    <button
-                      type="button"
-                      aria-pressed={squashSubtype === 'competitive'}
-                      onClick={() => setSquashSubtype('competitive')}
-                      className="rounded-full border border-surface-border px-3 py-1.5 text-xs font-medium"
-                    >Competencia</button>
+                    {MATCH_CONTEXTS.map((matchContext) => {
+                      const selected = (squashSubtype === 'competitive') === matchContext.competitive
+                      return (
+                        <button
+                          type="button"
+                          key={matchContext.label}
+                          aria-pressed={selected}
+                          onClick={() => setSquashSubtype(matchContext.competitive ? 'competitive' : 'match')}
+                          className={`rounded-full border px-3 py-1.5 text-xs font-medium ${
+                            selected
+                              ? `${config.bgClass} ${config.textClass} ${config.borderClass}`
+                              : 'border-surface-border bg-surface-raised text-ink-muted'
+                          }`}
+                        >{matchContext.label}</button>
+                      )
+                    })}
                   </div>
                 </div>
               )}

@@ -984,7 +984,12 @@ describe('WeekCreatorEngine', () => {
     expect(mockProviderCall).toHaveBeenCalledTimes(1)
     expect(response.actions?.[0].sessions).toHaveLength(5)
     expect(response.actions?.[0].sessions?.filter((session) => session.sessionType === 'squash')).toHaveLength(3)
-    expect(response.message).toContain('Se agregaron 1 sesiones fallback')
+    expect(response.message).toContain('exposición competitiva real de squash')
+    const matchSession = response.actions?.[0].sessions?.find(
+      (session) => session.squashDetails?.sessionKind === 'match',
+    )
+    expect(findSquashDrillByName(matchSession?.squashDetails?.drills[0]?.name ?? '')?.id)
+      .toBe('practice_match_best_of_3')
   })
 
   it('finalizes an all-squash provider week into the required support mix', async () => {
@@ -1265,6 +1270,16 @@ describe('WeekCreatorEngine', () => {
 
     const context: ChatContext = {
       athleteProfile: makeProfile({
+        // Esta prueba aísla la reparación de duplicados. Un evento explícito
+        // de otro deporte impide que A2.5 cambie deliberadamente una de las
+        // dos sesiones squash repetidas a exposición competitiva.
+        goalEvents: [{
+          id: 'goal-1',
+          title: 'Carrera objetivo',
+          date: '2026-06-01',
+          sport: 'running',
+          priority: 'primary',
+        }],
         planWizardConfig: {
           goalEventId: 'goal-1',
           trainingDays: ['monday', 'tuesday', 'wednesday', 'thursday'],

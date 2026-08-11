@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { ChatContext, CoachAction } from '../../../types'
 import type { CoachNormalizedResponse } from '../../ai/types'
+import { findSquashDrillByName } from '../../training/drillLibrary'
 import type { WeekCreatorEffectiveConfig } from '../WeekCreatorConfig'
 import {
   hydrateWeekCreatorSkeleton,
@@ -299,6 +300,14 @@ describe('WeekCreatorLocalHydrator', () => {
   })
 
   it('hydrates the typed skeleton directly so focusKey survives the generic normalizer boundary', () => {
+    const context = makeContext()
+    context.athleteProfile!.goalEvents = [{
+      id: 'squash-event',
+      title: 'Open objetivo',
+      date: '2026-08-01',
+      sport: 'squash',
+      priority: 'primary',
+    }]
     const skeleton: WeekCreatorSkeleton = {
       type: 'create_week',
       reason: 'Semana compacta',
@@ -314,21 +323,22 @@ describe('WeekCreatorLocalHydrator', () => {
     const result = hydrateWeekCreatorSkeleton({
       skeleton,
       response: response({ type: 'create_week', reason: 'descartada por mapper genérico' }),
-      context: makeContext(),
+      context,
       config: makeConfig(),
       targetWeekStart: TARGET_WEEK,
     })
     const sessions = result.response.actions?.[0]?.sessions ?? []
 
     expect(result.focusOverlayCount).toBe(5)
-    // La modalidad llega declarada en el skeleton y sobrevive al mapper; hoy la
-    // semana se hidrata en fase base, donde el catálogo no tiene ningún drill de
-    // match elegible (0 en base y en taper, ver A2.5). La degradación a trabajo
-    // técnico es real y queda registrada en vez de pasar en silencio.
+    // La modalidad llega declarada en el skeleton y sobrevive al mapper. A2.5
+    // posee el pool vacío de base como política semanal: materializa mejor de 3
+    // sin degradar a técnica ni pedirle al hidratador cruzar modalidad.
     const declaredMatch = sessions.find((candidate) => candidate.squashKind === 'match')
     expect(declaredMatch?.squashDetails?.drills.length).toBeGreaterThan(0)
-    expect(result.repairMeta?.squashKindDegradedCount).toBe(1)
-    expect(result.repairMeta?.warnings.some((warning) => warning.code === 'squash_kind_degraded')).toBe(true)
+    expect(findSquashDrillByName(declaredMatch?.squashDetails?.drills[0]?.name ?? '')?.id)
+      .toBe('practice_match_best_of_3')
+    expect(result.repairMeta?.squashKindDegradedCount).toBeUndefined()
+    expect(result.repairMeta?.warnings.some((warning) => warning.code === 'squash_kind_degraded')).toBe(false)
     expect(sessions.find((candidate) => candidate.title === 'Fuerza base')?.objective)
       .toContain('fuerza lower de tren inferior')
   })
@@ -349,11 +359,18 @@ describe('WeekCreatorLocalHydrator', () => {
         objective: 'Sostener el ritmo de la semana',
       }],
     }
+    const focusContext = makeContext()
+    focusContext.athleteProfile!.sportContext!.primarySport = 'running'
     const objective = hydrateWeekCreatorSkeleton({
       skeleton,
       response: response(),
-      context: makeContext(),
-      config: makeConfig({ sessionsPerWeek: 1, maxSessionsPerWeek: 1 }),
+      context: focusContext,
+      config: makeConfig({
+        primarySport: 'running',
+        allowedSports: ['running', 'squash'],
+        sessionsPerWeek: 1,
+        maxSessionsPerWeek: 1,
+      }),
       targetWeekStart: TARGET_WEEK,
     }).response.actions?.[0]?.sessions?.[0]?.objective ?? ''
 

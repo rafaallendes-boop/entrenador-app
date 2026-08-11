@@ -103,6 +103,11 @@ describe('repairWeek Fase 2 wiring', () => {
   })
 
   it('maps unknown squash drills without regenerating the whole session template', () => {
+    const context = makeContext(0)
+    // Esta prueba cubre el mapeo local de drills; la exposición semanal de
+    // A2.5 tiene su propia suite y cambiaría deliberadamente la composición.
+    context.profile.goalEvents = []
+    context.plan.goalEventId = ''
     const result = repairGeneratedWeek([
       {
         date: '2026-06-02',
@@ -123,7 +128,7 @@ describe('repairWeek Fase 2 wiring', () => {
           ],
         },
       },
-    ] as never, makeContext(0))
+    ] as never, context)
 
     const squash = result.sessions[0]
     const drillNames = squash?.squashDetails?.drills.map((drill) => drill.name) ?? []

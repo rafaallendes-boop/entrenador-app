@@ -74,6 +74,11 @@ function planBuilderDetails(kind: SquashSessionBlockKind): SquashDetails {
     primarySport: 'squash',
     sessionsPerWeek: 1,
   })
+  // La matriz A7 prueba la frontera de una sesión, no la composición semanal
+  // de A2.5. Sin evento activo la modalidad solicitada no se sustituye por la
+  // exposición competitiva que se cubre en squashWeeklyExposureRepair.
+  repairContext.profile.goalEvents = []
+  repairContext.plan.goalEventId = ''
   repairContext.plan = {
     ...repairContext.plan,
     totalWeeks: 1,
@@ -218,9 +223,20 @@ describe('A7 — matriz de modalidad por frontera', () => {
     const catalogDrills = getCatalogForSport('squash', kind)
       .filter((entry) => entry.source === 'squash_drill')
     expect(catalogDrills.length).toBeGreaterThan(0)
-    for (const entry of catalogDrills) {
-      const definition = findSquashDrillByName(entry.libraryId)!
-      expect(resolveSquashDrillKind(definition)).toBe(kind)
+
+    // El picker comparte autoridad con `isSquashDrillKindCompatible`, no con la
+    // igualdad estricta: el hidratador compone sombras como accesorio de
+    // control/técnico/partido, así que exigir identidad escondería del
+    // explorador contenido que el propio motor genera y que el formulario
+    // acepta sin advertir. Lo que sí es estricto: los drills *propios* de la
+    // modalidad ejecutan en su modo esperado.
+    const definitions = catalogDrills.map((entry) => findSquashDrillByName(entry.libraryId)!)
+    for (const definition of definitions) {
+      expect(isSquashDrillKindCompatible(kind, resolveSquashDrillKind(definition))).toBe(true)
+    }
+    const ownDrills = definitions.filter((definition) => resolveSquashDrillKind(definition) === kind)
+    expect(ownDrills.length).toBeGreaterThan(0)
+    for (const definition of ownDrills) {
       expect(resolveDrillExecutionMode(definition)).toBe(EXPECTED_MODE[kind])
     }
   })

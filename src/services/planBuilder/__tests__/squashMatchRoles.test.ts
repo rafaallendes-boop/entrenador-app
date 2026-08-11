@@ -13,6 +13,12 @@ import {
 
 const ATTACK = 'Partido con ataque temprano'
 
+function withoutWeeklyExposure<T extends ReturnType<typeof buildRepairContextForTest>>(context: T): T {
+  context.profile.goalEvents = []
+  context.plan.goalEventId = ''
+  return context
+}
+
 describe('drill eliminado: ataque temprano', () => {
   it('ya no existe en el catálogo', () => {
     expect(findSquashDrillByName(ATTACK)?.id).not.toBe('practice_match_short_points_attack')
@@ -32,7 +38,7 @@ describe('drill eliminado: ataque temprano', () => {
   it('dentro de una sesión mixta conserva el resto', () => {
     const result = repairGeneratedWeek(
       [drillSessionFixture('2026-08-03', [SQUASH_NAMES.TECHNICAL, ATTACK])],
-      buildRepairContextForTest({ primarySport: 'squash', sessionsPerWeek: 1 }),
+      withoutWeeklyExposure(buildRepairContextForTest({ primarySport: 'squash', sessionsPerWeek: 1 })),
     )
     expect(result.failure).toBeUndefined()
     const names = (result.sessions[0]?.squashDetails?.drills ?? []).map((drill) => drill.name)
@@ -96,7 +102,7 @@ describe('semántica role-aware', () => {
     mixed.title = 'Partido mixto de squash'
     const result = repairGeneratedWeek(
       [mixed],
-      buildRepairContextForTest({ primarySport: 'squash', sessionsPerWeek: 1 }),
+      withoutWeeklyExposure(buildRepairContextForTest({ primarySport: 'squash', sessionsPerWeek: 1 })),
     )
     const names = result.sessions[0]?.squashDetails?.drills.map((drill) => drill.name) ?? []
 
@@ -180,6 +186,8 @@ describe('rotación respeta el rol', () => {
     phase: 'base' | 'build' | 'peak' | 'taper' = 'base',
   ) {
     const context = buildRepairContextForTest({ primarySport: 'squash', sessionsPerWeek })
+    context.profile.goalEvents = []
+    context.plan.goalEventId = ''
     context.plan = {
       ...context.plan,
       totalWeeks: 2,
@@ -279,7 +287,7 @@ describe('sessionMode ausente', () => {
   it('se completa a drill_session sin contarse como reparación', () => {
     const result = repairGeneratedWeek(
       [sessionWithoutMode()],
-      buildRepairContextForTest({ primarySport: 'squash', sessionsPerWeek: 1 }),
+      withoutWeeklyExposure(buildRepairContextForTest({ primarySport: 'squash', sessionsPerWeek: 1 })),
     )
 
     expect(result.sessions[0]?.squashDetails?.sessionMode).toBe('drill_session')
@@ -292,7 +300,7 @@ describe('sessionMode ausente', () => {
     session.squashDetails!.sessionMode = 'practice_match'
     const result = repairGeneratedWeek(
       [session],
-      buildRepairContextForTest({ primarySport: 'squash', sessionsPerWeek: 1 }),
+      withoutWeeklyExposure(buildRepairContextForTest({ primarySport: 'squash', sessionsPerWeek: 1 })),
     )
 
     expect(result.sessions[0]?.squashDetails?.sessionMode).toBe('drill_session')
