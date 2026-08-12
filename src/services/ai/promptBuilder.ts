@@ -693,8 +693,10 @@ function stripMorningTimePhrase(text: string): string {
 }
 
 function buildGeneralChatResponseInstructionsSection(context: ChatContext): string {
+  const macroPlan = computeMacroPlan(context.athleteProfile)
   return buildGeneralChatInstructionsSection({
     allowedSportsLabel: getAllowedPlanningSports(context.athleteProfile).join(', ') || 'sin restricción explícita',
+    currentPhase: macroPlan ? getPhaseLabel(macroPlan.currentPhase) : undefined,
   })
 }
 
@@ -1191,7 +1193,7 @@ function buildFatigueSection(context: ChatContext, options?: { compact?: boolean
   if (highRpeDays > 0) indicators.push(`${highRpeDays} dia(s) con esfuerzo >= 8/10`)
 
   if (indicators.length > 0) lines.push(`Señales observadas: ${indicators.join(' · ')}`)
-  else lines.push('Sin señales semanales suficientes. Si falta data, usa un taper conservador cuando haya competencia cercana.')
+  else lines.push('Sin señales semanales suficientes. Si falta data, no inventes fatiga ni cambies la fase: usa la fase calculada del macroplan.')
 
   if (options?.compact) {
     lines.push('Lectura rápida: si coinciden 2 o más señales, asume fatiga alta y ajusta con prudencia.')

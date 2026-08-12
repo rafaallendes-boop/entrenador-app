@@ -68,4 +68,36 @@ describe('promptBuilder temporal anchoring guards', () => {
     expect(prompt).toContain('Timing del evento: active')
     expect(prompt).toContain('NO la describas como post-evento')
   })
+
+  it('makes the computed macro phase authoritative over a generic tournament mention', () => {
+    vi.setSystemTime(new Date('2026-08-12T15:00:00'))
+    const prompt = buildCoachSystemPrompt({
+      recentSessions: [],
+      plannedSessions: [],
+      historicalSessions: [],
+      athleteProfile: {
+        id: 'athlete-build',
+        updatedAt: 0,
+        primarySport: 'squash',
+        sportContext: {
+          primarySport: 'squash',
+          enabledSports: ['squash'],
+        },
+        goalEvents: [{
+          id: 'goal-build',
+          title: 'Nacional',
+          date: '2026-09-11',
+          sport: 'squash',
+          priority: 'primary',
+        }],
+      },
+    }, {
+      requestClass: 'chat_general',
+      userMessage: '¿En qué fase estoy durante mi campeonato?',
+    })
+
+    expect(prompt).toContain('Contrato de fase: la fase vigente calculada es **Construcción**')
+    expect(prompt).toContain('no la sustituyas por taper, race o transición')
+    expect(prompt).toContain('no inventes fatiga ni cambies la fase')
+  })
 })

@@ -1,9 +1,9 @@
 # Squash: modalidad explícita y eventos multijornada — plan de implementación
 
 Fecha: 2026-08-10  
-Actualizado: 2026-08-11
+Actualizado: 2026-08-12
 
-Estado: A0–A7, incluida A2.5, completadas técnicamente; rollout operativo pendiente. B0–B5 completadas técnicamente; B6 pendiente de smoke y rollout.
+Estado: A0–A7, incluida A2.5, y B0–B5 completadas técnicamente. Rollout desplegado en producción el 2026-08-12; B6 queda con smoke manual parcial y una validación end-to-end multijornada pendiente.
 
 Spec: `docs/superpowers/specs/2026-08-10-squash-session-intent-and-event-window-design.md`
 
@@ -480,15 +480,27 @@ Crear semana.
 
 ### Task B6 — Verificación y rollout
 
+**Ejecución 2026-08-12 (producción, commit `ff86574`):**
+
+- smoke de carga, consola, formulario de modalidades, Chat, Crear semana,
+  ventana editable y Whoop zones ejecutado sin errores de consola;
+- se detectó que Chat podía llamar `taper` a una fase `build` ante una mención
+  ambigua de campeonato; se corrigió el contrato de fase del prompt y se agregó
+  regresión;
+- no se creó ni aceptó un plan multijornada de prueba, para no alterar el plan
+  activo ni consumir más créditos. Ese es el único gate manual que permanece.
+
 **Pasos:**
 
 - [x] Ejecutar la matriz B0 automatizada en macro, shell, validator, repair y fallback.
 - [x] Ejecutar suite completa, typecheck y build.
 - [ ] Probar manualmente evento de un día y multijornada desde creación hasta
-  aceptación del plan.
+  aceptación del plan. *(Parcial: captura y edición de rango verificadas; falta
+  generar/aceptar el plan multijornada en un atleta descartable.)*
 - [ ] Verificar import/export de un backup viejo y uno con rango.
 - [ ] Desplegar con lectura compatible; monitorear sesiones fuera de rango,
-  anclas duplicadas y cargas prohibidas durante `race`.
+  anclas duplicadas y cargas prohibidas durante `race`. *(Desplegado; falta la
+  observación de un plan multijornada real.)*
 
 ## Proyecto C — ampliación de los otros pools (posterior)
 
