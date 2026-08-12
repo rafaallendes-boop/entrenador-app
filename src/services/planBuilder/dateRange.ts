@@ -1,6 +1,11 @@
 import type { DayOfWeek, PlanWizardConfig } from '../../types'
 import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
-import { planWeekContainsEventAnchor, resolvePlanEventWindow } from './eventWindowRules'
+import {
+  MAX_EVENT_WINDOW_SUPPORTS_PER_WEEK,
+  isWithinPlanEventWindow,
+  planWeekContainsEventAnchor,
+  resolvePlanEventWindow,
+} from './eventWindowRules'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -76,6 +81,21 @@ export function getPlanWeekSessionCapacity(plan: TrainingPlan, week: TrainingPla
   }, 0)
 }
 
+function daysFromWeekStartToPlanEnd(plan: TrainingPlan, week: TrainingPlanWeek): number {
+  return Math.round(
+    (dateToUtcMs(plan.endDate) - dateToUtcMs(getPlanWeekDateRange(plan, week).startDate)) / DAY_MS,
+  )
+}
+
+/** Mismo escalonado que usa la fase taper, reutilizado por los días de la
+ * semana race que quedan fuera de la ventana del campeonato. */
+function taperWeekCap(plan: TrainingPlan, week: TrainingPlanWeek): number {
+  const days = daysFromWeekStartToPlanEnd(plan, week)
+  if (days <= 13) return 4
+  if (days <= 20) return Math.max(3, plan.wizardConfig.sessionsPerWeek - 2)
+  return Math.max(4, plan.wizardConfig.sessionsPerWeek - 1)
+}
+
 export function getExpectedSessionsForPlanWeek(plan: TrainingPlan, week: TrainingPlanWeek): number {
   let capacity = getPlanWeekSessionCapacity(plan, week)
   const primarySport = plan.macroSnapshot.sportDetails.find((detail) => detail.role === 'primary')?.sport
@@ -89,12 +109,33 @@ export function getExpectedSessionsForPlanWeek(plan: TrainingPlan, week: Trainin
   if (baseExpected <= 0) return 0
   if (week.phase !== 'taper' && week.phase !== 'race') return baseExpected
 
-  const daysToEventFromWeekStart = Math.round((dateToUtcMs(plan.endDate) - dateToUtcMs(getPlanWeekDateRange(plan, week).startDate)) / DAY_MS)
-  // El ancla no consume el cupo de apoyos: el prompt pide una competencia más
-  // un máximo de dos apoyos, así que la semana que la contiene espera tres.
+  const daysToEventFromWeekStart = daysFromWeekStartToPlanEnd(plan, week)
   if (week.phase === 'race') {
-    const anchorInWeek = primarySport === 'squash' && planWeekContainsEventAnchor(plan, week)
-    return Math.min(baseExpected, anchorInWeek ? 3 : 2)
+    if (primarySport !== 'squash') return Math.min(baseExpected, 2)
+
+    // El cupo se parte en dos: los días del evento admiten una sola ancla y
+    // hasta dos apoyos; los días de la semana que quedan fuera de la ventana
+    // conservan su capacidad normal y sus reglas de taper.
+    const trainingDates = getPlanWeekTrainingDates(plan, week)
+    const insideWindow = trainingDates.filter((date) => isWithinPlanEventWindow(plan, date))
+    const outsideWindow = trainingDates.filter((date) => !isWithinPlanEventWindow(plan, date))
+
+    const capacityOf = (dates: string[]) => dates.reduce(
+      (total, date) => total + (canUseDoubleSessionOnDate(date, plan.wizardConfig) ? 2 : 1),
+      0,
+    )
+    const anchorInWeek = planWeekContainsEventAnchor(plan, week)
+
+    // Dentro: una sola ancla y hasta dos apoyos, medidos en capacidad y no en
+    // fechas, para que un día con doble sesión pueda alojar ancla + apoyo.
+    const insideAllowance = Math.min(
+      capacityOf(insideWindow),
+      (anchorInWeek ? 1 : 0) + MAX_EVENT_WINDOW_SUPPORTS_PER_WEEK,
+    )
+    // Fuera: los días previos al campeonato son taper, no una semana normal.
+    const outsideAllowance = Math.min(capacityOf(outsideWindow), taperWeekCap(plan, week))
+
+    return Math.min(baseExpected, insideAllowance + outsideAllowance)
   }
   if (daysToEventFromWeekStart <= 13) return Math.min(baseExpected, 4)
   if (daysToEventFromWeekStart <= 20) return Math.min(baseExpected, Math.max(3, plan.wizardConfig.sessionsPerWeek - 2))

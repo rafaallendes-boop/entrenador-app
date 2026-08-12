@@ -4,7 +4,11 @@ import { getExpectedSessionsForPlanWeek, getPlanWeekDateRange, getPlanWeekTraini
 import { repairGeneratedWeek, type RepairResult } from './repairWeek'
 import type { PlanWeekDescriptor } from './blockIdentity'
 import { selectStrengthBlockTemplate } from '../training/strengthBlocks'
-import { resolvePlanEventWindow } from './eventWindowRules'
+import {
+  MAX_EVENT_WINDOW_SUPPORTS_PER_WEEK,
+  isWithinPlanEventWindow,
+  resolvePlanEventWindow,
+} from './eventWindowRules'
 
 type Slot = { date: string; timeBlock: 'AM' | 'PM'; role?: 'event_anchor' | 'support' }
 
@@ -31,9 +35,16 @@ function buildSlots(plan: TrainingPlan, week: TrainingPlanWeek, expected: number
     const validRange = getPlanWeekDateRange(plan, week)
     const anchorInsideWeek = anchorDate >= validRange.startDate && anchorDate <= validRange.endDate
     const supportCount = Math.max(0, expected - (anchorInsideWeek ? 1 : 0))
-    const supportSlots: Slot[] = dates
-      .filter((date) => date !== anchorDate)
-      .slice(0, Math.min(supportCount, 2))
+    // El tope de dos apoyos es de la ventana, no de la semana: los días previos
+    // al campeonato conservan sus slots de taper.
+    const candidates = dates.filter((date) => date !== anchorDate)
+    const insideSupports = candidates
+      .filter((date) => isWithinPlanEventWindow(plan, date))
+      .slice(0, MAX_EVENT_WINDOW_SUPPORTS_PER_WEEK)
+    const outsideSupports = candidates.filter((date) => !isWithinPlanEventWindow(plan, date))
+    const supportSlots: Slot[] = [...outsideSupports, ...insideSupports]
+      .sort((left, right) => left.localeCompare(right))
+      .slice(0, supportCount)
       .map((date) => ({ date, timeBlock: 'AM', role: 'support' }))
     const slots: Slot[] = anchorInsideWeek
       ? [...supportSlots, { date: anchorDate, timeBlock: 'PM', role: 'event_anchor' }]

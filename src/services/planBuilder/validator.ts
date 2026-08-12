@@ -5,7 +5,8 @@ import {
   EVENT_WINDOW_SUPPORT_CAPS,
   MAX_EVENT_WINDOW_SUPPORTS_PER_WEEK,
   isPlanEventAnchorDate,
-  isSquashCompetitionSession,
+  isDeclaredSquashMatchSession,
+  isWithinPlanEventWindow,
   planEventAppliesToSquash,
   planWeekContainsEventAnchor,
   resolveEventWindowSupportKind,
@@ -387,8 +388,10 @@ function validateSquashCompetitionReadiness(plan: TrainingPlan, week: TrainingPl
     }
 
     if (week.phase !== 'race') continue
+    // Fuera de los días del evento no hay "apoyo de campeonato" que exigir.
+    if (!isWithinPlanEventWindow(plan, session.date)) continue
 
-    const isAnchor = session.date === anchorDate && isSquashCompetitionSession(session)
+    const isAnchor = session.date === anchorDate && isDeclaredSquashMatchSession(session)
     if (session.date === anchorDate && !isAnchor) {
       issues.push({
         severity: 'error',
@@ -399,7 +402,7 @@ function validateSquashCompetitionReadiness(plan: TrainingPlan, week: TrainingPl
     }
     if (isAnchor) continue
 
-    if (isSquashCompetitionSession(session)) {
+    if (isDeclaredSquashMatchSession(session)) {
       issues.push({
         severity: 'error',
         code: 'squash.event_window.extra_match',
@@ -447,7 +450,7 @@ function validateSquashCompetitionReadiness(plan: TrainingPlan, week: TrainingPl
 
   if (week.phase === 'race') {
     const anchors = week.sessions.filter((session) =>
-      session.date === anchorDate && isSquashCompetitionSession(session))
+      session.date === anchorDate && isDeclaredSquashMatchSession(session))
     if (anchorInsideWeek && anchors.length !== 1) {
       issues.push({
         severity: 'error',
@@ -458,7 +461,8 @@ function validateSquashCompetitionReadiness(plan: TrainingPlan, week: TrainingPl
     }
 
     const supportCount = week.sessions.filter((session) =>
-      !(session.date === anchorDate && isSquashCompetitionSession(session))).length
+      isWithinPlanEventWindow(plan, session.date)
+      && !(session.date === anchorDate && isDeclaredSquashMatchSession(session))).length
     if (supportCount > MAX_EVENT_WINDOW_SUPPORTS_PER_WEEK) {
       issues.push({
         severity: 'error',

@@ -9,7 +9,7 @@ import { resolveBlockPositions, type PlanWeekDescriptor } from './blockIdentity'
 import { collectAllStrengthKeys, collectCountableKeys } from './strengthRoleContract'
 import { validatePlan, validatePlanWeek } from './validator'
 import { isReadyWeek } from './weekUtils'
-import { isPlanEventAnchorDate, isSquashCompetitionSession } from './eventWindowRules'
+import { isPlanEventAnchorDate, isDeclaredSquashMatchSession } from './eventWindowRules'
 
 export type PlanQualityGrade = 'excellent' | 'good' | 'needs_review' | 'poor'
 
@@ -123,7 +123,7 @@ function getSportCompletenessIssues(plan: TrainingPlan, week: TrainingPlanWeek):
       const durationCap = getTaperDurationCap(session.sessionType)
       const isEventAnchor = week.phase === 'race'
         && isPlanEventAnchorDate(plan, session.date)
-        && isSquashCompetitionSession(session)
+        && isDeclaredSquashMatchSession(session)
       if (!isEventAnchor && session.durationMin > durationCap) {
         issues.push(issue({
           severity: 'warning',

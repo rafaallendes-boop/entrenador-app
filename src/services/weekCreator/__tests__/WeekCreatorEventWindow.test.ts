@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { AthleteProfile, ChatContext } from '../../../types'
-import { isSquashCompetitionSession } from '../../planBuilder/eventWindowRules'
+import { isDeclaredSquashMatchSession } from '../../planBuilder/eventWindowRules'
 import { repairGeneratedWeek } from '../../planBuilder/repairWeek'
 import type { WeekCreatorEffectiveConfig } from '../WeekCreatorConfig'
 import {
@@ -181,8 +181,8 @@ describe('B5 — Week Creator consume la ventana completa', () => {
 
     const repaired = repairGeneratedWeek([], repairContext)
     expect(repaired.sessions).toHaveLength(2)
-    expect(repaired.sessions.filter(isSquashCompetitionSession)).toHaveLength(1)
-    expect(repaired.sessions.find(isSquashCompetitionSession)?.date).toBe('2026-09-09')
+    expect(repaired.sessions.filter(isDeclaredSquashMatchSession)).toHaveLength(1)
+    expect(repaired.sessions.find(isDeclaredSquashMatchSession)?.date).toBe('2026-09-09')
 
     const validation = validateWeekCreatorResponse({
       response: {

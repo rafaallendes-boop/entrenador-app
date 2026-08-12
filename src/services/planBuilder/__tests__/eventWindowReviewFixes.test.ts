@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 
 import type { PlanWizardConfig } from '../../../types'
 import type { TrainingPlan, TrainingPlanWeek } from '../../../types/planBuilder'
-import { getExpectedSessionsForPlanWeek } from '../dateRange'
 import { validatePlanWeek } from '../validator'
 
 function wizard(): PlanWizardConfig {
@@ -122,16 +121,5 @@ describe('hallazgo 2 — el validator tolera una semana sin arreglo de sesiones'
   })
 })
 
-describe('hallazgo 3 — el cupo de la semana race admite ancla + 2 apoyos', () => {
-  it('espera 3 sesiones en la semana que contiene el ancla', () => {
-    // El prompt pide "una ancla y como máximo 2 apoyos"; si el cupo es 2, una
-    // respuesta que obedece la instrucción se recorta y falla por conteo.
-    expect(getExpectedSessionsForPlanWeek(plan({ goalEventSport: 'squash' }), week([]))).toBe(3)
-  })
-
-  it('mantiene el tope de 2 apoyos en una semana race sin ancla', () => {
-    const planWithLateAnchor = plan({ goalEventSport: 'squash', goalEventDate: '2026-09-26' })
-    const earlyWeek = { ...week([]), weekStartDate: '2026-09-07' }
-    expect(getExpectedSessionsForPlanWeek(planWithLateAnchor, earlyWeek)).toBe(2)
-  })
-})
+// El cupo de la semana race se cubre en `eventWindowScope.test.ts`: al
+// estrechar las reglas a los días del evento dejó de ser un número único.

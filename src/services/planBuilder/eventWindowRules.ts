@@ -53,6 +53,16 @@ export function planEventAppliesToSquash(plan: TrainingPlan): boolean {
   return eventSport === 'squash'
 }
 
+/**
+ * Las reglas de carga del campeonato aplican a los **días del evento**, no a la
+ * semana `race` entera: un evento de sábado a domingo no puede vaciar el lunes.
+ * Fuera de la ventana rigen las reglas de taper que ya existían.
+ */
+export function isWithinPlanEventWindow(plan: TrainingPlan, isoDate: string): boolean {
+  const { startDate, endDate } = resolvePlanEventWindow(plan)
+  return isoDate >= startDate && isoDate <= endDate
+}
+
 export function isPlanEventAnchorDate(plan: TrainingPlan, isoDate: string): boolean {
   return resolvePlanEventWindow(plan).anchorDate === isoDate
 }
@@ -73,8 +83,18 @@ export function planWeekContainsEventAnchor(plan: TrainingPlan, week: TrainingPl
   return planWeekContainsDate(plan, week, resolvePlanEventWindow(plan).anchorDate)
 }
 
-/** Predicado estructurado: nunca infiere un partido desde título u objetivo. */
-export function isSquashCompetitionSession(session: CoachSessionProposal): boolean {
+/**
+ * Reconoce la **intención declarada** de partido: `squashKind`, `subtype`,
+ * `sessionMode` o un bloque `match`. Nunca infiere desde título ni objetivo.
+ *
+ * NO acredita exposición competitiva. Sirve para materializar el ancla, reparar
+ * respuestas incompletas y rechazar apoyos competitivos extra, todo eso antes de
+ * que el repair complete los drills. El único predicado de exposición real es
+ * `hasSquashCompetitiveExposureContent` (`training/squashMatchRole.ts`), que
+ * mide contenido canónico y ejecutable. Unificarlos perdería las señales
+ * declaradas mientras la sesión todavía no tiene drills.
+ */
+export function isDeclaredSquashMatchSession(session: CoachSessionProposal): boolean {
   if (session.sessionType !== 'squash') return false
   const details = session.squashDetails
   return session.squashKind === 'match'
@@ -97,7 +117,7 @@ export function resolveEventWindowSupportKind(
   if (session.sessionType === 'mobility' || session.sessionType === 'recovery') {
     return 'recovery'
   }
-  if (session.sessionType !== 'squash' || isSquashCompetitionSession(session)) {
+  if (session.sessionType !== 'squash' || isDeclaredSquashMatchSession(session)) {
     return undefined
   }
 

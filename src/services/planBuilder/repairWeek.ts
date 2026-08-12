@@ -78,7 +78,8 @@ import {
   EVENT_WINDOW_SUPPORT_CAPS,
   MAX_EVENT_WINDOW_SUPPORTS_PER_WEEK,
   isPlanEventAnchorDate,
-  isSquashCompetitionSession,
+  isDeclaredSquashMatchSession,
+  isWithinPlanEventWindow,
   planWeekContainsEventAnchor,
   resolveEventWindowSupportKind,
   resolvePlanEventWindow,
@@ -1530,9 +1531,9 @@ function normalizeSquashEventWindow(
 
   if (anchorInsideWeek) {
     const onAnchorDate = result.filter((session) => session.date === anchorDate)
-    anchor = onAnchorDate.find((session) => session.sessionType === 'squash' && isSquashCompetitionSession(session))
+    anchor = onAnchorDate.find((session) => session.sessionType === 'squash' && isDeclaredSquashMatchSession(session))
       ?? onAnchorDate.find((session) => session.sessionType === 'squash')
-      ?? result.find((session) => isSquashCompetitionSession(session))
+      ?? result.find((session) => isDeclaredSquashMatchSession(session))
       ?? onAnchorDate[0]
 
     if (!anchor) {
@@ -1596,9 +1597,15 @@ function normalizeSquashEventWindow(
       normalized.push(session)
       continue
     }
+    // Fuera de los días del evento manda el taper que ya existía: convertir la
+    // carga de toda la semana `race` vaciaba días que no son del campeonato.
+    if (!isWithinPlanEventWindow(context.plan, session.date)) {
+      normalized.push(session)
+      continue
+    }
 
     let support = session
-    if (isSquashCompetitionSession(support)) {
+    if (isDeclaredSquashMatchSession(support)) {
       const previousTitle = support.title
       const before = JSON.stringify(support)
       applyPreEventSquashActivationDetails(support, context)
@@ -1686,8 +1693,14 @@ function normalizeSquashEventWindow(
   const supports = normalized
     .filter((session) => session !== anchor)
     .sort((left, right) => left.date.localeCompare(right.date) || left.timeBlock.localeCompare(right.timeBlock))
-  const keptSupports = supports.slice(0, MAX_EVENT_WINDOW_SUPPORTS_PER_WEEK)
-  const droppedSupportCount = supports.length - keptSupports.length
+  // El tope de apoyos pertenece a la ventana: los días de la semana que quedan
+  // fuera del campeonato conservan sus sesiones de taper.
+  const insideSupports = supports.filter((session) =>
+    isWithinPlanEventWindow(context.plan, session.date))
+  const outsideSupports = supports.filter((session) =>
+    !isWithinPlanEventWindow(context.plan, session.date))
+  const keptInside = insideSupports.slice(0, MAX_EVENT_WINDOW_SUPPORTS_PER_WEEK)
+  const droppedSupportCount = insideSupports.length - keptInside.length
   if (droppedSupportCount > 0) {
     meta.droppedSessionCount += droppedSupportCount
     meta.warnings.push({
@@ -1696,7 +1709,7 @@ function normalizeSquashEventWindow(
     })
   }
 
-  return [...(anchor ? [anchor] : []), ...keptSupports]
+  return [...(anchor ? [anchor] : []), ...outsideSupports, ...keptInside]
     .sort((left, right) => left.date.localeCompare(right.date) || left.timeBlock.localeCompare(right.timeBlock))
 }
 
@@ -2928,7 +2941,7 @@ function normalizeCompetitionTaperLoad(
   if (context.week.phase !== 'taper' && context.week.phase !== 'race') return sessions
 
   const cappedSessions = sessions.map((session) => {
-    if (isSquashRaceEventAnchorCandidate(session, context) && isSquashCompetitionSession(session)) {
+    if (isSquashRaceEventAnchorCandidate(session, context) && isDeclaredSquashMatchSession(session)) {
       return session
     }
     const daysToEvent = daysBetween(session.date, context.plan.endDate)

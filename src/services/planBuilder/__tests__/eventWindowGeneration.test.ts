@@ -5,7 +5,7 @@ import type { TrainingPlan, TrainingPlanWeek } from '../../../types/planBuilder'
 import { buildDeterministicWeek } from '../fallbackWeek'
 import {
   EVENT_WINDOW_SUPPORT_CAPS,
-  isSquashCompetitionSession,
+  isDeclaredSquashMatchSession,
   resolveEventWindowSupportKind,
   resolvePlanEventWindow,
 } from '../eventWindowRules'
@@ -150,15 +150,15 @@ describe('B4 — generación dentro de una ventana competitiva', () => {
     }).sessions)
 
     const allSessions = generated.flat()
-    const anchors = allSessions.filter(isSquashCompetitionSession)
+    const anchors = allSessions.filter(isDeclaredSquashMatchSession)
     expect(anchors).toHaveLength(1)
     expect(anchors[0]).toMatchObject({ date: '2026-09-09', sessionType: 'squash', subtype: 'competitive' })
-    expect(generated[0]!.filter(isSquashCompetitionSession)).toHaveLength(0)
+    expect(generated[0]!.filter(isDeclaredSquashMatchSession)).toHaveLength(0)
     expect(generated[0]).toHaveLength(2)
     expect(generated[1]).toHaveLength(2)
 
     for (const sessions of generated) {
-      for (const session of sessions.filter((item) => !isSquashCompetitionSession(item))) {
+      for (const session of sessions.filter((item) => !isDeclaredSquashMatchSession(item))) {
         expectValidSupport(session)
       }
     }
@@ -185,11 +185,11 @@ describe('B4 — generación dentro de una ventana competitiva', () => {
       planWeekDescriptors: [{ weekIndex: 0, phase: 'race' }, { weekIndex: 1, phase: 'race' }],
     })
 
-    expect(result.sessions.filter(isSquashCompetitionSession)).toHaveLength(1)
-    expect(result.sessions.find(isSquashCompetitionSession)?.date).toBe('2026-09-09')
+    expect(result.sessions.filter(isDeclaredSquashMatchSession)).toHaveLength(1)
+    expect(result.sessions.find(isDeclaredSquashMatchSession)?.date).toBe('2026-09-09')
     expect(result.sessions.filter((session) => session.date === '2026-09-09')).toHaveLength(1)
     expect(result.sessions.some((session) => session.sessionType === 'strength')).toBe(false)
-    for (const session of result.sessions.filter((item) => !isSquashCompetitionSession(item))) {
+    for (const session of result.sessions.filter((item) => !isDeclaredSquashMatchSession(item))) {
       expectValidSupport(session)
     }
   })
@@ -205,8 +205,8 @@ describe('B4 — generación dentro de una ventana competitiva', () => {
     })
 
     expect(result.sessions).toHaveLength(2)
-    expect(result.sessions.filter(isSquashCompetitionSession)).toHaveLength(1)
-    expect(result.sessions.find(isSquashCompetitionSession)?.date).toBe('2026-09-09')
+    expect(result.sessions.filter(isDeclaredSquashMatchSession)).toHaveLength(1)
+    expect(result.sessions.find(isDeclaredSquashMatchSession)?.date).toBe('2026-09-09')
   })
 
   it('validator detecta ancla ausente, match extra y apoyo incompatible', () => {

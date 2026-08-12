@@ -9,7 +9,7 @@ import type { WeekCreatorEffectiveConfig } from './WeekCreatorConfig'
 import type { WeekCreatorValidationCode } from './WeekCreatorFailurePolicy'
 import { resolveDayScheduleConstraint } from './scheduleConstraints'
 import { resolveWeekCreatorEventContext } from './WeekCreatorEventContext'
-import { isSquashCompetitionSession } from '../planBuilder/eventWindowRules'
+import { isDeclaredSquashMatchSession } from '../planBuilder/eventWindowRules'
 
 /**
  * Fields where structural recursion stops. Their internal validation is owned
@@ -326,7 +326,7 @@ function validateAllowedDays(
 ): string | undefined {
   const allowedDays = new Set(config.trainingDays)
   for (const session of sessions) {
-    if (session.date === eventAnchorDate && isSquashCompetitionSession(session)) continue
+    if (session.date === eventAnchorDate && isDeclaredSquashMatchSession(session)) continue
     const day = isoDateToDayOfWeek(session.date)
     if (!day || !allowedDays.has(day)) {
       return `La sesión ${session.title} cae en un día no permitido por la configuración (${session.date}).`
@@ -341,7 +341,7 @@ function validateScheduleTimeConstraints(
   eventAnchorDate?: string,
 ): string | undefined {
   for (const session of sessions) {
-    if (session.date === eventAnchorDate && isSquashCompetitionSession(session)) continue
+    if (session.date === eventAnchorDate && isDeclaredSquashMatchSession(session)) continue
     const day = isoDateToDayOfWeek(session.date)
     if (!day) continue
     const constraint = resolveDayScheduleConstraint(config.scheduleConstraints, day)
