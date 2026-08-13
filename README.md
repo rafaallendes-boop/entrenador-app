@@ -587,7 +587,7 @@ Esto sirve para pruebas personales y beta interna. Para una beta externa, el sig
 - La calidad del coach debe seguir midiendose con E2E + uso real.
 - La telemetria persistente resumida sigue pendiente para una beta externa.
 - El sync requiere QA real multi-dispositivo antes de usuarios externos.
-- Whoop readiness/workouts ya están operativos; las zonas de FC requieren aplicar `019`, rollout por flags, reaceptación y smoke antes de exponer esa capa a terceros.
+- Whoop readiness/workouts y las zonas de FC ya están operativos en producción (`019` aplicada y flag activo). Permanecen las auditorías de consentimiento/reaceptación, paridad y datos para exponer esa capa a terceros.
 - Los providers directos en browser son solo para dev; produccion debe usar proxy.
 - PDF import sigue siendo una parte pesada cuando se usa.
 - Notificaciones web tienen limites propios del navegador.
@@ -596,13 +596,12 @@ Esto sirve para pruebas personales y beta interna. Para una beta externa, el sig
 
 Prioridad actual:
 
-1. Aplicar `019` y completar el rollout/smoke combinado de detalle y zonas de FC de Whoop.
-2. Desplegar y observar los contratos `squashKind` v2 y A2.5, ya cerrados técnicamente, antes de retirar compatibilidad legacy.
-3. Probar convergencia real entre desktop y mobile y fijar los fallos en un harness E2E de dos clientes.
+1. Desplegar el harness de sync multi-dispositivo y probar convergencia real entre desktop y mobile con una misma cuenta.
+2. Cerrar las verificaciones pendientes de Whoop: consentimiento/reaceptación, auditoría SQL, paridad y contexto del coach.
+3. Desplegar y observar los contratos `squashKind` v2 y A2.5, ya cerrados técnicamente, antes de retirar compatibilidad legacy.
 4. Smokear Biblioteca, Planificación y la semana visible autenticadas sobre el bundle actual.
-5. Cerrar revisión jurídica, retención y reaceptación de las publicaciones Whoop nuevas.
-6. Consolidar tres planes arquetipo y la calidad deportiva del coach.
-7. Onboardear el primer cliente acompañado antes de construir pagos self-serve.
+5. Consolidar tres planes arquetipo y la calidad deportiva del coach.
+6. Onboardear el primer cliente acompañado antes de construir pagos self-serve.
 
 ## Documentos Utiles
 

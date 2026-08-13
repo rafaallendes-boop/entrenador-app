@@ -1,6 +1,10 @@
 # Smoke — Whoop: zonas de frecuencia cardíaca (`019`)
 
-Estado: **pendiente de ejecución.** Requiere sesión real; no cuesta API.
+Estado: **smoke funcional parcial superado en producción (2026-08-12).**
+`019` está aplicada, el bundle está desplegado y `WHOOP_ZONES_ENABLED=true`.
+Se comprobaron visualmente las zonas en el detalle de sesión y el resumen semanal.
+Quedan las verificaciones de base de datos, paridad, trazas del coach, atleta
+gestionado y reaceptación/consentimiento que requieren evidencia específica.
 
 Plan: `docs/superpowers/plans/2026-08-08-whoop-hr-zones.md`
 Spec: `docs/superpowers/specs/2026-08-07-whoop-hr-zones-design.md`
@@ -13,10 +17,10 @@ pasos 3 a 5, después del Deploy 3 que la enciende.
 
 ## Antes de empezar
 
-- [ ] `019_whoop_workout_zones.sql` aplicada en producción.
-- [ ] Bundle desplegado confirmado (hard refresh).
+- [x] `019_whoop_workout_zones.sql` aplicada en producción.
+- [x] Bundle desplegado confirmado (hard refresh).
 - [ ] `CONSENT_GATE_ENABLED=true` y `VITE_CONSENT_GATE=true` (preflight del spec §3.5).
-- [ ] Anotar el valor efectivo de `WHOOP_ZONES_ENABLED` en el deploy bajo prueba.
+- [x] Valor efectivo en el deploy bajo prueba: `WHOOP_ZONES_ENABLED=true`.
 
 ---
 
@@ -55,7 +59,7 @@ Contra la base, con un `workout_id` real. Cada `update` debe **fallar**:
 
 Después del Deploy 3 y de un sync con al menos un workout `SCORED` con zonas.
 
-- [ ] **Tarjeta de sesión** (`/day/:date`, sesión auto-completada): aparece la
+- [x] **Tarjeta de sesión** (`/day/:date`, sesión auto-completada): aparece la
       métrica `Zona alta` en minutos, la barra apilada y el desplegable
       `Distribución por zona` con seis filas en `m:ss`, orden Z5 → Z0.
 - [ ] El desplegable abre y cierra; `aria-expanded` acompaña.
@@ -65,7 +69,7 @@ Después del Deploy 3 y de un sync con al menos un workout `SCORED` con zonas.
 - [ ] **Paridad**: una sesión vieja **sin** zonas se ve igual que antes de esta
       entrega — mismas métricas, mismos valores, mismo copy, mismo orden, y
       **ningún** elemento de zonas.
-- [ ] **Resumen semanal** (`/week`): la tarjeta `Carga medida por Whoop` muestra
+- [x] **Resumen semanal** (`/week`): la tarjeta `Carga medida por Whoop` muestra
       el titular en zona alta, el subtítulo con conteo y minutos registrados, las
       siete columnas (incluidas las vacías) y la leyenda Z0-Z5.
 - [ ] Navegar a una semana **sin** workouts con zonas: la tarjeta no se monta.
@@ -117,11 +121,16 @@ order by total desc;
 Resultado:
 
 ```
-(pendiente)
+(pendiente de la consulta de auditoría)
 ```
 
 ---
 
 ## Notas de la ejecución
 
-(pendiente)
+- 2026-08-12: owner confirmó `019` aplicada y el flag `WHOOP_ZONES_ENABLED`
+  activo en producción. Se verificaron visualmente la tarjeta de detalle y el
+  resumen semanal con datos de zonas.
+- No se infieren de ese recorrido los `CHECK` de Supabase, el contrato con el
+  flag apagado, la reaceptación de consentimientos ni el contexto exportado del
+  coach; permanecen explícitamente pendientes.

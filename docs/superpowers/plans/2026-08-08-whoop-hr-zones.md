@@ -10,6 +10,12 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-07-whoop-hr-zones-design.md`. Cuando este plan y el spec discrepen, gana el spec — pero reportalo antes de seguir.
 
+**Estado de rollout (2026-08-12):** `019` fue aplicada en producción y las
+zonas quedaron habilitadas con `WHOOP_ZONES_ENABLED=true`. El smoke funcional
+de detalle y resumen semanal pasó. Siguen pendientes las comprobaciones de
+consentimiento/reaceptación, las auditorías SQL y los casos de paridad y atleta
+gestionado del documento de smoke; no se dan por completados por inferencia.
+
 ## Global Constraints
 
 - **Sin Dexie v20.** `zoneDurations` y `percentRecorded` no se indexan, así que `stores()` no cambia. Si algún paso te empuja a tocar `db.ts`, pará: es señal de que el diseño se desvió.
