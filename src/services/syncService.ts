@@ -1796,6 +1796,15 @@ function rowToSession(row: Record<string, unknown>): Session {
   } as Session
 }
 
+/**
+ * Sessions use the backend as the stable authority when two distinct payloads
+ * carry the same timestamp. Without this tie-break, each device can retain its
+ * own version indefinitely because neither side is strictly newer.
+ */
+function remoteSessionWins(local: Session, remote: Session): boolean {
+  return remote.updatedAt >= local.updatedAt
+}
+
 function dayLogToRow(log: DayLog, userId: string): Record<string, unknown> {
   const { id, date, updatedAt, ...rest } = log
   return {
@@ -2583,9 +2592,9 @@ export async function pullSessionsForDateRange(startDate: string, endDate: strin
 
       await runAthleteWrite(remote.athleteId, async () => {
         const local = await db.sessions.get(remote.id)
-        if (!local || remote.updatedAt > local.updatedAt) {
+        if (!local || remoteSessionWins(local, remote)) {
           await db.sessions.put(remote)
-        } else if (local.updatedAt > remote.updatedAt) {
+        } else {
           await pushSession(local)
         }
       })
@@ -2644,7 +2653,7 @@ export async function pullWeekSessionsForAthlete(
       // borrado del atleta veto la hidratacion despues del fetch.
       if (resolveSessionAgainstTombstone(ownerAccountId, remote, sessionTombstones) === 'skip') return
       const local = await db.sessions.get(remote.id)
-      if (!local || remote.updatedAt > (local.updatedAt ?? 0)) {
+      if (!local || remoteSessionWins(local, remote)) {
         await db.sessions.put(remote)
       }
     })
@@ -3378,9 +3387,9 @@ async function mergeSessions(userId: string, context: MergeContext): Promise<voi
     }
 
     const local = await db.sessions.get(remote.id)
-    if (!local || remote.updatedAt > local.updatedAt) {
+    if (!local || remoteSessionWins(local, remote)) {
       await runAthleteWrite(remote.athleteId, () => db.sessions.put(remote))
-    } else if (local.updatedAt > remote.updatedAt) {
+    } else {
       context.pendingWrites.push(() => pushSession(local))
     }
   }

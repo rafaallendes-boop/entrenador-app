@@ -625,6 +625,39 @@ describe('syncService', () => {
       expect(outcome).toBe('completed')
     })
 
+    it('desempata updatedAt idéntico a favor de la versión remota', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      sessionsRows = [
+        {
+          id: 'same-version',
+          athleteId: 'ath-managed',
+          date: '2026-07-14',
+          timeBlock: 'am',
+          type: 'squash',
+          status: 'planned',
+          title: 'Local',
+          durationMin: 60,
+          createdAt: 1,
+          updatedAt: 200,
+        },
+      ]
+      tableResults.set('sessions', {
+        data: [remoteSession('same-version', 'ath-managed', 200, 'Remota')],
+        error: null,
+      })
+
+      const sync = await import('../syncService')
+      await sync.pullWeekSessionsForAthlete(
+        'user-1',
+        'ath-managed',
+        '2026-07-13',
+        '2026-07-19',
+        { includeLegacy: false },
+      )
+
+      expect(sessionsRows).toMatchObject([{ id: 'same-version', title: 'Remota', updatedAt: 200 }])
+    })
+
     it('self includeLegacy consulta athlete_id propio o null e hidrata legacy', async () => {
       vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
       tableResults.set('sessions', {

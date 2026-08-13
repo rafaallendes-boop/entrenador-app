@@ -67,13 +67,14 @@ function SquashDrillGuidance({ drill }: { drill: SquashDrill }) {
 function WhoopSyncBadge() {
   return (
     <span
-      className="inline-flex items-center gap-1 rounded-full border border-sky-500/25 bg-sky-500/15 px-2 py-0.5 text-[10px] font-medium text-sky-400"
+      className="inline-flex flex-shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-sky-500/25 bg-sky-500/15 px-2 py-0.5 text-[10px] font-medium text-sky-400"
       title="Sesion completada automaticamente desde Whoop"
     >
-      <svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true" className="fill-current">
+      <svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true" className="fill-current flex-shrink-0">
         <path d="M1 3h2l2 7 2-6h2l2 6 2-7h2l-3 10H10L8 7l-2 6H4L1 3z" />
       </svg>
-      Sincronizado desde Whoop
+      <span className="sm:hidden">Whoop</span>
+      <span className="hidden sm:inline">Sincronizado desde Whoop</span>
     </span>
   )
 }
@@ -166,9 +167,10 @@ export default function SessionCard({ session, compact = false, onDelete, whoopW
         {/* Main content */}
         <div className="flex-1 min-w-0">
           <div
-            className={`flex items-start gap-3 p-3 md:p-4 ${isExpandable ? 'cursor-pointer' : ''}`}
+            className={`flex flex-wrap items-start gap-3 p-3 md:p-4 ${isExpandable ? 'cursor-pointer' : ''}`}
             onClick={() => isExpandable && setExpanded((e) => !e)}
           >
+        <div className="flex min-w-0 flex-1 items-start gap-3">
         <SessionTypeIcon type={session.type} />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -259,7 +261,8 @@ export default function SessionCard({ session, compact = false, onDelete, whoopW
             )}
           </div>
         </div>
-        <div className="flex flex-shrink-0 items-center gap-2 self-start md:self-center">
+        </div>
+        <div className="ml-auto flex flex-shrink-0 flex-wrap items-center justify-end gap-2 self-start md:self-center">
           {session.status === 'completed' && session.autoCompletion?.source === 'whoop_workout' && (
             <WhoopSyncBadge />
           )}
