@@ -1149,6 +1149,55 @@ de atleta no se puede verificar con un solo dispositivo** y es el cambio con
 mayor alcance destructivo del bloque: queda absorbido por la validación
 multi-dispositivo que ya es prioridad 6.
 
+### 29. Fuerza — rotación del core inyectado (2026-08-14)
+
+Cierra la **Causa A** del Hallazgo 5 de §28. Sin migraciones, un archivo de
+producción, tres call sites y dos archivos de test.
+
+**El defecto.** `ensureCoreBlock` inyectaba `dead_bug` literal cuando una sesión
+de fuerza de 45 min o más no traía trabajo de zona media. No tenía ninguna
+noción de semana, así que el mismo ejercicio aparecía en **todas** las semanas
+de un bloque y aportaba un ejercicio compartido gratis a cada par de semanas.
+Como `isCountableRole` solo excluye `main_lift`, ese core contaba de lleno para
+`quality.strength.repeated_template`.
+
+**Reproducción antes de tocar código.** `strengthTemplateRotationConcurrent.test.ts`
+reconstruye la condición real: con `DEFAULT_CONCURRENCY = 3` las semanas de un
+bloque se reparan en paralelo, así que `isReadyWeek(previousWeek)` es `false`,
+`previousKeys` queda vacío y el modelo devuelve la misma plantilla de fuerza
+para todas. Tres semanas de peak dieron exactamente 3 contables compartidos
+entre las semanas 1 y 2 —`dead_bug`, `med_ball_slam`, `close_grip_bench_press`—
+que es el umbral del warning.
+
+**El arreglo.** `INJECTED_CORE_ROTATION` es una allowlist explícita de cuatro
+ids con orden congelado (`dead_bug`, `plank`, `side_plank`,
+`stability_ball_front_plank`), mismo precedente que los pliométricos de §23:
+«core» como grupo incluye trabajo de fuerza real —Copenhagen, press de disco—
+que no sirve como relleno seguro, así que el pool no puede derivarse del grupo.
+`resolveInjectedCoreId` es total y determinista: un índice ausente, infinito o
+negativo devuelve el primero del pool. **`dead_bug` va primero a propósito**,
+porque el camino sin contexto de semana es el del chat y ese comportamiento no
+cambia. Plan Builder pasa `weekIndexInBlock` en los tres call sites de
+`enhanceStrengthSessionExercises`; el chat (`responseNormalizer`) no pasa nada.
+
+**Alcance honesto.** Esto quita **un** ejercicio compartido por par de semanas,
+no arregla la rotación. En la reproducción baja el solape de 3 a 2 y el warning
+deja de dispararse, pero los otros dos compartidos siguen ahí.
+
+**Causa B, abierta y explícita.** `selectStrengthReplacement` hace
+`candidates[rotationIndex % candidates.length]` (`strengthSelector.ts:382`).
+Los pools no son el cuello de botella —medidos: rotación 7, push 10, pull 13—;
+lo que pasa es que el pool *después de exclusiones* difiere entre semanas, así
+que índices distintos aterrizan en el mismo candidato. La semana 0 de un bloque
+no rota nunca (`applyPolicy = weekIndexInBlock > 0`), así que 0 vs 1 diverge y
+el choque queda entre las dos que sí rotan. Resolverlo pide darle a la
+reparación conocimiento del bloque, o que la política garantice divergencia
+entre semanas hermanas bajo concurrencia. **Es trabajo separado y no forma
+parte de este cierre.**
+
+Verificado: **416 archivos / 3377 tests**, `tsc -b`, lint, build y
+`git diff --check` verdes.
+
 ### Producto Publico Y Marca
 
 - Marca publica operativa: `RallyIQ`.
@@ -1433,7 +1482,7 @@ Objetivo: que el primer plan pagado se pueda mirar a la cara.
 - [x] Guardar backup/export de cada plan arquetipo.
 - [x] Crear checklist manual de revision de entrenador.
 - [ ] Revisar warnings de variedad de drills en build/peak.
-- [ ] Confirmar que fuerza no repita plantillas clonadas semana a semana. (**Falla medida**: Hallazgo 5 de §28 — 5 de 8-9 ejercicios repetidos entre semanas 3 y 4 de peak. `qualityReview` lo detecta como `repeated_template` pero no lo evita.)
+- [ ] Confirmar que fuerza no repita plantillas clonadas semana a semana. (Hallazgo 5 de §28. **Causa A cerrada** el 2026-08-14 — el core inyectado ahora rota por semana, ver §29. **Causa B abierta**: dos semanas rotadas por política siguen pudiendo converger bajo concurrencia.)
 - [x] Confirmar que 1RM se usa cuando existe. (Verificado numericamente contra el perfil guardado.)
 - [x] Confirmar que running/ciclismo aparecen solo si aportan al objetivo. (No aparecieron cuando no se seleccionaron como complementarios.)
 

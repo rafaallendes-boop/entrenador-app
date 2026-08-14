@@ -2128,6 +2128,7 @@ function normalizeStrengthSessions(
     session.exercises = enhanceStrengthSessionExercises(session.exercises, {
       durationMin: session.durationMin,
       strengthProfile: context.profile.strengthProfile,
+      weekIndexInBlock: getWeekIndexInBlock(context),
     })
     if (session.exercises) {
       const mode = shouldApplySupersetPolicy({
@@ -2882,6 +2883,7 @@ function completeStrengthExerciseDensity(
   return enhanceStrengthSessionExercises([...exercises, ...additions], {
     durationMin: session.durationMin,
     strengthProfile: context.profile.strengthProfile,
+    weekIndexInBlock: getWeekIndexInBlock(context),
   })
 }
 
