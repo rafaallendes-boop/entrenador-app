@@ -15,6 +15,7 @@ export const MIGRATION_KEY_PREFIX = 'entrenador_migrated_v1'
 export const INITIAL_PULL_KEY_PREFIX = 'entrenador_initial_pull_v1'
 export const REMOTE_WIPE_KEY = 'entrenador_remote_wipe_v1'
 export const REMOTE_FULL_RESET_ACK_KEY_PREFIX = 'entrenador_remote_reset_ack_v1'
+export const REMOTE_ATHLETE_ACK_KEY_PREFIX = 'entrenador_remote_athlete_ack_v1'
 export const PROFILE_RESET_LOCK_KEY = 'entrenador_profile_reset_lock_v1'
 export const SESSION_DELETE_TOMBSTONES_KEY = 'entrenador_sync_session_tombstones_v1'
 export const COACH_PROPOSAL_DELETE_TOMBSTONES_KEY = 'entrenador_sync_coach_proposal_tombstones_v1'
@@ -26,6 +27,10 @@ export function getInitialPullKey(userId: string): string {
 
 export function getRemoteFullResetAckKey(userId: string): string {
   return `${REMOTE_FULL_RESET_ACK_KEY_PREFIX}:${userId}`
+}
+
+export function getRemoteAthleteAckKey(userId: string): string {
+  return `${REMOTE_ATHLETE_ACK_KEY_PREFIX}:${userId}`
 }
 
 export function getMigrationKey(userId: string): string {

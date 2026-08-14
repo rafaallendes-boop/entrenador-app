@@ -956,7 +956,7 @@ export default function SettingsPage() {
             )}
             {profileSaved && (
               <p className="mb-3 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-300">
-                Perfil guardado. RallyIQ usará estos cambios en la próxima respuesta.
+                Perfil guardado en este dispositivo. La sincronización con tu cuenta continúa en segundo plano.
               </p>
             )}
             <AthleteProfileEditor

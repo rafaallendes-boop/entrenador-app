@@ -1,9 +1,10 @@
 # RallyIQ - Project Review and Roadmap
 
-Actualizado: 2026-08-11
+Actualizado: 2026-08-14
 
 Base de contraste:
 
+- **QA deportiva de arquetipos ejecutada y sus hallazgos cerrados (2026-08-13/14):** ver §28. Primera QA deportiva real sobre producción: cinco arquetipos, 12/12 semanas del cupo diario, ~US$0,35, **veredicto APROBADO PARCIAL**. El motor de generación quedó bien (1RM verificado contra el perfil, superseries deterministas vivas en prod, modalidad de squash sin cruces, taper protegido); la capa de persistencia de perfil y de ciclo de plan produjo siete hallazgos que el code review convirtió en nueve defectos verificados, todos corregidos. Los cuatro serios: el corte del ciclo de plan ignoraba el inicio futuro del plan nuevo y vaciaba el calendario intermedio; el preview subreportaba el borrado y su aviso nunca llegaba al usuario; conservar el perfil ante ausencia remota reabría la resurrección en el segundo dispositivo por el FK `on delete cascade` de `007`; y los planes legacy nunca se supersedían. `Session` gana `planId`/`planWeekId` sin migración. Suite: **414 archivos / 3371 tests**, `tsc -b`, lint, build y `git diff --check` verdes. Pendientes: deploy, un smoke dirigido de un solo recorrido, y el cascade de borrado de atleta, que **no se puede verificar con un solo dispositivo**.
 - **Squash — modalidad explícita y exposición semanal A2.5 implementadas (2026-08-10/11, `5ba9554`…`eed08af`):** ver §27. Los 49 drills tienen `sessionKind` y modo ejecutable explícitos; `either` queda fuera del catálogo; un hidratador compartido compone sin cruzar modalidades; y `squashKind` viaja por Plan Builder, Crear semana skeleton v2, chat, formulario, plantillas e import/export. A2.5 agrega mejor de 3 en base, regula build/peak por carga, limita taper a tres o más días del evento y hace que race cuente la competencia real, con vetos de partner, restricción médica y sobrecarga. Sin migraciones. Suite completa: **394 archivos / 3211 tests**, build, `tsc -b`, lint y `git diff --check` verdes. Pendiente rollout/monitoreo antes de retirar compatibilidad legacy.
 - **Semana y planificación endurecidas y mergeadas en `main` (2026-08-10, PR #11, `b3bb6c3` / merge `0059e6e`):** ver §26. La ausencia de macroplan pasa a ser `not_applicable` en vez de un falso `ok`; la card ofrece crear el plan sin ocultar carga/adherencia reales; la semana visible ya no reutiliza sesiones o resumen de otra semana durante un request; el arranque prioriza el pull de la semana solicitada antes del sync completo; el plan competitivo omite la semana parcial si ya no queda ningún día habilitado; y los drills de squash recuperan guía canónica aunque una fila persistida venga sin `notes`. Sin migraciones. Suite: 388 archivos / 3109 tests, `tsc -b`, lint y `git diff --check` verdes. Pendiente deploy/smoke; esto reduce el riesgo de estado obsoleto, pero **no sustituye** la validación real multi-dispositivo.
 - **Whoop — zonas de frecuencia cardíaca por entrenamiento implementadas (2026-08-08):** ver §25. Seis duraciones de zona y cobertura de medición por workout, con normalizador compartido como única autoridad de forma, migración `019` de aplicación manual, flag de ingestión `WHOOP_ZONES_ENABLED` que omite claves en vez de escribir null, guard de drift de columnas en tres ejes, rampa secuencial de un solo tono y dos publicaciones legales registradas y no vigentes. **Sin Dexie v20.** Suite: 385 archivos / 3087 tests. Pendiente todo el rollout, empezando por aplicar `019` antes del primer deploy.
@@ -1051,6 +1052,103 @@ Dexie.
 pools cortos y degradaciones, y una ventana de compatibilidad legacy. El
 Proyecto B de eventos multijornada no forma parte de este cierre.
 
+### 28. QA deportiva de arquetipos y cierre de sus hallazgos (2026-08-13/14)
+
+Primera QA deportiva real del proyecto, ejecutada sobre producción con el
+atleta gestionado "Juan perez", y la tanda de correcciones que salió de ella.
+Sin migraciones de Supabase ni Dexie.
+
+**El smoke.** Cinco arquetipos (4 por Plan Builder + 1 por Crear semana), 12/12
+semanas del cupo diario, ~US$0,35. Reporte en
+`docs/superpowers/smokes/2026-08-13-archetype-plans-prod-smoke.md`, con extractos
+sanitizados en `docs/superpowers/smokes/evidence/`. **Veredicto: APROBADO
+PARCIAL.** El motor de generación se comportó bien —1RM verificado
+numéricamente contra el perfil, superseries generadas por la política
+determinista en producción, modalidad de squash nunca cruzada, taper protegido—
+pero la capa de persistencia de perfil y de ciclo de plan produjo siete
+hallazgos. Los recortes de presupuesto dejaron dos cosas **sin verificar** y así
+quedan declaradas: "mejor de 3 en base" (ningún arquetipo alcanzó fase base) y
+los seis pasos manuales de superseries de §23.
+
+**Lo que el smoke encontró y esta tanda cierra.** El código review posterior
+(alto esfuerzo, agente + pasada manual) convirtió los hallazgos en nueve
+defectos verificados. Los cuatro que podían destruir datos:
+
+1. **El corte del ciclo de plan ignoraba cuándo empieza el plan nuevo.**
+   `activatePlanLifecycle` borraba toda sesión planificada no-manual desde
+   **hoy**, pero `buildPlanShell.ts:222` ancla `planStartDate` en
+   `eventEndWeekStart − 11 semanas` cuando el plan excede
+   `MAX_COMPETITION_PLAN_WEEKS`. Un evento a 20 semanas dejaba el calendario
+   vacío entre hoy y la primera semana del plan. El corte pasa a
+   `max(hoy, nextPlan.startDate)` en `planLifecycle.ts`.
+2. **El preview subreportaba el borrado y el aviso nunca llegaba.**
+   `commitImpact` calculaba reemplazos por fechas propuestas mientras
+   `applyCreateWeek` reemplaza por `replacementRange` de semana completa: una
+   sesión planificada en un día sin propuesta se mostraba como "queda fuera de
+   las fechas que este plan toca" y se borraba igual. Además `commitPlan`
+   empujaba el warning a `warnings` y `handleConfirmAcceptPlan` solo leía
+   `errors`. Ahora el preview replica el predicado real, suma los borrados de
+   ciclo deduplicados contra los reemplazos in-week, y el aviso post-commit
+   viaja por navigation state y se consume una sola vez en `WeeklyView`.
+3. **El fix del perfil reabría la resurrección en el segundo dispositivo.**
+   Conservar el perfil ante ausencia remota corrige el Hallazgo 1, pero
+   `007_athlete_scope.sql:242,269` crea
+   `athlete_profiles_athlete_fk → athletes(id) on delete cascade not valid`;
+   `NOT VALID` salta las filas existentes y **sí valida inserts nuevos**. Tras
+   un borrado duro en otro dispositivo, este re-empujaba para siempre contra un
+   `athlete_id` inexistente — alimentando el `queue:op_failed` del Hallazgo 2.
+   La solución es un registro durable de identidades **reconocidas remotamente**
+   (`entrenador_remote_athlete_ack_v1`): la ausencia remota solo cuenta como
+   borrado si el dispositivo vio ese id antes. Ahí sí tombstone, limpieza de
+   cola, espera de operaciones en vuelo y purga transaccional de todo el scope.
+   `pullMemberships`/`pullAthletes` se movieron **antes** de `drainQueue` en
+   `runFullSync`, porque una escritura encolada podía recrear el padre vía
+   `ensureRemoteAthlete`; si el pull falla, el sync aborta y reintenta.
+4. **Planes legacy nunca se supersedían.** `rowToTrainingPlan` hace
+   `row.athlete_id as string` sin validar, así que una fila pre-`007` entrega
+   `undefined` y la igualdad cruda fallaba: quedaban dos planes `active`, justo
+   la invariante que el bloque existe para establecer.
+
+Los cinco restantes: el plan nuevo se publicaba al final de una cadena
+secuencial de N+M round trips (ahora va primero, resto en `Promise.allSettled`);
+`refreshRemovedSessionWeeks` usaba un snapshot rancio de `useTrainingStore`;
+`db.sessions.toArray()` dentro de la transacción `rw` (ahora
+`where('date').aboveOrEqual`); el copy de colisiones nombraba sesiones manuales
+en el camino de chat donde no pueden serlo; y el acoplamiento por string entre
+`rateLimit.ts` y la copy de cuota no tenía test que lo fijara — productor y
+consumidor comparten ahora `dailyQuotaError.ts`, con el regex derivado del mismo
+prefijo para sobrevivir el aplanado a string del store.
+
+**Procedencia de sesiones.** `Session` gana `planId`/`planWeekId` opcionales,
+estampados por `applyCreateWeek` cuando el commit los pasa. Viajan dentro de
+`sessions.data` por el rest-spread de `sessionToRow`/`rowToSession`, así que no
+hay migración ni índice Dexie; import/export los preserva y el allowlist de
+`sessionTemplateSerializer` los excluye, de modo que una plantilla no puede
+arrastrar procedencia obsoleta. Sin esto el Hallazgo 7 no era diagnosticable:
+`sessions` no permitía atribuir una fila a su plan.
+
+**Reversión deliberada, registrada acá porque el comentario original se borró.**
+`pullAthletes` estaba marcada "fully defensive … must NEVER break the sync". Ya
+no: su falla aborta `runFullSync`. Es la consecuencia de tener que conocer el
+estado del atleta antes de drenar la cola. El `throw` cae en el fallback de
+`classifySyncError` (`syncUtils.ts:190`), que es `retriable: true`, así que
+degrada a reintento con backoff y no deja el sync en estado muerto — pero una
+falla transitoria del pull de `athletes` ahora posterga **todo** el sync en vez
+de sincronizar parcialmente.
+
+**Verificación.** **414 archivos / 3371 tests**, `tsc -b`, lint, build y
+`git diff --check` verdes. Cero llamadas a IA o Supabase durante las
+correcciones.
+
+**Pendientes explícitos.** (1) Deploy. (2) Un smoke dirigido de un solo
+recorrido: plan con inicio futuro, sesión planificada en un día sin propuesta y
+confirmación del aviso posterior — el caso de inicio futuro exige un evento a
+más de 12 semanas, o sea el cupo diario completo (~US$0,35), así que puede
+quedarse en cobertura determinista si se prefiere. (3) **El cascade de borrado
+de atleta no se puede verificar con un solo dispositivo** y es el cambio con
+mayor alcance destructivo del bloque: queda absorbido por la validación
+multi-dispositivo que ya es prioridad 6.
+
 ### Producto Publico Y Marca
 
 - Marca publica operativa: `RallyIQ`.
@@ -1331,21 +1429,25 @@ Objetivo: que el primer plan pagado se pueda mirar a la cara.
 - [x] Rate limit local visible para Plan Builder async.
 - [x] Tests de Plan Builder, repairs y generacion async.
 - [x] Copys de sesiones del coach parcialmente humanizados.
-- [ ] Generar y revisar 3 planes arquetipo.
-- [ ] Guardar backup/export de cada plan arquetipo.
-- [ ] Crear checklist manual de revision de entrenador.
+- [x] Generar y revisar 3 planes arquetipo. (5 generados y revisados el 2026-08-13; ver §28. Recortados por cupo diario, no son arquetipos de la duracion que pide esta lista.)
+- [x] Guardar backup/export de cada plan arquetipo.
+- [x] Crear checklist manual de revision de entrenador.
 - [ ] Revisar warnings de variedad de drills en build/peak.
-- [ ] Confirmar que fuerza no repita plantillas clonadas semana a semana.
-- [ ] Confirmar que 1RM se usa cuando existe.
-- [ ] Confirmar que running/ciclismo aparecen solo si aportan al objetivo.
+- [ ] Confirmar que fuerza no repita plantillas clonadas semana a semana. (**Falla medida**: Hallazgo 5 de §28 — 5 de 8-9 ejercicios repetidos entre semanas 3 y 4 de peak. `qualityReview` lo detecta como `repeated_template` pero no lo evita.)
+- [x] Confirmar que 1RM se usa cuando existe. (Verificado numericamente contra el perfil guardado.)
+- [x] Confirmar que running/ciclismo aparecen solo si aportan al objetivo. (No aparecieron cuando no se seleccionaron como complementarios.)
 
 Arquetipos recomendados:
 
-- [ ] Torneo en 4 semanas.
-- [ ] Jugador con 3 dias disponibles.
-- [ ] Jugador con 5-6 dias y doble sesion ocasional.
-- [ ] Retorno con molestia de rodilla/tobillo/hombro.
-- [ ] Semana con poco sueno y match cercano.
+- [x] Torneo en 4 semanas.
+- [x] Jugador con 3 dias disponibles.
+- [x] Jugador con 5-6 dias y doble sesion ocasional.
+- [x] Retorno con molestia de rodilla/tobillo/hombro.
+- [x] Semana con poco sueno y match cercano. (Via Crear semana, no Plan Builder.)
+
+**Sin verificar y declarado** (§28): "mejor de 3 en base" — ningun arquetipo
+alcanzo fase base porque los eventos quedaron muy cerca por el recorte de
+presupuesto. Cubierto por tests deterministas, no por evidencia de produccion.
 
 ### F. Coach UI F2-lite
 
@@ -1766,10 +1868,18 @@ Orden recomendado (Athlete-Aware Core + Coach F2-lite Parte 2b + Whoop v1/Workou
    plantillas y perfil; incluir create/update/delete concurrente, offline→online,
    foreground y cambio de atleta/semana. No agregar otra capa de sync: corregir
    únicamente las divergencias reproducibles y congelarlas en un harness E2E.
+   **Ahora también cubre el cascade de borrado de atleta de §28**, que es el
+   cambio con mayor alcance destructivo sin verificar y que por construcción
+   necesita dos dispositivos: A borra un gestionado, B debe purgar su scope sin
+   resucitarlo y sin tocar el self.
 7. **Revision juridica formal y retención** (2-3 dias abogado, paralelizar con
    items 2-6): firma de terminos/privacidad/descargos/políticas Whoop y decisión
    sobre `user_consents` al borrar cuenta.
-8. **QA deportiva y preparacion piloto** (1-2 dias): generar 3 planes arquetipo como atletas gestionados, revisar salida coach, preparar oferta (duracion, precio, soporte, reembolso).
+8. **Preparacion piloto** (1-2 dias): la QA deportiva de arquetipos ya se
+   ejecutó (§28, APROBADO PARCIAL). Queda preparar la oferta (duracion, precio,
+   soporte, reembolso) y, si se quiere cerrar lo que el smoke dejó abierto,
+   cubrir "mejor de 3 en base" y la repeticion de accesorios de fuerza
+   (Hallazgo 5), que es la única falla deportiva medida y sigue sin arreglo.
 9. **Primer cliente acompanado** (ejecutar en paralelo con abogado): elegir 1 candidato, onboarding 1:1, generar semana 1, iniciar protocolo de revision semanal.
 
 **Siguiente bloque de desarrollo recomendado, después de los smokes:**

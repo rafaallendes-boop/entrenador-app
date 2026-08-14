@@ -1,0 +1,143 @@
+{
+  "schemaVersion": 1,
+  "smokeDate": "2026-08-13",
+  "purpose": "Manifiesto sanitizado y extractos reproducibles del smoke de planes arquetipo.",
+  "privacy": {
+    "rawArtifactsCommitted": false,
+    "reason": "Los exports completos contienen datos de producción ajenos al alcance del smoke.",
+    "redactions": [
+      "correo de la cuenta",
+      "nombre del atleta",
+      "identificadores completos de cuenta y atleta",
+      "sesiones y perfiles del owner no relacionados con el smoke"
+    ],
+    "rawLocationAtReview": "scratchpad temporal bajo /private/tmp (no durable)"
+  },
+  "artifacts": [
+    {
+      "basename": "arquetipo1-torneo4semanas-backup.json",
+      "kind": "app_backup",
+      "bytes": 2108856,
+      "exportedAt": "2026-08-13T20:47:49.379Z",
+      "sha256": "fd40cccbf286e79eb64e37f2a622a3519b0a6d4424119ff1c5481cdc2eb384c7"
+    },
+    {
+      "basename": "arquetipo2-3dias-backup.json",
+      "kind": "app_backup",
+      "bytes": 2117644,
+      "exportedAt": "2026-08-13T21:01:19.200Z",
+      "sha256": "81da145d377cfb3d6b2792f13de9b919e4a750b509440f2c2c3a305b44151645"
+    },
+    {
+      "basename": "arquetipo3-and-4-backup.json",
+      "kind": "app_backup",
+      "bytes": 2159622,
+      "exportedAt": "2026-08-13T21:11:59.570Z",
+      "sha256": "5022003a02f2a906cb00579db26bc2a1ad334c45601d6b156992ed9fae217bd3"
+    },
+    {
+      "basename": "beta-quality-after-arquetipo2-failure.json",
+      "kind": "beta_quality_diagnostic",
+      "bytes": 152212,
+      "exportedAt": "2026-08-13T20:55:29.618Z",
+      "sha256": "01fe4d7bb63227ea029db3fb38a05f76ca4af29fcecc778e3bf87ace57d804af"
+    },
+    {
+      "basename": "final-all-archetypes-backup.json",
+      "kind": "app_backup",
+      "bytes": 2189869,
+      "exportedAt": "2026-08-13T21:20:15.866Z",
+      "sha256": "99cfa7d2619cd6570fd7f0b5b82aec74b02312ea5bd3df90c1247ecadc53b3a2"
+    }
+  ],
+  "artifactSummary": {
+    "appBackups": 4,
+    "diagnostics": 1,
+    "note": "El tercer backup se exportó después de aceptar el arquetipo 4 y contiene juntos los arquetipos 3 y 4."
+  },
+  "observations": {
+    "profilePersistence": {
+      "managedProfilePresentByBackup": {
+        "arquetipo1-torneo4semanas-backup.json": false,
+        "arquetipo2-3dias-backup.json": false,
+        "arquetipo3-and-4-backup.json": true,
+        "final-all-archetypes-backup.json": false
+      },
+      "interpretation": "La presencia alternante del perfil gestionado en exports sucesivos es consistente con el vaciado observado en UI; no identifica por sí sola la causa de sync."
+    },
+    "rateLimitAfterFailedNineWeekAttempt": {
+      "requestClass": "plan_builder_week",
+      "dailyUsage": 5,
+      "dailyLimit": 12,
+      "failedAttemptVisibleInRecentRequests": false
+    },
+    "archetype1": {
+      "weekCount": 5,
+      "qualityVersion": 2,
+      "qualityScore": 88,
+      "qualityGrade": "good",
+      "qualityWarning": "quality.strength.repeated_template",
+      "wallClockMs": 38184,
+      "summedAiDurationMs": 84504,
+      "averageAiDurationMs": 16900.8,
+      "requestCount": 5,
+      "configuredConcurrency": 3,
+      "oneRepMaxChecks": [
+        {
+          "exercise": "sentadilla trasera",
+          "profileOneRepMaxKg": 115,
+          "targetPercent": 72,
+          "expectedKg": 82.8,
+          "prescribedKg": 82.5
+        },
+        {
+          "exercise": "press vertical",
+          "profileOneRepMaxKg": 55,
+          "targetPercent": 72,
+          "expectedKg": 39.6,
+          "prescribedKg": 40
+        }
+      ]
+    },
+    "raceSupportCap": {
+      "archetype": 3,
+      "phase": "race",
+      "preEventSupportSessionCount": 4,
+      "eventWindowSupportSessionCount": 0,
+      "anchorSessionCount": 1,
+      "maximumEventWindowSupports": 2,
+      "eventWindowStartDate": "2026-08-20",
+      "eventWindowEndDate": "2026-08-20",
+      "contractResult": "pass",
+      "note": "El tope aplica dentro de la ventana del evento; las cuatro sesiones observadas fueron previas."
+    },
+    "archetype4": {
+      "phase": "race",
+      "sessionCount": 1,
+      "onlySessionWasEventAnchor": true
+    },
+    "archetype5": {
+      "appliedCoachSessionCount": 2,
+      "durationsMin": [60, 60],
+      "rpeValues": [6, 6],
+      "note": "Se verifican las dos filas aplicadas; la calificación de carga reducida sigue siendo observación de calibración, no fallo duro."
+    },
+    "activePlanConflict": {
+      "activeManagedPlanCount": 6,
+      "plans": [
+        { "idPrefix": "1a2c8ce9", "title": "Plan SMOKE B - Campeonato multijornada" },
+        { "idPrefix": "34d9b7bf", "title": "Plan Arquetipo 4 - Retorno con molestia de rodilla" },
+        { "idPrefix": "b83b8806", "title": "Plan Arquetipo 1 - Torneo interclubes 4 semanas" },
+        { "idPrefix": "c32f1d1b", "title": "Plan Arquetipo 3 - 5-6 dias con doble sesion" },
+        { "idPrefix": "e51b62af", "title": "Plan SMOKE A - Torneo corto" },
+        { "idPrefix": "f7423c89", "title": "Plan Arquetipo 2 - 3 dias disponibles" }
+      ]
+    },
+    "calendarSnapshotComparison": {
+      "method": "Coincidencia exacta por athlete scope, fecha y título entre trainingPlanWeeks[].sessions y sessions del backup final.",
+      "archetype1": { "snapshotSessions": 17, "exactCalendarMatches": 4 },
+      "archetype2": { "snapshotSessions": 9, "exactCalendarMatches": 5 },
+      "limitation": "Las filas sessions no conservan planId y las sesiones de los snapshots tienen id null; la comparación demuestra discordancia parcial, no procedencia ni causalidad."
+    }
+  }
+}

@@ -1058,6 +1058,8 @@ function parseSession(value: unknown, index: number): Session {
     date: requireISODate(row.date, `sessions[${index}].date`),
     timeBlock: requireEnum(row.timeBlock, TIME_BLOCKS, `sessions[${index}].timeBlock`) as Session['timeBlock'],
     source: optionalEnum(row.source, SESSION_SOURCES, `sessions[${index}].source`) as Session['source'],
+    planId: optionalString(row.planId, `sessions[${index}].planId`),
+    planWeekId: optionalString(row.planWeekId, `sessions[${index}].planWeekId`),
     type: requireEnum(row.type, SESSION_TYPES, `sessions[${index}].type`) as Session['type'],
     status: requireEnum(row.status, SESSION_STATUSES, `sessions[${index}].status`) as Session['status'],
     title: requireString(row.title, `sessions[${index}].title`),

@@ -9,6 +9,10 @@ import { filterRowsToActiveScope } from '../athlete/activeScopeFilter'
 import { fromISO, getWeekStart, toISO } from '../../utils/date'
 import { v4 as uuid } from '../../utils/uuid'
 import type { AthleteProfile, CoachAction, Session, WeekSummary } from '../../types'
+import {
+  formatCreateWeekCollisionWarning,
+  formatCreateWeekPreservedCountWarning,
+} from './createWeekCollisionCopy'
 
 type CreateWeekSessionInput = NonNullable<CoachAction['sessions']>
 
@@ -32,6 +36,8 @@ export async function applyCreateWeek({
   store,
   replacementCutoffAt,
   replacementRange,
+  planProvenance,
+  preserveManualSessions = false,
 }: {
   sessions: CreateWeekSessionInput
   weekObjectives?: string[]
@@ -39,6 +45,8 @@ export async function applyCreateWeek({
   store: CreateWeekStoreAdapter
   replacementCutoffAt?: number
   replacementRange?: { startDate: string; endDate: string }
+  planProvenance?: { planId: string; planWeekId: string }
+  preserveManualSessions?: boolean
 }): Promise<ApplyCreateWeekResult> {
   const warnings: string[] = []
   const createdSessionIds: string[] = []
@@ -55,13 +63,18 @@ export async function applyCreateWeek({
     return { warnings, createdSessionIds, restoredSessions, restoredWeekSummaries, deletedWeekSummaryIds }
   }
 
-  const replacement = await replacePlannedSessionsForCreateWeek(allowedSessions, replacementCutoffAt, replacementRange)
+  const replacement = await replacePlannedSessionsForCreateWeek(
+    allowedSessions,
+    replacementCutoffAt,
+    replacementRange,
+    preserveManualSessions,
+  )
   restoredSessions.push(...replacement.replacedSessions)
   warnings.push(...replacement.warnings)
 
-  const collisions = await findCreateWeekCollisions(allowedSessions)
+  const collisions = await findCreateWeekCollisions(allowedSessions, preserveManualSessions)
   if (collisions.length > 0) {
-    warnings.push(`Se mantuvieron sesiones ya realizadas o ajustadas en: ${collisions.map((item) => `${item.date} ${item.timeBlock}`).join(', ')}`)
+    warnings.push(formatCreateWeekCollisionWarning(collisions, preserveManualSessions))
   }
   const collisionSet = new Set(collisions.map((collision) => `${collision.date}|${collision.timeBlock}`))
 
@@ -72,6 +85,7 @@ export async function applyCreateWeek({
       date: session.date,
       timeBlock: session.timeBlock,
       source: 'coach',
+      ...planProvenance,
       type: session.sessionType,
       subtype: session.subtype,
       title: session.title,
@@ -132,6 +146,7 @@ export async function applyCreateWeek({
 
 async function findCreateWeekCollisions(
   sessions: CreateWeekSessionInput,
+  preserveManualSessions: boolean,
 ): Promise<Array<{ date: string; timeBlock: string }>> {
   const targetDates = [...new Set(sessions.map((session) => session.date))]
   const existingSessions = filterRowsToActiveScope(
@@ -143,7 +158,10 @@ async function findCreateWeekCollisions(
       existingSessions.some((existing) => (
         existing.date === session.date
         && existing.timeBlock === session.timeBlock
-        && existing.status !== 'planned'
+        && (
+          existing.status !== 'planned'
+          || (preserveManualSessions && existing.source === 'manual')
+        )
       )),
     )
     .map((session) => ({ date: session.date, timeBlock: session.timeBlock }))
@@ -153,6 +171,7 @@ async function replacePlannedSessionsForCreateWeek(
   sessions: CreateWeekSessionInput,
   replacementCutoffAt?: number,
   replacementRange?: { startDate: string; endDate: string },
+  preserveManualSessions = false,
 ): Promise<{ replacedSessions: Session[]; warnings: string[] }> {
   const warnings: string[] = []
   const weekStarts = [...new Set(sessions.map((session) => toISO(getWeekStart(fromISO(session.date)))))]
@@ -172,9 +191,16 @@ async function replacePlannedSessionsForCreateWeek(
       return replacementDates.has(session.date)
     }
     const plannedSessions = existingWeekSessions.filter(
-      (session) => session.status === 'planned' && shouldReplaceSession(session),
+      (session) => (
+        session.status === 'planned'
+        && shouldReplaceSession(session)
+        && (!preserveManualSessions || session.source !== 'manual')
+      ),
     )
-    const preservedSessions = existingWeekSessions.filter((session) => session.status !== 'planned')
+    const preservedSessions = existingWeekSessions.filter((session) => (
+      session.status !== 'planned'
+      || (preserveManualSessions && session.source === 'manual')
+    ))
 
     if (plannedSessions.length > 0) {
       const concurrentSession = replacementCutoffAt != null
@@ -194,7 +220,10 @@ async function replacePlannedSessionsForCreateWeek(
 
     const preservedOnReplacementDates = preservedSessions.filter(shouldReplaceSession)
     if (preservedOnReplacementDates.length > 0) {
-      warnings.push(`Se conservaron ${preservedOnReplacementDates.length} sesiones con historial en la misma semana para no borrar adherencia ya registrada.`)
+      warnings.push(formatCreateWeekPreservedCountWarning(
+        preservedOnReplacementDates.length,
+        preserveManualSessions,
+      ))
     }
   }
 

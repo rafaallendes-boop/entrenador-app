@@ -61,4 +61,54 @@ describe('applyCreateWeek no borra planned sessions de otro atleta', () => {
     expect(vi.mocked(syncService.deleteSession)).not.toHaveBeenCalledWith('self-planned')
     expect(storeAdapter.addSession).toHaveBeenCalled() // la semana nueva sí se creó
   })
+
+  it('describe solo historial en la ruta default que no preserva manuales planned', async () => {
+    setSelfAthleteId('ath_self')
+    setActiveAthleteId(null)
+    await db.sessions.put({
+      id: 'completed-slot',
+      athleteId: 'ath_self',
+      date: '2026-07-06',
+      timeBlock: 'AM',
+      type: 'squash',
+      status: 'completed',
+      durationMin: 60,
+      updatedAt: 1,
+    } as never)
+
+    const result = await applyCreateWeek({
+      sessions: [{ date: '2026-07-06', sessionType: 'squash', title: 'Drills', timeBlock: 'AM', durationMin: 45 }] as never,
+      athleteProfile: null,
+      store: storeAdapter as never,
+    })
+
+    expect(result.warnings).toContain('Se mantuvieron sesiones con historial en: 2026-07-06 AM')
+    expect(result.warnings.join(' ')).not.toContain('manuales o con historial')
+  })
+
+  it('describe manuales o historial cuando la ruta preserva manuales planned', async () => {
+    setSelfAthleteId('ath_self')
+    setActiveAthleteId(null)
+    await db.sessions.put({
+      id: 'manual-slot',
+      athleteId: 'ath_self',
+      date: '2026-07-06',
+      timeBlock: 'AM',
+      source: 'manual',
+      type: 'squash',
+      status: 'planned',
+      durationMin: 60,
+      updatedAt: 1,
+    } as never)
+
+    const result = await applyCreateWeek({
+      sessions: [{ date: '2026-07-06', sessionType: 'squash', title: 'Drills', timeBlock: 'AM', durationMin: 45 }] as never,
+      athleteProfile: null,
+      store: storeAdapter as never,
+      preserveManualSessions: true,
+    })
+
+    expect(result.warnings).toContain('Se mantuvieron sesiones manuales o con historial en: 2026-07-06 AM')
+    expect(await db.sessions.get('manual-slot')).toBeDefined()
+  })
 })

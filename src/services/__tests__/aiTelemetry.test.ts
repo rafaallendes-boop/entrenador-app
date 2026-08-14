@@ -67,6 +67,7 @@ import {
   reservePlanBuilderWeekUsage,
   syncPlanBuilderWeekUsageFromWeeks,
 } from '../planBuilder/rateLimit'
+import { getPlanBuilderDailyQuotaNotice } from '../planBuilder/consumerError'
 
 function makeRemoteWeek(input: {
   planId?: string
@@ -227,9 +228,20 @@ describe('aiTelemetry', () => {
     }
 
     await expect(assertPlanBuilderWeekRateLimit([0], now)).resolves.toBeUndefined()
-    await expect(assertPlanBuilderWeekRateLimit([0, 1], now)).rejects.toMatchObject({
-      code: 'rate_limit',
-    })
+    let quotaError: unknown
+    try {
+      await assertPlanBuilderWeekRateLimit([0, 1], now)
+    } catch (error) {
+      quotaError = error
+    }
+
+    expect(quotaError).toMatchObject({ code: 'rate_limit' })
+    const expectedNotice =
+      `No tienes cuota diaria suficiente para crear este plan: necesita 2 semanas y hoy te quedan 1 de ${DEFAULT_DAILY_AI_LIMITS.plan_builder_week}. Vuelve mañana o reduce la cantidad de semanas.`
+    expect(getPlanBuilderDailyQuotaNotice(quotaError)).toBe(expectedNotice)
+    // El store persiste `error.message`, no la instancia tipada. Esta aserción
+    // enlaza el formatter de rateLimit con el decoder que consume producción.
+    expect(getPlanBuilderDailyQuotaNotice((quotaError as Error).message)).toBe(expectedNotice)
   })
 
   it('replaces an async reservation with the real remote week trace when polling syncs results', async () => {

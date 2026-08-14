@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { AlertCircle, Download, Plus, FileUp, Sparkles, MessageSquareText } from 'lucide-react'
 import { useTrainingStore } from '../store/useTrainingStore'
 import { useCoachActionsStore } from '../store/useCoachActionsStore'
@@ -28,12 +28,17 @@ import {
 } from '../services/weeklyLaunchIntent'
 import { isWeeklyReviewWindowOpen } from '../services/weeklyReviewWindow'
 import { hasFreshWeeklyCoachNote } from '../services/weeklyCoachNote'
+import { consumePlanCommitNoticeState, readPlanCommitNotice } from '../services/planBuilder/commitNotice'
 
 const DailyCheckInCard = lazy(() => import('../components/dashboard/DailyCheckInCard'))
 const WeeklyActionCenterCard = lazy(() => import('../components/week/WeeklyActionCenterCard'))
 const ProposalDrawer = lazy(() => import('../components/chat/ProposalDrawer'))
 
 export default function WeeklyView() {
+  const location = useLocation()
+  const navigate = useNavigate()
+  const initialLocationStateRef = useRef(location.state)
+  const [planCommitNotice] = useState(() => readPlanCommitNotice(initialLocationStateRef.current))
   const { sessions, currentWeekSummary, dayLogs, isLoading, loadedWeekStart, requestedWeekStart, loadWeek, generateCoachNote, deleteSession } = useTrainingStore()
   const { addProposal, acceptProposal, rejectProposal } = useCoachActionsStore()
   const { athleteProfile } = useCoachMemoryStore()
@@ -54,7 +59,13 @@ export default function WeeklyView() {
     void loadWeek(currentWeekStart)
   }, [currentWeekStart, loadWeek, requestedWeekStart])
 
-  const navigate = useNavigate()
+  useEffect(() => {
+    if (!planCommitNotice) return
+    navigate(location.pathname, {
+      replace: true,
+      state: consumePlanCommitNoticeState(initialLocationStateRef.current),
+    })
+  }, [location.pathname, navigate, planCommitNotice])
   const weekDays = getWeekDays(fromISO(currentWeekStart))
   const today = todayISO()
   // El resumen semanal solo se genera para la semana en curso (el store lo exige).
@@ -282,6 +293,15 @@ export default function WeeklyView() {
           )}
         </div>
       </div>
+
+      {planCommitNotice && (
+        <div
+          role="status"
+          className="mx-4 mt-3 rounded-xl border border-amber-400/20 bg-amber-400/10 px-3 py-2.5 text-xs text-amber-200 md:mx-6"
+        >
+          Plan activado. Se retiraron {planCommitNotice.removedSessionCount} sesiones futuras planificadas del ciclo anterior.
+        </div>
+      )}
 
       <div className="mx-4 mt-4 rounded-[1.6rem] border border-surface-soft/70 bg-[linear-gradient(145deg,rgba(26,26,26,0.96),rgba(14,14,14,0.98))] shadow-panel md:mx-6">
         <WeekStrip showNav={true} />

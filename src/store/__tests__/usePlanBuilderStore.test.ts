@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AthleteProfile, PlanWizardConfig } from '../../types'
 import type { PlanGenerationJob, TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
+import { PlanBuilderDailyQuotaError } from '../../services/planBuilder/dailyQuotaError'
 import { PlanEnqueueRejectedError } from '../../services/planBuilder/triggerBackgroundGeneration'
 
 interface GeneratePlanWeeksMockInput {
@@ -486,7 +487,9 @@ describe('usePlanBuilderStore', () => {
     const profile = await createShell()
     mocks.supabase = { auth: {} }
     mocks.authUser = { id: 'user-1' }
-    mocks.assertPlanBuilderWeekRateLimit.mockRejectedValueOnce(new Error('Alcanzaste el límite diario para crear planes'))
+    mocks.assertPlanBuilderWeekRateLimit.mockRejectedValueOnce(
+      new PlanBuilderDailyQuotaError({ requested: 2, remaining: 0, limit: 12 }),
+    )
 
     await usePlanBuilderStore.getState().runGeneration(profile)
 

@@ -369,6 +369,9 @@ export interface SessionBase {
   weekStartDate?: string   // ISO "YYYY-MM-DD", Monday — indexed in Dexie for efficient week queries
   timeBlock: TimeBlock
   source?: SessionSource
+  /** Plan Builder provenance. Persisted in the session JSON payload (no DB index required). */
+  planId?: string
+  planWeekId?: string
   status: SessionStatus
   title: string
   objective?: string

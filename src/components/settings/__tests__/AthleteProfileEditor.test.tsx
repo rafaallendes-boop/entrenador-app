@@ -42,6 +42,7 @@ describe('AthleteProfileEditor weekly session target', () => {
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
       scheduleProfile: expect.objectContaining({ sessionsPerWeek: 5 }),
     }))
+    expect(screen.getByText('✓ Guardado en este dispositivo')).toBeTruthy()
   })
 
   it('clamps the target to the capacity the days and doubles actually leave open', async () => {
