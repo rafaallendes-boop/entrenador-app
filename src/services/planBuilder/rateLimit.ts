@@ -3,6 +3,7 @@ import type { AIProviderName, AITechnicalResult } from '../../types'
 import type { TrainingPlanWeek } from '../../types/planBuilder'
 import { DEFAULT_DAILY_AI_LIMITS, getDailyAIUsage, upsertAIRequestLog } from '../ai/aiTelemetry'
 import { AIProviderError } from '../ai/types'
+import { PlanBuilderDailyQuotaError } from './dailyQuotaError'
 
 const REQUEST_CLASS = 'plan_builder_week' as const
 const SURFACE = 'plan_builder' as const
@@ -31,12 +32,7 @@ export async function assertPlanBuilderWeekRateLimit(
     const used = usage[REQUEST_CLASS] ?? 0
     const remaining = Math.max(0, limit - used)
     if (requested > remaining) {
-      throw new AIProviderError(
-        'gemini',
-        'rate_limit',
-        `Alcanzaste el límite diario para crear planes: necesitas ${requested} semana(s) y quedan ${remaining}/${limit}. Vuelve mañana o reduce las semanas a ajustar.`,
-        false,
-      )
+      throw new PlanBuilderDailyQuotaError({ requested, remaining, limit })
     }
   } catch (error) {
     if (error instanceof AIProviderError) throw error

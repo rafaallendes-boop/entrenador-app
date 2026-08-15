@@ -2,20 +2,27 @@ import { addDays } from 'date-fns'
 import type { Session, WeekSummary } from '../../types'
 import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import { db } from '../../db/db'
-import { getWeekSummary } from '../../db/queries'
+import { getWeekSummary, recalculateWeekSummary } from '../../db/queries'
 import { useCoachMemoryStore } from '../../store/useCoachMemoryStore'
 import * as syncService from '../syncService'
 import { useTrainingStore } from '../../store/useTrainingStore'
-import { fromISO, toISO } from '../../utils/date'
+import { fromISO, getWeekStart, toISO } from '../../utils/date'
 import { applyCreateWeek } from '../planning/applyCreateWeek'
 import { filterRowsToActiveScope } from '../athlete/activeScopeFilter'
 import { validatePlan } from './validator'
 import { reviewPlanQuality } from './qualityReview'
+import {
+  getPlanLifecycleCutoff,
+  selectActivePlansToSupersede,
+  selectSupersededPlanSessionsForCleanup,
+  stampLifecyclePlanAthlete,
+} from './planLifecycle'
 
 export interface CommitPlanResult {
   errors: string[]
   warnings: string[]
   acceptedWeeks: number[]
+  lifecycleRemovedSessionCount: number
 }
 
 interface WeekCommitSnapshot {
@@ -25,8 +32,102 @@ interface WeekCommitSnapshot {
   summary: WeekSummary | null
 }
 
+interface PlanLifecycleCommit {
+  supersededPlans: TrainingPlan[]
+  removedSessions: Session[]
+}
+
 function getWeekEndDate(weekStartDate: string): string {
   return toISO(addDays(fromISO(weekStartDate), 6))
+}
+
+function getSessionWeekStart(session: Session): string {
+  return session.weekStartDate ?? toISO(getWeekStart(fromISO(session.date)))
+}
+
+async function activatePlanLifecycle(
+  nextPlan: TrainingPlan,
+  nextWeeks: TrainingPlanWeek[],
+): Promise<PlanLifecycleCommit> {
+  const futureCutoff = getPlanLifecycleCutoff(nextPlan)
+
+  return db.transaction(
+    'rw',
+    db.trainingPlans,
+    db.trainingPlanWeeks,
+    db.sessions,
+    async () => {
+      const previousActivePlans = selectActivePlansToSupersede(
+        await db.trainingPlans.toArray(),
+        nextPlan,
+      )
+      const supersededPlans = previousActivePlans.map((candidate) => ({
+        ...stampLifecyclePlanAthlete(candidate, nextPlan),
+        status: 'superseded' as const,
+        updatedAt: Math.max(nextPlan.updatedAt, candidate.updatedAt + 1),
+      }))
+      const supersededPlanIds = new Set(supersededPlans.map((candidate) => candidate.id))
+      const removedSessions = supersededPlanIds.size === 0
+        ? []
+        : selectSupersededPlanSessionsForCleanup(
+            await db.sessions.where('date').aboveOrEqual(futureCutoff).toArray(),
+            supersededPlanIds,
+            futureCutoff,
+          )
+
+      await db.trainingPlans.bulkPut([...supersededPlans, nextPlan])
+      await db.trainingPlanWeeks.bulkPut(nextWeeks)
+      if (removedSessions.length > 0) {
+        await db.sessions.bulkDelete(removedSessions.map((session) => session.id))
+      }
+
+      return { supersededPlans, removedSessions }
+    },
+  )
+}
+
+async function syncPlanLifecycle(
+  nextPlan: TrainingPlan,
+  nextWeeks: TrainingPlanWeek[],
+  lifecycle: PlanLifecycleCommit,
+): Promise<syncService.SyncPushOutcome> {
+  // The new parent is the durable publication barrier: online it lands first;
+  // offline its queue op lands first. Children and convergent cleanup can then
+  // run independently without one rejected mutation suppressing the rest.
+  // Do not supersede the remote parent if publishing/queueing its replacement
+  // fails: that would briefly (or permanently) leave the athlete with no
+  // active remote plan. `upsertRow` resolves after the write is durable or its
+  // offline operation is queued.
+  const parentOutcome = await syncService.pushTrainingPlan(nextPlan)
+  if (parentOutcome === 'failed' || parentOutcome === 'no_remote') {
+    return parentOutcome
+  }
+  await Promise.allSettled([
+    syncService.pushTrainingPlanWeeks(
+      nextPlan,
+      nextWeeks.filter((week) => week.status === 'accepted'),
+    ),
+    ...lifecycle.supersededPlans.map((previousPlan) => (
+      syncService.pushTrainingPlan(previousPlan)
+    )),
+    ...lifecycle.removedSessions.map((session) => (
+      syncService.deleteSession(session.id)
+    )),
+  ])
+  return parentOutcome
+}
+
+async function refreshRemovedSessionWeeks(
+  sessions: Session[],
+): Promise<void> {
+  if (sessions.length === 0) return
+  const affectedWeekStarts = [...new Set(sessions.map(getSessionWeekStart))]
+  await Promise.all(affectedWeekStarts.map((weekStart) => recalculateWeekSummary(weekStart)))
+  const currentStore = useTrainingStore.getState()
+  if (currentStore.loadedWeekStart && affectedWeekStarts.includes(currentStore.loadedWeekStart)) {
+    await currentStore.loadWeek(currentStore.loadedWeekStart)
+  }
+  await useTrainingStore.getState().loadAllSummaries()
 }
 
 async function captureWeekCommitSnapshot(week: TrainingPlanWeek): Promise<WeekCommitSnapshot> {
@@ -108,6 +209,7 @@ export async function commitPlan(
   const errors: string[] = []
   const warnings: string[] = []
   const acceptedWeeks: number[] = []
+  let lifecycleRemovedSessionCount = 0
   const trainingStore = useTrainingStore.getState()
   const athleteProfile = useCoachMemoryStore.getState().athleteProfile
   const orderedWeeks = [...weeks].sort((a, b) => a.weekIndex - b.weekIndex)
@@ -116,7 +218,7 @@ export async function commitPlan(
     .filter((issue): issue is string => issue != null)
 
   if (readinessErrors.length > 0) {
-    return { errors: readinessErrors, warnings, acceptedWeeks }
+    return { errors: readinessErrors, warnings, acceptedWeeks, lifecycleRemovedSessionCount }
   }
 
   const validationIssues = validatePlan({ plan, weeks: orderedWeeks })
@@ -126,7 +228,7 @@ export async function commitPlan(
   warnings.push(...validationIssues.filter((issue) => issue.severity !== 'error').map((issue) => issue.message))
 
   if (validationErrors.length > 0) {
-    return { errors: validationErrors, warnings, acceptedWeeks }
+    return { errors: validationErrors, warnings, acceptedWeeks, lifecycleRemovedSessionCount }
   }
 
   const qualityContext = { profile: athleteProfile ?? undefined }
@@ -142,6 +244,7 @@ export async function commitPlan(
       ],
       warnings,
       acceptedWeeks,
+      lifecycleRemovedSessionCount,
     }
   }
   if (preCommitQualityReview.grade === 'needs_review') {
@@ -163,6 +266,11 @@ export async function commitPlan(
           startDate: week.weekStartDate,
           endDate: getWeekEndDate(week.weekStartDate),
         },
+        planProvenance: {
+          planId: plan.id,
+          planWeekId: week.id,
+        },
+        preserveManualSessions: true,
       })
       warnings.push(...result.warnings)
       acceptedWeeks.push(week.weekIndex)
@@ -211,13 +319,9 @@ export async function commitPlan(
           qualityReview,
         },
     }
+    let lifecycle: PlanLifecycleCommit
     try {
-      await db.transaction('rw', db.trainingPlans, db.trainingPlanWeeks, async () => {
-        await db.trainingPlans.put(nextPlan)
-        await Promise.all(
-          nextWeeks.map((w) => db.trainingPlanWeeks.put(w)),
-        )
-      })
+      lifecycle = await activatePlanLifecycle(nextPlan, nextWeeks)
     } catch (error) {
       if (appliedSnapshots.length > 0) {
         await restoreWeekCommitSnapshots(appliedSnapshots)
@@ -226,11 +330,18 @@ export async function commitPlan(
       }
       const msg = error instanceof Error ? error.message : String(error)
       errors.push(`No se pudo activar el plan: ${msg}`)
-      return { errors, warnings, acceptedWeeks }
+      return { errors, warnings, acceptedWeeks, lifecycleRemovedSessionCount }
     }
-    void syncService.pushTrainingPlan(nextPlan)
-    void syncService.pushTrainingPlanWeeks(nextPlan, nextWeeks.filter((week) => week.status === 'accepted'))
+    lifecycleRemovedSessionCount = lifecycle.removedSessions.length
+    if (lifecycle.removedSessions.length > 0) {
+      warnings.push(`Se retiraron ${lifecycle.removedSessions.length} sesiones futuras planificadas de ciclos reemplazados.`)
+      await refreshRemovedSessionWeeks(lifecycle.removedSessions).catch(() => undefined)
+    }
+    const syncOutcome = await syncPlanLifecycle(nextPlan, nextWeeks, lifecycle)
+    if (syncOutcome === 'failed') {
+      warnings.push('El plan quedó activo en este dispositivo, pero no se pudo publicar. No se modificó el ciclo remoto anterior.')
+    }
   }
 
-  return { errors, warnings, acceptedWeeks }
+  return { errors, warnings, acceptedWeeks, lifecycleRemovedSessionCount }
 }

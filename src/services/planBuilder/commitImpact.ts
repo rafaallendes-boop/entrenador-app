@@ -5,6 +5,11 @@ import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import { fromISO, toISO } from '../../utils/date'
 import { filterCoachSessionsToAllowedSports } from '../planningConstraints'
 import { filterRowsToActiveScope } from '../athlete/activeScopeFilter'
+import {
+  getPlanLifecycleCutoff,
+  selectActivePlansToSupersede,
+  selectSupersededPlanSessionsForCleanup,
+} from './planLifecycle'
 
 export interface PlanCommitWeekImpact {
   weekIndex: number
@@ -29,7 +34,9 @@ export interface PlanCommitImpact {
     preservedHistorySessions: number
     blockedByHistorySessions: number
     untouchedPlannedSessions: number
+    lifecycleRemovedSessions: number
   }
+  lifecycleRemovedSessions: Session[]
   hasExistingPlannedSessions: boolean
   hasHistoryConflicts: boolean
   hasFilteredSessions: boolean
@@ -48,6 +55,7 @@ function emptyTotals(): PlanCommitImpact['totals'] {
     preservedHistorySessions: 0,
     blockedByHistorySessions: 0,
     untouchedPlannedSessions: 0,
+    lifecycleRemovedSessions: 0,
   }
 }
 
@@ -62,7 +70,7 @@ function addToTotals(totals: PlanCommitImpact['totals'], week: PlanCommitWeekImp
 }
 
 export async function analyzePlanCommitImpact(
-  _plan: TrainingPlan,
+  plan: TrainingPlan,
   weeks: TrainingPlanWeek[],
   athleteProfile: AthleteProfile | null,
 ): Promise<PlanCommitImpact> {
@@ -77,7 +85,6 @@ export async function analyzePlanCommitImpact(
     const allowedSessions = filterCoachSessionsToAllowedSports(generatedSessions, athleteProfile)
     const allowedSet = new Set(allowedSessions)
     const filteredSessions = generatedSessions.filter((session) => !allowedSet.has(session))
-    const replacementDates = new Set(allowedSessions.map((session) => session.date))
     const existingWeekSessions = filterRowsToActiveScope(
       await db.sessions
         .where('date')
@@ -85,14 +92,23 @@ export async function analyzePlanCommitImpact(
         .toArray(),
     )
 
-    const replacedPlannedSessions = existingWeekSessions.filter(
-      (session) => session.status === 'planned' && replacementDates.has(session.date),
-    )
-    const preservedHistorySessions = existingWeekSessions.filter(
-      (session) => session.status !== 'planned' && replacementDates.has(session.date),
-    )
+    const appliesReplacement = allowedSessions.length > 0
+    const replacedPlannedSessions = appliesReplacement ? existingWeekSessions.filter(
+      (session) => (
+        session.status === 'planned'
+        && session.source !== 'manual'
+      ),
+    ) : []
+    const preservedHistorySessions = appliesReplacement ? existingWeekSessions.filter(
+      (session) => (
+        (session.status !== 'planned' || session.source === 'manual')
+      ),
+    ) : []
     const untouchedPlannedSessions = existingWeekSessions.filter(
-      (session) => session.status === 'planned' && !replacementDates.has(session.date),
+      (session) => (
+        session.status === 'planned'
+        && !appliesReplacement
+      ),
     )
     const blockedByHistorySessions = allowedSessions
       .map((proposed) => {
@@ -121,10 +137,30 @@ export async function analyzePlanCommitImpact(
     addToTotals(totals, weekImpact)
   }
 
+  const supersededPlanIds = new Set(
+    selectActivePlansToSupersede(await db.trainingPlans.toArray(), plan)
+      .map((candidate) => candidate.id),
+  )
+  const replacementIds = new Set(
+    impactWeeks.flatMap((week) => week.replacedPlannedSessions.map((session) => session.id)),
+  )
+  const lifecycleCutoff = getPlanLifecycleCutoff(plan)
+  const lifecycleRemovedSessions = supersededPlanIds.size === 0
+    ? []
+    : selectSupersededPlanSessionsForCleanup(
+        await db.sessions.where('date').aboveOrEqual(lifecycleCutoff).toArray(),
+        supersededPlanIds,
+        lifecycleCutoff,
+      ).filter((session) => !replacementIds.has(session.id))
+  totals.lifecycleRemovedSessions = lifecycleRemovedSessions.length
+
   return {
     weeks: impactWeeks,
     totals,
-    hasExistingPlannedSessions: totals.replacedPlannedSessions > 0 || totals.untouchedPlannedSessions > 0,
+    lifecycleRemovedSessions,
+    hasExistingPlannedSessions: totals.replacedPlannedSessions > 0
+      || totals.untouchedPlannedSessions > 0
+      || totals.lifecycleRemovedSessions > 0,
     hasHistoryConflicts: totals.preservedHistorySessions > 0 || totals.blockedByHistorySessions > 0,
     hasFilteredSessions: totals.filteredSessions > 0,
   }

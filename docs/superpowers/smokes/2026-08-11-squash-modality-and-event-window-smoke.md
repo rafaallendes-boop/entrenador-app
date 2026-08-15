@@ -475,14 +475,17 @@ proveedor para forzar fallback: el fallback determinista está cubierto en Gate
   ambas existe exactamente una sesión squash match/competitive en el día clave;
   no aparece otra competencia ni match-play de entrenamiento.
 
-- [ ] **B4.2.** Cada semana `race` tiene como máximo dos apoyos además del ancla:
+- [ ] **B4.2.** Dentro de la ventana del evento hay como máximo dos apoyos
+  además del ancla. Las sesiones previas a la ventana, aunque estén en la misma
+  semana `race`, se auditan con las reglas de taper y no entran en este conteo:
 
   - activación `shadows/control`: 10–20 min, RPE 2–4;
   - toque `technical`: 20–30 min, RPE 3–4 y requiere partner;
   - movilidad/recovery: 15–30 min, RPE 1–3.
 
-- [ ] **B4.3.** No hay fuerza, running, cycling ni nutrition en las semanas
-  `race`; no hay una segunda sesión en el día clave.
+- [ ] **B4.3.** No hay fuerza, running, cycling ni nutrition dentro de la
+  ventana del evento; antes de la ventana solo se admite carga compatible con
+  taper. No hay una segunda sesión en el día clave.
 
 - [ ] **B4.4.** Ejecutar este helper de solo lectura. Todas las columnas de
   problema deben ser `0` y `anchorCount` debe ser `1` global:
@@ -524,6 +527,8 @@ function smokeSupportRule(session) {
 const bRaceWeeks = bWeeks.filter((week) => week.phase === 'race')
 const bAnchorDate = bPlan.macroSnapshot?.goalEventKeyDate
   ?? bPlan.macroSnapshot?.goalEventDate
+const bEventStart = bPlan.macroSnapshot?.goalEventDate
+const bEventEnd = bPlan.macroSnapshot?.goalEventEndDate ?? bEventStart
 const bAllRaceSessions = bRaceWeeks.flatMap((week) => week.sessions)
 
 console.log({
@@ -533,12 +538,16 @@ console.log({
 })
 
 console.table(bRaceWeeks.map((week) => {
-  const anchors = week.sessions.filter((session) =>
+  const windowSessions = week.sessions.filter((session) =>
+    session.date >= bEventStart && session.date <= bEventEnd)
+  const anchors = windowSessions.filter((session) =>
     session.date === bAnchorDate && smokeIsCompetition(session))
-  const supports = week.sessions.filter((session) => !anchors.includes(session))
+  const supports = windowSessions.filter((session) => !anchors.includes(session))
   return {
     week: week.weekIndex + 1,
     sessions: week.sessions.length,
+    preEventSessions: week.sessions.filter((session) => session.date < bEventStart).length,
+    windowSessions: windowSessions.length,
     anchors: anchors.length,
     supports: supports.length,
     extraMatches: supports.filter(smokeIsCompetition).length,
@@ -564,9 +573,10 @@ console.table(bRaceWeeks.map((week) => {
 ## Caso B5 — Crear semana, chat y resúmenes con ventana completa
 
 - [ ] **B5.1. Crear semana.** Pedir una semana para la semana que contiene el
-  día clave. Antes de aplicar, la propuesta tiene máximo dos sesiones totales:
-  una única ancla el día clave y como máximo un apoyo compatible. No recrea una
-  competencia en la otra semana `race`.
+  día clave. Antes de aplicar, dentro de la ventana aparece una única ancla el
+  día clave y como máximo un apoyo compatible. Puede haber sesiones previas
+  fuera de la ventana si respetan taper. No recrea una competencia en la otra
+  semana `race`.
 
 - [ ] **B5.2. Costo/retry.** En Beta Quality o la traza de Network, la solicitud
   anterior termina en un intento salvo un error real del proveedor. No hay un

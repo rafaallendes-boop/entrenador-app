@@ -10,12 +10,15 @@ import { usePlanBuilderStore } from '../store/usePlanBuilderStore'
 import { supabase } from '../services/auth'
 import { getPrimaryGoalEvent } from '../services/macroPlan'
 import { buildDraftSignature } from '../services/planBuilder/draftSignature'
+import { getPlanBuilderDailyQuotaNotice } from '../services/planBuilder/consumerError'
 import {
   formatGoalEventKeyDate,
   formatGoalEventWindow,
   goalEventWindowFromMacroPlan,
 } from '../services/goalEventWindow'
 import { analyzePlanCommitImpact } from '../services/planBuilder/commitImpact'
+import type { WeekNavigationState } from '../services/planBuilder/commitNotice'
+import { formatPlanBuilderCollisionBanner } from '../services/planning/createWeekCollisionCopy'
 import { shouldDeleteEmptyShellDraft, shouldLoadMatchingDraftPlan } from '../services/planBuilder/draftAutoload'
 import { rowToTrainingPlan, rowToTrainingPlanWeek } from '../services/planBuilder/planRows'
 import { buildPlanQualityRepairInstructions, reviewPlanQuality } from '../services/planBuilder/qualityReview'
@@ -745,8 +748,12 @@ export default function PlanBuilderV2Page() {
   // Consumer-facing readiness: the technical recovery controls are dev-only, so the
   // clean card must reflect reality instead of claiming success or implying endless progress.
   const isActivelyGenerating = status === 'generating' || plan?.generationState === 'generating'
+  const consumerDailyQuotaNotice = showPlanQualityDebug
+    ? null
+    : getPlanBuilderDailyQuotaNotice(lastError)
   const customerStatusMessage = (() => {
     if (!lastError || showPlanQualityDebug) return null
+    if (consumerDailyQuotaNotice) return consumerDailyQuotaNotice
     if (isActivelyGenerating) return 'Seguimos preparando tu plan. Si tarda más de lo normal, puedes volver a intentarlo.'
     if (isFailedState || status === 'error') return 'No pudimos completar este intento. Tus datos siguen guardados.'
     if (plan?.generationState === 'partial') return 'Algunas semanas quedaron pendientes. Puedes intentar completar el plan.'
@@ -896,7 +903,15 @@ export default function PlanBuilderV2Page() {
     const result = await acceptPlan()
     if (result.errors.length === 0) {
       setIsImpactOpen(false)
-      navigate(ROUTES.WEEK)
+      const state: WeekNavigationState | undefined = result.lifecycleRemovedSessionCount > 0
+        ? {
+            planCommitNotice: {
+              kind: 'lifecycle_sessions_removed',
+              removedSessionCount: result.lifecycleRemovedSessionCount,
+            },
+          }
+        : undefined
+      navigate(ROUTES.WEEK, { state })
     } else {
       setImpactError(result.errors.join(' · '))
     }
@@ -1099,7 +1114,8 @@ export default function PlanBuilderV2Page() {
               <div>
                 <h2 className="font-display text-base font-bold text-ink">No pudimos preparar tu plan ahora</h2>
                 <p className="mt-1 text-sm text-ink-muted">
-                  Inténtalo de nuevo en un momento o descarta este intento para volver a empezar.
+                  {consumerDailyQuotaNotice
+                    ?? 'Inténtalo de nuevo en un momento o descarta este intento para volver a empezar.'}
                 </p>
                 {showPlanQualityDebug && lastError && <p className="mt-2 text-xs text-red-400">{lastError}</p>}
               </div>
@@ -1115,7 +1131,8 @@ export default function PlanBuilderV2Page() {
               <div>
                 <h2 className="font-display text-base font-bold text-ink">No pudimos completar la operación</h2>
                 <p className="mt-1 text-sm text-ink-muted">
-                  Tus datos siguen guardados. Inténtalo de nuevo en un momento.
+                  {consumerDailyQuotaNotice
+                    ?? 'Tus datos siguen guardados. Inténtalo de nuevo en un momento.'}
                 </p>
                 {showPlanQualityDebug && lastError && <p className="mt-2 text-xs text-red-400">{lastError}</p>}
               </div>
@@ -1134,7 +1151,8 @@ export default function PlanBuilderV2Page() {
                 <div>
                   <h2 className="font-display text-sm font-bold text-ink">La preparación quedó incompleta</h2>
                   <p className="mt-1 text-xs text-ink-muted">
-                    Las semanas que ya están listas se conservaron. Puedes descartar este intento y volver a empezar en un momento.
+                    {consumerDailyQuotaNotice
+                      ?? 'Las semanas que ya están listas se conservaron. Puedes descartar este intento y volver a empezar en un momento.'}
                   </p>
                   {showPlanQualityDebug && lastError && <p className="mt-1.5 text-xs text-red-400">{lastError}</p>}
                 </div>
@@ -1679,12 +1697,13 @@ export default function PlanBuilderV2Page() {
 	              </div>
 
 	              <div className="max-h-[58vh] overflow-y-auto px-4 py-4 space-y-4">
-	                <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+	                <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
 	                  {[
 	                    ['Crea', commitImpact.totals.creatableSessions],
 	                    ['Reemplaza', commitImpact.totals.replacedPlannedSessions],
 	                    ['Conserva', commitImpact.totals.preservedHistorySessions],
 	                    ['No toca', commitImpact.totals.untouchedPlannedSessions],
+	                    ['Retira ciclo', commitImpact.totals.lifecycleRemovedSessions],
 	                  ].map(([label, value]) => (
 	                    <div key={label} className="rounded-xl px-3 py-2.5" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
 	                      <p className="font-mono text-[9px] font-bold uppercase tracking-[0.16em] text-ink-faint">{label}</p>
@@ -1697,11 +1716,24 @@ export default function PlanBuilderV2Page() {
 	                  <div className="rounded-xl px-3 py-2.5 text-xs text-amber-300"
 	                    style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.18)' }}>
 	                    {commitImpact.hasHistoryConflicts && (
-	                      <p>Hay sesiones con historial en fechas del plan. Se conservarán y no se sobrescribirá adherencia registrada.</p>
+	                      <p>{formatPlanBuilderCollisionBanner(true)}</p>
 	                    )}
 	                    {commitImpact.hasFilteredSessions && (
 	                      <p>Algunas sesiones serán filtradas porque no pertenecen a deportes permitidos para esta planificación.</p>
 	                    )}
+	                  </div>
+	                )}
+
+	                {commitImpact.lifecycleRemovedSessions.length > 0 && (
+	                  <div className="rounded-xl px-3 py-2.5 text-xs text-amber-300"
+	                    style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.18)' }}>
+	                    <p>Al activar este ciclo se retirarán además {commitImpact.lifecycleRemovedSessions.length} sesión(es) futuras planificadas de ciclos reemplazados.</p>
+	                    <ul className="mt-2 space-y-1 text-ink-muted">
+	                      {commitImpact.lifecycleRemovedSessions.slice(0, 6).map((session) => (
+	                        <li key={session.id}>{storedSessionLabel(session)}</li>
+	                      ))}
+	                      {commitImpact.lifecycleRemovedSessions.length > 6 && <li>+{commitImpact.lifecycleRemovedSessions.length - 6} más</li>}
+	                    </ul>
 	                  </div>
 	                )}
 

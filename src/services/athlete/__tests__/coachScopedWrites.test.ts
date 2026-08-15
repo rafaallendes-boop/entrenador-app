@@ -29,8 +29,9 @@ vi.mock('../coachPlanningHydration', () => ({
 }))
 
 import { db } from '../../../db/db'
+import { useTrainingStore } from '../../../store/useTrainingStore'
 import type { Session } from '../../../types'
-import { setSelfAthleteId } from '../activeAthlete'
+import { setActiveAthleteId, setSelfAthleteId } from '../activeAthlete'
 import type { CoachSessionDraft } from '../coachSessionSerializer'
 import * as hydration from '../coachPlanningHydration'
 import {
@@ -91,6 +92,16 @@ describe('coach scoped writes', () => {
     hydrationMarks.clear()
     leaseMock.veto = false
     setSelfAthleteId(self)
+    setActiveAthleteId(null)
+    useTrainingStore.setState({
+      sessions: [],
+      dayLogs: {},
+      currentWeekSummary: null,
+      allWeekSummaries: [],
+      isLoading: false,
+      loadedWeekStart: null,
+      requestedWeekStart: null,
+    })
     db.close()
     await db.delete()
     await db.open()
@@ -111,6 +122,7 @@ describe('coach scoped writes', () => {
   })
 
   afterEach(() => {
+    setActiveAthleteId(null)
     setSelfAthleteId(null)
     db.close()
   })
@@ -182,6 +194,44 @@ describe('coach scoped writes', () => {
     })
     expect(updated.objective).toBeUndefined()
     expect(updated.updatedAt).toBeGreaterThan(now)
+  })
+
+  it('refleja inmediatamente en /week una edición hecha para el atleta activo', async () => {
+    const original = session()
+    await db.sessions.put(original)
+    setActiveAthleteId(managed)
+    useTrainingStore.setState({
+      sessions: [original],
+      loadedWeekStart: original.weekStartDate,
+      requestedWeekStart: original.weekStartDate,
+    })
+
+    await updateSessionForAthlete(owner, managed, original.id, { durationMin: 45 })
+
+    expect(useTrainingStore.getState().sessions).toEqual([
+      expect.objectContaining({ id: original.id, durationMin: 45 }),
+    ])
+  })
+
+  it('reconcilia altas y borrados del atleta activo sin contaminar otro scope', async () => {
+    setActiveAthleteId(managed)
+    useTrainingStore.setState({
+      sessions: [],
+      loadedWeekStart: '2026-07-13',
+      requestedWeekStart: '2026-07-13',
+    })
+
+    const created = await createSessionForAthlete(owner, managed, draft)
+    expect(useTrainingStore.getState().sessions.map((row) => row.id)).toEqual([created.id])
+
+    await deleteSessionForAthlete(owner, managed, created.id)
+    expect(useTrainingStore.getState().sessions).toEqual([])
+
+    setActiveAthleteId(self)
+    const visible = session({ id: 'self-visible', athleteId: self })
+    useTrainingStore.setState({ sessions: [visible] })
+    await createSessionForAthlete(owner, managed, draft)
+    expect(useTrainingStore.getState().sessions).toEqual([visible])
   })
 
   it('mover de fecha recalcula la semana original y la destino', async () => {

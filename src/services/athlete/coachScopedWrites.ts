@@ -1,5 +1,6 @@
 import { db } from '../../db/db'
 import { recalculateWeekSummaryCore } from '../../db/queries'
+import { reflectCoachScopedSessionWrite } from '../../store/useTrainingStore'
 import type { Session, WeekSummary } from '../../types'
 import type { SessionTemplateExercise, SessionTemplatePayload } from '../../types/sessionTemplate'
 import { fromISO, getWeekStart, toISO } from '../../utils/date'
@@ -112,6 +113,11 @@ async function createSessionCoreForAthlete(
         captureRemoteSessionTarget(session, ownerAccountId, scope.athleteId),
       )
       pushChangedSummaries(state.summaries)
+      reflectCoachScopedSessionWrite(
+        athleteId,
+        { kind: 'upsert', session },
+        state.summaries,
+      )
       return session
     } catch (error) {
       if (!(error instanceof HydrationScopeChangedError)) throw error
@@ -227,6 +233,11 @@ export async function updateSessionForAthlete(
 
       void pushSessionForTarget(state.updated, state.target)
       pushChangedSummaries(state.summaries)
+      reflectCoachScopedSessionWrite(
+        athleteId,
+        { kind: 'upsert', session: state.updated },
+        state.summaries,
+      )
       return state.updated
     } catch (error) {
       if (!(error instanceof HydrationScopeChangedError)) throw error
@@ -292,6 +303,11 @@ export async function deleteSessionForAthlete(
       rememberSessionDeleteTombstone(ownerAccountId, sessionId)
       void deleteSessionForTarget(sessionId, state.target)
       pushChangedSummaries(state.summaries)
+      reflectCoachScopedSessionWrite(
+        athleteId,
+        { kind: 'delete', sessionId },
+        state.summaries,
+      )
       return
     } catch (error) {
       if (!(error instanceof HydrationScopeChangedError)) throw error

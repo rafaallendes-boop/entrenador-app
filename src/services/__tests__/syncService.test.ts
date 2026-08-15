@@ -67,6 +67,8 @@ let athleteCoachNoteRows: Array<{ athleteId: string; updatedAt: number; [key: st
 let athleteMembershipRows: Array<{ athleteId: string; accountId: string; role: string; createdAt: number; updatedAt: number }> = []
 let athleteRows: Array<{ id: string; [key: string]: unknown }> = []
 let planGenerationJobRows: unknown[] = []
+let readinessDailyRows: unknown[] = []
+let whoopWorkoutRows: unknown[] = []
 let sessionTemplateRows: unknown[] = []
 let tableResults = new Map<string, SupabaseResultSource>()
 let actionResults = new Map<string, SupabaseResultSource>()
@@ -250,6 +252,13 @@ vi.mock('../../db/db', () => ({
       bulkDelete: vi.fn(async (ids: string[]) => {
         sessionsRows = deleteRowsById(sessionsRows, ids)
       }),
+      where: vi.fn((index: string) => ({
+        equals: vi.fn((value: unknown) => ({
+          delete: vi.fn(async () => {
+            sessionsRows = sessionsRows.filter((row) => !matchesIndex(row, index, value))
+          }),
+        })),
+      })),
     },
     dayLogs: {
       toArray: vi.fn(async () => dayLogRows),
@@ -271,6 +280,9 @@ vi.mock('../../db/db', () => ({
         equals: vi.fn((value: unknown) => ({
           first: vi.fn(async () => dayLogRows.find((row) => matchesIndex(row, index, value))),
           toArray: vi.fn(async () => dayLogRows.filter((row) => matchesIndex(row, index, value))),
+          delete: vi.fn(async () => {
+            dayLogRows = dayLogRows.filter((row) => !matchesIndex(row, index, value))
+          }),
         })),
       })),
     },
@@ -294,6 +306,9 @@ vi.mock('../../db/db', () => ({
         equals: vi.fn((value: unknown) => ({
           first: vi.fn(async () => weekSummaryRows.find((row) => matchesIndex(row, index, value))),
           toArray: vi.fn(async () => weekSummaryRows.filter((row) => matchesIndex(row, index, value))),
+          delete: vi.fn(async () => {
+            weekSummaryRows = weekSummaryRows.filter((row) => !matchesIndex(row, index, value))
+          }),
         })),
       })),
     },
@@ -314,6 +329,13 @@ vi.mock('../../db/db', () => ({
       bulkDelete: vi.fn(async (ids: string[]) => {
         trainingPlanRows = deleteRowsById(trainingPlanRows, ids)
       }),
+      where: vi.fn((index: string) => ({
+        equals: vi.fn((value: unknown) => ({
+          delete: vi.fn(async () => {
+            trainingPlanRows = trainingPlanRows.filter((row) => !matchesIndex(row, index, value))
+          }),
+        })),
+      })),
     },
     trainingPlanWeeks: {
       toArray: vi.fn(async () => trainingPlanWeekRows),
@@ -352,6 +374,13 @@ vi.mock('../../db/db', () => ({
         chatMessageRows = mergeRowsById(chatMessageRows, rows)
       }),
       bulkDelete: vi.fn(async () => {}),
+      where: vi.fn((index: string) => ({
+        equals: vi.fn((value: unknown) => ({
+          delete: vi.fn(async () => {
+            chatMessageRows = chatMessageRows.filter((row) => !matchesIndex(row, index, value))
+          }),
+        })),
+      })),
     },
     coachProposals: {
       toArray: vi.fn(async () => coachProposalRows),
@@ -362,6 +391,13 @@ vi.mock('../../db/db', () => ({
         coachProposalRows = mergeRowsById(coachProposalRows, rows)
       }),
       bulkDelete: vi.fn(async () => {}),
+      where: vi.fn((index: string) => ({
+        equals: vi.fn((value: unknown) => ({
+          delete: vi.fn(async () => {
+            coachProposalRows = coachProposalRows.filter((row) => !matchesIndex(row, index, value))
+          }),
+        })),
+      })),
     },
     athleteProfiles: {
       toArray: vi.fn(async () => athleteProfileRows),
@@ -379,6 +415,13 @@ vi.mock('../../db/db', () => ({
       clear: vi.fn(async () => {
         athleteProfileRows = []
       }),
+      where: vi.fn((index: string) => ({
+        equals: vi.fn((value: unknown) => ({
+          delete: vi.fn(async () => {
+            athleteProfileRows = athleteProfileRows.filter((row) => !matchesIndex(row, index, value))
+          }),
+        })),
+      })),
     },
     athleteCoachNotes: {
       toArray: vi.fn(async () => athleteCoachNoteRows),
@@ -431,6 +474,9 @@ vi.mock('../../db/db', () => ({
           else athleteRows.push(row)
         }
       }),
+      delete: vi.fn(async (id: string) => {
+        athleteRows = athleteRows.filter((row) => row.id !== id)
+      }),
       clear: vi.fn(async () => {
         athleteRows = []
       }),
@@ -457,6 +503,24 @@ vi.mock('../../db/db', () => ({
           }),
           toArray: vi.fn(async () =>
             planGenerationJobRows.filter((row) => matchesIndex(row, index, value))),
+        })),
+      })),
+    },
+    readinessDaily: {
+      where: vi.fn((index: string) => ({
+        equals: vi.fn((value: unknown) => ({
+          delete: vi.fn(async () => {
+            readinessDailyRows = readinessDailyRows.filter((row) => !matchesIndex(row, index, value))
+          }),
+        })),
+      })),
+    },
+    whoopWorkouts: {
+      where: vi.fn((index: string) => ({
+        equals: vi.fn((value: unknown) => ({
+          delete: vi.fn(async () => {
+            whoopWorkoutRows = whoopWorkoutRows.filter((row) => !matchesIndex(row, index, value))
+          }),
         })),
       })),
     },
@@ -495,6 +559,8 @@ describe('syncService', () => {
     athleteMembershipRows = []
     athleteRows = []
     planGenerationJobRows = []
+    readinessDailyRows = []
+    whoopWorkoutRows = []
     sessionTemplateRows = []
     tableResults = new Map()
     actionResults = new Map()
@@ -2199,34 +2265,327 @@ describe('syncService', () => {
     }
   })
 
-  it('un gestionado local sin remoto dentro de la ventana de deletes se borra en vez de resucitar', async () => {
+  it('conserva y reintenta un perfil gestionado cuando su push expira y el pull remoto sigue vacío', async () => {
+    const { setSelfAthleteId, setActiveAthleteId } = await import('../athlete/activeAthlete')
+    const { db: mockedDb } = await import('../../db/db')
+    setSelfAthleteId('ath_user-1')
+    setActiveAthleteId('ath_m_pending')
+    try {
+      await mockedDb.athletes.put({
+        id: 'ath_m_pending',
+        ownerAccountId: 'user-1',
+        linkedAccountId: null,
+        status: 'active',
+        createdAt: 50,
+        updatedAt: 50,
+      } as never)
+      const localProfile = {
+        id: 'ath_m_pending',
+        athleteId: 'ath_m_pending',
+        updatedAt: 100,
+        name: 'Cliente pendiente',
+        primarySport: 'squash',
+      }
+      await mockedDb.athleteProfiles.put(localProfile as never)
+
+      actionResults.set('upsert:athlete_profiles', {
+        data: null,
+        error: { message: 'Failed to fetch' },
+      })
+
+      const syncService = await import('../syncService')
+      await syncService.pushAthleteProfile(localProfile as never)
+
+      const queued = JSON.parse(localStorage.getItem('entrenador_sync_queue_v1') ?? '[]') as Array<{
+        table: string
+        retryCount?: number
+      }>
+      expect(queued).toHaveLength(1)
+      expect(queued[0]?.table).toBe('athlete_profiles')
+      queued[0]!.retryCount = 5
+      localStorage.setItem('entrenador_sync_queue_v1', JSON.stringify(queued))
+
+      expect(await syncService.drainQueue()).toBe(false)
+      expect(JSON.parse(localStorage.getItem('entrenador_sync_queue_v1') ?? '[]')).toEqual([])
+
+      // Un sync exitoso posterior de otras entidades no convierte la ausencia
+      // remota del perfil en una señal de borrado.
+      storeState.syncDetails.lastSuccessfulSyncAt = 200
+      actionResults.delete('upsert:athlete_profiles')
+      actionResults.set('select:athlete_profiles', { data: [], error: null })
+      await syncService.runFullSync('user-1')
+
+      expect(athleteProfileRows.find((profile) =>
+        (profile as { id?: string }).id === 'ath_m_pending',
+      )).toMatchObject(localProfile)
+      expect(upsertCalls.filter((call) =>
+        call.table === 'athlete_profiles'
+        && (call.payload as { id?: string }).id === 'profile:user-1:ath_m_pending',
+      )).toHaveLength(2)
+    } finally {
+      setSelfAthleteId(null)
+      setActiveAthleteId(null)
+    }
+  })
+
+  it('un hard delete en otro dispositivo elimina la identidad y no resucita su perfil', async () => {
     const { setSelfAthleteId, setActiveAthleteId } = await import('../athlete/activeAthlete')
     setSelfAthleteId('ath_user-1')
-    storeState.syncDetails.lastSuccessfulSyncAt = 10
+    setActiveAthleteId('ath_m_deleted_elsewhere')
     try {
-      athleteProfileRows = [
-        { id: 'ath_m_del', athleteId: 'ath_m_del', updatedAt: 5, name: 'Ex cliente' },
-      ]
+      tableResults.set('athletes', {
+        data: [{
+          id: 'ath_m_deleted_elsewhere',
+          owner_account_id: 'user-1',
+          linked_account_id: null,
+          display_name: 'Cliente remoto',
+          status: 'archived',
+          created_at: 10,
+          updated_at: 20,
+        }],
+        error: null,
+      })
       actionResults.set('select:athlete_profiles', {
         data: [{
-          id: 'profile:user-1',
+          id: 'profile:user-1:ath_m_deleted_elsewhere',
           user_id: 'user-1',
-          athlete_id: 'ath_user-1',
+          athlete_id: 'ath_m_deleted_elsewhere',
           coach_memory: null,
           updated_at: 20,
-          data: { name: 'Rafa' },
+          data: { name: 'Cliente remoto', primarySport: 'squash' },
         }],
         error: null,
       })
 
       const syncService = await import('../syncService')
       await syncService.runFullSync('user-1')
+      expect(athleteRows.find((row) => row.id === 'ath_m_deleted_elsewhere')).toBeDefined()
+      expect(athleteProfileRows.find((row) =>
+        (row as { id?: string }).id === 'ath_m_deleted_elsewhere',
+      )).toBeDefined()
+      sessionsRows = [{
+        id: 'session-deleted-elsewhere',
+        athleteId: 'ath_m_deleted_elsewhere',
+        date: '2026-08-13',
+        updatedAt: 20,
+      }]
+      Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: { localStorage },
+      })
+      localStorage.setItem(
+        'coach_chat_session_id:ath_m_deleted_elsewhere',
+        'chat-session-deleted-elsewhere',
+      )
 
-      expect(athleteProfileRows.find((profile) => (profile as { id?: string }).id === 'ath_m_del')).toBeUndefined()
-      expect(upsertCalls.find((call) =>
-        call.table === 'athlete_profiles'
-        && (call.payload as { id?: string }).id === 'profile:user-1:ath_m_del',
+      // Dispositivo A ejecutó el hard delete. La FK remota hizo cascade del
+      // perfil; el segundo pull de B recibe ausencia en ambas tablas.
+      tableResults.set('athletes', { data: [], error: null })
+      actionResults.set('select:athlete_profiles', { data: [], error: null })
+      localStorage.setItem('entrenador_sync_queue_v1', JSON.stringify([{
+        userId: 'user-1',
+        table: 'athlete_profiles',
+        action: 'upsert',
+        payload: {
+          id: 'profile:user-1:ath_m_deleted_elsewhere',
+          user_id: 'user-1',
+          athlete_id: 'ath_m_deleted_elsewhere',
+          updated_at: 25,
+          data: { name: 'Edición pendiente de B' },
+        },
+        enqueuedAt: Date.now(),
+      }]))
+      upsertCalls.length = 0
+      await syncService.runFullSync('user-1')
+
+      expect(athleteRows.find((row) => row.id === 'ath_m_deleted_elsewhere')).toBeUndefined()
+      expect(athleteProfileRows.find((row) =>
+        (row as { athleteId?: string }).athleteId === 'ath_m_deleted_elsewhere',
       )).toBeUndefined()
+      expect(sessionsRows.find((row) =>
+        (row as { athleteId?: string }).athleteId === 'ath_m_deleted_elsewhere',
+      )).toBeUndefined()
+      expect(localStorage.getItem('coach_chat_session_id:ath_m_deleted_elsewhere')).toBeNull()
+      expect(upsertCalls.some((call) =>
+        call.table === 'athletes'
+        && (call.payload as { id?: string }).id === 'ath_m_deleted_elsewhere',
+      )).toBe(false)
+      expect(upsertCalls.some((call) =>
+        call.table === 'athlete_profiles'
+        && (call.payload as { athlete_id?: string }).athlete_id === 'ath_m_deleted_elsewhere',
+      )).toBe(false)
+      expect(JSON.parse(localStorage.getItem('entrenador_sync_queue_v1') ?? '[]')).toEqual([])
+    } finally {
+      Reflect.deleteProperty(globalThis, 'window')
+      setSelfAthleteId(null)
+      setActiveAthleteId(null)
+    }
+  })
+
+  it('no drena una escritura child si el pull de memberships devuelve error', async () => {
+    vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+    const { setSelfAthleteId, setActiveAthleteId } = await import('../athlete/activeAthlete')
+    setSelfAthleteId('ath_user-1')
+    setActiveAthleteId('ath_m_pull_guard')
+    try {
+      athleteRows = [{
+        id: 'ath_m_pull_guard',
+        ownerAccountId: 'user-1',
+        linkedAccountId: null,
+        status: 'active',
+        createdAt: 10,
+        updatedAt: 20,
+      }]
+      const queuedChild = {
+        userId: 'user-1',
+        table: 'athlete_profiles',
+        action: 'upsert',
+        payload: {
+          id: 'profile:user-1:ath_m_pull_guard',
+          user_id: 'user-1',
+          athlete_id: 'ath_m_pull_guard',
+          updated_at: 25,
+          data: { name: 'Pendiente protegido' },
+        },
+        enqueuedAt: Date.now(),
+      }
+      localStorage.setItem('entrenador_sync_queue_v1', JSON.stringify([queuedChild]))
+      actionResults.set('select:athlete_memberships', {
+        data: null,
+        error: { message: 'memberships unavailable', status: 503 },
+      })
+
+      const syncService = await import('../syncService')
+      await syncService.runFullSync('user-1')
+
+      expect(selectCalls.some((call) => call.table === 'athletes')).toBe(false)
+      expect(upsertCalls.some((call) => (
+        (call.payload as { id?: string }).id === 'ath_m_pull_guard'
+        || (call.payload as { athlete_id?: string }).athlete_id === 'ath_m_pull_guard'
+      ))).toBe(false)
+      expect(JSON.parse(localStorage.getItem('entrenador_sync_queue_v1') ?? '[]'))
+        .toEqual([queuedChild])
+    } finally {
+      setSelfAthleteId(null)
+      setActiveAthleteId(null)
+    }
+  })
+
+  it('no drena una escritura child si el pull de athletes devuelve error', async () => {
+    vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+    const { setSelfAthleteId, setActiveAthleteId } = await import('../athlete/activeAthlete')
+    setSelfAthleteId('ath_user-1')
+    setActiveAthleteId('ath_m_pull_guard')
+    try {
+      athleteRows = [{
+        id: 'ath_m_pull_guard',
+        ownerAccountId: 'user-1',
+        linkedAccountId: null,
+        status: 'active',
+        createdAt: 10,
+        updatedAt: 20,
+      }]
+      const queuedChild = {
+        userId: 'user-1',
+        table: 'athlete_profiles',
+        action: 'upsert',
+        payload: {
+          id: 'profile:user-1:ath_m_pull_guard',
+          user_id: 'user-1',
+          athlete_id: 'ath_m_pull_guard',
+          updated_at: 25,
+          data: { name: 'Pendiente protegido' },
+        },
+        enqueuedAt: Date.now(),
+      }
+      localStorage.setItem('entrenador_sync_queue_v1', JSON.stringify([queuedChild]))
+      actionResults.set('select:athletes', {
+        data: null,
+        error: { message: 'athletes unavailable', status: 503 },
+      })
+
+      const syncService = await import('../syncService')
+      await syncService.runFullSync('user-1')
+
+      expect(selectCalls.some((call) => call.table === 'athletes')).toBe(true)
+      expect(upsertCalls.some((call) => (
+        (call.payload as { id?: string }).id === 'ath_m_pull_guard'
+        || (call.payload as { athlete_id?: string }).athlete_id === 'ath_m_pull_guard'
+      ))).toBe(false)
+      expect(JSON.parse(localStorage.getItem('entrenador_sync_queue_v1') ?? '[]'))
+        .toEqual([queuedChild])
+    } finally {
+      setSelfAthleteId(null)
+      setActiveAthleteId(null)
+    }
+  })
+
+  it('falla cerrado si no puede persistir el tombstone del delete remoto confirmado', async () => {
+    const { setSelfAthleteId, setActiveAthleteId } = await import('../athlete/activeAthlete')
+    setSelfAthleteId('ath_user-1')
+    setActiveAthleteId('ath_m_guarded')
+    try {
+      athleteRows = [{
+        id: 'ath_m_guarded',
+        ownerAccountId: 'user-1',
+        linkedAccountId: null,
+        displayName: 'Cliente protegido',
+        status: 'archived',
+        createdAt: 10,
+        updatedAt: 20,
+      }]
+      athleteProfileRows = [{
+        id: 'ath_m_guarded',
+        athleteId: 'ath_m_guarded',
+        updatedAt: 20,
+        name: 'Cliente protegido',
+      }]
+      sessionsRows = [{ id: 'session-guarded', athleteId: 'ath_m_guarded', updatedAt: 20 }]
+      localStorage.setItem(
+        'entrenador_remote_athlete_ack_v1:user-1',
+        JSON.stringify(['ath_m_guarded']),
+      )
+      localStorage.setItem('entrenador_sync_queue_v1', JSON.stringify([{
+        userId: 'user-1',
+        table: 'athlete_profiles',
+        action: 'upsert',
+        payload: {
+          id: 'profile:user-1:ath_m_guarded',
+          user_id: 'user-1',
+          athlete_id: 'ath_m_guarded',
+          updated_at: 25,
+          data: { name: 'Pendiente protegido' },
+        },
+        enqueuedAt: Date.now(),
+      }]))
+      tableResults.set('athletes', { data: [], error: null })
+      actionResults.set('select:athlete_profiles', { data: [], error: null })
+
+      const durableSetItem = localStorage.setItem.bind(localStorage)
+      vi.spyOn(localStorage, 'setItem').mockImplementation((key: string, value: string) => {
+        if (key.startsWith('entrenador_athlete_delete_tombstone_v1:user-1:ath_m_guarded:')) {
+          throw new Error('quota')
+        }
+        durableSetItem(key, value)
+      })
+
+      const syncService = await import('../syncService')
+      await syncService.runFullSync('user-1')
+
+      expect(athleteRows.find((row) => row.id === 'ath_m_guarded')).toBeDefined()
+      expect(athleteProfileRows.find((row) =>
+        (row as { athleteId?: string }).athleteId === 'ath_m_guarded',
+      )).toBeDefined()
+      expect(sessionsRows.find((row) =>
+        (row as { athleteId?: string }).athleteId === 'ath_m_guarded',
+      )).toBeDefined()
+      expect(JSON.parse(localStorage.getItem('entrenador_sync_queue_v1') ?? '[]')).toHaveLength(1)
+      expect(localStorage.getItem('entrenador_remote_athlete_ack_v1:user-1'))
+        .toBe(JSON.stringify(['ath_m_guarded']))
+      expect(upsertCalls.some((call) =>
+        (call.payload as { id?: string }).id === 'ath_m_guarded'
+        || (call.payload as { athlete_id?: string }).athlete_id === 'ath_m_guarded',
+      )).toBe(false)
     } finally {
       setSelfAthleteId(null)
       setActiveAthleteId(null)
@@ -2859,6 +3218,25 @@ describe('syncService', () => {
         .map((call) => call.table)).toEqual(['training_plans'])
       expect(JSON.parse(localStorageState.get('entrenador_sync_queue_v1') ?? '[]'))
         .toEqual([expect.objectContaining({ table: 'training_plans', action: 'upsert' })])
+    })
+
+    it('si la cola no se persiste el padre no informa un commit durable', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      Object.defineProperty(globalThis, 'navigator', {
+        configurable: true,
+        value: { onLine: false },
+      })
+      const durableSetItem = localStorage.setItem.bind(localStorage)
+      vi.spyOn(localStorage, 'setItem').mockImplementation((key: string, value: string) => {
+        if (key === 'entrenador_sync_queue_v1') return
+        durableSetItem(key, value)
+      })
+      const { softDeleteTrainingPlan } = await import('../syncService')
+
+      await expect(softDeleteTrainingPlan(planFixture(), [weekFixture(0)]))
+        .resolves.toBe('failed')
+      expect(upsertCalls).toEqual([])
+      expect(JSON.parse(localStorageState.get('entrenador_sync_queue_v1') ?? '[]')).toEqual([])
     })
 
     it('una limpieza child failed/queued no degrada un padre ya pushed', async () => {

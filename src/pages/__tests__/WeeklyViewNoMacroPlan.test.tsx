@@ -11,11 +11,12 @@ const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   profile: null as AthleteProfile | null,
   weekSummary: null as WeekSummary | null,
+  locationState: null as unknown,
 }))
 
 vi.mock('react-router-dom', () => ({
   useNavigate: () => mocks.navigate,
-  useLocation: () => ({ pathname: '/week', state: null, search: '', hash: '', key: 'test' }),
+  useLocation: () => ({ pathname: '/week', state: mocks.locationState, search: '', hash: '', key: 'test' }),
 }))
 // WeeklyView desestructura el store entero, pero useMacroWeekCoherence lo llama con
 // selector. El mock tiene que soportar las dos formas.
@@ -78,6 +79,8 @@ afterEach(() => {
   cleanup()
   mocks.profile = null
   mocks.weekSummary = null
+  mocks.locationState = null
+  mocks.navigate.mockClear()
 })
 
 describe('WeeklyView sin macroplan', () => {
@@ -105,5 +108,22 @@ describe('WeeklyView sin macroplan', () => {
 
     expect(await screen.findByText('Sin plan de competencia')).toBeTruthy()
     expect(screen.queryByText('60% adherencia')).toBeNull()
+  })
+
+  it('muestra una vez el aviso estructurado del commit y conserva otro navigation state', async () => {
+    mocks.locationState = {
+      planCommitNotice: { kind: 'lifecycle_sessions_removed', removedSessionCount: 3 },
+      unrelated: 'preserve-me',
+    }
+
+    render(<WeeklyView />)
+
+    expect((await screen.findByRole('status')).textContent).toContain(
+      'Se retiraron 3 sesiones futuras planificadas del ciclo anterior.',
+    )
+    expect(mocks.navigate).toHaveBeenCalledWith('/week', {
+      replace: true,
+      state: { unrelated: 'preserve-me' },
+    })
   })
 })

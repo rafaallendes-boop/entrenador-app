@@ -9,7 +9,7 @@ import type {
 import { db } from '../db/db'
 import { buildPlanShell } from '../services/planBuilder/buildPlanShell'
 import { validatePlan } from '../services/planBuilder/validator'
-import { commitPlan } from '../services/planBuilder/commitPlan'
+import { commitPlan, type CommitPlanResult } from '../services/planBuilder/commitPlan'
 import { getPrimaryGoalEvent } from '../services/macroPlan'
 import {
   derivePlanGenerationState,
@@ -78,7 +78,7 @@ interface PlanBuilderState {
   retryIncompleteWeeks: (profile: AthleteProfile) => Promise<void>
   resumeGenerationJobs: (profile: AthleteProfile) => Promise<void>
   cancelGeneration: () => Promise<void>
-  acceptPlan: () => Promise<{ errors: string[]; warnings: string[] }>
+  acceptPlan: () => Promise<CommitPlanResult>
   discard: () => Promise<void>
   loadDraft: (planId: string) => Promise<void>
   resetBuilderState: () => void
@@ -981,11 +981,11 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
   acceptPlan: async () => {
     const switchEpochAtStart = getSwitchEpoch()
     const { plan, weeks } = get()
-    if (!plan) return { errors: ['No hay plan activo'], warnings: [] }
+    if (!plan) return { errors: ['No hay plan activo'], warnings: [], acceptedWeeks: [], lifecycleRemovedSessionCount: 0 }
     if (plan.generationState !== 'complete') {
       const message = 'El plan todavía no está completamente preparado. Completa la preparación antes de aceptarlo.'
       set({ status: toBuilderStatus(plan.generationState), lastError: message })
-      return { errors: [message], warnings: [] }
+      return { errors: [message], warnings: [], acceptedWeeks: [], lifecycleRemovedSessionCount: 0 }
     }
     set({ status: 'committing', lastError: null })
     const acceptedPlan: TrainingPlan = {
@@ -1008,7 +1008,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
     } else {
       set({ status: toBuilderStatus(plan.generationState), lastError: result.errors.join(' · ') })
     }
-    return { errors: result.errors, warnings: result.warnings }
+    return result
   },
 
   discard: async () => {

@@ -2,9 +2,11 @@ import type { CoachExerciseProposal, Exercise, ExerciseGroup, StrengthProfile } 
 import type { ExerciseLibraryRef } from '../../types/exerciseLibraryRef'
 import {
   findStrengthExerciseByName,
+  getExerciseById,
   getExerciseGroupForDefinition,
   getStrengthExerciseIdentityById,
   resolveStrengthExercise,
+  type EquipmentType,
   type ExerciseDefinition,
   type StrengthExerciseResolution,
 } from './exerciseLibrary'
@@ -19,9 +21,61 @@ type StrengthExerciseLike = CoachExerciseProposal | Exercise
 
 const BLOCK_ORDER: ExerciseGroup[] = ['core', 'olympic', 'legs', 'push', 'pull', 'other', 'cardio', 'mobility']
 
+/**
+ * Pool del core de fundación inyectado, por `id` y con orden congelado.
+ * Allowlist explícita —mismo precedente que los pliométricos de §23 y los
+ * drills competitivos de squash— porque «core» como grupo incluye trabajo de
+ * fuerza real (Copenhagen, press de disco) que no sirve como relleno seguro.
+ *
+ * `dead_bug` va primero a propósito: es lo que devuelve el camino sin contexto
+ * de semana, que es el del chat, y así ese comportamiento no cambia.
+ */
+const INJECTED_CORE_ROTATION = [
+  'dead_bug',
+  'plank',
+  'side_plank',
+  'stability_ball_front_plank',
+] as const
+
+/**
+ * Determinista y total: sin índice —o con uno no utilizable— devuelve el
+ * primero del pool, que es el comportamiento previo a la rotación.
+ */
+function resolveInjectedCoreId(
+  weekIndexInBlock?: number,
+  availableEquipment?: EquipmentType[],
+): string {
+  if (
+    weekIndexInBlock == null ||
+    !Number.isFinite(weekIndexInBlock) ||
+    weekIndexInBlock < 0
+  ) return INJECTED_CORE_ROTATION[0]
+
+  // Las tres primeras opciones son de peso corporal. La cuarta exige fitball:
+  // `bodyweight` también figura en su definición para clasificar la carga, no
+  // significa que pueda ejecutarse sin balón. Cuando el atleta declaró equipo,
+  // esa dependencia se valida explícitamente.
+  const rotation = availableEquipment != null && !availableEquipment.includes('stability_ball')
+    ? INJECTED_CORE_ROTATION.filter((id) => id !== 'stability_ball_front_plank')
+    : INJECTED_CORE_ROTATION
+  return rotation[Math.trunc(weekIndexInBlock) % rotation.length]!
+}
+
+export interface StrengthStructureOptions {
+  durationMin?: number
+  /**
+   * Índice de la semana dentro de su bloque. Solo lo pasa Plan Builder: rota el
+   * core inyectado para que semanas consecutivas no compartan ese ejercicio.
+   * Ausente en el chat, que no tiene noción de bloque.
+   */
+  weekIndexInBlock?: number
+  /** Equipamiento declarado por el atleta; limita variantes no universales. */
+  availableEquipment?: EquipmentType[]
+}
+
 export function normalizeStrengthSessionExercises<T extends StrengthExerciseLike>(
   exercises: T[] | undefined,
-  options: { durationMin?: number } = {},
+  options: StrengthStructureOptions = {},
 ): T[] | undefined {
   if (!exercises || exercises.length === 0) return exercises
 
@@ -30,7 +84,10 @@ export function normalizeStrengthSessionExercises<T extends StrengthExerciseLike
   const expanded = expandGenericFootworkBlocks(protocolFiltered)
   const normalized = expanded.map((exercise) => normalizeStrengthExerciseGroup(exercise))
   const withCore = durationMin >= 45
-    ? ensureCoreBlock(normalized)
+    ? ensureCoreBlock(
+        normalized,
+        resolveInjectedCoreId(options.weekIndexInBlock, options.availableEquipment),
+      )
     : normalized
 
   return sortStrengthSessionUnits(withCore)
@@ -79,7 +136,7 @@ function removeProtocolExercisesWhenStrengthWorkExists<T extends StrengthExercis
 
 export function enhanceStrengthSessionExercises<T extends StrengthExerciseLike>(
   exercises: T[] | undefined,
-  options: { durationMin?: number; strengthProfile?: StrengthProfile } = {},
+  options: StrengthStructureOptions & { strengthProfile?: StrengthProfile } = {},
 ): T[] | undefined {
   const normalized = normalizeStrengthSessionExercises(exercises, options)
   if (!normalized || normalized.length === 0) return normalized
@@ -201,18 +258,22 @@ function inferExerciseGroup(exercise: Pick<StrengthExerciseLike, 'name' | 'group
   return exercise.group ?? 'other'
 }
 
-function ensureCoreBlock<T extends StrengthExerciseLike>(exercises: T[]): T[] {
+function ensureCoreBlock<T extends StrengthExerciseLike>(
+  exercises: T[],
+  coreId: string,
+): T[] {
   const core = exercises.filter((exercise) => exercise.group === 'core')
   if (core.length === 0) {
     return [
-      makeCoreExercise<T>('dead_bug', 'Zona media: controla pelvis y costillas antes de la fuerza principal.'),
+      makeCoreExercise<T>(coreId, 'Zona media: controla pelvis y costillas antes de la fuerza principal.'),
       ...exercises,
     ]
   }
 
   if (core.length === 1) {
+    if (resolveStrengthExercise(core[0]!)?.definition?.id === coreId) return exercises
     return [
-      makeCoreExercise<T>('dead_bug', 'Zona media: anti-extensión y control lumbo-pélvico.'),
+      makeCoreExercise<T>(coreId, 'Zona media: anti-extensión y control lumbo-pélvico.'),
       ...exercises,
     ]
   }
@@ -224,7 +285,7 @@ function ensureCoreBlock<T extends StrengthExerciseLike>(exercises: T[]): T[] {
   return exercises.map((exercise) => {
     if (replaced || exercise.group !== 'core') return exercise
     replaced = true
-    const replacement = makeCoreExercise<T>('dead_bug', 'Zona media: anti-extensión y control lumbo-pélvico.')
+    const replacement = makeCoreExercise<T>(coreId, 'Zona media: anti-extensión y control lumbo-pélvico.')
     if (!exercise.supersetGroup) return replacement
 
     // El enriquecimiento de core es anterior al sort por unidades. Si el core
@@ -237,6 +298,18 @@ function ensureCoreBlock<T extends StrengthExerciseLike>(exercises: T[]): T[] {
       supersetGroup: exercise.supersetGroup,
     }
   })
+}
+
+export function isSelectedInjectedCore(
+  exercise: StrengthExerciseLike,
+  options: Pick<StrengthStructureOptions, 'weekIndexInBlock' | 'availableEquipment'>,
+): boolean {
+  const weekIndex = options.weekIndexInBlock
+  if (weekIndex == null || !Number.isFinite(weekIndex) || weekIndex < 0) return false
+  return resolveStrengthExercise(exercise)?.definition?.id === resolveInjectedCoreId(
+    weekIndex,
+    options.availableEquipment,
+  )
 }
 
 function completeStrengthLoadAndEffort<T extends StrengthExerciseLike>(
@@ -450,10 +523,14 @@ function extractRepresentativeReps(reps: number | string): number | undefined {
 }
 
 function makeCoreExercise<T extends StrengthExerciseLike>(id: string, notes: string): T {
+  const definition = getExerciseById(id)
+  const reps = definition?.prescriptionUnit === 'seconds'
+    ? definition.id === 'side_plank' ? '30s/lado' : '30s'
+    : '8/lado'
   return {
     ...getStrengthExerciseIdentityById(id),
     sets: 3,
-    reps: '8/lado',
+    reps,
     group: 'core',
     notes,
   } as T
