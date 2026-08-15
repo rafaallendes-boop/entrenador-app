@@ -1,9 +1,25 @@
 # RallyIQ - Project Review and Roadmap
 
-Actualizado: 2026-08-14
+Actualizado: 2026-08-15
 
 Base de contraste:
 
+- **Sección Pre-Lanzamiento abierta (2026-08-15):** ver §Pre-Lanzamiento, ubicada
+  justo después de §Porcentaje De Avance. Consolida los 14 pendientes que separan
+  el estado actual de invitar a una beta controlada de 10–20 personas, cada uno
+  con prioridad, estado contrastado contra el código de `7fc7d4f`, criterio de
+  Done y dependencias. **Cinco son bloqueantes reales:** OAuth de Google todavía
+  depende de la lista de Test Users; no existe ninguna noción de tier ni
+  entitlement aunque `/pricing` publique tres planes con precios en CLP —el
+  diseño quedó aprobado el 2026-08-15 en
+  [`2026-08-15-entitlements-design.md`](docs/superpowers/specs/2026-08-15-entitlements-design.md),
+  sin implementar—; el rate
+  limit de IA por usuario es local (Dexie) y el del servidor es un `Map` en
+  memoria de 20 req/60 s; no hay techo de gasto ni kill switch pese a un costo
+  medido de ~US$10/mes por usuario que agote Plan Builder; y `netlify.toml` no
+  define ningún header de seguridad. La sección declara explícitamente qué **no**
+  construir todavía: cola global sin medir, herramienta de analytics, gateway de
+  pago y Android.
 - **QA deportiva de arquetipos ejecutada y sus hallazgos cerrados (2026-08-13/14):** ver §28. Primera QA deportiva real sobre producción: cinco arquetipos, 12/12 semanas del cupo diario, ~US$0,35, **veredicto APROBADO PARCIAL**. El motor de generación quedó bien (1RM verificado contra el perfil, superseries deterministas vivas en prod, modalidad de squash sin cruces, taper protegido); la capa de persistencia de perfil y de ciclo de plan produjo siete hallazgos que el code review convirtió en nueve defectos verificados, todos corregidos. Los cuatro serios: el corte del ciclo de plan ignoraba el inicio futuro del plan nuevo y vaciaba el calendario intermedio; el preview subreportaba el borrado y su aviso nunca llegaba al usuario; conservar el perfil ante ausencia remota reabría la resurrección en el segundo dispositivo por el FK `on delete cascade` de `007`; y los planes legacy nunca se supersedían. `Session` gana `planId`/`planWeekId` sin migración. Suite: **414 archivos / 3371 tests**, `tsc -b`, lint, build y `git diff --check` verdes. Pendientes: deploy, un smoke dirigido de un solo recorrido, y el cascade de borrado de atleta, que **no se puede verificar con un solo dispositivo**.
 - **Squash — modalidad explícita y exposición semanal A2.5 implementadas (2026-08-10/11, `5ba9554`…`eed08af`):** ver §27. Los 49 drills tienen `sessionKind` y modo ejecutable explícitos; `either` queda fuera del catálogo; un hidratador compartido compone sin cruzar modalidades; y `squashKind` viaja por Plan Builder, Crear semana skeleton v2, chat, formulario, plantillas e import/export. A2.5 agrega mejor de 3 en base, regula build/peak por carga, limita taper a tres o más días del evento y hace que race cuente la competencia real, con vetos de partner, restricción médica y sobrecarga. Sin migraciones. Suite completa: **394 archivos / 3211 tests**, build, `tsc -b`, lint y `git diff --check` verdes. Pendiente rollout/monitoreo antes de retirar compatibilidad legacy.
 - **Semana y planificación endurecidas y mergeadas en `main` (2026-08-10, PR #11, `b3bb6c3` / merge `0059e6e`):** ver §26. La ausencia de macroplan pasa a ser `not_applicable` en vez de un falso `ok`; la card ofrece crear el plan sin ocultar carga/adherencia reales; la semana visible ya no reutiliza sesiones o resumen de otra semana durante un request; el arranque prioriza el pull de la semana solicitada antes del sync completo; el plan competitivo omite la semana parcial si ya no queda ningún día habilitado; y los drills de squash recuperan guía canónica aunque una fila persistida venga sin `notes`. Sin migraciones. Suite: 388 archivos / 3109 tests, `tsc -b`, lint y `git diff --check` verdes. Pendiente deploy/smoke; esto reduce el riesgo de estado obsoleto, pero **no sustituye** la validación real multi-dispositivo.
@@ -71,6 +87,499 @@ Estimacion actual:
 - Monetizacion publica self-serve: **65% listo / 35% pendiente** (rutas legales + landing coach vivas y consentimiento activo; faltan pagos automáticos, cierre jurídico y e2e auth).
 
 Traduccion practica: el producto ya tiene sustancia y superficie legal/comercial minima. Lo pendiente es reducir riesgo juridico formal (revision de abogado) y riesgo operacional (primer cliente real).
+
+## Pre-Lanzamiento
+
+Abierta el 2026-08-15. Es la lista de lo que separa el estado actual de **invitar
+a una beta controlada de 10–20 personas que no sean el owner**. Todo lo de abajo
+está contrastado contra el código de `7fc7d4f`, no contra lo que el roadmap
+afirmaba antes; donde el código contradice una entrada previa, se dice.
+
+Dos principios de esta sección, para que no se convierta en otro backlog:
+
+1. **Nada se construye sin evidencia de que hace falta.** El punto 10 (cola
+   global) está deliberadamente bloqueado por medición, no por implementación.
+2. **Una tarea a la vez, en el orden del §Orden recomendado.** Los 14 puntos no
+   son 14 proyectos: cinco son bloqueantes reales y el resto corre durante la
+   beta.
+
+### Lo que el código demuestra que YA está cerrado
+
+No re-abrir estos puntos; están acá para que no se vuelvan a listar como
+pendientes.
+
+| Punto | Evidencia en código |
+|---|---|
+| Rutas legales públicas | `/terms`, `/privacy`, `/health-disclaimer`, `/whoop-disclaimer` como páginas React + redirects en `netlify.toml` |
+| Consentimiento in-app versionado | `017` aplicada, `VITE_CONSENT_GATE` + `CONSENT_GATE_ENABLED` on, `consentFlag.ts` |
+| Metadata/OG por ruta + prerender para crawlers | `scripts/generate-public-route-html.mjs`, `src/constants/publicRouteMetadata.json` |
+| Página de precios con 3 tiers y precios reales | `PricingPage.tsx`: 0 / 12.990 / 24.990 CLP mensual, 9.990 / 19.990 anual, toggle mensual-anual |
+| OAuth Google implementado, web + nativo | `useAuthStore.signInWithGoogle` con `skipBrowserRedirect` + `Browser.open` en Capacitor |
+| Pipeline async de generación pesada | `enqueue-plan-generation` (auth + `jobId` durable + dedupe por `shouldDedupeActiveGeneration`) → `generate-plan-background` (concurrencia 3, presupuesto 13 min) → polling |
+| Telemetría por fila de IA | `014` attempts, `016` jobs, `018` coach requests — con tokens y `estimated_cost_usd` |
+| Proyecto iOS con Capacitor 8 | `capacitor.config.ts` (`cl.rallyiq.app`), carpeta `ios/`, `npm run ios:sync` con `verify-ios-env.mjs` |
+| Rate limit de ráfaga server-side | `enforceRateLimit` en `coach.ts:773` — 20 req / 60 s por `user:<id>` |
+
+### Blockers para lanzar
+
+Cinco puntos. Ninguna invitación externa sale antes de cerrarlos.
+
+---
+
+#### 1. Google OAuth listo para producción — **P0**
+
+**Estado real.** El código está completo y no necesita cambios:
+`signInWithOAuth({ provider: 'google' })` con `redirectTo` desde
+`VITE_AUTH_REDIRECT_URL`, y en nativo `skipBrowserRedirect` + `Browser.open`.
+Lo que no está resuelto vive **fuera del repositorio**: el estado de publicación
+de la OAuth consent screen en Google Cloud Console. Mientras siga en `Testing`,
+solo entran las cuentas de la lista de Test Users (tope 100) y el resto ve la
+pantalla de app no verificada.
+
+**Qué falta.** Pasar la consent screen a `In production`; declarar dominios
+autorizados y los redirect URIs de web y de esquema nativo; confirmar que los
+scopes pedidos son solo `email`/`profile` —scopes no sensibles no disparan
+verificación de marca, y pedir algo más la dispararía—; y borrar cualquier
+dependencia operativa de la lista de Test Users.
+
+**Done.** Una cuenta Google que nunca estuvo en Test Users completa registro y
+login en `app.rallyiq.cl` **y** en el build iOS, sin pantalla de advertencia.
+
+**Dependencias.** Ninguna. Es el bloqueante más barato del lote y el que
+desbloquea todos los demás — sin esto no hay a quién invitar.
+
+---
+
+#### 2. Feature flags y entitlements por plan — **P0** · spec aprobado
+
+**Estado real.** Existen cinco flags, y **ninguna es un entitlement**:
+`VITE_ATHLETE_SCOPE`, `VITE_COACH_ACCOUNTS`, `VITE_CONSENT_GATE`,
+`VITE_DEV_TOOLS`, `VITE_SHOW_PLAN_QUALITY`. Son flags de **build** más una
+allowlist por email (`coachAccess.ts`, que su propio comentario declara "NO es
+una barrera de seguridad"). No hay noción de plan, tier ni suscripción en el
+modelo de datos: ni en Dexie, ni en Supabase, ni en los tipos.
+
+La consecuencia es concreta y hoy está en vivo: `PricingPage.tsx` publica tres
+planes con precios en CLP, y **los tres CTA llaman a la misma función**
+(`handleAccess` → Google sign-in → app). Cualquiera que se registre obtiene Plan
+Builder, coach ilimitado y todo lo demás. La página promete una diferenciación
+que el producto no implementa.
+
+**Qué falta.** Diseñado y aprobado el 2026-08-15 en
+[`docs/superpowers/specs/2026-08-15-entitlements-design.md`](docs/superpowers/specs/2026-08-15-entitlements-design.md);
+falta el plan de implementación y el código. Forma acordada:
+
+- **Tres tiers, no dos:** `free` / `weekly` / `advanced`, alineados con los tres
+  planes que `/pricing` ya publica. Se eligieron tres porque las features caras
+  ya están partidas por `AIRequestClass` —chat, `week_creator`,
+  `plan_builder_*`— y el gate cae sobre esas costuras sin trabajo extra.
+- Tabla `user_entitlements` (`020`, de aplicación manual) con RLS `select`
+  propio y **sin políticas de escritura**: solo service role asigna. Ausencia de
+  fila, vencimiento o fallo de lectura resuelven a `free`.
+- **Tier por cuenta**, cubriendo a sus atletas gestionados: los gestionados no
+  tienen login, así que son datos de la cuenta.
+- **Tres funciones a gatear, no una.** Además de `enqueue-plan-generation.ts`,
+  van `coach.ts` (las 7 clases) y `generate-plan-background.ts`. Esta última es
+  obligatoria y no defensa en profundidad: acepta llamadas autenticadas directas
+  y **acuña su propio `jobId`**, con el código declarándolo ruta soportada, así
+  que gatear solo el enqueue dejaría una puerta trasera documentada.
+- Upsell como oferta con metadata tipada (`requestClass`, `requiredTier`), nunca
+  como error.
+
+**Done.** Un usuario `free` no puede generar un plan **ni desde la UI, ni
+llamando a `enqueue-plan-generation`, ni llamando a `generate-plan-background`
+directamente** —el rechazo es server-side, 403 `entitlement_required`— y la UI
+muestra la oferta en vez de un error técnico. Un `advanced` pasa. El cambio de
+tier se refleja sin redeploy.
+
+**Dependencias.** Es prerequisito del punto 3 (la cuota depende del tier), del
+punto 4 (el techo de gasto se calcula por tier) y del cobro (§Necesario durante
+beta, punto 11). No al revés: **los entitlements no dependen de tener pagos.**
+
+---
+
+#### 3. Rate limits de IA server-side por usuario — **P0**
+
+**Estado real.** Hay dos capas y ninguna cierra el caso.
+
+- **Cliente (la que se ve en Ajustes).** `DEFAULT_DAILY_AI_LIMITS` en
+  `aiTelemetry.ts` — `chat_general` 80/día, `plan_builder_week` 12/día, etc. Se
+  evalúa **contra Dexie local**. Es una cuota por navegador: se resetea borrando
+  datos del sitio o cambiando de dispositivo. Además falla abierto a propósito
+  ("If local telemetry cannot be read, do not block the coach"). Lo mismo aplica
+  a `assertPlanBuilderWeekRateLimit` en `planBuilder/rateLimit.ts`.
+- **Servidor.** `enforceRateLimit` (`coach.ts:773`): 20 requests por 60 s
+  (`COACH_RATE_LIMIT_MAX` / `COACH_RATE_LIMIT_WINDOW_MS`), key `user:<id>`. El
+  bucket es un `Map` **en memoria del proceso**: no se comparte entre instancias
+  de Netlify y se pierde en cada cold start. Protege contra un bucle accidental,
+  no contra abuso ni contra el costo del día.
+
+Un detalle a auditar junto con el punto 5: si `COACH_PROXY_REQUIRE_AUTH` quedara
+en `'false'` en producción, `resolveAuthContext` devuelve `anonymous` y el rate
+limit pasa a ser por IP sobre un endpoint abierto.
+
+**Qué falta.** Cuota **diaria y durable por usuario** en Supabase, leída antes de
+llamar al proveedor, en **las mismas tres funciones que gatea el punto 2**:
+`coach.ts`, `enqueue-plan-generation.ts` y `generate-plan-background.ts`. El dato
+de escritura ya existe —`coach_requests` (`018`) y `plan_generation_jobs` (`016`)
+registran por usuario—; lo que falta es el camino de lectura y el enforcement.
+
+Dos restricciones que hereda del spec de entitlements y que no se pueden
+reordenar: **el chequeo de entitlement va primero y el de cuota después** —una
+clase bloqueada por plan nunca debe reportarse como límite diario alcanzado, o el
+usuario recibe la oferta equivocada y vuelve mañana esperando que se renueve—; y
+la cuota de `chat_general` + `chat_action` es un **bucket compartido**, no dos
+contadores. El bloque de entitlements deja los contadores locales ya
+account-scoped, que hoy no lo están (`getDailyAIUsage` no filtra por usuario).
+
+**Done.** Un usuario que agota su cuota recibe 429 desde el servidor aunque borre
+IndexedDB y entre desde otro dispositivo, con mensaje honesto y fila registrada.
+La cuota depende del tier.
+
+**Dependencias.** Punto 2. Se implementa junto con el punto 4: comparten el
+mismo camino de lectura.
+
+---
+
+#### 4. Protección de costos y circuit breaker de IA — **P0**
+
+**Estado real.** No existe. Los únicos "presupuestos" en `coach.ts` son de
+**wallclock** (24 s de función, reparto por intento), no de dinero. No hay techo
+de gasto diario, ni kill switch, ni alerta. `estimated_cost_usd` se escribe por
+fila en `016` y `018`, pero **nadie lo lee para decidir nada**.
+
+El número que justifica esto está medido, no es miedo abstracto:
+`OPTIMIZATION_AND_COSTS.md` §4 fija **≈US$0,029 por semana generada** y proyecta
+**≈US$10,44/mes** para un usuario que agote su rate limit de Plan Builder todos
+los días. Con 20 usuarios de beta, el peor caso es ~US$200/mes — y hoy nada lo
+detiene. El chat es mucho más barato (`gemini-2.5-flash`), así que el riesgo se
+concentra en Plan Builder.
+
+**Qué falta.** (a) Techo de gasto diario **global** y por cuenta, evaluado desde
+las tablas que ya se escriben; (b) kill switch por variable de entorno que corte
+antes de llamar al proveedor y devuelva un error honesto; (c) una alerta cuando
+se cruza un umbral.
+
+Los tres cortes van en **las mismas tres funciones** del punto 2 —`coach.ts`,
+`enqueue-plan-generation.ts`, `generate-plan-background.ts`— y heredan de §4.3.1
+del spec de entitlements la obligación de **terminalizar el job** si el corte
+ocurre en el worker después de que el enqueue ya escribió `generating`: si no, el
+plan queda colgado cinco minutos hasta el detector de stalled.
+
+**Done.** Con el kill switch activo, ninguna clase de request llega al proveedor
+y la UI explica qué pasa. Superado el techo diario global, las llamadas nuevas se
+rechazan con 429 y queda registro. Ambos casos verificados con un test.
+
+**Dependencias.** Puntos 2 y 3 — misma infraestructura de lectura, hacerlos en el
+mismo bloque.
+
+---
+
+#### 5. Auditoría de seguridad pre-producción — **P0**
+
+**Estado real.** Hay superficies genuinamente endurecidas: RLS por `user_id`,
+tokens Whoop cifrados AES-256-GCM y server-only, credenciales fuera del cliente,
+consentimiento bloqueante. Lo que no hay es una **pasada transversal registrada**
+antes de abrir a terceros.
+
+Cuatro puntos ya detectables sin auditar:
+
+- **`netlify.toml` no tiene ningún bloque `[[headers]]`, y no existe
+  `public/_headers`.** Hoy el sitio se sirve sin CSP, sin HSTS, sin
+  `X-Frame-Options` ni `X-Content-Type-Options`.
+- `COACH_PROXY_REQUIRE_AUTH` es un interruptor de un solo carácter entre
+  "autenticado" y "abierto al mundo" (ver punto 3).
+- `018` inserta con el token del usuario; el propio §22 registra que un cliente
+  de confianza podría forjar filas de telemetría. Aceptado en su momento —
+  revisar ahora que se abre a terceros.
+- `007` dejó FKs `not valid` y la RLS v2 por membresía sigue pendiente (SP1a).
+
+**Qué falta.** Recorrer un checklist con evidencia: inventario de variables de
+entorno de producción (y confirmar que ninguna `VITE_*` lleva un secreto),
+`grep` de secretos sobre `dist/`, RLS probada con un segundo usuario real
+intentando leer datos ajenos, headers de seguridad configurados, y revisión de
+las funciones Netlify que aceptan input del cliente.
+
+**Done.** Checklist completo con evidencia adjunta por ítem, headers activos
+verificados sobre el deploy, y cero hallazgos abiertos de severidad alta.
+
+**Dependencias.** Se corre **después** de los puntos 2–4, para auditar la
+superficie final y no una intermedia.
+
+---
+
+#### 6. Revisión legal — **P0** (ya rastreado, no duplicar)
+
+Este punto **ya vive** en Riesgo 1, Riesgo 2 y el checklist §D. Se repite acá
+solo porque es bloqueante de lanzamiento y porque su plazo lo controla un
+tercero: **empezarlo el día 1 y dejarlo correr en paralelo con todo lo demás.**
+
+Lo técnico está cerrado (`017` aplicada, gate activo, smoke hecho). Lo que
+bloquea: firma de abogado sobre las cuatro publicaciones, decisión de retención
+de `user_consents` al borrar cuenta con el copy de Ajustes alineado, y política
+de cancelación/reembolso. Suma dos publicaciones de zonas de FC registradas y
+**no vigentes** que dependen de la misma revisión (§25).
+
+**Done.** Textos firmados, decisión de retención tomada e implementada, política
+de reembolso publicada en `/coaches`.
+
+---
+
+#### 7. Coherencia de la página de precios — **P0** (subconjunto del punto 9)
+
+**Estado real.** `/pricing` publica tres tiers con precios reales y CTAs que
+llevan a un producto sin diferenciación (punto 2) y sin forma de cobrar
+(punto 11). Es el único ítem de landing que bloquea: publicar precios que no se
+cobran ni se hacen cumplir es un problema de confianza, no de diseño.
+
+**Qué falta.** Una de dos, y hay que elegir: cerrar el punto 2 antes de invitar,
+o etiquetar explícitamente los tiers pagados como "beta cerrada — sin cobro
+todavía" y que el CTA lo diga.
+
+**Done.** Lo que la página promete coincide con lo que un usuario nuevo
+efectivamente recibe.
+
+**Dependencias.** Punto 2. Si el punto 2 se cierra a tiempo, este desaparece.
+
+---
+
+### Necesario durante beta
+
+No bloquean la invitación, pero sin ellos la beta no enseña nada.
+
+---
+
+#### 8. Beta controlada de 10–20 usuarios — **P1** (es el destino, no una tarea)
+
+**Estado real.** El roadmap ya contempla un piloto de 1–3 clientes (Opción C).
+Esto lo amplía a 10–20 y cambia el perfil de riesgo: con 3 usuarios se puede
+acompañar a mano; con 20, no. Del lado operacional no hay nada implementado:
+sin canal de soporte definido, sin política de reembolso, sin protocolo de
+revisión semanal escrito.
+
+**Qué falta.** Criterios de entrada (los blockers 1–7 cerrados), lista de
+invitados, guion de onboarding, canal de soporte único, y criterios de salida
+que digan cuándo se abre más.
+
+**Done.** 10–20 cuentas activas, cada una con al menos una semana planificada,
+feedback registrado por categoría, cero pérdidas de datos y cero incidentes de
+fuga entre athlete scopes.
+
+**Dependencias.** Blockers 1–7. Todo lo demás de esta sección puede correr con la
+beta ya andando.
+
+---
+
+#### 9. Landing final — **P1**
+
+**Estado real.** Mejor de lo que decía el roadmap. Las cuatro rutas públicas son
+páginas React reales con metadata y OG por ruta, prerenderizadas para crawlers.
+Pricing tiene tres tiers con precios y toggle anual.
+
+Huecos verificados en el repo:
+
+- **No existe `public/robots.txt` ni `public/sitemap.xml`.**
+- Los únicos assets son `public/landing/cycling.jpg`, `public/og/rallyiq.png` y
+  tres `.webp` de bienvenida iOS: **cero screenshots del producto real**.
+- `/coaches` sigue sin imágenes de producto, tal como el roadmap ya anotaba.
+
+**Qué falta.** Screenshots mobile reales, `robots.txt` + `sitemap.xml`, pasada
+responsive a 360/768/1280, y CTA único coherente.
+
+**Done.** Las cuatro rutas se ven correctas en los tres anchos, muestran producto
+real, sirven robots y sitemap, y el CTA lleva a un flujo que existe.
+
+**Dependencias.** Punto 7 para el mensaje de precios. Los screenshots conviene
+tomarlos **después** de la beta inicial, con datos reales de un usuario que no
+sea el owner.
+
+---
+
+#### 10. Dashboard / observabilidad de lanzamiento — **P1**
+
+**Estado real.** La instrumentación por fila **ya existe y está en producción**:
+`plan_generation_jobs` (`016`), `plan_generation_attempts` (`014`),
+`coach_requests` (`018`), con tokens, latencias y costo estimado. En cliente hay
+"Diagnóstico IA" en Ajustes (`BetaQualitySnapshot`: requests, feedback, uso
+diario contra límites) y export de trazas.
+
+Lo que no existe: **agregación, alertas y una vista única**. Y no hay ningún
+reporter de errores de frontend — cero ocurrencias de Sentry o equivalente en el
+repo, así que un error de JS en el dispositivo de un beta tester es invisible.
+
+**Qué falta.** Un puñado de queries SQL guardadas (errores por clase, p90 de
+latencia, costo diario, corridas fallidas, usuarios activos), un reporter de
+errores de frontend, y un umbral que dispare aviso.
+
+**Done.** Responder en menos de cinco minutos, sin abrir el código: cuántos
+usuarios activos hubo hoy, cuántas requests fallaron y por qué, cuánto se gastó,
+y si apareció un error nuevo.
+
+**Dependencias.** Ninguna dura — las tablas ya están. Comparte trabajo con el
+backlog 6 de `OPTIMIZATION_AND_COSTS.md`, que pide exactamente esta agregación.
+
+---
+
+#### 11. Pagos, suscripciones y arquitectura de entitlements — **P1** durante beta
+
+**Estado real.** Cero código de pagos. Las coincidencias de "stripe" en el repo
+son comentarios de CSS (`rim-light stripe`, `accent stripe`).
+
+**Qué falta y qué NO.** Para 10–20 usuarios, cobrar por transferencia y conciliar
+a mano cuesta menos que integrar y mantener un gateway — el roadmap ya lo había
+decidido así y sigue siendo correcto. Lo que **sí** hace falta igual es el
+backend de entitlements del punto 2: un gateway sin entitlements no sirve de
+nada, entitlements sin gateway funcionan perfectamente con cobro manual.
+
+**Done (beta).** Tabla de entitlements poblada a mano tras confirmar
+transferencia, leída por RLS y por las funciones. **Done (self-serve, después).**
+Un webhook de pago escribe esa misma tabla y nada más cambia.
+
+**Dependencias.** Punto 2 es prerequisito. El gateway es explícitamente
+posterior al lanzamiento de la beta.
+
+---
+
+#### 12. Analytics de producto y funnel — **P1**
+
+**Estado real.** **Cero.** No hay ninguna herramienta de analytics ni evento de
+producto en el repo; las coincidencias de "analytics" son `loadAnalytics.ts`,
+que es carga de entrenamiento. Hoy el funnel registro → onboarding → primer plan
+→ primera sesión → sesiones completadas → conversión Pro **no se puede responder
+con ningún dato**.
+
+**Qué falta, y por qué es menos de lo que parece.** El diseño local-first juega a
+favor: cuatro de los seis pasos ya dejan fila sincronizada en Supabase
+(`athletes` para onboarding, `training_plans` para primer plan, `sessions` para
+primera sesión y completadas). Eso es consultable **con SQL, sin instrumentar
+nada**. Solo faltan de verdad: el paso registro → onboarding, y la conversión.
+
+**Done.** Una query o panel que devuelva los seis pasos por cohorte semanal de
+registro.
+
+**Dependencias.** Ninguna si se resuelve con SQL sobre lo que ya se sincroniza.
+**Recomendación explícita: no instalar una herramienta de analytics para 20
+usuarios.** Reevaluar recién con self-serve.
+
+---
+
+#### 13. Readiness de iOS y Android con Capacitor — **P1 iOS / P2 Android**
+
+**Estado real.** Capacitor 8 con ocho plugins, `capacitor.config.ts` con appId
+`cl.rallyiq.app`, carpeta `ios/` versionada, scripts `ios:sync` / `build:ios` con
+`verify-ios-env.mjs`, y los deep links de OAuth nativo ya resueltos.
+**No existe carpeta `android/` y `@capacitor/android` no está en
+`dependencies`**: la plataforma Android no está empezada.
+
+**Qué falta (iOS).** Cuenta Apple Developer y app en App Store Connect, íconos y
+splash finales, privacy nutrition labels —Whoop implica declarar datos de salud—,
+build firmado y TestFlight.
+**Qué falta (Android).** `cap add android`, Play Console, formulario de Data
+Safety, firma, y la pasada de QA completa en una plataforma nueva.
+
+**Done (iOS).** Build en TestFlight instalable por un tester externo, que completa
+OAuth → plan → sesión en un dispositivo real.
+
+**Dependencias.** Punto 1 (OAuth en producción) para que el login nativo funcione
+fuera de Test Users. **Recomendación: iOS durante la beta, Android después de que
+el funnel web esté validado.** Abrir Android ahora duplica la superficie de QA
+sin aprender nada nuevo.
+
+---
+
+#### 14. Load test con 10, 25, 50 y 100 usuarios concurrentes — **P1 (10/25) / P2 (50/100)**
+
+**Estado real.** Hay dos loadtests y **ninguno mide usuarios concurrentes**.
+`scripts/loadtest-plan-builder.mjs` corre los planes **secuencialmente** —el
+propio código lo dice en la línea 584: "Los planes son secuenciales; la
+concurrencia interna queda productiva"— con writer en memoria y sin Dexie ni
+Supabase: mide calidad, costo y latencia del motor, no capacidad del sistema.
+`loadtest-week-creator.mjs` no tiene noción de concurrencia.
+
+**Qué falta.** Un harness distinto: N sesiones autenticadas simultáneas contra el
+deploy real, midiendo tasa de error y p50/p90 por endpoint —no calidad
+deportiva—. Y decidir qué capa se prueba con proveedor mock (transporte, auth,
+Supabase, cola de sync) y qué con IA real.
+
+**Done.** Reporte con las cuatro cargas, tasa de error y p90 por endpoint, y una
+lista explícita de los límites encontrados y de dónde estaba el cuello.
+
+**Dependencias y advertencia de presupuesto.** Con IA real, 100 usuarios
+concurrentes es caro y no enseña más que 25. **Recomendación: mock provider para
+transporte/Supabase en las cuatro cargas, más una sola corrida chica con IA real
+para validar el camino completo.** El saldo Anthropic registrado al 2026-07-30
+era ~US$0,60: confirmar saldo con el owner antes de planificar cualquier corrida
+pagada.
+
+---
+
+### Escalabilidad posterior
+
+---
+
+#### 15. Cola global para generaciones pesadas — **P2, y explícitamente NO construir todavía**
+
+**Estado real.** Ya hay una cadena async completa y con más garantías de las que
+suele tener un primer intento: `enqueue-plan-generation` valida auth, escribe un
+`jobId` durable y deduplica generaciones activas por plan
+(`shouldDedupeActiveGeneration`); `generate-plan-background` corre como función
+background de Netlify con concurrencia interna 3 y presupuesto de 13 minutos; el
+cliente hace polling. **El pico de un usuario ya está absorbido.**
+
+**Qué falta — y es medición, no código.** Nadie sabe cuántas generaciones
+concurrentes de **usuarios distintos** tolera el sistema. La hipótesis de que
+hace falta una cola global no tiene ninguna evidencia detrás.
+
+**Done.** Una de dos, y ambas cierran el punto: o el load test de 25/50 muestra
+fallas atribuibles a concurrencia entre usuarios —y entonces recién se escribe la
+spec de la cola—, o se cierra por escrito como no necesario con el dato que lo
+respalda.
+
+**Dependencias.** Punto 14. **Bloqueado por medición a propósito**: construir una
+cola global antes de tener el número sería exactamente la sobrearquitectura que
+esta sección existe para evitar.
+
+---
+
+#### 16. El resto del carril de escala
+
+Sin fecha y sin trabajo asignado hasta que la beta enseñe algo:
+
+- Load test de 50 y 100 usuarios (punto 14), una vez que 10/25 pase limpio.
+- Plataforma Android completa (punto 13).
+- Gateway de pago self-serve (punto 11).
+- SP1a dos-lados: membresías, invites y RLS v2 — ya especificado y planificado,
+  ver Opción D.
+- Sync multi-dispositivo verificable, que sigue siendo el mayor riesgo técnico
+  abierto y ya es prioridad 6 del §Que Hacer Primero.
+
+---
+
+### Orden recomendado de ejecución
+
+Una tarea a la vez. Los tres primeros pasos son el 80% del riesgo de
+lanzamiento.
+
+| # | Tarea | Por qué acá |
+|---|---|---|
+| 1 | **Revisión legal (punto 6)** — arrancarla el día 1 | El plazo lo controla un tercero; corre en paralelo con todo lo demás desde el minuto cero |
+| 2 | **OAuth a producción (punto 1)** | Barato, sin dependencias, y sin esto no hay a quién invitar |
+| 3 | **Entitlements de tres tiers (punto 2)** | El trabajo estructural del lote; los puntos 3, 4, 7 y 11 lo referencian |
+| 4 | **Rate limits server-side + techo de costo + kill switch (puntos 3 y 4)** | Un solo bloque: comparten el camino de lectura sobre `016`/`018` |
+| 5 | **Coherencia de precios (punto 7)** | Cae solo si el paso 3 se cerró; si no, es un cambio de copy de una hora |
+| 6 | **Auditoría de seguridad (punto 5)** | Sobre la superficie ya final, no sobre una intermedia |
+| 7 | **Observabilidad + funnel SQL (puntos 10 y 12)** | Ambos son consulta sobre tablas que ya existen; sin esto la beta no enseña |
+| 8 | **Abrir la beta de 10–20 (punto 8)** | Aquí termina el pre-lanzamiento |
+| 9 | **Load test 10/25 con mock (punto 14)** | Durante la beta, no antes: el objetivo es dimensionar, no bloquear |
+| 10 | **Decidir la cola (punto 15)** | Con el dato del paso 9 en la mano |
+| 11 | **iOS TestFlight (punto 13) y landing final (punto 9)** | Con screenshots de uso real, que recién existen después de la beta |
+| 12 | Android, gateway, 50/100 concurrentes | Post-beta, si el funnel lo justifica |
+
+**Lo que esta sección deliberadamente no pide:** cola global sin medir,
+herramienta de analytics para 20 usuarios, gateway de pago antes de tener
+entitlements, Android en paralelo con iOS, y load test de 100 usuarios con IA
+real. Cada uno de esos es trabajo que se puede justificar más tarde con datos, y
+ninguno bloquea lanzar.
 
 ## Lo Nuevo Desde El Roadmap Anterior
 
