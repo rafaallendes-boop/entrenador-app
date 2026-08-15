@@ -248,7 +248,7 @@ repite. Cambios necesarios:
 - `ProxyProvider` lo parsea y lo cuelga de `AIProviderError`.
 - `enqueue-plan-generation` y `generate-plan-background` devuelven la misma forma.
 
-### 4.6 `normalizeError` no puede aplanar el 403
+### 4.6 Dos puntos aplanan el 403, y hay que arreglar los dos
 
 Hoy `normalizeError` (`coach.ts:496`) hace:
 
@@ -266,8 +266,25 @@ quedaría rota en silencio, sin fallar ningún test que hoy exista.
 
 El requisito es explícito: `normalizeError` **preserva** `errorCode` y `detail`
 cuando ya vienen definidos, y solo cae a `unauthorized` para un 401/403 sin
-código propio. Va con test dedicado, porque es un punto donde un refactor futuro
-puede volver a aplanarlo sin que nada más se rompa.
+código propio.
+
+**El cliente tiene el mismo defecto, de forma independiente.**
+`ProxyProvider.throwHttpError` (`ProxyProvider.ts:325`) hace:
+
+```ts
+if (res.status === 401 || res.status === 403) {
+  throw createProviderError('gemini', data.errorCode === 'misconfigured' ? 'misconfigured' : 'unauthorized', message)
+}
+```
+
+Es decir: aunque el servidor preserve `entitlement_required` correctamente, el
+cliente lo vuelve a aplanar a `unauthorized` al recibirlo. **Arreglar solo el
+servidor no produce ningún cambio observable.** Los dos puntos se corrigen
+juntos o el trabajo no sirve.
+
+Ambos van con test dedicado, porque son puntos donde un refactor futuro puede
+volver a aplanarlos sin que nada más se rompa. `AIErrorCode` (cliente) y
+`TechnicalErrorCode` (servidor) suman `entitlement_required` como valor.
 
 ## 5. Cliente
 
@@ -482,6 +499,10 @@ No negociables:
   corrida.
 - **`normalizeError` preserva `entitlement_required` y su `detail`** en un 403,
   y sigue cayendo a `unauthorized` para un 403 sin código propio (§4.6).
+- **`ProxyProvider.throwHttpError` preserva `entitlement_required`** en un 403
+  en vez de aplanarlo a `unauthorized`, y sigue aplanando un 403 sin código
+  propio. Test de extremo a extremo: un 403 con `detail` sale del servidor y
+  llega al cliente con `requiredTier` intacto (§4.6).
 - Reconciliación del espejo, los tres casos por separado: fila presente escribe,
   ausencia confirmada **borra**, error de red **conserva** (§5.1.1).
 - Hidratación en curso sin espejo → estado neutro, no oferta (§5.1.2).
