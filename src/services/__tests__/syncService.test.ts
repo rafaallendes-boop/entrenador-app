@@ -2422,6 +2422,104 @@ describe('syncService', () => {
     }
   })
 
+  it('no drena una escritura child si el pull de memberships devuelve error', async () => {
+    vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+    const { setSelfAthleteId, setActiveAthleteId } = await import('../athlete/activeAthlete')
+    setSelfAthleteId('ath_user-1')
+    setActiveAthleteId('ath_m_pull_guard')
+    try {
+      athleteRows = [{
+        id: 'ath_m_pull_guard',
+        ownerAccountId: 'user-1',
+        linkedAccountId: null,
+        status: 'active',
+        createdAt: 10,
+        updatedAt: 20,
+      }]
+      const queuedChild = {
+        userId: 'user-1',
+        table: 'athlete_profiles',
+        action: 'upsert',
+        payload: {
+          id: 'profile:user-1:ath_m_pull_guard',
+          user_id: 'user-1',
+          athlete_id: 'ath_m_pull_guard',
+          updated_at: 25,
+          data: { name: 'Pendiente protegido' },
+        },
+        enqueuedAt: Date.now(),
+      }
+      localStorage.setItem('entrenador_sync_queue_v1', JSON.stringify([queuedChild]))
+      actionResults.set('select:athlete_memberships', {
+        data: null,
+        error: { message: 'memberships unavailable', status: 503 },
+      })
+
+      const syncService = await import('../syncService')
+      await syncService.runFullSync('user-1')
+
+      expect(selectCalls.some((call) => call.table === 'athletes')).toBe(false)
+      expect(upsertCalls.some((call) => (
+        (call.payload as { id?: string }).id === 'ath_m_pull_guard'
+        || (call.payload as { athlete_id?: string }).athlete_id === 'ath_m_pull_guard'
+      ))).toBe(false)
+      expect(JSON.parse(localStorage.getItem('entrenador_sync_queue_v1') ?? '[]'))
+        .toEqual([queuedChild])
+    } finally {
+      setSelfAthleteId(null)
+      setActiveAthleteId(null)
+    }
+  })
+
+  it('no drena una escritura child si el pull de athletes devuelve error', async () => {
+    vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+    const { setSelfAthleteId, setActiveAthleteId } = await import('../athlete/activeAthlete')
+    setSelfAthleteId('ath_user-1')
+    setActiveAthleteId('ath_m_pull_guard')
+    try {
+      athleteRows = [{
+        id: 'ath_m_pull_guard',
+        ownerAccountId: 'user-1',
+        linkedAccountId: null,
+        status: 'active',
+        createdAt: 10,
+        updatedAt: 20,
+      }]
+      const queuedChild = {
+        userId: 'user-1',
+        table: 'athlete_profiles',
+        action: 'upsert',
+        payload: {
+          id: 'profile:user-1:ath_m_pull_guard',
+          user_id: 'user-1',
+          athlete_id: 'ath_m_pull_guard',
+          updated_at: 25,
+          data: { name: 'Pendiente protegido' },
+        },
+        enqueuedAt: Date.now(),
+      }
+      localStorage.setItem('entrenador_sync_queue_v1', JSON.stringify([queuedChild]))
+      actionResults.set('select:athletes', {
+        data: null,
+        error: { message: 'athletes unavailable', status: 503 },
+      })
+
+      const syncService = await import('../syncService')
+      await syncService.runFullSync('user-1')
+
+      expect(selectCalls.some((call) => call.table === 'athletes')).toBe(true)
+      expect(upsertCalls.some((call) => (
+        (call.payload as { id?: string }).id === 'ath_m_pull_guard'
+        || (call.payload as { athlete_id?: string }).athlete_id === 'ath_m_pull_guard'
+      ))).toBe(false)
+      expect(JSON.parse(localStorage.getItem('entrenador_sync_queue_v1') ?? '[]'))
+        .toEqual([queuedChild])
+    } finally {
+      setSelfAthleteId(null)
+      setActiveAthleteId(null)
+    }
+  })
+
   it('falla cerrado si no puede persistir el tombstone del delete remoto confirmado', async () => {
     const { setSelfAthleteId, setActiveAthleteId } = await import('../athlete/activeAthlete')
     setSelfAthleteId('ath_user-1')
@@ -3120,6 +3218,25 @@ describe('syncService', () => {
         .map((call) => call.table)).toEqual(['training_plans'])
       expect(JSON.parse(localStorageState.get('entrenador_sync_queue_v1') ?? '[]'))
         .toEqual([expect.objectContaining({ table: 'training_plans', action: 'upsert' })])
+    })
+
+    it('si la cola no se persiste el padre no informa un commit durable', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      Object.defineProperty(globalThis, 'navigator', {
+        configurable: true,
+        value: { onLine: false },
+      })
+      const durableSetItem = localStorage.setItem.bind(localStorage)
+      vi.spyOn(localStorage, 'setItem').mockImplementation((key: string, value: string) => {
+        if (key === 'entrenador_sync_queue_v1') return
+        durableSetItem(key, value)
+      })
+      const { softDeleteTrainingPlan } = await import('../syncService')
+
+      await expect(softDeleteTrainingPlan(planFixture(), [weekFixture(0)]))
+        .resolves.toBe('failed')
+      expect(upsertCalls).toEqual([])
+      expect(JSON.parse(localStorageState.get('entrenador_sync_queue_v1') ?? '[]')).toEqual([])
     })
 
     it('una limpieza child failed/queued no degrada un padre ya pushed', async () => {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { CoachExerciseProposal } from '../../../types'
+import type { EquipmentType } from '../exerciseLibrary'
 import { normalizeStrengthSessionExercises } from '../strengthSessionStructure'
 import { resolveStrengthExercise } from '../exerciseLibrary'
 
@@ -27,11 +28,22 @@ function injectedCoreId(exercises: CoachExerciseProposal[] | undefined): string 
   return core ? resolveStrengthExercise(core)?.definition?.id : undefined
 }
 
-function normalizeAt(weekIndexInBlock: number | undefined): string | undefined {
-  return injectedCoreId(normalizeStrengthSessionExercises(sessionWithoutCore(), {
+function normalizedAt(
+  weekIndexInBlock: number | undefined,
+  availableEquipment?: EquipmentType[],
+): CoachExerciseProposal[] | undefined {
+  return normalizeStrengthSessionExercises(sessionWithoutCore(), {
     durationMin: 60,
     ...(weekIndexInBlock == null ? {} : { weekIndexInBlock }),
-  }))
+    ...(availableEquipment == null ? {} : { availableEquipment }),
+  })
+}
+
+function normalizeAt(
+  weekIndexInBlock: number | undefined,
+  availableEquipment?: EquipmentType[],
+): string | undefined {
+  return injectedCoreId(normalizedAt(weekIndexInBlock, availableEquipment))
 }
 
 describe('rotación del core inyectado', () => {
@@ -67,4 +79,47 @@ describe('rotación del core inyectado', () => {
       expect(definition?.tags).toContain('core')
     }
   })
+
+  it('prescribe repeticiones para dead bug y segundos para las tres planchas', () => {
+    const prescriptions = [0, 1, 2, 3].map((index) => normalizedAt(index)?.find(
+      (exercise) => exercise.group === 'core',
+    )?.reps)
+
+    expect(prescriptions).toEqual(['8/lado', '30s', '30s/lado', '30s'])
+  })
+
+  it('cae al primer core para índices negativos o no finitos', () => {
+    for (const index of [-1, -4, Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY, Number.NaN]) {
+      expect(normalizeAt(index), String(index)).toBe('dead_bug')
+    }
+  })
+
+  it('no inyecta la plancha en fitball cuando el equipamiento no la permite', () => {
+    expect(normalizeAt(3, ['bodyweight'])).toBe('dead_bug')
+    expect(normalizeAt(3, ['bodyweight', 'stability_ball'])).toBe('stability_ball_front_plank')
+  })
+
+  it('es idempotente cuando el único core ya es el seleccionado para la semana', () => {
+    const first = normalizedAt(1)
+    const second = normalizeStrengthSessionExercises(first, { durationMin: 60, weekIndexInBlock: 1 })
+    const ids = second
+      ?.filter((exercise) => exercise.group === 'core')
+      .map((exercise) => resolveStrengthExercise(exercise)?.definition?.id)
+
+    expect(ids).toEqual(['plank'])
+  })
+
+  it('en Chat conserva un core real distinto además del dead bug por defecto', () => {
+    const input = [
+      ...sessionWithoutCore(),
+      { name: 'Plancha frontal', sets: 3, reps: '30s', group: 'core' as const },
+    ]
+    const normalized = normalizeStrengthSessionExercises(input, { durationMin: 60 })
+    const ids = normalized
+      ?.filter((exercise) => exercise.group === 'core')
+      .map((exercise) => resolveStrengthExercise(exercise)?.definition?.id)
+
+    expect(ids).toEqual(['dead_bug', 'plank'])
+  })
+
 })

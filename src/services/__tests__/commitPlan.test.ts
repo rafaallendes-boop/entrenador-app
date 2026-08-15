@@ -143,7 +143,7 @@ vi.mock('../syncService', () => ({
   deleteSession: vi.fn(),
   pullSessionsForDateRange: vi.fn(async () => {}),
   pushWeekSummary: vi.fn(),
-  pushTrainingPlan: vi.fn(async () => {}),
+  pushTrainingPlan: vi.fn(async () => 'pushed' as const),
   pushTrainingPlanWeeks: vi.fn(async () => {}),
 }))
 
@@ -786,6 +786,7 @@ describe('commitPlan', () => {
     vi.mocked(syncService.pushTrainingPlan).mockImplementation(async (candidate) => {
       publicationOrder.push(`${candidate.id}:${candidate.status}`)
       if (candidate.id === 'plan-1') await activePublished
+      return 'pushed'
     })
     vi.mocked(syncService.pushTrainingPlanWeeks).mockImplementation(async () => {
       publicationOrder.push('plan-1:weeks')
@@ -827,8 +828,95 @@ describe('commitPlan', () => {
     ]))
     expect(settled).toBe(true)
 
-    vi.mocked(syncService.pushTrainingPlan).mockReset().mockResolvedValue(undefined)
+    vi.mocked(syncService.pushTrainingPlan).mockReset().mockResolvedValue('pushed')
     vi.mocked(syncService.pushTrainingPlanWeeks).mockReset().mockResolvedValue(undefined)
+  })
+
+  it('does not converge destructive remote lifecycle changes when parent publication fails', async () => {
+    const syncService = await import('../syncService')
+    const previousActive = {
+      ...makePlan(1),
+      id: 'plan-old',
+      status: 'active' as const,
+    }
+    trainingPlansById.set(previousActive.id, previousActive)
+    const removed: Session = {
+      ...makeStoredSession('old-generated-future', '2099-01-04', 'Plan anterior'),
+      weekStartDate: '2098-12-29',
+      athleteId: 'athlete-1',
+      source: 'coach',
+      planId: previousActive.id,
+      planWeekId: 'old-week',
+    }
+    sessionsById.set(removed.id, removed)
+    vi.mocked(syncService.pushTrainingPlan).mockReset().mockResolvedValue('failed')
+    vi.mocked(syncService.pushTrainingPlanWeeks).mockClear()
+    vi.mocked(syncService.deleteSession).mockClear()
+
+    const result = await commitPlan({
+      ...makePlan(1),
+      wizardConfig: {
+        ...makePlan().wizardConfig,
+        allowDoubleSession: true,
+        trainingDays: ['monday'],
+        sessionsPerWeek: 2,
+      },
+    }, [
+      makeWeek({
+        id: 'week-1',
+        weekIndex: 0,
+        weekStartDate: '2026-05-04',
+        sessions: makeProposalSession('2026-05-05'),
+      }),
+    ])
+
+    expect(result.errors).toEqual([])
+    expect(result.warnings).toContain(
+      'El plan quedó activo en este dispositivo, pero no se pudo publicar. No se modificó el ciclo remoto anterior.',
+    )
+    expect(syncService.pushTrainingPlan).toHaveBeenCalledTimes(1)
+    expect(syncService.pushTrainingPlan).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'plan-1',
+      status: 'active',
+    }))
+    expect(syncService.pushTrainingPlanWeeks).not.toHaveBeenCalled()
+    expect(syncService.deleteSession).not.toHaveBeenCalled()
+    expect(trainingPlansById.get('plan-1')).toMatchObject({ status: 'active' })
+    expect(trainingPlansById.get(previousActive.id)).toMatchObject({ status: 'superseded' })
+
+    vi.mocked(syncService.pushTrainingPlan).mockReset().mockResolvedValue('pushed')
+  })
+
+  it('keeps a local-only commit successful without launching remote convergence', async () => {
+    const syncService = await import('../syncService')
+    vi.mocked(syncService.pushTrainingPlan).mockReset().mockResolvedValue('no_remote')
+    vi.mocked(syncService.pushTrainingPlanWeeks).mockClear()
+    vi.mocked(syncService.deleteSession).mockClear()
+
+    const result = await commitPlan({
+      ...makePlan(1),
+      wizardConfig: {
+        ...makePlan().wizardConfig,
+        allowDoubleSession: true,
+        trainingDays: ['monday'],
+        sessionsPerWeek: 2,
+      },
+    }, [
+      makeWeek({
+        id: 'week-1',
+        weekIndex: 0,
+        weekStartDate: '2026-05-04',
+        sessions: makeProposalSession('2026-05-05'),
+      }),
+    ])
+
+    expect(result.errors).toEqual([])
+    expect(result.warnings).not.toContainEqual(expect.stringContaining('no se pudo publicar'))
+    expect(syncService.pushTrainingPlanWeeks).not.toHaveBeenCalled()
+    expect(syncService.deleteSession).not.toHaveBeenCalled()
+    expect(trainingPlansById.get('plan-1')).toMatchObject({ status: 'active' })
+
+    vi.mocked(syncService.pushTrainingPlan).mockReset().mockResolvedValue('pushed')
   })
 
   it('uses an indexed future-session query and a fresh training-store snapshot when refreshing cleanup', async () => {

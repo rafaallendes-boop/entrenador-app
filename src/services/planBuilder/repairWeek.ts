@@ -45,7 +45,11 @@ import {
   type StrengthSelectionExercise,
   type StrengthSportProfile,
 } from '../training/strengthSelector'
-import { enhanceStrengthSessionExercises, resolveStrengthExerciseBlock } from '../training/strengthSessionStructure'
+import {
+  enhanceStrengthSessionExercises,
+  isSelectedInjectedCore,
+  resolveStrengthExerciseBlock,
+} from '../training/strengthSessionStructure'
 import { planSupersetGroups, shouldApplySupersetPolicy } from '../training/supersetPolicy'
 import { type ExperienceLevel } from '../training/exerciseLibrary'
 import { getStrengthExerciseKey, toStrengthProposal } from '../training/strengthExerciseProposal'
@@ -2042,6 +2046,7 @@ function normalizeStrengthSessions(
   // programado.
 
   const weekIndexInBlock = getWeekIndexInBlock(context)
+  const availableEquipment = buildAthleteParameters(context.profile, context.wizardConfig).availableEquipment
   const currentBlockId = resolveBlockPositions(getPlanPhaseDescriptors(context), getPlanWeekDescriptors(context))
     .get(context.week.weekIndex)?.blockId
   const previous = context.previousWeek
@@ -2062,7 +2067,11 @@ function normalizeStrengthSessions(
     exercises.forEach((exercise, position) => {
       const key = getStrengthExerciseKey(exercise)
       if (!key) return
-      if (!isCountableRole(roles[position]!) || alreadyCanonical) {
+      const isProtectedInjectedCore = isSelectedInjectedCore(exercise, {
+        weekIndexInBlock,
+        availableEquipment,
+      })
+      if (!isCountableRole(roles[position]!) || alreadyCanonical || isProtectedInjectedCore) {
         assignedKeys.add(key)
         return
       }
@@ -2129,6 +2138,7 @@ function normalizeStrengthSessions(
       durationMin: session.durationMin,
       strengthProfile: context.profile.strengthProfile,
       weekIndexInBlock: getWeekIndexInBlock(context),
+      availableEquipment,
     })
     if (session.exercises) {
       const mode = shouldApplySupersetPolicy({
@@ -2810,6 +2820,8 @@ function enhanceStrengthSessionDetails(
   const enhanced = enhanceStrengthSessionExercises(session.exercises, {
     durationMin: session.durationMin,
     strengthProfile: context.profile.strengthProfile,
+    weekIndexInBlock: getWeekIndexInBlock(context),
+    availableEquipment: buildAthleteParameters(context.profile, context.wizardConfig).availableEquipment,
   })
   session.exercises = completeStrengthExerciseDensity(session, context, recentExercises, enhanced)
   return before !== JSON.stringify(session.exercises ?? [])
@@ -2884,6 +2896,7 @@ function completeStrengthExerciseDensity(
     durationMin: session.durationMin,
     strengthProfile: context.profile.strengthProfile,
     weekIndexInBlock: getWeekIndexInBlock(context),
+    availableEquipment: buildAthleteParameters(context.profile, context.wizardConfig).availableEquipment,
   })
 }
 

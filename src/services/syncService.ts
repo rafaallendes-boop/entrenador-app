@@ -757,7 +757,7 @@ function scheduleRetry(ms: number): void {
   }, Math.max(0, retryAt - Date.now()))
 }
 
-function enqueue(op: OfflineOp): void {
+function enqueue(op: OfflineOp): boolean {
   enqueueOp(op, {
     onOverflow: (dropped) => {
       syncLog('queue:overflow', {
@@ -769,6 +769,7 @@ function enqueue(op: OfflineOp): void {
       }, 'warn')
     },
   })
+  return loadQueue().some((queued) => offlineOpsShareIdentity(queued, op))
 }
 
 function getEntityMutationKey(
@@ -1386,7 +1387,8 @@ async function upsertRow(
     }
 
     if (hasPendingRemoteWipeForTable(userId, table)) {
-      enqueue({ userId, table, action: 'upsert', payload, enqueuedAt: Date.now() })
+      const queued = enqueue({ userId, table, action: 'upsert', payload, enqueuedAt: Date.now() })
+      if (!queued) return 'failed'
       scheduleRetry(15000)
       return 'queued'
     }
@@ -1394,7 +1396,8 @@ async function upsertRow(
     if (!navigator.onLine) {
       finishSyncAttempt('offline')
       syncStoreState().setSyncStatus('offline')
-      enqueue({ userId, table, action: 'upsert', payload, enqueuedAt: Date.now() })
+      const queued = enqueue({ userId, table, action: 'upsert', payload, enqueuedAt: Date.now() })
+      if (!queued) return 'failed'
       scheduleRetry(15000)
       return 'queued'
     }
@@ -1459,9 +1462,9 @@ async function upsertRow(
         applySyncFailure(error, errorInfo.userMessage, table)
         return 'failed'
       }
-      enqueue({ userId, table, action: 'upsert', payload, enqueuedAt: Date.now() })
+      const queued = enqueue({ userId, table, action: 'upsert', payload, enqueuedAt: Date.now() })
       applySyncFailure(error, errorInfo.userMessage, table)
-      return 'queued'
+      return queued ? 'queued' : 'failed'
     }
   }))
 }
@@ -3033,10 +3036,11 @@ export async function pushAthleteProfile(
   })
 }
 
-export async function pushTrainingPlan(plan: TrainingPlan): Promise<void> {
+export async function pushTrainingPlan(plan: TrainingPlan): Promise<SyncPushOutcome> {
   const userId = getUserId()
-  if (!userId || !isSyncablePlanStatus(plan.status)) return
-  await upsertRow('training_plans', trainingPlanToRow(plan, userId))
+  if (!userId) return isEnabled() ? 'failed' : 'no_remote'
+  if (!isSyncablePlanStatus(plan.status)) return 'no_remote'
+  return upsertRow('training_plans', trainingPlanToRow(plan, userId))
 }
 
 export async function pushTrainingPlanWeeks(plan: TrainingPlan, weeks: TrainingPlanWeek[]): Promise<void> {
@@ -3221,11 +3225,11 @@ async function processPendingRemoteWipes(userId: string): Promise<RemoteWipeOutc
 /**
  * Pull the owner's athlete rows FIRST (Tier-A intent) and re-hydrate the active
  * athlete, so any athlete-scoped read/write later in the sync uses a resolved id.
- * Scoped by owner_account_id (athletes has no user_id). Degrades gracefully if the
- * table/migration is not present yet.
+ * Scoped by account_id. A failed read returns false so runFullSync can preserve
+ * queued child writes until identity state has been confirmed remotely.
  */
-export async function pullMemberships(userId: string): Promise<void> {
-  if (!isEnabled()) return
+export async function pullMemberships(userId: string): Promise<boolean> {
+  if (!isEnabled()) return true
   try {
     const { data, error } = await withRequestTimeout(
       getSupabase().from('athlete_memberships').select('*').eq('account_id', userId),
@@ -3239,10 +3243,12 @@ export async function pullMemberships(userId: string): Promise<void> {
     await runAthleteWrites(athleteIds, async () => {
       await replaceMembershipCache(userId, alive)
     })
+    return true
   } catch (error) {
     syncLog('memberships:pull_failed', {
       error: error instanceof Error ? error.message : String(error),
     }, 'warn')
+    return false
   }
 }
 
@@ -3256,48 +3262,48 @@ async function pullAthletes(userId: string): Promise<boolean> {
       : base.eq('owner_account_id', userId))
     if (error) {
       syncLog('pullAthletes:error', { error: error.message }, 'warn')
-    } else {
-      const remoteRows = (data ?? []) as AthleteRow[]
-      const remoteIds = new Set(remoteRows.map((row) => row.id))
-      const acknowledged = loadAcknowledgedRemoteAthleteIds(userId)
-      const selfAthleteId = groupingSelfAthleteId(userId)
-      const localOwnedAthletes = (await db.athletes.toArray()).filter((athlete) => (
-        athlete.ownerAccountId === userId && athlete.id !== selfAthleteId
-      ))
-
-      for (const local of localOwnedAthletes) {
-        if (remoteIds.has(local.id) || !acknowledged.has(local.id)) continue
-
-        // The device observed this exact identity remotely before, so its later
-        // absence from a complete owner-scoped pull is the durable signal of a
-        // hard delete (whose FK cascade also removed athlete_profiles).
-        try {
-          rememberAthleteDeleteTombstone(userId, local.id)
-        } catch (error) {
-          syncLog('pullAthletes:delete_tombstone_failed', {
-            athleteId: local.id,
-            error: error instanceof Error ? error.message : String(error),
-          }, 'warn')
-          // Fail closed: without the durable write barrier, neither the queue
-          // nor Dexie nor the acknowledgement may change.
-          return false
-        }
-        clearQueuedOpsForAthlete(userId, local.id)
-        await waitForInFlightAthleteOps(local.id)
-        await db.transaction('rw', getAllAthleteScopedTables(), async () => {
-          await purgeAthleteScopedRows(local.id)
-        })
-        clearStoredChatSessionIdForAthlete(local.id)
-        forgetRemoteAthleteAcknowledgement(userId, local.id)
-        syncLog('pullAthletes:remote_delete_applied', { athleteId: local.id })
-      }
-
-      for (const row of remoteRows) {
-        if (hasAthleteDeleteTombstone(userId, row.id)) continue
-        await runAthleteWrite(row.id, () => db.athletes.put(rowToAthlete(row)))
-      }
-      rememberRemoteAthleteAcknowledgements(userId, remoteRows.map((row) => row.id))
+      return false
     }
+    const remoteRows = (data ?? []) as AthleteRow[]
+    const remoteIds = new Set(remoteRows.map((row) => row.id))
+    const acknowledged = loadAcknowledgedRemoteAthleteIds(userId)
+    const selfAthleteId = groupingSelfAthleteId(userId)
+    const localOwnedAthletes = (await db.athletes.toArray()).filter((athlete) => (
+      athlete.ownerAccountId === userId && athlete.id !== selfAthleteId
+    ))
+
+    for (const local of localOwnedAthletes) {
+      if (remoteIds.has(local.id) || !acknowledged.has(local.id)) continue
+
+      // The device observed this exact identity remotely before, so its later
+      // absence from a complete owner-scoped pull is the durable signal of a
+      // hard delete (whose FK cascade also removed athlete_profiles).
+      try {
+        rememberAthleteDeleteTombstone(userId, local.id)
+      } catch (error) {
+        syncLog('pullAthletes:delete_tombstone_failed', {
+          athleteId: local.id,
+          error: error instanceof Error ? error.message : String(error),
+        }, 'warn')
+        // Fail closed: without the durable write barrier, neither the queue
+        // nor Dexie nor the acknowledgement may change.
+        return false
+      }
+      clearQueuedOpsForAthlete(userId, local.id)
+      await waitForInFlightAthleteOps(local.id)
+      await db.transaction('rw', getAllAthleteScopedTables(), async () => {
+        await purgeAthleteScopedRows(local.id)
+      })
+      clearStoredChatSessionIdForAthlete(local.id)
+      forgetRemoteAthleteAcknowledgement(userId, local.id)
+      syncLog('pullAthletes:remote_delete_applied', { athleteId: local.id })
+    }
+
+    for (const row of remoteRows) {
+      if (hasAthleteDeleteTombstone(userId, row.id)) continue
+      await runAthleteWrite(row.id, () => db.athletes.put(rowToAthlete(row)))
+    }
+    rememberRemoteAthleteAcknowledgements(userId, remoteRows.map((row) => row.id))
     await hydrateActiveAthlete(userId)
     return true
   } catch (error) {
@@ -3378,7 +3384,9 @@ export async function runFullSync(userId: string): Promise<void> {
       // another device hard-deleted a previously acknowledged managed athlete,
       // its remote absence must tombstone/clear stale queued profile writes
       // before `ensureRemoteAthlete` can recreate the parent row.
-      await pullMemberships(userId)
+      if (!await pullMemberships(userId)) {
+        throw new Error('No se pudo confirmar el estado remoto de las membresías antes de drenar la cola.')
+      }
       if (!await pullAthletes(userId)) {
         throw new Error('No se pudo confirmar el estado remoto de los atletas antes de drenar la cola.')
       }

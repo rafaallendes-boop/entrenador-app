@@ -90,7 +90,7 @@ async function syncPlanLifecycle(
   nextPlan: TrainingPlan,
   nextWeeks: TrainingPlanWeek[],
   lifecycle: PlanLifecycleCommit,
-): Promise<void> {
+): Promise<syncService.SyncPushOutcome> {
   // The new parent is the durable publication barrier: online it lands first;
   // offline its queue op lands first. Children and convergent cleanup can then
   // run independently without one rejected mutation suppressing the rest.
@@ -98,7 +98,10 @@ async function syncPlanLifecycle(
   // fails: that would briefly (or permanently) leave the athlete with no
   // active remote plan. `upsertRow` resolves after the write is durable or its
   // offline operation is queued.
-  await syncService.pushTrainingPlan(nextPlan)
+  const parentOutcome = await syncService.pushTrainingPlan(nextPlan)
+  if (parentOutcome === 'failed' || parentOutcome === 'no_remote') {
+    return parentOutcome
+  }
   await Promise.allSettled([
     syncService.pushTrainingPlanWeeks(
       nextPlan,
@@ -111,6 +114,7 @@ async function syncPlanLifecycle(
       syncService.deleteSession(session.id)
     )),
   ])
+  return parentOutcome
 }
 
 async function refreshRemovedSessionWeeks(
@@ -333,7 +337,10 @@ export async function commitPlan(
       warnings.push(`Se retiraron ${lifecycle.removedSessions.length} sesiones futuras planificadas de ciclos reemplazados.`)
       await refreshRemovedSessionWeeks(lifecycle.removedSessions).catch(() => undefined)
     }
-    await syncPlanLifecycle(nextPlan, nextWeeks, lifecycle)
+    const syncOutcome = await syncPlanLifecycle(nextPlan, nextWeeks, lifecycle)
+    if (syncOutcome === 'failed') {
+      warnings.push('El plan quedó activo en este dispositivo, pero no se pudo publicar. No se modificó el ciclo remoto anterior.')
+    }
   }
 
   return { errors, warnings, acceptedWeeks, lifecycleRemovedSessionCount }

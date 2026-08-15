@@ -36,8 +36,8 @@ const WIZARD_CONFIG = {
   currentFitnessLevel: 'fit', currentFatigue: 'fresh', createdAt: '', updatedAt: '',
 } as never
 
-const WEEK_START_DATES = ['2026-06-08', '2026-06-15', '2026-06-22']
-const SESSION_DATES = ['2026-06-09', '2026-06-16', '2026-06-23']
+const WEEK_START_DATES = ['2026-06-08', '2026-06-15', '2026-06-22', '2026-06-29']
+const SESSION_DATES = ['2026-06-09', '2026-06-16', '2026-06-23', '2026-06-30']
 
 /** La plantilla clonada que el modelo devolvió en el arquetipo 1. */
 function clonedStrengthTemplate(date: string): CoachSessionProposal {
@@ -87,6 +87,7 @@ function makeContext(weekIndex: number): RepairContext {
       { weekIndex: 0, phase: 'peak' },
       { weekIndex: 1, phase: 'peak' },
       { weekIndex: 2, phase: 'peak' },
+      { weekIndex: 3, phase: 'peak' },
     ],
   }
 }
@@ -116,5 +117,30 @@ describe('rotación de fuerza entre semanas reparadas en paralelo', () => {
 
     const offending = overlaps.filter((entry) => entry.shared.length >= 3)
     expect(offending).toEqual([])
+  })
+
+  it('propaga el índice del bloque al primer enriquecimiento y rota el core inyectado', () => {
+    const withoutCore = (date: string): CoachSessionProposal => ({
+      ...clonedStrengthTemplate(date),
+      exercises: [
+        ...(clonedStrengthTemplate(date).exercises?.filter((exercise) => exercise.group !== 'core') ?? []),
+        { name: 'Sentadilla frontal', sets: 3, reps: 8, group: 'legs' },
+        { name: 'Press banca', sets: 3, reps: 8, group: 'push' },
+        { name: 'Dominada', sets: 3, reps: 8, group: 'pull' },
+      ],
+    })
+
+    const selectedIds = ['dead_bug', 'plank', 'side_plank', 'stability_ball_front_plank']
+    const injectedCoreOccurrences = [0, 1, 2, 3].map((weekIndex) => {
+      const repaired = repairGeneratedWeek(
+        [withoutCore(SESSION_DATES[weekIndex]!)] as never,
+        makeContext(weekIndex),
+      ).sessions
+      return repaired[0]?.exercises?.filter(
+        (exercise) => exercise.libraryRef?.id === selectedIds[weekIndex],
+      ).length
+    })
+
+    expect(injectedCoreOccurrences).toEqual([1, 1, 1, 1])
   })
 })

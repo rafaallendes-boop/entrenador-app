@@ -19,6 +19,7 @@ import * as syncService from '../services/syncService'
 import { toISO, fromISO, getWeekStart, currentWeekStartISO, todayISO } from '../utils/date'
 import { v4 as uuid } from '../utils/uuid'
 import { resolveAuthoredByRole, withActiveAthleteStamp } from '../services/athlete/activeScopeFilter'
+import { getActiveAthleteId } from '../services/athlete/activeAthlete'
 import { isWeeklyReviewWindowOpen } from '../services/weeklyReviewWindow'
 import { buildWeeklyCoachNoteSnapshot } from '../services/weeklyCoachNote'
 import { getCoachMemoryText } from '../services/athlete/coachNotes'
@@ -330,3 +331,42 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
     }
   },
 }))
+
+type CoachScopedSessionWrite =
+  | { kind: 'upsert'; session: Session }
+  | { kind: 'delete'; sessionId: string }
+
+/**
+ * Keeps the athlete-facing calendar coherent after a write from Coach
+ * Planning. Coach Planning persists with an explicit athlete scope, while this
+ * store represents only the currently active athlete; writes for any other
+ * roster member must therefore remain invisible here.
+ */
+export function reflectCoachScopedSessionWrite(
+  athleteId: string,
+  write: CoachScopedSessionWrite,
+  changedSummaries: WeekSummary[],
+): void {
+  if (getActiveAthleteId() !== athleteId) return
+
+  useTrainingStore.setState((state) => {
+    const sessions = write.kind === 'upsert'
+      ? resolveVisibleSessionsAfterUpdate(state.sessions, write.session, state.loadedWeekStart)
+      : state.sessions.filter((session) => session.id !== write.sessionId)
+    const visibleSummary = changedSummaries.find(
+      (summary) => summary.weekStartDate === state.loadedWeekStart,
+    )
+    const allWeekSummaries = changedSummaries.reduce((summaries, changed) => {
+      const remaining = summaries.filter((summary) => summary.weekStartDate !== changed.weekStartDate)
+      return [...remaining, changed].sort((left, right) => (
+        right.weekStartDate.localeCompare(left.weekStartDate)
+      ))
+    }, state.allWeekSummaries)
+
+    return {
+      sessions,
+      currentWeekSummary: visibleSummary ?? state.currentWeekSummary,
+      allWeekSummaries,
+    }
+  })
+}

@@ -2,9 +2,11 @@ import type { CoachExerciseProposal, Exercise, ExerciseGroup, StrengthProfile } 
 import type { ExerciseLibraryRef } from '../../types/exerciseLibraryRef'
 import {
   findStrengthExerciseByName,
+  getExerciseById,
   getExerciseGroupForDefinition,
   getStrengthExerciseIdentityById,
   resolveStrengthExercise,
+  type EquipmentType,
   type ExerciseDefinition,
   type StrengthExerciseResolution,
 } from './exerciseLibrary'
@@ -39,11 +41,24 @@ const INJECTED_CORE_ROTATION = [
  * Determinista y total: sin índice —o con uno no utilizable— devuelve el
  * primero del pool, que es el comportamiento previo a la rotación.
  */
-function resolveInjectedCoreId(weekIndexInBlock?: number): string {
-  if (weekIndexInBlock == null || !Number.isFinite(weekIndexInBlock)) return INJECTED_CORE_ROTATION[0]
-  const length = INJECTED_CORE_ROTATION.length
-  const index = ((Math.trunc(weekIndexInBlock) % length) + length) % length
-  return INJECTED_CORE_ROTATION[index]!
+function resolveInjectedCoreId(
+  weekIndexInBlock?: number,
+  availableEquipment?: EquipmentType[],
+): string {
+  if (
+    weekIndexInBlock == null ||
+    !Number.isFinite(weekIndexInBlock) ||
+    weekIndexInBlock < 0
+  ) return INJECTED_CORE_ROTATION[0]
+
+  // Las tres primeras opciones son de peso corporal. La cuarta exige fitball:
+  // `bodyweight` también figura en su definición para clasificar la carga, no
+  // significa que pueda ejecutarse sin balón. Cuando el atleta declaró equipo,
+  // esa dependencia se valida explícitamente.
+  const rotation = availableEquipment != null && !availableEquipment.includes('stability_ball')
+    ? INJECTED_CORE_ROTATION.filter((id) => id !== 'stability_ball_front_plank')
+    : INJECTED_CORE_ROTATION
+  return rotation[Math.trunc(weekIndexInBlock) % rotation.length]!
 }
 
 export interface StrengthStructureOptions {
@@ -54,6 +69,8 @@ export interface StrengthStructureOptions {
    * Ausente en el chat, que no tiene noción de bloque.
    */
   weekIndexInBlock?: number
+  /** Equipamiento declarado por el atleta; limita variantes no universales. */
+  availableEquipment?: EquipmentType[]
 }
 
 export function normalizeStrengthSessionExercises<T extends StrengthExerciseLike>(
@@ -67,7 +84,10 @@ export function normalizeStrengthSessionExercises<T extends StrengthExerciseLike
   const expanded = expandGenericFootworkBlocks(protocolFiltered)
   const normalized = expanded.map((exercise) => normalizeStrengthExerciseGroup(exercise))
   const withCore = durationMin >= 45
-    ? ensureCoreBlock(normalized, resolveInjectedCoreId(options.weekIndexInBlock))
+    ? ensureCoreBlock(
+        normalized,
+        resolveInjectedCoreId(options.weekIndexInBlock, options.availableEquipment),
+      )
     : normalized
 
   return sortStrengthSessionUnits(withCore)
@@ -238,7 +258,10 @@ function inferExerciseGroup(exercise: Pick<StrengthExerciseLike, 'name' | 'group
   return exercise.group ?? 'other'
 }
 
-function ensureCoreBlock<T extends StrengthExerciseLike>(exercises: T[], coreId: string): T[] {
+function ensureCoreBlock<T extends StrengthExerciseLike>(
+  exercises: T[],
+  coreId: string,
+): T[] {
   const core = exercises.filter((exercise) => exercise.group === 'core')
   if (core.length === 0) {
     return [
@@ -248,6 +271,7 @@ function ensureCoreBlock<T extends StrengthExerciseLike>(exercises: T[], coreId:
   }
 
   if (core.length === 1) {
+    if (resolveStrengthExercise(core[0]!)?.definition?.id === coreId) return exercises
     return [
       makeCoreExercise<T>(coreId, 'Zona media: anti-extensión y control lumbo-pélvico.'),
       ...exercises,
@@ -274,6 +298,18 @@ function ensureCoreBlock<T extends StrengthExerciseLike>(exercises: T[], coreId:
       supersetGroup: exercise.supersetGroup,
     }
   })
+}
+
+export function isSelectedInjectedCore(
+  exercise: StrengthExerciseLike,
+  options: Pick<StrengthStructureOptions, 'weekIndexInBlock' | 'availableEquipment'>,
+): boolean {
+  const weekIndex = options.weekIndexInBlock
+  if (weekIndex == null || !Number.isFinite(weekIndex) || weekIndex < 0) return false
+  return resolveStrengthExercise(exercise)?.definition?.id === resolveInjectedCoreId(
+    weekIndex,
+    options.availableEquipment,
+  )
 }
 
 function completeStrengthLoadAndEffort<T extends StrengthExerciseLike>(
@@ -487,10 +523,14 @@ function extractRepresentativeReps(reps: number | string): number | undefined {
 }
 
 function makeCoreExercise<T extends StrengthExerciseLike>(id: string, notes: string): T {
+  const definition = getExerciseById(id)
+  const reps = definition?.prescriptionUnit === 'seconds'
+    ? definition.id === 'side_plank' ? '30s/lado' : '30s'
+    : '8/lado'
   return {
     ...getStrengthExerciseIdentityById(id),
     sets: 3,
-    reps: '8/lado',
+    reps,
     group: 'core',
     notes,
   } as T
