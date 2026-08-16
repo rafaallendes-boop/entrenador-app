@@ -1,0 +1,89 @@
+import { create } from 'zustand'
+import {
+  hydrateEntitlement,
+  readMirroredTier,
+} from '../services/entitlements/entitlementService'
+import type { Tier } from '../services/entitlements/entitlementPolicy'
+import {
+  ENTITLEMENT_SOURCE,
+  type EntitlementSource,
+} from '../types/entitlement'
+
+export type { EntitlementSource } from '../types/entitlement'
+
+interface EntitlementState {
+  tier: Tier
+  loading: boolean
+  source: EntitlementSource
+  userId: string | null
+  hydrate: (userId: string) => Promise<void>
+  reset: () => void
+}
+
+/** Deduplica hidrataciones concurrentes de la misma cuenta. */
+let inFlight: { userId: string; promise: Promise<void> } | null = null
+
+/** Descarta respuestas tardías de una cuenta que ya no es la activa. */
+let epoch = 0
+
+export const useEntitlementStore = create<EntitlementState>((set, get) => ({
+  tier: 'free',
+  loading: false,
+  source: ENTITLEMENT_SOURCE.DEFAULT,
+  userId: null,
+
+  hydrate: async (userId: string) => {
+    if (inFlight?.userId === userId) return inFlight.promise
+
+    // Cambiar de cuenta descarta el tier anterior de inmediato: heredarlo aunque
+    // sea por un frame le mostraría a la cuenta nueva un plan que no tiene.
+    if (get().userId !== userId) {
+      set({
+        userId,
+        tier: 'free',
+        source: ENTITLEMENT_SOURCE.DEFAULT,
+        loading: true,
+      })
+    } else {
+      set({ loading: true })
+    }
+
+    const myEpoch = ++epoch
+    const promise = (async () => {
+      const mirrored = await readMirroredTier(userId)
+      if (myEpoch !== epoch) return
+      if (mirrored) set({ tier: mirrored, source: ENTITLEMENT_SOURCE.MIRROR })
+
+      const remote = await hydrateEntitlement(userId)
+      if (myEpoch !== epoch) return
+      set({
+        tier: remote.tier,
+        source: remote.ok
+          ? ENTITLEMENT_SOURCE.REMOTE
+          : (mirrored ? ENTITLEMENT_SOURCE.MIRROR : ENTITLEMENT_SOURCE.DEFAULT),
+        loading: false,
+      })
+    })().finally(() => {
+      if (inFlight?.userId === userId) inFlight = null
+    })
+
+    inFlight = { userId, promise }
+    return promise
+  },
+
+  reset: () => {
+    epoch += 1
+    inFlight = null
+    set({
+      tier: 'free',
+      loading: false,
+      source: ENTITLEMENT_SOURCE.DEFAULT,
+      userId: null,
+    })
+  },
+}))
+
+/** Lectura sincrónica para consumidores fuera de React (cuotas, chat store). */
+export function getEntitlementTier(): Tier {
+  return useEntitlementStore.getState().tier
+}

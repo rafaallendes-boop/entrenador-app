@@ -18,6 +18,7 @@ import {
 import { resolveWeekStartToRefresh, useTrainingStore } from './store/useTrainingStore'
 import { useCoachMemoryStore } from './store/useCoachMemoryStore'
 import { usePlanBuilderStore } from './store/usePlanBuilderStore'
+import { useEntitlementStore } from './store/useEntitlementStore'
 import { currentWeekStartISO, fromISO, toISO } from './utils/date'
 import { db } from './db/db'
 import { hasSkippedOnboarding, needsOnboarding } from './utils/onboarding'
@@ -175,6 +176,14 @@ export default function App() {
     capturePendingClaimTokenFromUrl()
     void db.open().catch(console.error)
   }, [])
+
+  useEffect(() => {
+    if (!userId) {
+      useEntitlementStore.getState().reset()
+      return
+    }
+    void useEntitlementStore.getState().hydrate(userId)
+  }, [userId])
 
   useEffect(() => {
     if (!hasLoadedMemory || !athleteProfile) return
