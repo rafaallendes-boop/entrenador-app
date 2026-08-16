@@ -85,10 +85,7 @@ describe('resolveEntitlementTier', () => {
   })
 
   it('nunca pide select=*, y pide las columnas del contrato', async () => {
-    const spy = vi.fn(async (
-      _input: Parameters<typeof fetch>[0],
-      _init?: RequestInit,
-    ) => new Response('[]', { status: 200 }))
+    const spy = vi.fn<typeof fetch>(async () => new Response('[]', { status: 200 }))
     vi.stubGlobal('fetch', spy)
     await resolveEntitlementTier('tok')
     const url = String(spy.mock.calls[0][0])
@@ -97,10 +94,7 @@ describe('resolveEntitlementTier', () => {
   })
 
   it('manda el token del usuario para que RLS filtre', async () => {
-    const spy = vi.fn(async (
-      _input: Parameters<typeof fetch>[0],
-      _init?: RequestInit,
-    ) => new Response('[]', { status: 200 }))
+    const spy = vi.fn<typeof fetch>(async () => new Response('[]', { status: 200 }))
     vi.stubGlobal('fetch', spy)
     await resolveEntitlementTier('tok-123')
     const init = spy.mock.calls[0][1] as RequestInit
