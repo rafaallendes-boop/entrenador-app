@@ -157,7 +157,7 @@ blocker **sigue abierto** porque producción continúa permisiva: `020` es de
 aplicación manual, `ENTITLEMENTS_ENABLED` está apagada por defecto en runtime y
 `VITE_ENTITLEMENTS` está apagada por defecto en el build. Hasta completar el
 rollout, cualquiera que se registre conserva acceso al comportamiento previo.
-Verificación final: **437 archivos / 3571 tests**, lint, build, `tsc -b` y
+Verificación final: **437 archivos / 3576 tests**, lint, build, `tsc -b` y
 `git diff --check` verdes.
 
 La implementación sigue el diseño aprobado el 2026-08-15 en
