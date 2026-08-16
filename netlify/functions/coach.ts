@@ -24,6 +24,19 @@ import {
   type CoachRequestTelemetry,
 } from './_shared/coachRequestTelemetry'
 import { CORS_HEADERS, corsPreflight } from './_shared/cors'
+import {
+  buildEntitlementDetail,
+  formatEntitlementMessage,
+} from '../../src/services/entitlements/entitlementError'
+import {
+  isClassAllowed,
+  minTierForClass,
+  type Tier,
+} from '../../src/services/entitlements/entitlementPolicy'
+import {
+  isEntitlementEnforcementEnabled,
+  resolveEntitlementTier,
+} from './_shared/resolveEntitlement'
 
 export { mapGeminiUsage, mapOpenAIUsage } from '../../src/services/ai/providerUsage'
 
@@ -62,6 +75,7 @@ interface NormalizedServerError extends Error {
   statusCode?: number
   errorCode?: TechnicalErrorCode
   retryable?: boolean
+  detail?: unknown
 }
 
 interface ProviderExecutionResult {
@@ -485,11 +499,13 @@ function makeError(
   statusCode: number,
   errorCode: TechnicalErrorCode,
   retryable = false,
+  detail?: unknown,
 ): NormalizedServerError {
   const error = new Error(message) as NormalizedServerError
   error.statusCode = statusCode
   error.errorCode = errorCode
   error.retryable = retryable
+  if (detail !== undefined) error.detail = detail
   return error
 }
 
@@ -497,6 +513,12 @@ function normalizeError(error: unknown): NormalizedServerError {
   const err = error as NormalizedServerError
   const message = err.message ?? 'Error interno del servidor.'
   const statusCode = err.statusCode
+  // Un error que ya trae su propio código lo conserva: aplanar un 403 a
+  // 'unauthorized' rutearía un rechazo por plan como sesión inválida y
+  // descartaría su `detail`, dejando la oferta sin datos para armarse.
+  if (statusCode === 403 && err.errorCode === 'entitlement_required') {
+    return makeError(message, 403, 'entitlement_required', false, err.detail)
+  }
   if (statusCode === 401 || statusCode === 403) {
     return makeError(message, statusCode, 'unauthorized')
   }
@@ -511,6 +533,9 @@ function normalizeError(error: unknown): NormalizedServerError {
   }
   return makeError(message, 500, err.errorCode ?? 'server_error')
 }
+
+/** Export sólo para test: `normalizeError` no es parte del contrato público. */
+export const normalizeErrorForTest = normalizeError
 
 function parseProviderName(value: string | undefined, envName: string): ProviderName | undefined {
   const normalized = value?.trim().toLowerCase()
@@ -1620,12 +1645,38 @@ export const handler = stream(async (event: HandlerEvent): Promise<StreamingResp
   let authDurationMs = 0
   let persistence: { userId: string; token: string } | undefined
   try {
-    const auth = await resolveAuthContext(event)
-    const token = getBearerToken(event)
+    const bearer = getBearerToken(event)
+    const gateEnabled = isEntitlementEnforcementEnabled()
+    const [auth, gateTier] = await Promise.all([
+      resolveAuthContext(event),
+      gateEnabled && bearer
+        ? resolveEntitlementTier(bearer)
+        : Promise.resolve('free' as Tier),
+    ])
+    const token = bearer
     if (token && auth.userId !== ANONYMOUS_USER_ID) {
       persistence = { userId: auth.userId, token }
     }
     enforceRateLimit(auth)
+
+    // Entitlement ANTES que cualquier cuota: una clase bloqueada por plan no
+    // puede reportarse como límite diario, o el usuario recibe la oferta
+    // equivocada y vuelve mañana esperando que se le renueve.
+    if (gateEnabled && auth.userId !== ANONYMOUS_USER_ID) {
+      const gateClass = normalizeRequestClass(req.requestClass)
+      const currentTier = gateTier
+      if (!isClassAllowed(currentTier, gateClass)) {
+        const requiredTier = minTierForClass(gateClass) ?? 'advanced'
+        const detail = buildEntitlementDetail(gateClass, requiredTier, currentTier)
+        throw makeError(
+          formatEntitlementMessage(detail),
+          403,
+          'entitlement_required',
+          false,
+          detail,
+        )
+      }
+    }
     authDurationMs = Date.now() - authStartedAt
   } catch (error) {
     authDurationMs = Date.now() - authStartedAt
@@ -1645,6 +1696,7 @@ export const handler = stream(async (event: HandlerEvent): Promise<StreamingResp
     return json(normalized.statusCode ?? 500, {
       error: normalized.message,
       errorCode: normalized.errorCode ?? 'unknown',
+      ...(normalized.detail !== undefined ? { detail: normalized.detail } : {}),
       traceId: req.traceId,
       requestClass: normalizeRequestClass(req.requestClass),
       generationId: req.generationId,
