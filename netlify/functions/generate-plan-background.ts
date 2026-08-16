@@ -1,8 +1,12 @@
 import type { Handler } from '@netlify/functions'
 import type { TrainingPlan } from '../../src/types/planBuilder'
 import { shouldDedupeActiveGeneration } from '../../src/services/planBuilder/activeGeneration'
-import type { PlanGenerationJobVariant } from '../../src/services/planBuilder/asyncGenerationLoop'
+import type {
+  AsyncPlanGenerationWriter,
+  PlanGenerationJobVariant,
+} from '../../src/services/planBuilder/asyncGenerationLoop'
 import { emitUnstartedJobTelemetry, runAsyncPlanGeneration } from '../../src/services/planBuilder/asyncGenerationLoop'
+import type { Tier } from '../../src/services/entitlements/entitlementPolicy'
 import {
   PRODUCTIVE_QUALITY_VERSION,
   resolveEffectiveRunQualityVersion,
@@ -13,10 +17,56 @@ import { resolveEffectivePlanBuilderConfig } from './_shared/planBuilderRunConfi
 import {
   createJobId,
   createSupabaseWriter,
+  getBearerToken,
   isGeneratePlanPayload,
   json,
   resolveAuthContext,
 } from './_shared/planGenerationShared'
+import {
+  assertPlanGenerationEntitlement,
+  isEntitlementEnforcementEnabled,
+  resolveEntitlementTier,
+} from './_shared/resolveEntitlement'
+
+type RejectedJobWriter = Pick<AsyncPlanGenerationWriter, 'getPlan' | 'putPlan'>
+
+/**
+ * Terminaliza un job ya encolado cuando el worker rechaza por entitlement.
+ *
+ * El enqueue deja el plan en `generating` antes de invocar este worker. Un
+ * rechazo posterior debe cerrar ese job, pero sólo si el payload todavía
+ * identifica la misma corrida y el plan sigue en curso: una respuesta tardía
+ * nunca puede degradar un plan ya completado ni tocar una corrida posterior.
+ */
+export async function terminalizeRejectedJob(
+  writer: RejectedJobWriter,
+  planId: string,
+  jobId: string | undefined,
+): Promise<'marked' | 'skipped'> {
+  if (!jobId) return 'skipped'
+
+  try {
+    const existing = await writer.getPlan(planId)
+    if (!existing?.generationSummary) return 'skipped'
+    if (existing.generationSummary.jobId !== jobId) return 'skipped'
+    if (existing.generationState !== 'generating') return 'skipped'
+
+    const now = Date.now()
+    await writer.putPlan({
+      ...existing,
+      generationState: 'failed',
+      updatedAt: now,
+      generationSummary: {
+        ...existing.generationSummary,
+        completedAt: now,
+      },
+    })
+    return 'marked'
+  } catch (error) {
+    console.error(`[generate-plan] entitlement cleanup failed planId=${planId}: ${error instanceof Error ? error.message : String(error)}`)
+    return 'skipped'
+  }
+}
 
 export const handler: Handler = async (event) => {
   if (event.httpMethod !== 'POST') {
@@ -39,7 +89,37 @@ export const handler: Handler = async (event) => {
   // responsable de emitirla si algo falla.
   let emitUnstartedJob: (() => Promise<void>) | null = null
   try {
-    const auth = await resolveAuthContext(event)
+    const bearer = getBearerToken(event)
+    const gateEnabled = isEntitlementEnforcementEnabled()
+    const [auth, gateTier] = await Promise.all([
+      resolveAuthContext(event),
+      gateEnabled && bearer
+        ? resolveEntitlementTier(bearer)
+        : Promise.resolve('free' as Tier),
+    ])
+
+    if (gateEnabled) {
+      try {
+        assertPlanGenerationEntitlement(gateTier)
+      } catch (error) {
+        // Esta función admite llamadas autenticadas directas y puede acuñar su
+        // propio jobId. El gate es obligatorio aquí, no sólo en el enqueue.
+        // El writer sólo se crea si hay un job durable que intentar limpiar.
+        const rejectedJobId = typeof body.jobId === 'string' && body.jobId
+          ? body.jobId
+          : undefined
+        const cleanupOutcome = rejectedJobId
+          ? await terminalizeRejectedJob(
+              createSupabaseWriter(auth.userId, auth.token),
+              body.plan.id,
+              rejectedJobId,
+            )
+          : 'skipped'
+        console.warn(`[generate-plan] entitlement denied tier=${gateTier} planId=${body.plan.id} cleanup=${cleanupOutcome}`)
+        throw error
+      }
+    }
+
     const writer = createSupabaseWriter(auth.userId, auth.token)
     const startedAt = Date.now()
     const planId = body.plan.id
@@ -155,6 +235,12 @@ export const handler: Handler = async (event) => {
       : 500
     const message = error instanceof Error ? error.message : String(error)
     console.error(`[generate-plan] error planId=${(body as { plan?: { id?: string } })?.plan?.id ?? 'unknown'}: ${message}`)
-    return json(statusCode, { error: message })
+    const errorCode = (error as { errorCode?: string }).errorCode
+    const detail = (error as { detail?: unknown }).detail
+    return json(statusCode, {
+      error: message,
+      ...(errorCode ? { errorCode } : {}),
+      ...(detail !== undefined ? { detail } : {}),
+    })
   }
 }
