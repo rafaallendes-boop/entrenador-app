@@ -29,7 +29,7 @@ Etapa: preparando piloto premium acompañado (1-3 clientes fundadores). Coach Mo
 ## Estado actual del producto
 Ver `PROJECT_REVIEW_AND_ROADMAP.md` para el estado completo. Actualizado: 2026-08-14.
 Suite completa verificada: **3390/3390 tests** en 416 archivos, build, `tsc -b`, lint y `git diff --check` OK.
-Migraciones remotas aplicadas hasta `018`; la prueba de producción de `coach_requests` está pendiente. Dexie local en **v19**.
+Migraciones remotas aplicadas hasta `018`; la prueba de producción de `coach_requests` está pendiente. Dexie local en **v20**.
 Deploy del 2026-08-03: un solo bundle llevó a producción el consentimiento, la rotación coordinada, los roles de partido de squash, la identidad `libraryRef` y el copy de fuerza. El smoke del consentimiento quedó cerrado; sigue pendiente registrar la verificación post-deploy de las tandas de motor.
 El chunk más pesado es `pdf.worker.min` — ya optimizado, no tocar sin razón.
 
@@ -89,7 +89,8 @@ Saldo Anthropic al 2026-07-30: **~US$0,60**. Una corrida de `npm run loadtest:pl
   - Toda creación local de esas filas se estampa con `withActiveAthleteStamp`.
   - En sync, el fallback legacy se ancla a `getSelfAthleteId()`, nunca al atleta activo.
   - `isInAthleteScope` (effectiveAthleteKey) es para delete-scoping de sync; para lecturas usar `activeScopeFilter`.
-- El modelo local es Dexie (**v19**) — cualquier cambio de schema requiere migración + test de upgrade real (fake-indexeddb ya instalado; el upgrade de consentimiento abre primero una base legacy v18 con datos, la cierra y luego abre `EntrenadorDB`).
+- El modelo local es Dexie (**v20**) — cualquier cambio de schema requiere migración + test de upgrade real (fake-indexeddb ya instalado; el upgrade de consentimiento abre primero una base legacy v18 con datos, la cierra y luego abre `EntrenadorDB`).
+- **Entitlements: `entitlementPolicy.ts` es la única autoridad de acceso por plan.** Tres tiers `free < weekly < advanced`; ausencia de fila, vencimiento, vencimiento ilegible o fallo de lectura resuelven a `free`; clase desconocida se deniega para todos. El gate va en las **tres** funciones (`coach.ts`, `enqueue-plan-generation`, `generate-plan-background`) porque la última acepta llamadas directas y acuña su propio `jobId`. **El chequeo de entitlement va siempre antes que el de cuota** y una clase no permitida **nunca** se representa como cuota `0`, o se reporta como límite diario en vez de oferta. El filtro de `create_week` en `chat_action` (`responseNormalizer.ts`) es una **barrera de negocio**, no una regla de calidad.
 - Las migraciones remotas son de **aplicación manual**: escribir el `.sql` numerado no es aplicarlo. Antes de asumir que una tabla existe en prod, confirmar el rollout con el owner.
 - Coach: las lecturas/escrituras por atleta explícito van por `coachScopedReads`/`coachScopedWrites` — nunca cambiando el atleta activo para leer la semana de otro.
 - No modificar `promptBuilder.ts` sin revisar el contexto completo del coach.

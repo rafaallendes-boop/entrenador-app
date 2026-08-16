@@ -9,11 +9,11 @@ Base de contraste:
   el estado actual de invitar a una beta controlada de 10–20 personas, cada uno
   con prioridad, estado contrastado contra el código de `7fc7d4f`, criterio de
   Done y dependencias. **Cinco son bloqueantes reales:** OAuth de Google todavía
-  depende de la lista de Test Users; no existe ninguna noción de tier ni
-  entitlement aunque `/pricing` publique tres planes con precios en CLP —el
-  diseño quedó aprobado el 2026-08-15 en
+  depende de la lista de Test Users; los entitlements de tres tiers ya están
+  implementados en el repositorio, pero siguen inactivos hasta completar la
+  migración y el rollout manual —el diseño quedó aprobado el 2026-08-15 en
   [`2026-08-15-entitlements-design.md`](docs/superpowers/specs/2026-08-15-entitlements-design.md),
-  sin implementar—; el rate
+  con rollout pendiente—; el rate
   limit de IA por usuario es local (Dexie) y el del servidor es un `Map` en
   memoria de 20 req/60 s; no hay techo de gasto ni kill switch pese a un costo
   medido de ~US$10/mes por usuario que agote Plan Builder; y `netlify.toml` no
@@ -150,24 +150,18 @@ desbloquea todos los demás — sin esto no hay a quién invitar.
 
 ---
 
-#### 2. Feature flags y entitlements por plan — **P0** · spec aprobado
+#### 2. Feature flags y entitlements por plan — **P0** · implementado, pendiente rollout
 
-**Estado real.** Existen cinco flags, y **ninguna es un entitlement**:
-`VITE_ATHLETE_SCOPE`, `VITE_COACH_ACCOUNTS`, `VITE_CONSENT_GATE`,
-`VITE_DEV_TOOLS`, `VITE_SHOW_PLAN_QUALITY`. Son flags de **build** más una
-allowlist por email (`coachAccess.ts`, que su propio comentario declara "NO es
-una barrera de seguridad"). No hay noción de plan, tier ni suscripción en el
-modelo de datos: ni en Dexie, ni en Supabase, ni en los tipos.
+**Estado real.** El código está implementado y verificado localmente, pero el
+blocker **sigue abierto** porque producción continúa permisiva: `020` es de
+aplicación manual, `ENTITLEMENTS_ENABLED` está apagada por defecto en runtime y
+`VITE_ENTITLEMENTS` está apagada por defecto en el build. Hasta completar el
+rollout, cualquiera que se registre conserva acceso al comportamiento previo.
+Verificación final: **437 archivos / 3571 tests**, lint, build, `tsc -b` y
+`git diff --check` verdes.
 
-La consecuencia es concreta y hoy está en vivo: `PricingPage.tsx` publica tres
-planes con precios en CLP, y **los tres CTA llaman a la misma función**
-(`handleAccess` → Google sign-in → app). Cualquiera que se registre obtiene Plan
-Builder, coach ilimitado y todo lo demás. La página promete una diferenciación
-que el producto no implementa.
-
-**Qué falta.** Diseñado y aprobado el 2026-08-15 en
-[`docs/superpowers/specs/2026-08-15-entitlements-design.md`](docs/superpowers/specs/2026-08-15-entitlements-design.md);
-falta el plan de implementación y el código. Forma acordada:
+La implementación sigue el diseño aprobado el 2026-08-15 en
+[`docs/superpowers/specs/2026-08-15-entitlements-design.md`](docs/superpowers/specs/2026-08-15-entitlements-design.md):
 
 - **Tres tiers, no dos:** `free` / `weekly` / `advanced`, alineados con los tres
   planes que `/pricing` ya publica. Se eligieron tres porque las features caras
@@ -185,6 +179,11 @@ falta el plan de implementación y el código. Forma acordada:
   que gatear solo el enqueue dejaría una puerta trasera documentada.
 - Upsell como oferta con metadata tipada (`requestClass`, `requiredTier`), nunca
   como error.
+
+**Qué falta.** Aplicar `020`, asignar `advanced` al owner, desplegar con ambas
+flags apagadas, encender primero el gate servidor y recién después redesplegar
+el cliente con su flag. **Nunca se enciende el cliente antes que el servidor.**
+El blocker se cierra sólo después del último paso y de su smoke en producción.
 
 **Done.** Un usuario `free` no puede generar un plan **ni desde la UI, ni
 llamando a `enqueue-plan-generation`, ni llamando a `generate-plan-background`

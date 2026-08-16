@@ -298,6 +298,34 @@ npm run ios:open
 
 La app puede correr en modo mock/local, pero para IA real, auth y sync necesitas variables.
 
+### Entitlements por plan
+
+| Variable | Ámbito | Default | Qué hace |
+|---|---|---|---|
+| `ENTITLEMENTS_ENABLED` | Servidor (runtime) | apagado | Enciende el gate en `coach.ts`, `enqueue-plan-generation` y `generate-plan-background`. Sólo la cadena exacta `true`. |
+| `VITE_ENTITLEMENTS` | Cliente (build-time) | apagado | Enciende sólo el ocultamiento proactivo de affordances. El manejo del 403 va siempre encendido. |
+
+**Orden de rollout, no negociable:**
+
+1. Aplicar `supabase/020_user_entitlements.sql` a mano en producción.
+2. **Asignarse `advanced`**, o al encender el gate se pierde Plan Builder en la
+   propia cuenta (ausencia de fila = `free`, y eso vale para el owner).
+3. Desplegar con las dos flags apagadas: comportamiento idéntico al previo.
+4. Encender `ENTITLEMENTS_ENABLED` (runtime, sin redeploy).
+5. Redesplegar con `VITE_ENTITLEMENTS=true`.
+
+**Nunca el cliente antes que el servidor:** con el cliente gateando y el
+servidor permisivo, la UI oculta el botón pero una llamada directa pasa.
+
+SQL de asignación manual (service role):
+
+```sql
+insert into public.user_entitlements (user_id, tier, source, note)
+values ('<uuid>', 'advanced', 'manual', 'transferencia <fecha>, <nombre>')
+on conflict (user_id) do update
+  set tier = excluded.tier, source = excluded.source, note = excluded.note;
+```
+
 ### Frontend
 
 Variables habituales:
