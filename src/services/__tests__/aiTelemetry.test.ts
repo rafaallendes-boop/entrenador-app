@@ -7,6 +7,18 @@ const mocks = vi.hoisted(() => ({
   feedback: new Map<string, CoachFeedback>(),
 }))
 
+const USER_ID = 'user-test'
+
+vi.mock('../../store/useAuthStore', () => ({
+  useAuthStore: {
+    getState: () => ({ user: { id: USER_ID } }),
+  },
+}))
+
+vi.mock('../../store/useEntitlementStore', () => ({
+  getEntitlementTier: () => 'advanced',
+}))
+
 vi.mock('../../db/db', () => ({
   db: {
     aiRequestLogs: {
@@ -56,8 +68,8 @@ vi.mock('../../db/db', () => ({
 
 import {
   assertDailyAIRequestLimit,
-  DEFAULT_DAILY_AI_LIMITS,
   getBetaQualitySnapshot,
+  getDailyAILimits,
   getDailyAIUsage,
   recordCoachFeedback,
   upsertAIRequestLog,
@@ -68,6 +80,8 @@ import {
   syncPlanBuilderWeekUsageFromWeeks,
 } from '../planBuilder/rateLimit'
 import { getPlanBuilderDailyQuotaNotice } from '../planBuilder/consumerError'
+
+const ADVANCED_DAILY_AI_LIMITS = getDailyAILimits('advanced') as Record<AITechnicalResult['requestClass'], number>
 
 function makeRemoteWeek(input: {
   planId?: string
@@ -115,6 +129,7 @@ describe('aiTelemetry', () => {
     await upsertAIRequestLog({
       traceId: 'trace-1',
       generationId: 'generation-1',
+      userId: USER_ID,
       attempt: 1,
       requestClass: 'chat_action',
       surface: 'chat',
@@ -124,13 +139,14 @@ describe('aiTelemetry', () => {
 
     await upsertAIRequestLog({
       traceId: 'trace-2',
+      userId: USER_ID,
       requestClass: 'chat_general',
       surface: 'chat',
       status: 'completed',
       startedAt: now,
     })
 
-    expect(await getDailyAIUsage(now)).toMatchObject({
+    expect(await getDailyAIUsage(now, USER_ID)).toMatchObject({
       chat_action: 1,
       chat_general: 1,
     })
@@ -146,6 +162,7 @@ describe('aiTelemetry', () => {
       mocks.logs.push({
         traceId,
         generationId: 'week_creator-generation-1',
+        userId: USER_ID,
         attempt: index + 1,
         requestClass: 'week_creator',
         surface: 'chat',
@@ -154,7 +171,7 @@ describe('aiTelemetry', () => {
       })
     }
 
-    expect(await getDailyAIUsage(now)).toMatchObject({ week_creator: 1 })
+    expect(await getDailyAIUsage(now, USER_ID)).toMatchObject({ week_creator: 1 })
   })
 
   it('still counts rows without a generationId individually', async () => {
@@ -162,6 +179,7 @@ describe('aiTelemetry', () => {
     for (const traceId of ['trace-a', 'trace-b']) {
       mocks.logs.push({
         traceId,
+        userId: USER_ID,
         requestClass: 'chat_general',
         surface: 'chat',
         status: 'completed',
@@ -169,14 +187,15 @@ describe('aiTelemetry', () => {
       })
     }
 
-    expect(await getDailyAIUsage(now)).toMatchObject({ chat_general: 2 })
+    expect(await getDailyAIUsage(now, USER_ID)).toMatchObject({ chat_general: 2 })
   })
 
   it('throws a rate_limit error when a requestClass reaches its beta daily cap', async () => {
     const now = new Date('2026-05-09T12:00:00').getTime()
-    for (let i = 0; i < DEFAULT_DAILY_AI_LIMITS.plan_builder_pair; i++) {
+    for (let i = 0; i < ADVANCED_DAILY_AI_LIMITS.plan_builder_pair; i++) {
       mocks.logs.push({
         traceId: `trace-${i}`,
+        userId: USER_ID,
         requestClass: 'plan_builder_pair',
         surface: 'plan_builder',
         status: 'completed',
@@ -198,7 +217,7 @@ describe('aiTelemetry', () => {
       now,
     })
 
-    expect(await getDailyAIUsage(now)).toMatchObject({
+    expect(await getDailyAIUsage(now, USER_ID)).toMatchObject({
       plan_builder_week: 2,
     })
     expect(mocks.logs).toEqual(expect.arrayContaining([
@@ -217,9 +236,10 @@ describe('aiTelemetry', () => {
 
   it('blocks async Plan Builder starts that would exceed the remaining weekly cap', async () => {
     const now = new Date('2026-05-09T12:00:00').getTime()
-    for (let i = 0; i < DEFAULT_DAILY_AI_LIMITS.plan_builder_week - 1; i++) {
+    for (let i = 0; i < ADVANCED_DAILY_AI_LIMITS.plan_builder_week - 1; i++) {
       mocks.logs.push({
         traceId: `trace-${i}`,
+        userId: USER_ID,
         requestClass: 'plan_builder_week',
         surface: 'plan_builder',
         status: 'completed',
@@ -237,7 +257,7 @@ describe('aiTelemetry', () => {
 
     expect(quotaError).toMatchObject({ code: 'rate_limit' })
     const expectedNotice =
-      `No tienes cuota diaria suficiente para crear este plan: necesita 2 semanas y hoy te quedan 1 de ${DEFAULT_DAILY_AI_LIMITS.plan_builder_week}. Vuelve mañana o reduce la cantidad de semanas.`
+      `No tienes cuota diaria suficiente para crear este plan: necesita 2 semanas y hoy te quedan 1 de ${ADVANCED_DAILY_AI_LIMITS.plan_builder_week}. Vuelve mañana o reduce la cantidad de semanas.`
     expect(getPlanBuilderDailyQuotaNotice(quotaError)).toBe(expectedNotice)
     // El store persiste `error.message`, no la instancia tipada. Esta aserción
     // enlaza el formatter de rateLimit con el decoder que consume producción.
@@ -259,6 +279,7 @@ describe('aiTelemetry', () => {
     expect(mocks.logs).toHaveLength(1)
     expect(mocks.logs[0]).toMatchObject({
       traceId: 'remote-trace-1',
+      userId: USER_ID,
       requestClass: 'plan_builder_week',
       surface: 'plan_builder',
       status: 'completed',
@@ -293,6 +314,7 @@ describe('aiTelemetry', () => {
     await upsertAIRequestLog({
       traceId: 'trace-1',
       generationId: 'generation-1',
+      userId: USER_ID,
       attempt: 1,
       requestClass: 'chat_action',
       surface: 'chat',

@@ -1,18 +1,16 @@
 import type { AIRequestClass, AITechnicalResult, CoachFeedback } from '../../types'
 import { db } from '../../db/db'
+import { getEntitlementTier } from '../../store/useEntitlementStore'
+import { useAuthStore } from '../../store/useAuthStore'
+import type { Tier } from '../entitlements/entitlementPolicy'
+import {
+  bucketForClass,
+  bucketLimitForTier,
+  QUOTA_BUCKETS,
+} from '../entitlements/quotaBuckets'
 import { AIProviderError } from './types'
 
 const MAX_AI_REQUEST_LOGS = 500
-
-export const DEFAULT_DAILY_AI_LIMITS: Record<AIRequestClass, number> = {
-  chat_general: 80,
-  chat_action: 40,
-  weekly_summary: 10,
-  week_creator: 8,
-  plan_builder_week: 12,
-  plan_builder_pair: 6,
-  import_extract: 10,
-}
 
 export async function upsertAIRequestLog(entry: AITechnicalResult): Promise<void> {
   try {
@@ -34,16 +32,28 @@ export async function getRecentAIRequestLogs(limit = 100): Promise<AITechnicalRe
 export async function assertDailyAIRequestLimit(
   requestClass: AIRequestClass,
   now = Date.now(),
+  ctx?: { userId?: string | null; tier?: Tier },
 ): Promise<void> {
   try {
-    const usage = await getDailyAIUsage(now)
-    const limit = DEFAULT_DAILY_AI_LIMITS[requestClass]
-    const used = usage[requestClass] ?? 0
+    const bucket = bucketForClass(requestClass)
+    if (!bucket) return
+
+    const tier = ctx?.tier ?? getEntitlementTier()
+    const limit = bucketLimitForTier(bucket, tier)
+    // Una clase bloqueada no tiene cuota cero: el gate de entitlement es quien
+    // debe rechazarla y presentar la oferta correspondiente.
+    if (limit == null) return
+
+    const userId = ctx?.userId !== undefined
+      ? ctx.userId
+      : useAuthStore.getState().user?.id ?? null
+    const usage = await getDailyAIUsage(now, userId)
+    const used = bucket.classes.reduce((total, cls) => total + (usage[cls] ?? 0), 0)
     if (used >= limit) {
       throw new AIProviderError(
         'gemini',
         'rate_limit',
-        `Límite diario beta alcanzado para ${requestClass} (${used}/${limit}). Vuelve a intentarlo mañana.`,
+        `Límite diario alcanzado (${used}/${limit}). Vuelve a intentarlo mañana.`,
         false,
       )
     }
@@ -55,6 +65,7 @@ export async function assertDailyAIRequestLimit(
 
 export async function getDailyAIUsage(
   now = Date.now(),
+  userId: string | null = null,
 ): Promise<Partial<Record<AIRequestClass, number>>> {
   const start = startOfLocalDay(now)
   const logs = await db.aiRequestLogs
@@ -62,13 +73,17 @@ export async function getDailyAIUsage(
     .aboveOrEqual(start)
     .toArray()
 
+  // Dos cuentas en el mismo navegador no comparten cupo. Las filas legacy sin
+  // userId no pertenecen a nadie y quedan fuera deliberadamente.
+  const owned = logs.filter((log) => log.userId != null && log.userId === userId)
+
   // Quota is spent per logical generation, not per telemetry row. One Week
   // Creator request can log several rows -- a provider attempt, a retry, and the
   // local fallback that costs no provider call -- and charging each of them let
   // usage run past the declared daily cap. Rows without a `generationId` (chat,
   // Plan Builder reservations) keep counting individually.
   const counted = new Set<string>()
-  return logs.reduce<Partial<Record<AIRequestClass, number>>>((acc, log) => {
+  return owned.reduce<Partial<Record<AIRequestClass, number>>>((acc, log) => {
     const generationKey = `${log.requestClass}:${log.generationId ?? log.traceId}`
     if (counted.has(generationKey)) return acc
     counted.add(generationKey)
@@ -117,7 +132,7 @@ export async function getCoachFeedbackByTarget(
 export interface BetaQualitySnapshot {
   exportedAt: string
   dailyUsage: Partial<Record<AIRequestClass, number>>
-  dailyLimits: Record<AIRequestClass, number>
+  dailyLimits: Partial<Record<AIRequestClass, number>>
   requestCount: number
   feedbackCount: number
   positiveFeedback: number
@@ -127,16 +142,18 @@ export interface BetaQualitySnapshot {
 }
 
 export async function getBetaQualitySnapshot(limit = 100): Promise<BetaQualitySnapshot> {
+  const tier = getEntitlementTier()
+  const userId = useAuthStore.getState().user?.id ?? null
   const [recentRequests, recentFeedback, dailyUsage] = await Promise.all([
     getRecentAIRequestLogs(limit),
     getRecentCoachFeedback(limit),
-    getDailyAIUsage(),
+    getDailyAIUsage(Date.now(), userId),
   ])
 
   return {
     exportedAt: new Date().toISOString(),
     dailyUsage,
-    dailyLimits: DEFAULT_DAILY_AI_LIMITS,
+    dailyLimits: getDailyAILimits(tier),
     requestCount: recentRequests.length,
     feedbackCount: recentFeedback.length,
     positiveFeedback: recentFeedback.filter((item) => item.rating === 1).length,
@@ -144,6 +161,16 @@ export async function getBetaQualitySnapshot(limit = 100): Promise<BetaQualitySn
     recentRequests,
     recentFeedback,
   }
+}
+
+/** Límites visibles del tier actual; las clases bloqueadas se omiten. */
+export function getDailyAILimits(tier: Tier): Partial<Record<AIRequestClass, number>> {
+  return QUOTA_BUCKETS.reduce<Partial<Record<AIRequestClass, number>>>((limits, bucket) => {
+    const limit = bucketLimitForTier(bucket, tier)
+    if (limit == null) return limits
+    for (const requestClass of bucket.classes) limits[requestClass] = limit
+    return limits
+  }, {})
 }
 
 export async function getRecentCoachFeedback(limit = 100): Promise<CoachFeedback[]> {

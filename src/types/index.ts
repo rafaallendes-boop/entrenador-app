@@ -54,6 +54,11 @@ export interface AITechnicalResult {
   traceId: string
   /** Correlates all provider attempts and the local fallback for one user request. */
   generationId?: string
+  /**
+   * Cuenta dueña de la request. Las filas legacy sin este campo no cuentan
+   * para ninguna cuota: contarlas castigaría a un usuario por consumo ajeno.
+   */
+  userId?: string
   /** Logical Week Creator attempt. Provider-internal retries remain server telemetry. */
   attempt?: number
   surface: AITechnicalSurface

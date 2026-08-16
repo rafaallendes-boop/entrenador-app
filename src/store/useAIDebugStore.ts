@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { AITechnicalResult } from '../types'
 import { upsertAIRequestLog } from '../services/ai/aiTelemetry'
+import { useAuthStore } from './useAuthStore'
 
 const MAX_DEBUG_REQUESTS = 30
 const AI_DEBUG_STORAGE_KEY = 'entrenador_ai_debug_requests_v1'
@@ -58,14 +59,18 @@ export const useAIDebugStore = create<AIDebugState>((set) => ({
   requests: loadPersistedRequests(),
 
   startRequest: (entry) => {
+    const ownedEntry = {
+      ...entry,
+      userId: useAuthStore.getState().user?.id,
+    }
     set((state) => commitRequests([
         {
-          ...entry,
-          status: entry.status ?? 'started',
+          ...ownedEntry,
+          status: ownedEntry.status ?? 'started',
         },
         ...state.requests,
       ]))
-    persistRequestLog({ ...entry, status: entry.status ?? 'started' })
+    persistRequestLog({ ...ownedEntry, status: ownedEntry.status ?? 'started' })
   },
 
   updateRequest: (traceId, patch) => {

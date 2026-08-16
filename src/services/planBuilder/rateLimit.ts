@@ -1,8 +1,12 @@
 import { db } from '../../db/db'
 import type { AIProviderName, AITechnicalResult } from '../../types'
 import type { TrainingPlanWeek } from '../../types/planBuilder'
-import { DEFAULT_DAILY_AI_LIMITS, getDailyAIUsage, upsertAIRequestLog } from '../ai/aiTelemetry'
+import { useAuthStore } from '../../store/useAuthStore'
+import { getEntitlementTier } from '../../store/useEntitlementStore'
+import { getDailyAIUsage, upsertAIRequestLog } from '../ai/aiTelemetry'
 import { AIProviderError } from '../ai/types'
+import type { Tier } from '../entitlements/entitlementPolicy'
+import { bucketForClass, bucketLimitForTier } from '../entitlements/quotaBuckets'
 import { PlanBuilderDailyQuotaError } from './dailyQuotaError'
 
 const REQUEST_CLASS = 'plan_builder_week' as const
@@ -22,14 +26,24 @@ export function buildPlanBuilderWeekReservationTraceId(
 export async function assertPlanBuilderWeekRateLimit(
   weekIndexes: readonly number[],
   now = Date.now(),
+  ctx?: { userId?: string | null; tier?: Tier },
 ): Promise<void> {
   const requested = uniqueWeekIndexes(weekIndexes).length
   if (requested === 0) return
 
   try {
-    const usage = await getDailyAIUsage(now)
-    const limit = DEFAULT_DAILY_AI_LIMITS[REQUEST_CLASS]
-    const used = usage[REQUEST_CLASS] ?? 0
+    const bucket = bucketForClass(REQUEST_CLASS)
+    if (!bucket) return
+    const tier = ctx?.tier ?? getEntitlementTier()
+    const limit = bucketLimitForTier(bucket, tier)
+    // La clase no permitida será rechazada por entitlement, no por cuota.
+    if (limit == null) return
+
+    const userId = ctx?.userId !== undefined
+      ? ctx.userId
+      : useAuthStore.getState().user?.id ?? null
+    const usage = await getDailyAIUsage(now, userId)
+    const used = bucket.classes.reduce((total, cls) => total + (usage[cls] ?? 0), 0)
     const remaining = Math.max(0, limit - used)
     if (requested > remaining) {
       throw new PlanBuilderDailyQuotaError({ requested, remaining, limit })
@@ -46,6 +60,7 @@ export async function reservePlanBuilderWeekUsage(input: {
   now?: number
 }): Promise<string[]> {
   const timestamp = input.now ?? Date.now()
+  const userId = useAuthStore.getState().user?.id
   const weekIndexes = uniqueWeekIndexes(input.weekIndexes)
   const traceIds = weekIndexes.map((weekIndex) =>
     buildPlanBuilderWeekReservationTraceId(input.planId, weekIndex, timestamp)
@@ -53,6 +68,7 @@ export async function reservePlanBuilderWeekUsage(input: {
 
   await Promise.all(traceIds.map((traceId, index) => upsertAIRequestLog({
     traceId,
+    userId,
     surface: SURFACE,
     requestClass: REQUEST_CLASS,
     status: 'started',
@@ -87,6 +103,7 @@ export async function syncPlanBuilderWeekUsageFromWeeks(
   weeks: readonly TrainingPlanWeek[],
   now = Date.now(),
 ): Promise<void> {
+  const userId = useAuthStore.getState().user?.id
   const finalizedWeeks = weeks.filter((week) =>
     (week.status === 'draft' || week.status === 'accepted' || week.status === 'error') &&
     (week.generationMeta.attempts ?? 0) > 0
@@ -116,6 +133,7 @@ export async function syncPlanBuilderWeekUsageFromWeeks(
 
     await upsertAIRequestLog({
       traceId: meta.traceId,
+      userId,
       surface: SURFACE,
       requestClass: REQUEST_CLASS,
       provider: normalizeProvider(meta.provider),
