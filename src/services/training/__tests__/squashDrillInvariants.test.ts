@@ -60,6 +60,12 @@ const POST_COPY_DELIVERY_IDS = new Set([
   'two_wall_volley_cross_straight_reply',
   'two_wall_volley_cross_drop_option',
   'two_wall_volley_cross_front_direction_choice',
+  'solo_100_serve_lob_targets',
+  'solo_100_serve_hard_low',
+  'return_of_serve_depth_control',
+  'serve_return_first_three_shots',
+  'high_volley_control',
+  'volley_drop_finish',
 ])
 
 /**
