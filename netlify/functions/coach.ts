@@ -1649,7 +1649,7 @@ export const handler = stream(async (event: HandlerEvent): Promise<StreamingResp
     const gateEnabled = isEntitlementEnforcementEnabled()
     const [auth, gateTier] = await Promise.all([
       resolveAuthContext(event),
-      gateEnabled && bearer
+      gateEnabled && AUTH_REQUIRED && bearer
         ? resolveEntitlementTier(bearer)
         : Promise.resolve('free' as Tier),
     ])
@@ -1662,9 +1662,11 @@ export const handler = stream(async (event: HandlerEvent): Promise<StreamingResp
     // Entitlement ANTES que cualquier cuota: una clase bloqueada por plan no
     // puede reportarse como límite diario, o el usuario recibe la oferta
     // equivocada y vuelve mañana esperando que se le renueve.
-    if (gateEnabled && auth.userId !== ANONYMOUS_USER_ID) {
+    if (gateEnabled) {
       const gateClass = normalizeRequestClass(req.requestClass)
-      const currentTier = gateTier
+      // Con auth desactivada no existe una identidad verificada a la cual
+      // atribuir un tier: ese caller es Free, incluso si envía un bearer.
+      const currentTier = auth.userId === ANONYMOUS_USER_ID ? 'free' : gateTier
       if (!isClassAllowed(currentTier, gateClass)) {
         const requiredTier = minTierForClass(gateClass) ?? 'advanced'
         const detail = buildEntitlementDetail(gateClass, requiredTier, currentTier)
