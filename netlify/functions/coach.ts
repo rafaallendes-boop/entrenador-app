@@ -36,7 +36,7 @@ type RequestClass =
   | 'plan_builder_week'
   | 'plan_builder_pair'
   | 'import_extract'
-type TechnicalErrorCode = 'timeout' | 'rate_limit' | 'parse_error' | 'server_error' | 'misconfigured' | 'unknown' | 'unauthorized'
+type TechnicalErrorCode = 'timeout' | 'rate_limit' | 'parse_error' | 'server_error' | 'misconfigured' | 'unknown' | 'unauthorized' | 'entitlement_required'
 type ResponseSchema = Record<string, unknown>
 
 interface CoachRequest {

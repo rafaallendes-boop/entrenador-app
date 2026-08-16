@@ -164,6 +164,7 @@ export type AIErrorCode =
   | 'parse_error'    // response could not be parsed
   | 'misconfigured'  // server or provider config missing
   | 'server_error'   // internal proxy/backend error
+  | 'entitlement_required' // el plan del usuario no alcanza para esta clase
   | 'unknown'        // catch-all
 
 export class AIProviderError extends Error {
