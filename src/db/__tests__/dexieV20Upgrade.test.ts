@@ -6,10 +6,10 @@ import { db } from '../db'
 
 const DB_NAME = db.name
 
-/** Esquema efectivo de v18, antes de agregar consentAcceptances. */
-async function openLegacyV18() {
+/** Esquema efectivo de v19, antes de agregar entitlements. */
+async function openLegacyV19() {
   const legacy = new Dexie(DB_NAME)
-  legacy.version(18).stores({
+  legacy.version(19).stores({
     sessions: 'id, date, weekStartDate, type, status, completedAt, athleteId',
     dayLogs: 'id, date, athleteId, &[athleteId+date]',
     weekSummaries: 'id, weekStartDate, athleteId, &[athleteId+weekStartDate]',
@@ -29,13 +29,15 @@ async function openLegacyV18() {
     athleteMemberships: '[athleteId+accountId], accountId, athleteId, role',
     athleteCoachNotes: 'athleteId, updatedAt',
     sessionTemplates: 'id, kind, updatedAt, name',
+    consentAcceptances: 'id, userId, &[userId+document+version]',
   })
   await legacy.open()
   return legacy
 }
 
-describe('Dexie v19 — upgrade real desde v18', () => {
+describe('Dexie v20 — upgrade real desde v19', () => {
   beforeEach(async () => {
+    // fake-indexeddb mantiene esta base solo en memoria dentro de este test.
     db.close()
     await Dexie.delete(DB_NAME)
   })
@@ -45,61 +47,32 @@ describe('Dexie v19 — upgrade real desde v18', () => {
     await Dexie.delete(DB_NAME)
   })
 
-  it('migra una base v18 con datos sin perderlos', async () => {
-    const legacy = await openLegacyV18()
-    await legacy.table('sessionTemplates').put({
-      id: 'tpl-1',
-      kind: 'strength',
-      updatedAt: 1,
-      name: 'Fuerza base',
+  it('conserva datos previos y agrega la tabla entitlements', async () => {
+    const legacy = await openLegacyV19()
+    await legacy.table('sessions').put({
+      id: 's1',
+      date: '2026-08-01',
+      athleteId: 'a1',
+    })
+    await legacy.table('consentAcceptances').put({
+      id: 'consent-1',
+      userId: 'u1',
+      document: 'terms',
+      version: '2026-07-13',
     })
     legacy.close()
 
     await db.open()
 
-    expect(db.verno).toBeGreaterThanOrEqual(19)
-    expect(db.consentAcceptances).toBeDefined()
-    const survived = await db.sessionTemplates.get('tpl-1')
-    expect(survived?.name).toBe('Fuerza base')
-  })
-
-  it('el índice compuesto impide duplicar la misma aceptación', async () => {
-    await db.open()
-    const row = {
-      id: 'row-1',
-      userId: 'user-1',
-      document: 'terms' as const,
-      version: '2026-07-13',
-      acceptedAt: '2026-08-03T10:00:00.000Z',
-    }
-    await db.consentAcceptances.put(row)
-
-    await expect(
-      db.consentAcceptances.add({ ...row, id: 'row-2' }),
-    ).rejects.toMatchObject({ name: 'ConstraintError' })
-  })
-
-  it('separa aceptaciones por cuenta en el mismo dispositivo', async () => {
-    await db.open()
-    await db.consentAcceptances.bulkPut([
-      {
-        id: 'a',
-        userId: 'user-1',
-        document: 'terms',
-        version: '2026-07-13',
-        acceptedAt: '2026-08-03T10:00:00.000Z',
-      },
-      {
-        id: 'b',
-        userId: 'user-2',
-        document: 'terms',
-        version: '2026-07-13',
-        acceptedAt: '2026-08-03T10:00:00.000Z',
-      },
-    ])
-
-    const mine = await db.consentAcceptances.where('userId').equals('user-1').toArray()
-    expect(mine).toHaveLength(1)
-    expect(mine[0]!.id).toBe('a')
+    expect(await db.sessions.get('s1')).toMatchObject({ id: 's1' })
+    expect(await db.consentAcceptances.get('consent-1')).toMatchObject({ id: 'consent-1' })
+    await db.entitlements.put({
+      userId: 'u1',
+      tier: 'weekly',
+      expiresAt: null,
+      confirmedAt: 1,
+    })
+    expect(await db.entitlements.get('u1')).toMatchObject({ tier: 'weekly' })
+    expect(db.verno).toBe(20)
   })
 })

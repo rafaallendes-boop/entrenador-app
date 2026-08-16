@@ -4,6 +4,7 @@ import type { PlanGenerationJob, TrainingPlan, TrainingPlanWeek } from '../types
 import type { SyncDiagnosticEvent, SyncErrorLogEntry } from '../types/syncDiagnostics'
 import type { StoredSessionTemplate } from '../types/sessionTemplate'
 import type { ConsentAcceptance } from '../types/consent'
+import type { StoredEntitlement } from '../types/entitlement'
 import { getOrCreateChatSessionId } from '../utils/chatSession'
 import { toISO, getWeekStart, fromISO } from '../utils/date'
 
@@ -28,6 +29,7 @@ export class EntrenadorDB extends Dexie {
   athleteCoachNotes!: Table<AthleteCoachNote, string>
   sessionTemplates!: Table<StoredSessionTemplate, string>
   consentAcceptances!: Table<ConsentAcceptance, string>
+  entitlements!: Table<StoredEntitlement, string>
 
   constructor() {
     super('EntrenadorDB')
@@ -247,6 +249,12 @@ export class EntrenadorDB extends Dexie {
     // repetidas de la misma publicación para una cuenta.
     this.version(19).stores({
       consentAcceptances: 'id, userId, &[userId+document+version]',
+    })
+
+    // v20 — espejo local del entitlement confirmado por el servidor. Una fila
+    // por cuenta; el servidor sigue siendo la autoridad.
+    this.version(20).stores({
+      entitlements: 'userId',
     })
   }
 }
