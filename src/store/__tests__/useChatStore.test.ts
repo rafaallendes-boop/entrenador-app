@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatContext, ChatMessage, CoachAction, CoachProposal } from '../../types'
+import { AIProviderError } from '../../services/ai/types'
+import {
+  EntitlementRequiredError,
+  buildEntitlementDetail,
+} from '../../services/entitlements/entitlementError'
 
 const mocks = vi.hoisted(() => {
   const chatMessages: ChatMessage[] = []
@@ -292,6 +297,56 @@ beforeEach(() => {
 })
 
 describe('useChatStore.sendMessage', () => {
+  it('convierte el 403 tipado en una oferta efimera sin persistir una burbuja de error', async () => {
+    mocks.routeKind = 'week_creator'
+    const detail = buildEntitlementDetail('week_creator', 'weekly', 'free')
+    mocks.sendWeekCreate.mockRejectedValueOnce(new EntitlementRequiredError(detail))
+
+    await useChatStore.getState().sendMessage('armame la semana', makeContext())
+
+    const state = useChatStore.getState()
+    expect(state.entitlementOffer).toEqual(detail)
+    expect(state.error).toBeNull()
+    expect(state.isLoading).toBe(false)
+    expect(state.responsePhase).toBe('idle')
+    expect(state.messages).toHaveLength(1)
+    expect(state.messages[0]?.role).toBe('user')
+    expect(mocks.chatMessages).toHaveLength(1)
+    expect(mocks.pushChatMessage).toHaveBeenCalledTimes(1)
+  })
+
+  it('mantiene copy seguro si un error entitlement_required pierde su subtipo', async () => {
+    mocks.sendAction.mockRejectedValueOnce(
+      new AIProviderError('gemini', 'entitlement_required', 'raw provider entitlement payload'),
+    )
+
+    await useChatStore.getState().sendMessage('ajusta mi sesión', makeContext())
+
+    const state = useChatStore.getState()
+    expect(state.entitlementOffer).toBeNull()
+    expect(state.error).toBe('Esta función está en un plan superior. Mirá los planes disponibles.')
+    expect(state.error).not.toContain('raw provider')
+  })
+
+  it('una respuesta tardia no publica la oferta en otra conversacion', async () => {
+    mocks.routeKind = 'week_creator'
+    const detail = buildEntitlementDetail('week_creator', 'weekly', 'free')
+    let rejectRequest: (reason: unknown) => void = () => undefined
+    mocks.sendWeekCreate.mockImplementationOnce(() => new Promise((_, reject) => {
+      rejectRequest = reject
+    }))
+
+    const pending = useChatStore.getState().sendMessage('armame la semana', makeContext())
+    await vi.waitFor(() => expect(mocks.sendWeekCreate).toHaveBeenCalledTimes(1))
+    await useChatStore.getState().newSession()
+    const nextSessionId = useChatStore.getState().currentSessionId
+    rejectRequest(new EntitlementRequiredError(detail))
+    await pending
+
+    expect(useChatStore.getState().currentSessionId).toBe(nextSessionId)
+    expect(useChatStore.getState().entitlementOffer).toBeNull()
+  })
+
   it('traduce filteredCreateWeek a una oferta efimera para free', async () => {
     mocks.sendAction.mockResolvedValue({
       message: 'Puedo ayudarte a ajustar lo que ya existe.',

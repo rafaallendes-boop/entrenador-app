@@ -45,3 +45,15 @@ export class EntitlementRequiredError extends AIProviderError {
     this.detail = detail
   }
 }
+
+/**
+ * Traduce el rechazo tipado a metadata de presentación. Debe ejecutarse antes
+ * de cualquier formateador que pueda convertir el mensaje técnico en copy del
+ * hilo.
+ */
+export function toChatEntitlementOffer(
+  error: unknown,
+): EntitlementRequiredDetail | null {
+  if (error instanceof EntitlementRequiredError) return error.detail
+  return null
+}

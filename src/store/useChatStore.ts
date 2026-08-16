@@ -24,6 +24,7 @@ import {
 } from '../services/athlete/activeAthlete'
 import {
   buildEntitlementDetail,
+  toChatEntitlementOffer,
   type EntitlementRequiredDetail,
 } from '../services/entitlements/entitlementError'
 import { isClassAllowed } from '../services/entitlements/entitlementPolicy'
@@ -457,6 +458,30 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
         return { route: route.kind }
       }
+
+      const entitlementOffer = toChatEntitlementOffer(e)
+      if (entitlementOffer) {
+        // La oferta pertenece al request que la produjo. Un switch de hilo o
+        // atleta aborta/libera su controller, por lo que una respuesta tardía
+        // no puede publicar metadata en el scope que quedó visible.
+        if (!isActiveChatRequest(get().currentSessionId, sessionId, abortController)) {
+          return { route: route.kind }
+        }
+        if (weekCreatorGenerationId) {
+          markWeekCreatorGenerationFailed(weekCreatorGenerationId, requestStartedAt)
+        }
+        // Es una oferta, no un error de conversación: no se crea ni persiste
+        // una burbuja del coach y tampoco se expone el texto crudo del 403.
+        set({
+          entitlementOffer,
+          isLoading: false,
+          streamingText: '',
+          responsePhase: 'idle',
+          error: null,
+        })
+        return { route: route.kind }
+      }
+
       if (expectedProposal && persistedCoachMsg && !persistedProposalId) {
         await discardLateCoachArtifacts(persistedCoachMsg).catch(() => undefined)
       }
@@ -934,6 +959,8 @@ function formatError(e: unknown): string {
         return 'Tu sesión expiró o no está disponible. Inicia sesión nuevamente e intenta de nuevo.'
       case 'misconfigured':
         return 'RallyIQ no está configurado correctamente en el servidor.'
+      case 'entitlement_required':
+        return 'Esta función está en un plan superior. Mirá los planes disponibles.'
       case 'rate_limit':
         if (e.message.includes('Límite diario')) return e.message
         return `Límite de uso alcanzado en ${e.provider}. Espera unos minutos e intenta de nuevo.`

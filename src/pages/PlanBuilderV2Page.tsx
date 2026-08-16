@@ -27,6 +27,7 @@ import { ChevronLeft, RefreshCw, CheckCircle2, AlertTriangle, X } from 'lucide-r
 import type { AthleteProfile, PlanWizardConfig, GoalEvent, CoachSessionProposal, Session } from '../types'
 import type { PlanCommitImpact } from '../services/planBuilder/commitImpact'
 import type { TrainingPlanWeek } from '../types/planBuilder'
+import { UpsellCard } from '../components/entitlements/UpsellCard'
 
 type PlanBuilderLocationState = {
   fromWizard?: boolean
@@ -528,6 +529,7 @@ export default function PlanBuilderV2Page() {
   const loadMemory = useCoachMemoryStore((s) => s.loadMemory)
   const {
     plan, weeks, issues, status, currentWeekIndex, completedWeeks, failedWeekIndexes, lastError,
+    entitlementOffer,
     createDraft, runGeneration, retryFullGeneration, regenerateWeek, regenerateWeeks, retryFailedWeeks, retryIncompleteWeeks, cancelGeneration, acceptPlan, discard, loadDraft,
   } = usePlanBuilderStore()
 
@@ -1021,6 +1023,15 @@ export default function PlanBuilderV2Page() {
 
       {/* Main grid */}
       <div className="mx-auto max-w-5xl px-4 pt-5 md:px-6">
+        {entitlementOffer && (
+          <div className="mb-5">
+            <UpsellCard
+              requestClass={entitlementOffer.requestClass}
+              requiredTier={entitlementOffer.requiredTier}
+            />
+          </div>
+        )}
+
         {(status === 'shelling' || (!plan && weeks.length === 0)) ? (
           <div
             className="rounded-2xl p-5"

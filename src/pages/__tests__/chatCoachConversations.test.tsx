@@ -4,6 +4,7 @@ import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatMessage } from '../../types'
+import type { EntitlementRequiredDetail } from '../../services/entitlements/entitlementError'
 
 const h = vi.hoisted(() => ({
   openConversation: vi.fn(),
@@ -13,6 +14,7 @@ const h = vi.hoisted(() => ({
   loadMemory: vi.fn(),
   loadWeek: vi.fn(),
   currentSessionId: 's1',
+  entitlementOffer: null as EntitlementRequiredDetail | null,
 }))
 
 vi.mock('../../components/chat/ConversationDrawer', () => ({
@@ -42,6 +44,7 @@ vi.mock('../../store/useChatStore', () => {
     streamingText: '',
     responsePhase: 'idle',
     error: null,
+    entitlementOffer: h.entitlementOffer,
     loadHistory: h.loadHistory,
     sendMessage: vi.fn(),
     newSession: vi.fn(),
@@ -115,6 +118,9 @@ vi.mock('react-router-dom', () => ({
     search: '',
     state: null,
   }),
+  Link: ({ to, children, ...props }: { to: string; children: React.ReactNode }) => (
+    <a href={to} {...props}>{children}</a>
+  ),
 }))
 
 const scrollSpy = vi.fn()
@@ -127,6 +133,7 @@ beforeEach(() => {
   h.loadMemory.mockReset()
   h.loadWeek.mockReset()
   h.currentSessionId = 's1'
+  h.entitlementOffer = null
   h.openConversation.mockImplementation(async (sessionId: string) => {
     h.currentSessionId = sessionId
   })
@@ -149,6 +156,21 @@ afterEach(() => {
 })
 
 describe('ChatCoach conversation wiring', () => {
+  it('muestra la oferta efimera debajo del hilo', async () => {
+    h.entitlementOffer = {
+      requestClass: 'week_creator',
+      requiredTier: 'weekly',
+      currentTier: 'free',
+    }
+    const { default: ChatCoach } = await import('../ChatCoach')
+
+    render(<ChatCoach />)
+
+    expect(screen.getByText(/semana generada por el coach/i)).toBeTruthy()
+    expect(screen.getByText(/Coach Semanal/i)).toBeTruthy()
+    expect(screen.getByRole('link', { name: /ver planes/i }).getAttribute('href')).toBe('/pricing')
+  })
+
   it('opens the drawer from the header button', async () => {
     const { default: ChatCoach } = await import('../ChatCoach')
     render(<ChatCoach />)

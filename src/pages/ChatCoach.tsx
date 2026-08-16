@@ -14,6 +14,7 @@ import ChatBubble from '../components/chat/ChatBubble'
 import ChatInput from '../components/chat/ChatInput'
 import ChatMarkdown from '../components/chat/ChatMarkdown'
 import Spinner from '../components/ui/Spinner'
+import { UpsellCard } from '../components/entitlements/UpsellCard'
 import type { ChatContext, CoachProposal, ReadinessDaily } from '../types'
 import { recordCoachFeedback } from '../services/ai/aiTelemetry'
 import { ROUTES } from '../constants/routes'
@@ -103,6 +104,7 @@ export default function ChatCoach() {
     streamingText,
     responsePhase,
     error,
+    entitlementOffer,
     loadHistory,
     sendMessage,
     newSession,
@@ -610,6 +612,13 @@ export default function ChatCoach() {
                 )}
               </div>
             </div>
+          )}
+
+          {entitlementOffer && (
+            <UpsellCard
+              requestClass={entitlementOffer.requestClass}
+              requiredTier={entitlementOffer.requiredTier}
+            />
           )}
 
           <div ref={bottomRef} data-chat-bottom />
