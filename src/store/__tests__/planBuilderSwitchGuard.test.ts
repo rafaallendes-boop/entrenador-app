@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AthleteProfile, PlanWizardConfig } from '../../types'
 import type { PlanGenerationJob, TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
+import { PlanEnqueueRejectedError } from '../../services/planBuilder/triggerBackgroundGeneration'
 
 const mocks = vi.hoisted(() => ({
   authUser: null as { id: string } | null,
@@ -227,6 +228,7 @@ function resetPlanBuilderStore() {
     streamingTextByWeekIndex: {},
     generationJob: null,
     lastError: null,
+    entitlementOffer: null,
   })
 }
 
@@ -420,6 +422,71 @@ describe('plan generation callbacks - switch guard', () => {
     expect(usePlanBuilderStore.getState().status).toBe('idle')
     expect(usePlanBuilderStore.getState().plan).toBeNull()
     expect(mocks.pollPlanGeneration).not.toHaveBeenCalled()
+  })
+
+  it('does not surface a late entitlement offer in the next athlete scope', async () => {
+    const enqueue = deferred<void>()
+    mocks.authUser = { id: 'user-1' }
+    mocks.supabase = {}
+    mocks.triggerBackgroundGeneration.mockReturnValue(enqueue.promise)
+    usePlanBuilderStore.setState({
+      plan: makePlan(),
+      weeks: [makeWeek()],
+      status: 'shell_ready',
+    })
+
+    const run = usePlanBuilderStore.getState().runGeneration(makeProfile())
+    await waitUntil(() => {
+      expect(mocks.triggerBackgroundGeneration).toHaveBeenCalled()
+    })
+
+    bumpSwitchEpoch()
+    usePlanBuilderStore.getState().resetForAthleteSwitch()
+    enqueue.reject(new PlanEnqueueRejectedError('Requiere advanced.', 403, {
+      requestClass: 'plan_builder_week',
+      requiredTier: 'advanced',
+      currentTier: 'free',
+    }))
+    await run
+
+    expect(usePlanBuilderStore.getState()).toMatchObject({
+      plan: null,
+      status: 'idle',
+      lastError: null,
+      entitlementOffer: null,
+    })
+    expect(mocks.pollPlanGeneration).not.toHaveBeenCalled()
+  })
+
+  it('does not republish the previous account plan after an account switch', async () => {
+    const enqueue = deferred<void>()
+    mocks.authUser = { id: 'user-1' }
+    mocks.supabase = {}
+    mocks.triggerBackgroundGeneration.mockReturnValue(enqueue.promise)
+    usePlanBuilderStore.setState({
+      plan: makePlan(),
+      weeks: [makeWeek()],
+      status: 'shell_ready',
+    })
+
+    const run = usePlanBuilderStore.getState().runGeneration(makeProfile())
+    await waitUntil(() => {
+      expect(mocks.triggerBackgroundGeneration).toHaveBeenCalled()
+      expect(mocks.pushTrainingPlan).toHaveBeenCalledTimes(1)
+    })
+
+    mocks.authUser = { id: 'user-2' }
+    bumpSwitchEpoch()
+    usePlanBuilderStore.getState().resetForAthleteSwitch()
+    enqueue.reject(new PlanEnqueueRejectedError('Requiere advanced.', 403, {
+      requestClass: 'plan_builder_week',
+      requiredTier: 'advanced',
+      currentTier: 'free',
+    }))
+    await run
+
+    expect(mocks.pushTrainingPlan).toHaveBeenCalledTimes(1)
+    expect(usePlanBuilderStore.getState().entitlementOffer).toBeNull()
   })
 
   it('does not write a late cancellation after an athlete switch', async () => {

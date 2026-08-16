@@ -40,6 +40,7 @@ import { pushTrainingPlan } from '../services/syncService'
 import { supabase } from '../services/auth'
 import { useAuthStore } from './useAuthStore'
 import { ATHLETE_PROFILE_LOCAL_ID, getActiveAthleteId, getSwitchEpoch } from '../services/athlete/activeAthlete'
+import type { EntitlementRequiredDetail } from '../services/entitlements/entitlementError'
 
 const EMPTY_DRAFT_WEEKS_MESSAGE = 'No encontramos semanas para este plan. Descártalo y vuelve a prepararlo desde el inicio.'
 
@@ -67,6 +68,8 @@ interface PlanBuilderState {
   streamingTextByWeekIndex: Record<number, string>
   generationJob: PlanGenerationJob | null
   lastError: string | null
+  /** Oferta de plan efímera; nunca se persiste en Dexie ni se sincroniza. */
+  entitlementOffer: EntitlementRequiredDetail | null
 
   createDraft: (input: { profile: AthleteProfile; wizardConfig: PlanWizardConfig }) => Promise<void>
   runGeneration: (profile: AthleteProfile, options?: { forceNew?: boolean }) => Promise<void>
@@ -89,6 +92,20 @@ type PlanBuilderSet = (
   partial: Partial<PlanBuilderState> | ((state: PlanBuilderState) => Partial<PlanBuilderState>),
 ) => void
 
+type PlanBuilderAttemptSnapshot = Pick<
+  PlanBuilderState,
+  | 'plan'
+  | 'weeks'
+  | 'issues'
+  | 'status'
+  | 'currentWeekIndex'
+  | 'completedWeeks'
+  | 'failedWeekIndexes'
+  | 'streamingTextByWeekIndex'
+  | 'generationJob'
+  | 'lastError'
+>
+
 let generationPollingController: AbortController | null = null
 
 function isCurrentSwitchEpoch(epochAtStart: number): boolean {
@@ -106,6 +123,21 @@ function setErrorIfCurrentSwitchEpoch(
 ) {
   if (!isCurrentSwitchEpoch(epochAtStart)) return
   set({ status: 'error', lastError: errorMessage(error) })
+}
+
+function captureAttemptSnapshot(state: PlanBuilderState): PlanBuilderAttemptSnapshot {
+  return {
+    plan: state.plan,
+    weeks: state.weeks,
+    issues: state.issues,
+    status: state.status,
+    currentWeekIndex: state.currentWeekIndex,
+    completedWeeks: state.completedWeeks,
+    failedWeekIndexes: state.failedWeekIndexes,
+    streamingTextByWeekIndex: state.streamingTextByWeekIndex,
+    generationJob: state.generationJob,
+    lastError: state.lastError,
+  }
 }
 
 async function persistPlanState(plan: TrainingPlan, weeks: TrainingPlanWeek[]) {
@@ -161,6 +193,7 @@ function applyGenerationSnapshot(
     streamingTextByWeekIndex: currentWeekIndex == null ? {} : { [currentWeekIndex]: '' },
     generationJob: null,
     lastError,
+    entitlementOffer: null,
   })
 }
 
@@ -335,6 +368,44 @@ async function markGenerationStartRejected(input: {
   })
 }
 
+async function restoreAfterEntitlementRejection(input: {
+  snapshot: PlanBuilderAttemptSnapshot
+  entitlement: EntitlementRequiredDetail
+  set: PlanBuilderSet
+  publishRemote: boolean
+  accountUserIdAtStart: string | null
+  epochAtStart: number
+}) {
+  generationPollingController?.abort()
+  generationPollingController = null
+
+  const { plan, weeks } = input.snapshot
+  if (plan) {
+    await persistPlanState(plan, weeks).catch((error) => {
+      console.warn('[plan-builder] failed to restore state after entitlement rejection', error)
+    })
+    // Una respuesta tardía después de cambiar de cuenta no puede publicar con
+    // el token de la cuenta nueva. Un cambio de atleta dentro de la misma
+    // cuenta sí puede terminar el rollback explícito del plan anterior.
+    const currentUserId = useAuthStore.getState().user?.id ?? null
+    if (input.publishRemote
+      && input.accountUserIdAtStart != null
+      && currentUserId === input.accountUserIdAtStart) {
+      await pushTrainingPlan(plan).catch((error) => {
+        console.warn('[plan-builder] failed to publish restored entitlement state', error)
+      })
+    }
+  }
+
+  // El rollback termina el intento explícito del scope anterior, pero una
+  // respuesta tardía nunca puede pisar la cuenta/atleta actualmente visible.
+  if (!isCurrentSwitchEpoch(input.epochAtStart)) return
+  input.set({
+    ...input.snapshot,
+    entitlementOffer: input.entitlement,
+  })
+}
+
 async function guardRemotePlanBuilderRateLimit(
   weekIndexes: readonly number[],
   set: PlanBuilderSet,
@@ -455,6 +526,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
   streamingTextByWeekIndex: {},
   generationJob: null,
   lastError: null,
+  entitlementOffer: null,
 
   resetBuilderState: () => {
     generationPollingController?.abort()
@@ -470,6 +542,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       streamingTextByWeekIndex: {},
       generationJob: null,
       lastError: null,
+      entitlementOffer: null,
     })
   },
 
@@ -479,7 +552,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
 
   createDraft: async ({ profile, wizardConfig }) => {
     const switchEpochAtStart = getSwitchEpoch()
-    set({ status: 'shelling', lastError: null, issues: [] })
+    set({ status: 'shelling', lastError: null, issues: [], entitlementOffer: null })
     try {
       const previousPlan = get().plan
       const goalEvent = getPrimaryGoalEvent(profile)
@@ -510,6 +583,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
         streamingTextByWeekIndex: {},
         generationJob: null,
         lastError: null,
+        entitlementOffer: null,
       })
     } catch (error) {
       setErrorIfCurrentSwitchEpoch(set, switchEpochAtStart, error)
@@ -518,8 +592,12 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
 
   runGeneration: async (profile, options) => {
     const switchEpochAtStart = getSwitchEpoch()
-    const { plan, weeks } = get()
+    const accountUserIdAtStart = useAuthStore.getState().user?.id ?? null
+    const stateBeforeAttempt = get()
+    const { plan, weeks } = stateBeforeAttempt
     if (!plan) return
+    const attemptSnapshot = captureAttemptSnapshot(stateBeforeAttempt)
+    set({ entitlementOffer: null })
     if (plan.generationState === 'generating' || get().status === 'generating') {
       startGenerationPolling(plan.id, set, get, switchEpochAtStart)
       return
@@ -616,6 +694,20 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       })
       startGenerationPolling(nextPlan.id, set, get, switchEpochAtStart)
     } catch (error) {
+      if (error instanceof PlanEnqueueRejectedError && error.entitlement) {
+        if (reservedRemoteUsage) {
+          await releaseReservedRemoteUsage(nextPlan.id, targetWeekIndexes)
+        }
+        await restoreAfterEntitlementRejection({
+          snapshot: attemptSnapshot,
+          entitlement: error.entitlement,
+          set,
+          publishRemote: remotePlanPublished,
+          accountUserIdAtStart,
+          epochAtStart: switchEpochAtStart,
+        })
+        return
+      }
       // A definitive start failure means the worker never started: surface it
       // instead of resuming into a poll that can only end in a stalled state.
       if (error instanceof PlanEnqueueRejectedError || !remotePlanPublished) {
@@ -658,12 +750,16 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
 
   regenerateWeeks: async (weekIndexes, profile, repairInstructions) => {
     const switchEpochAtStart = getSwitchEpoch()
-    const { plan, weeks } = get()
+    const accountUserIdAtStart = useAuthStore.getState().user?.id ?? null
+    const stateBeforeAttempt = get()
+    const { plan, weeks } = stateBeforeAttempt
     if (!plan) return
     const targetSet = new Set(weekIndexes)
     if (targetSet.size === 0) return
     const targets = weeks.filter((w) => targetSet.has(w.weekIndex))
     if (targets.length === 0) return
+    const attemptSnapshot = captureAttemptSnapshot(stateBeforeAttempt)
+    set({ entitlementOffer: null })
     const targetWeekIndexes = targets.map((week) => week.weekIndex)
     const useRemoteGeneration = canUseRemoteGeneration()
     if (useRemoteGeneration) {
@@ -753,6 +849,20 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       }
       startGenerationPolling(generatingPlan.id, set, get, switchEpochAtStart)
     } catch (error) {
+      if (error instanceof PlanEnqueueRejectedError && error.entitlement) {
+        if (reservedRemoteUsage) {
+          await releaseReservedRemoteUsage(generatingPlan.id, targetWeekIndexes)
+        }
+        await restoreAfterEntitlementRejection({
+          snapshot: attemptSnapshot,
+          entitlement: error.entitlement,
+          set,
+          publishRemote: remotePlanPublished,
+          accountUserIdAtStart,
+          epochAtStart: switchEpochAtStart,
+        })
+        return
+      }
       // A definitive start failure means the worker never started: surface it
       // instead of resuming into a poll that can only end in a stalled state.
       if (error instanceof PlanEnqueueRejectedError || !remotePlanPublished) {
@@ -782,8 +892,12 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
 
   retryFailedWeeks: async (profile) => {
     const switchEpochAtStart = getSwitchEpoch()
-    const { plan, weeks, failedWeekIndexes } = get()
+    const accountUserIdAtStart = useAuthStore.getState().user?.id ?? null
+    const stateBeforeAttempt = get()
+    const { plan, weeks, failedWeekIndexes } = stateBeforeAttempt
     if (!plan || failedWeekIndexes.length === 0) return
+    const attemptSnapshot = captureAttemptSnapshot(stateBeforeAttempt)
+    set({ entitlementOffer: null })
     const useRemoteGeneration = canUseRemoteGeneration()
     if (useRemoteGeneration) {
       const canStart = await guardRemotePlanBuilderRateLimit(failedWeekIndexes, set, switchEpochAtStart)
@@ -864,6 +978,20 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       }
       startGenerationPolling(generatingPlan.id, set, get, switchEpochAtStart)
     } catch (error) {
+      if (error instanceof PlanEnqueueRejectedError && error.entitlement) {
+        if (reservedRemoteUsage) {
+          await releaseReservedRemoteUsage(generatingPlan.id, failedWeekIndexes)
+        }
+        await restoreAfterEntitlementRejection({
+          snapshot: attemptSnapshot,
+          entitlement: error.entitlement,
+          set,
+          publishRemote: remotePlanPublished,
+          accountUserIdAtStart,
+          epochAtStart: switchEpochAtStart,
+        })
+        return
+      }
       // A definitive start failure means the worker never started: surface it
       // instead of resuming into a poll that can only end in a stalled state.
       if (error instanceof PlanEnqueueRejectedError || !remotePlanPublished) {
@@ -903,6 +1031,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
 
   resumeGenerationJobs: async (profile) => {
     const switchEpochAtStart = getSwitchEpoch()
+    set({ entitlementOffer: null })
     try {
       const jobs = await getRunnablePlanGenerationJobs(profile.id)
       if (!isCurrentSwitchEpoch(switchEpochAtStart)) return
@@ -940,6 +1069,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
     const switchEpochAtStart = getSwitchEpoch()
     const { plan } = get()
     if (!plan || plan.generationState !== 'generating') return
+    set({ entitlementOffer: null })
 
     // Detener el poller inmediatamente — evita que onSnapshot sobreescriba tras el abort
     generationPollingController?.abort()
@@ -982,6 +1112,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
     const switchEpochAtStart = getSwitchEpoch()
     const { plan, weeks } = get()
     if (!plan) return { errors: ['No hay plan activo'], warnings: [], acceptedWeeks: [], lifecycleRemovedSessionCount: 0 }
+    set({ entitlementOffer: null })
     if (plan.generationState !== 'complete') {
       const message = 'El plan todavía no está completamente preparado. Completa la preparación antes de aceptarlo.'
       set({ status: toBuilderStatus(plan.generationState), lastError: message })
@@ -1040,11 +1171,13 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       streamingTextByWeekIndex: {},
       generationJob: null,
       lastError: null,
+      entitlementOffer: null,
     })
   },
 
   loadDraft: async (planId) => {
     const switchEpochAtStart = getSwitchEpoch()
+    set({ entitlementOffer: null })
     let plan = await db.trainingPlans.get(planId)
     if (!isCurrentSwitchEpoch(switchEpochAtStart)) return
 
@@ -1080,6 +1213,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
         failedWeekIndexes: [],
         streamingTextByWeekIndex: {},
         lastError: EMPTY_DRAFT_WEEKS_MESSAGE,
+        entitlementOffer: null,
       })
       return
     }
@@ -1104,6 +1238,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       failedWeekIndexes: jobIsActive ? generationJob.failedWeekIndexes : failedWeekIndexes,
       streamingTextByWeekIndex: {},
       lastError: jobIsActive ? null : buildGenerationFailureMessage(failedWeekIndexes),
+      entitlementOffer: null,
     })
     if (normalizedPlan.generationState === 'generating') {
       startGenerationPolling(normalizedPlan.id, set, get, switchEpochAtStart)

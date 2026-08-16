@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { db } from '../../db/db'
 import { usePlanBuilderStore } from '../usePlanBuilderStore'
 import type { TrainingPlan } from '../../types/planBuilder'
+import type { EntitlementRequiredDetail } from '../../services/entitlements/entitlementError'
 
 const plan = {
   id: 'p1',
@@ -19,6 +20,12 @@ const plan = {
   createdAt: 1,
   updatedAt: 1,
 } as TrainingPlan
+
+const entitlementOffer: EntitlementRequiredDetail = {
+  requestClass: 'plan_builder_week',
+  requiredTier: 'advanced',
+  currentTier: 'free',
+}
 
 describe('resetBuilderState', () => {
   beforeEach(async () => {
@@ -44,6 +51,7 @@ describe('resetBuilderState', () => {
       streamingTextByWeekIndex: { 1: 'stream' },
       generationJob: {} as never,
       lastError: 'x',
+      entitlementOffer,
     })
 
     usePlanBuilderStore.getState().resetBuilderState()
@@ -59,6 +67,7 @@ describe('resetBuilderState', () => {
       streamingTextByWeekIndex: {},
       generationJob: null,
       lastError: null,
+      entitlementOffer: null,
     })
   })
 
@@ -72,12 +81,13 @@ describe('resetBuilderState', () => {
   })
 
   it('resetForAthleteSwitch conserva el contrato y delega al reset en memoria', () => {
-    usePlanBuilderStore.setState({ plan, status: 'done', lastError: 'x' })
+    usePlanBuilderStore.setState({ plan, status: 'done', lastError: 'x', entitlementOffer })
 
     usePlanBuilderStore.getState().resetForAthleteSwitch()
 
     expect(usePlanBuilderStore.getState().plan).toBeNull()
     expect(usePlanBuilderStore.getState().status).toBe('idle')
     expect(usePlanBuilderStore.getState().lastError).toBeNull()
+    expect(usePlanBuilderStore.getState().entitlementOffer).toBeNull()
   })
 })

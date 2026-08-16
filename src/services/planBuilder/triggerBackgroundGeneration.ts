@@ -3,6 +3,10 @@ import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import { supabase } from '../auth'
 import { trimRecentContextForPayload, type PlanBuilderRecentContext } from './recentContext'
 import { resolveApiUrl } from '../apiUrl'
+import {
+  isEntitlementRequiredDetail,
+  type EntitlementRequiredDetail,
+} from '../entitlements/entitlementError'
 
 // Synchronous enqueue/ack endpoint. Unlike the background function (which always
 // replies 202 with an empty body), this one validates auth/payload, writes a
@@ -23,10 +27,18 @@ export const MAX_PAYLOAD_BYTES = 200 * 1024
  */
 export class PlanEnqueueRejectedError extends Error {
   readonly statusCode: number
-  constructor(message: string, statusCode: number) {
+  /** Metadata de oferta cuando el rechazo fue por plan; `null` en el resto. */
+  readonly entitlement: EntitlementRequiredDetail | null
+
+  constructor(
+    message: string,
+    statusCode: number,
+    entitlement: EntitlementRequiredDetail | null = null,
+  ) {
     super(message)
     this.name = 'PlanEnqueueRejectedError'
     this.statusCode = statusCode
+    this.entitlement = entitlement
   }
 }
 
@@ -92,11 +104,24 @@ export async function triggerBackgroundGeneration(
     },
     body,
   })
-  const result = await response.json().catch(() => ({})) as { jobId?: string; error?: string }
+  const result = await response.json().catch(() => ({})) as {
+    jobId?: string
+    error?: string
+    errorCode?: string
+    detail?: unknown
+  }
   if (!response.ok) {
+    // Sólo el 403 contractual se convierte en oferta. Un 500 que por accidente
+    // copie esa metadata sigue siendo un fallo técnico.
+    const entitlement = response.status === 403
+      && result.errorCode === 'entitlement_required'
+      && isEntitlementRequiredDetail(result.detail)
+      ? result.detail
+      : null
     throw new PlanEnqueueRejectedError(
       result.error ?? `No se pudo iniciar la generación async (${response.status}).`,
       response.status,
+      entitlement,
     )
   }
   return { jobId: result.jobId }

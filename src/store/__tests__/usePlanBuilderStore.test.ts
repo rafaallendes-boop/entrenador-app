@@ -3,6 +3,7 @@ import type { AthleteProfile, PlanWizardConfig } from '../../types'
 import type { PlanGenerationJob, TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import { PlanBuilderDailyQuotaError } from '../../services/planBuilder/dailyQuotaError'
 import { PlanEnqueueRejectedError } from '../../services/planBuilder/triggerBackgroundGeneration'
+import type { EntitlementRequiredDetail } from '../../services/entitlements/entitlementError'
 
 interface GeneratePlanWeeksMockInput {
   weeks: TrainingPlanWeek[]
@@ -240,6 +241,7 @@ function resetStore() {
     streamingTextByWeekIndex: {},
     generationJob: null,
     lastError: null,
+    entitlementOffer: null,
   })
 }
 
@@ -547,6 +549,174 @@ describe('usePlanBuilderStore', () => {
       planId: plan.id,
       weekIndexes: expect.arrayContaining(usePlanBuilderStore.getState().weeks.map((week) => week.weekIndex)),
     })
+    expect(state.entitlementOffer).toBeNull()
+  })
+
+  it('turns an entitlement rejection into an ephemeral offer and restores the pre-attempt snapshot', async () => {
+    const profile = await createShell()
+    const originalPlan = usePlanBuilderStore.getState().plan!
+    const originalWeeks = usePlanBuilderStore.getState().weeks
+    const detail: EntitlementRequiredDetail = {
+      requestClass: 'plan_builder_week',
+      requiredTier: 'advanced',
+      currentTier: 'free',
+    }
+    mocks.supabase = { auth: {} }
+    mocks.authUser = { id: 'user-1' }
+    mocks.triggerBackgroundGeneration.mockRejectedValueOnce(
+      new PlanEnqueueRejectedError('Requiere advanced.', 403, detail),
+    )
+
+    await usePlanBuilderStore.getState().runGeneration(profile)
+
+    const state = usePlanBuilderStore.getState()
+    expect(state.entitlementOffer).toEqual(detail)
+    expect(state.lastError).toBeNull()
+    expect(state.status).toBe('shell_ready')
+    expect(state.plan).toEqual(originalPlan)
+    expect(state.weeks).toEqual(originalWeeks)
+    expect(mocks.pollPlanGeneration).not.toHaveBeenCalled()
+    expect(mocks.releasePlanBuilderWeekReservations).toHaveBeenCalled()
+    expect(mocks.pushTrainingPlan).toHaveBeenLastCalledWith(originalPlan)
+    expect(mocks.plans.get(originalPlan.id)).toEqual(originalPlan)
+  })
+
+  it('clears an old entitlement offer when a later enqueue succeeds', async () => {
+    const profile = await createShell()
+    mocks.supabase = { auth: {} }
+    mocks.authUser = { id: 'user-1' }
+    usePlanBuilderStore.setState({
+      entitlementOffer: {
+        requestClass: 'plan_builder_week',
+        requiredTier: 'advanced',
+        currentTier: 'free',
+      },
+    })
+
+    await usePlanBuilderStore.getState().runGeneration(profile)
+
+    expect(usePlanBuilderStore.getState().entitlementOffer).toBeNull()
+    expect(mocks.pollPlanGeneration).toHaveBeenCalled()
+  })
+
+  it('restores a partial plan when entitlement rejects a week regeneration', async () => {
+    const profile = await createShell()
+    const shell = usePlanBuilderStore.getState()
+    const partialWeeks = shell.weeks.map((week, index) => (
+      index === 0 ? failedWeek(week) : generatedWeek(week)
+    ))
+    const partialPlan: TrainingPlan = {
+      ...shell.plan!,
+      generationState: 'partial',
+      generationSummary: {
+        startedAt: 1,
+        completedAt: 2,
+        heartbeatAt: 2,
+        strategy: 'single',
+        completedWeeks: partialWeeks.length - 1,
+        failedWeeks: [partialWeeks[0].weekIndex],
+        totalAttempts: 1,
+      },
+    }
+    await mocks.db.trainingPlans.put(partialPlan)
+    await mocks.db.trainingPlanWeeks.bulkPut(partialWeeks)
+    usePlanBuilderStore.setState({
+      plan: partialPlan,
+      weeks: partialWeeks,
+      status: 'partial',
+      completedWeeks: partialWeeks.length - 1,
+      failedWeekIndexes: [partialWeeks[0].weekIndex],
+      lastError: 'fallo previo',
+    })
+    const detail: EntitlementRequiredDetail = {
+      requestClass: 'plan_builder_week',
+      requiredTier: 'advanced',
+      currentTier: 'free',
+    }
+    mocks.supabase = { auth: {} }
+    mocks.authUser = { id: 'user-1' }
+    mocks.triggerBackgroundGeneration.mockRejectedValueOnce(
+      new PlanEnqueueRejectedError('Requiere advanced.', 403, detail),
+    )
+
+    await usePlanBuilderStore.getState().regenerateWeek(partialWeeks[0].weekIndex, profile)
+
+    const state = usePlanBuilderStore.getState()
+    expect(state.plan).toEqual(partialPlan)
+    expect(state.weeks).toEqual(partialWeeks)
+    expect(state.status).toBe('partial')
+    expect(state.lastError).toBe('fallo previo')
+    expect(state.entitlementOffer).toEqual(detail)
+    expect(mocks.pushTrainingPlan).toHaveBeenLastCalledWith(partialPlan)
+  })
+
+  it('restores a failed plan when entitlement rejects retryFailedWeeks', async () => {
+    const profile = await createShell()
+    const shell = usePlanBuilderStore.getState()
+    const failedWeeks = shell.weeks.map(failedWeek)
+    const failedIndexes = failedWeeks.map((week) => week.weekIndex)
+    const failedPlan: TrainingPlan = {
+      ...shell.plan!,
+      generationState: 'failed',
+      generationSummary: {
+        startedAt: 1,
+        completedAt: 2,
+        heartbeatAt: 2,
+        strategy: 'single',
+        completedWeeks: 0,
+        failedWeeks: failedIndexes,
+        totalAttempts: 1,
+      },
+    }
+    await mocks.db.trainingPlans.put(failedPlan)
+    await mocks.db.trainingPlanWeeks.bulkPut(failedWeeks)
+    usePlanBuilderStore.setState({
+      plan: failedPlan,
+      weeks: failedWeeks,
+      status: 'failed',
+      completedWeeks: 0,
+      failedWeekIndexes: failedIndexes,
+      lastError: 'fallo previo',
+    })
+    const detail: EntitlementRequiredDetail = {
+      requestClass: 'plan_builder_week',
+      requiredTier: 'advanced',
+      currentTier: 'free',
+    }
+    mocks.supabase = { auth: {} }
+    mocks.authUser = { id: 'user-1' }
+    mocks.triggerBackgroundGeneration.mockRejectedValueOnce(
+      new PlanEnqueueRejectedError('Requiere advanced.', 403, detail),
+    )
+
+    await usePlanBuilderStore.getState().retryFailedWeeks(profile)
+
+    const state = usePlanBuilderStore.getState()
+    expect(state.plan).toEqual(failedPlan)
+    expect(state.weeks).toEqual(failedWeeks)
+    expect(state.status).toBe('failed')
+    expect(state.lastError).toBe('fallo previo')
+    expect(state.entitlementOffer).toEqual(detail)
+    expect(mocks.pushTrainingPlan).toHaveBeenLastCalledWith(failedPlan)
+  })
+
+  it('clears an old entitlement offer when creating or loading another draft', async () => {
+    const offer: EntitlementRequiredDetail = {
+      requestClass: 'plan_builder_week',
+      requiredTier: 'advanced',
+      currentTier: 'free',
+    }
+    usePlanBuilderStore.setState({ entitlementOffer: offer })
+
+    await createShell()
+
+    const planId = usePlanBuilderStore.getState().plan!.id
+    expect(usePlanBuilderStore.getState().entitlementOffer).toBeNull()
+
+    usePlanBuilderStore.setState({ entitlementOffer: offer })
+    await usePlanBuilderStore.getState().loadDraft(planId)
+
+    expect(usePlanBuilderStore.getState().entitlementOffer).toBeNull()
   })
 
   it('marks generation as failed when the remote draft cannot be published before enqueue', async () => {
