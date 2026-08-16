@@ -672,6 +672,20 @@ describe('resolveEntitlementTier', () => {
     await expect(resolveEntitlementTier('tok')).resolves.toBe('free')
   })
 
+  it('expires_at ILEGIBLE devuelve free, no "sin vencimiento"', async () => {
+    // Un valor que no parsea no puede interpretarse como null: eso sería lo
+    // más permisivo posible, al revés del fail-closed.
+    for (const bad of ['no-es-fecha', '', 42, {}]) {
+      mockFetchJson(200, [{ tier: 'advanced', expires_at: bad }])
+      await expect(resolveEntitlementTier('tok')).resolves.toBe('free')
+    }
+  })
+
+  it('expires_at ausente sigue siendo sin vencimiento', async () => {
+    mockFetchJson(200, [{ tier: 'advanced' }])
+    await expect(resolveEntitlementTier('tok')).resolves.toBe('advanced')
+  })
+
   it('error HTTP devuelve free (fail-closed)', async () => {
     mockFetchJson(500, { message: 'boom' })
     await expect(resolveEntitlementTier('tok')).resolves.toBe('free')
@@ -733,10 +747,22 @@ export function isEntitlementEnforcementEnabled(
   return env['ENTITLEMENTS_ENABLED'] === 'true'
 }
 
-function parseExpiresAt(value: unknown): number | null {
-  if (typeof value !== 'string' || value.length === 0) return null
+/**
+ * Tres resultados distintos, y colapsarlos rompe el fail-closed:
+ *  - `{ ok: true, value: null }`   → ausente = sin vencimiento (legítimo)
+ *  - `{ ok: true, value: number }` → vencimiento parseado
+ *  - `{ ok: false }`               → presente pero ilegible → tratar como free
+ *
+ * Devolver `null` ante un valor inválido significaría "sin vencimiento", que es
+ * lo más permisivo posible: exactamente al revés de lo que queremos.
+ */
+export function parseExpiresAt(
+  value: unknown,
+): { ok: true; value: number | null } | { ok: false } {
+  if (value == null) return { ok: true, value: null }
+  if (typeof value !== 'string' || value.length === 0) return { ok: false }
   const parsed = Date.parse(value)
-  return Number.isNaN(parsed) ? null : parsed
+  return Number.isNaN(parsed) ? { ok: false } : { ok: true, value: parsed }
 }
 
 /**
@@ -773,9 +799,13 @@ export async function resolveEntitlementTier(
     if (!Array.isArray(body) || body.length === 0) return 'free'
 
     const raw = body[0] as { tier?: unknown; expires_at?: unknown }
+    const expires = parseExpiresAt(raw.expires_at)
+    // Vencimiento ilegible → free. No se puede asumir "sin vencimiento".
+    if (!expires.ok) return 'free'
+
     const row: EntitlementRow = {
       tier: raw.tier as Tier,
-      expiresAt: parseExpiresAt(raw.expires_at),
+      expiresAt: expires.value,
     }
     return resolveTier(row, now)
   } catch {
@@ -921,15 +951,32 @@ Expected: PASS — 4 tests
 In `netlify/functions/coach.ts`, inside the auth `try` block, right after `enforceRateLimit(auth)` (line ~1629):
 
 ```ts
+Reemplazar el `const auth = await resolveAuthContext(event)` del bloque `try`
+por una lectura **realmente paralela**. `getBearerToken` es síncrona, así que el
+token está disponible antes de resolver auth, y RLS filtra por `auth.uid()` del
+propio token: la lectura del tier no necesita esperar a que auth termine.
+
+```ts
+    const bearer = getBearerToken(event)
+    const gateEnabled = isEntitlementEnforcementEnabled()
+    const [auth, gateTier] = await Promise.all([
+      resolveAuthContext(event),
+      gateEnabled && bearer
+        ? resolveEntitlementTier(bearer)
+        : Promise.resolve('free' as Tier),
+    ])
+    const token = bearer
+    if (token && auth.userId !== ANONYMOUS_USER_ID) {
+      persistence = { userId: auth.userId, token }
+    }
     enforceRateLimit(auth)
 
     // Entitlement ANTES que cualquier cuota: una clase bloqueada por plan no
     // puede reportarse como límite diario, o el usuario recibe la oferta
     // equivocada y vuelve mañana esperando que se le renueve.
-    if (isEntitlementEnforcementEnabled() && auth.userId !== ANONYMOUS_USER_ID) {
-      const token = getBearerToken(event)
+    if (gateEnabled && auth.userId !== ANONYMOUS_USER_ID) {
       const gateClass = normalizeRequestClass(req.requestClass)
-      const currentTier = token ? await resolveEntitlementTier(token) : 'free'
+      const currentTier = gateTier
       if (!isClassAllowed(currentTier, gateClass)) {
         const requiredTier = minTierForClass(gateClass) ?? 'advanced'
         const detail = buildEntitlementDetail(gateClass, requiredTier, currentTier)
@@ -1080,19 +1127,31 @@ Expected: PASS — 3 tests
 
 In `netlify/functions/enqueue-plan-generation.ts`, right after `const auth = await resolveAuthContext(event)` and **before** `createSupabaseWriter`:
 
+Lectura paralela: `getBearerToken` es síncrona y RLS filtra por el token, así
+que la consulta del tier no espera a que auth resuelva.
+
 ```ts
-    const auth = await resolveAuthContext(event)
+    const bearer = getBearerToken(event)
+    const gateEnabled = isEntitlementEnforcementEnabled()
+    const [auth, gateTier] = await Promise.all([
+      resolveAuthContext(event),
+      gateEnabled && bearer
+        ? resolveEntitlementTier(bearer)
+        : Promise.resolve('free' as Tier),
+    ])
     // Antes de cualquier escritura: un rechazo acá no debe dejar un plan en
     // 'generating' ni un jobId huérfano.
-    if (isEntitlementEnforcementEnabled()) {
-      assertPlanGenerationEntitlement(await resolveEntitlementTier(auth.token))
-    }
+    if (gateEnabled) assertPlanGenerationEntitlement(gateTier)
+
     const writer = createSupabaseWriter(auth.userId, auth.token)
 ```
 
-Add the import:
+`getBearerToken` es privada de `planGenerationShared.ts`. **Exportarla** desde
+ahí (`export function getBearerToken`) y agregar los imports:
 
 ```ts
+import { getBearerToken } from './_shared/planGenerationShared'
+import type { Tier } from '../../src/services/entitlements/entitlementPolicy'
 import {
   assertPlanGenerationEntitlement,
   isEntitlementEnforcementEnabled,
@@ -1212,6 +1271,17 @@ describe('terminalizeRejectedJob', () => {
     expect(putPlan).not.toHaveBeenCalled()
   })
 
+  it('NO degrada un plan ya completado con el mismo jobId', async () => {
+    const done = { ...makePlan('job-abc'), generationState: 'complete' } as unknown as TrainingPlan
+    const putPlan = vi.fn(async () => {})
+    const writer = { getPlan: vi.fn(async () => done), putPlan }
+
+    const result = await terminalizeRejectedJob(writer as never, 'plan-1', 'job-abc')
+
+    expect(result).toBe('skipped')
+    expect(putPlan).not.toHaveBeenCalled()
+  })
+
   it('un fallo al escribir no propaga: el rechazo ya ocurrio', async () => {
     const writer = {
       getPlan: vi.fn(async () => makePlan('job-abc')),
@@ -1256,6 +1326,10 @@ export async function terminalizeRejectedJob(
     const existing = await writer.getPlan(planId)
     if (!existing?.generationSummary) return 'skipped'
     if (existing.generationSummary.jobId !== jobId) return 'skipped'
+    // Sólo un job EN CURSO se puede terminalizar. Sin esta guarda, un reintento
+    // tardío con el mismo jobId sobre un plan ya completado lo degradaría a
+    // 'failed' y le borraría al usuario un plan que sí se generó.
+    if (existing.generationState !== 'generating') return 'skipped'
 
     const now = Date.now()
     await writer.putPlan({
@@ -1299,7 +1373,13 @@ In `netlify/functions/generate-plan-background.ts`, immediately after `const aut
           typeof body.jobId === 'string' ? body.jobId : undefined,
         )
         console.warn(`[generate-plan] entitlement denied tier=${tier} planId=${body.plan.id} cleanup=${outcome}`)
-        return json(403, { error: 'Esta función requiere el plan advanced.', errorCode: 'entitlement_required' })
+        // Mismo contrato que coach.ts y enqueue: el 403 SIEMPRE lleva detail.
+        const detail = buildEntitlementDetail(PLAN_GENERATION_REQUEST_CLASS, 'advanced', tier)
+        return json(403, {
+          error: formatEntitlementMessage(detail),
+          errorCode: 'entitlement_required',
+          detail,
+        })
       }
     }
 ```
@@ -1315,27 +1395,70 @@ import {
 } from './_shared/resolveEntitlement'
 ```
 
-- [ ] **Step 6: Add the race regression test**
+- [ ] **Step 6: Add the race regression test — contra el handler real**
+
+Un mock de proveedor declarado dentro del test y nunca conectado al handler no
+demuestra nada: pasaría aunque el gate no existiera. El test tiene que invocar
+`handler` y verificar que el proveedor **real** no se llamó.
 
 Append to `netlify/functions/__tests__/backgroundPlanEntitlement.test.ts`:
 
 ```ts
-describe('carrera enqueue-aceptado / worker-rechazado', () => {
-  it('el plan queda terminal y no se llama al proveedor', async () => {
-    const plan = makePlan('job-abc')
-    const putPlan = vi.fn(async () => {})
-    const writer = { getPlan: vi.fn(async () => plan), putPlan }
-    const callProvider = vi.fn()
+import { handler } from '../generate-plan-background'
 
-    const result = await terminalizeRejectedJob(writer as never, 'plan-1', 'job-abc')
+const callProvider = vi.fn()
+vi.mock('../_shared/anthropicCaller', () => ({
+  callAnthropicForWeek: (...args: unknown[]) => callProvider(...args),
+}))
 
-    expect(result).toBe('marked')
+const putPlan = vi.fn(async () => {})
+const getPlan = vi.fn(async () => makePlan('job-abc'))
+vi.mock('../_shared/planGenerationShared', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../_shared/planGenerationShared')>()),
+  resolveAuthContext: async () => ({ userId: 'user-free', token: 'tok-free' }),
+  createSupabaseWriter: () => ({ getPlan, putPlan }),
+}))
+
+vi.mock('../_shared/resolveEntitlement', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../_shared/resolveEntitlement')>()),
+  isEntitlementEnforcementEnabled: () => true,
+  resolveEntitlementTier: async () => 'free' as const,
+}))
+
+describe('carrera enqueue-aceptado / worker-rechazado (handler real)', () => {
+  it('responde 403 con detail, terminaliza el plan y NO llama al proveedor', async () => {
+    callProvider.mockClear()
+    putPlan.mockClear()
+
+    const response = await handler({
+      httpMethod: 'POST',
+      headers: { authorization: 'Bearer tok-free' },
+      body: JSON.stringify({
+        plan: { id: 'plan-1' },
+        weeks: [],
+        targetWeekIndexes: [0],
+        jobId: 'job-abc',
+      }),
+    } as never, {} as never)
+
+    expect(response?.statusCode).toBe(403)
+    const parsed = JSON.parse(response!.body as string)
+    expect(parsed.errorCode).toBe('entitlement_required')
+    expect(parsed.detail).toMatchObject({ requiredTier: 'advanced', currentTier: 'free' })
+
+    // El plan queda terminal: el cliente no depende del detector de stalled.
+    expect(putPlan).toHaveBeenCalledTimes(1)
     expect((putPlan.mock.calls[0][0] as TrainingPlan).generationState).toBe('failed')
-    // El cliente no depende del detector de stalled: el estado ya es terminal.
+
+    // Lo que de verdad importa: cero gasto.
     expect(callProvider).not.toHaveBeenCalled()
   })
 })
 ```
+
+Si el nombre del módulo del proveedor difiere, ajustar el `vi.mock` al que
+importe realmente `asyncGenerationLoop`; el assert que no se puede negociar es
+`expect(callProvider).not.toHaveBeenCalled()`.
 
 - [ ] **Step 7: Run tests and typecheck**
 
@@ -1361,7 +1484,7 @@ git commit -m "feat(entitlements): gate y terminalizacion en generate-plan-backg
 - Test: `src/db/__tests__/dexieV20Upgrade.test.ts`
 
 **Interfaces:**
-- Consumes: `resolveTier`, `Tier` (Task 1); `USER_ENTITLEMENT_SELECT` (Task 3); `supabase` de `src/lib/supabase` (mismo import que usa `consentService`)
+- Consumes: `resolveTier`, `Tier` (Task 1); `USER_ENTITLEMENT_SELECT` (Task 3); `supabase` de `src/services/auth` (el mismo import que usa `consentService`, que lo trae como `'../auth'`)
 - Produces:
   - `interface StoredEntitlement { userId: string; tier: Tier; expiresAt: number | null; confirmedAt: number }`
   - `async function fetchRemoteEntitlement(userId): Promise<{ ok: boolean; row: StoredEntitlement | null }>`
@@ -1424,6 +1547,16 @@ describe('hydrateEntitlement — reconciliacion', () => {
 
     expect(result.ok).toBe(false)
     expect(await db.entitlements.get(USER)).toMatchObject({ tier: 'advanced' })
+  })
+
+  it('vencimiento ILEGIBLE se trata como ausencia confirmada, no como sin vencimiento', async () => {
+    await db.entitlements.put({ userId: USER, tier: 'advanced', expiresAt: null, confirmedAt: 1 })
+    remoteReturns({ tier: 'advanced', expires_at: 'no-es-fecha' })
+
+    const result = await hydrateEntitlement(USER)
+
+    expect(result).toEqual({ ok: true, tier: 'free' })
+    expect(await db.entitlements.get(USER)).toBeUndefined()
   })
 })
 
@@ -1506,10 +1639,19 @@ import { isTier, resolveTier, type Tier } from './entitlementPolicy'
 
 const TABLE = 'user_entitlements'
 
-function parseExpiresAt(value: unknown): number | null {
-  if (typeof value !== 'string' || value.length === 0) return null
+/**
+ * Misma semántica fail-closed que el helper de servidor: un vencimiento
+ * ilegible NO es "sin vencimiento". Se reimplementa acá en vez de importarse
+ * desde `netlify/` para no arrastrar código de Functions al bundle del cliente;
+ * el test de abajo fija que ambas se comporten igual.
+ */
+function parseExpiresAt(
+  value: unknown,
+): { ok: true; value: number | null } | { ok: false } {
+  if (value == null) return { ok: true, value: null }
+  if (typeof value !== 'string' || value.length === 0) return { ok: false }
   const parsed = Date.parse(value)
-  return Number.isNaN(parsed) ? null : parsed
+  return Number.isNaN(parsed) ? { ok: false } : { ok: true, value: parsed }
 }
 
 /**
@@ -1534,12 +1676,18 @@ export async function fetchRemoteEntitlement(
   const raw = data as { tier?: unknown; expires_at?: unknown }
   if (!isTier(raw.tier)) return { ok: true, row: null }
 
+  const expires = parseExpiresAt(raw.expires_at)
+  // Fila presente pero con vencimiento ilegible: se trata como ausencia
+  // confirmada, o sea free. Escribir un espejo sin vencimiento sería otorgar
+  // el tier para siempre por un dato corrupto.
+  if (!expires.ok) return { ok: true, row: null }
+
   return {
     ok: true,
     row: {
       userId,
       tier: raw.tier,
-      expiresAt: parseExpiresAt(raw.expires_at),
+      expiresAt: expires.value,
       confirmedAt: Date.now(),
     },
   }
@@ -1644,24 +1792,32 @@ git commit -m "feat(entitlements): Dexie v20 y espejo con reconciliacion de tres
 
 ---
 
-### Task 9: Selector de cliente con estado neutro
+### Task 9: Store global de entitlement
+
+Un hook con `useState` guarda estado **por instancia**: dos componentes montados
+harían dos fetches y podrían discrepar, y nada fuera de React —`useChatStore`,
+las cuotas— podría leer el tier. La autoridad tiene que ser un store global
+hidratado una sola vez; el hook queda como selector.
 
 **Files:**
+- Create: `src/store/useEntitlementStore.ts`
 - Create: `src/hooks/useEntitlement.ts`
-- Modify: `src/components/legal/ConsentGate.tsx` — no; en su lugar montar la hidratación en `src/App.tsx` junto al bootstrap autenticado
-- Test: `src/hooks/__tests__/useEntitlement.test.tsx`
+- Modify: `src/App.tsx` — disparar la hidratación en el bootstrap autenticado
+- Test: `src/store/__tests__/useEntitlementStore.test.ts`
 
 **Interfaces:**
-- Consumes: `hydrateEntitlement`, `readMirroredTier` (Task 8)
-- Produces: `function useEntitlement(): { tier: Tier; loading: boolean; source: 'remote' | 'mirror' | 'default'; canUse(requestClass: string): boolean }`
+- Consumes: `hydrateEntitlement`, `readMirroredTier` (Task 8); `isClassAllowed`, `Tier` (Task 1)
+- Produces:
+  - `useEntitlementStore` con `{ tier, loading, source, userId, hydrate(userId), reset() }`
+  - `function getEntitlementTier(): Tier` — lectura sincrónica fuera de React
+  - `function useEntitlement(): { tier; loading; source; canUse(requestClass) }`
 
 - [ ] **Step 1: Write the failing test**
 
-Create `src/hooks/__tests__/useEntitlement.test.tsx`:
+Create `src/store/__tests__/useEntitlementStore.test.ts`:
 
-```tsx
-import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { renderHook, waitFor } from '@testing-library/react'
+```ts
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const hydrateEntitlement = vi.fn()
 const readMirroredTier = vi.fn()
@@ -1671,133 +1827,217 @@ vi.mock('../../services/entitlements/entitlementService', () => ({
   readMirroredTier: (...args: unknown[]) => readMirroredTier(...args),
 }))
 
-let mockUserId: string | null = 'user-1'
-vi.mock('../../store/useAuthStore', () => ({
-  useAuthStore: (selector: (s: unknown) => unknown) =>
-    selector({ user: mockUserId ? { id: mockUserId } : null }),
-}))
-
-const { useEntitlement } = await import('../useEntitlement')
+const { useEntitlementStore, getEntitlementTier } = await import('../useEntitlementStore')
 
 beforeEach(() => {
-  mockUserId = 'user-1'
   hydrateEntitlement.mockReset()
   readMirroredTier.mockReset()
+  useEntitlementStore.getState().reset()
 })
 
-describe('useEntitlement', () => {
-  it('sin espejo arranca loading y NO afirma free', async () => {
+describe('hidratacion unica', () => {
+  it('dos llamadas concurrentes para el mismo usuario hacen UN solo fetch', async () => {
+    readMirroredTier.mockResolvedValue(null)
+    hydrateEntitlement.mockResolvedValue({ ok: true, tier: 'advanced' })
+
+    await Promise.all([
+      useEntitlementStore.getState().hydrate('user-1'),
+      useEntitlementStore.getState().hydrate('user-1'),
+    ])
+
+    expect(hydrateEntitlement).toHaveBeenCalledTimes(1)
+    expect(useEntitlementStore.getState().tier).toBe('advanced')
+  })
+
+  it('cambiar de cuenta descarta el tier anterior antes de hidratar', async () => {
+    readMirroredTier.mockResolvedValue(null)
+    hydrateEntitlement.mockResolvedValue({ ok: true, tier: 'advanced' })
+    await useEntitlementStore.getState().hydrate('user-1')
+    expect(useEntitlementStore.getState().tier).toBe('advanced')
+
+    // La cuenta nueva no puede heredar el tier de la anterior ni por un frame.
+    hydrateEntitlement.mockImplementation(() => new Promise(() => {}))
+    void useEntitlementStore.getState().hydrate('user-2')
+
+    expect(useEntitlementStore.getState().tier).toBe('free')
+    expect(useEntitlementStore.getState().source).toBe('default')
+    expect(useEntitlementStore.getState().loading).toBe(true)
+  })
+
+  it('una respuesta tardia de la cuenta anterior no pisa a la nueva', async () => {
+    let resolveOld: (v: unknown) => void = () => {}
+    readMirroredTier.mockResolvedValue(null)
+    hydrateEntitlement.mockImplementationOnce(() => new Promise((r) => { resolveOld = r }))
+    void useEntitlementStore.getState().hydrate('user-1')
+
+    hydrateEntitlement.mockResolvedValueOnce({ ok: true, tier: 'free' })
+    await useEntitlementStore.getState().hydrate('user-2')
+
+    resolveOld({ ok: true, tier: 'advanced' })
+    await Promise.resolve()
+
+    expect(useEntitlementStore.getState().userId).toBe('user-2')
+    expect(useEntitlementStore.getState().tier).toBe('free')
+  })
+})
+
+describe('estado neutro', () => {
+  it('sin espejo arranca loading y source default', async () => {
     readMirroredTier.mockResolvedValue(null)
     hydrateEntitlement.mockImplementation(() => new Promise(() => {}))
 
-    const { result } = renderHook(() => useEntitlement())
+    void useEntitlementStore.getState().hydrate('user-1')
+    await Promise.resolve()
 
-    await waitFor(() => expect(result.current.loading).toBe(true))
-    expect(result.current.source).toBe('default')
+    expect(useEntitlementStore.getState().loading).toBe(true)
+    expect(useEntitlementStore.getState().source).toBe('default')
   })
 
-  it('con espejo lo usa de inmediato sin esperar la red', async () => {
+  it('con espejo lo usa antes de que responda la red', async () => {
     readMirroredTier.mockResolvedValue('advanced')
     hydrateEntitlement.mockImplementation(() => new Promise(() => {}))
 
-    const { result } = renderHook(() => useEntitlement())
-
-    await waitFor(() => expect(result.current.tier).toBe('advanced'))
-    expect(result.current.source).toBe('mirror')
+    void useEntitlementStore.getState().hydrate('user-1')
+    await vi.waitFor(() => expect(useEntitlementStore.getState().source).toBe('mirror'))
+    expect(useEntitlementStore.getState().tier).toBe('advanced')
   })
+})
 
-  it('la hidratacion remota gana sobre el espejo', async () => {
-    readMirroredTier.mockResolvedValue('advanced')
-    hydrateEntitlement.mockResolvedValue({ ok: true, tier: 'free' })
-
-    const { result } = renderHook(() => useEntitlement())
-
-    await waitFor(() => expect(result.current.source).toBe('remote'))
-    expect(result.current.tier).toBe('free')
-    expect(result.current.loading).toBe(false)
-  })
-
-  it('canUse refleja el tier resuelto', async () => {
+describe('getEntitlementTier', () => {
+  it('permite leer el tier fuera de React', async () => {
     readMirroredTier.mockResolvedValue(null)
     hydrateEntitlement.mockResolvedValue({ ok: true, tier: 'weekly' })
-
-    const { result } = renderHook(() => useEntitlement())
-
-    await waitFor(() => expect(result.current.loading).toBe(false))
-    expect(result.current.canUse('week_creator')).toBe(true)
-    expect(result.current.canUse('plan_builder_week')).toBe(false)
+    await useEntitlementStore.getState().hydrate('user-1')
+    expect(getEntitlementTier()).toBe('weekly')
   })
 
-  it('sin usuario resuelve free y no hidrata', async () => {
-    mockUserId = null
-    const { result } = renderHook(() => useEntitlement())
-    await waitFor(() => expect(result.current.loading).toBe(false))
-    expect(result.current.tier).toBe('free')
-    expect(hydrateEntitlement).not.toHaveBeenCalled()
+  it('sin hidratar devuelve free', () => {
+    expect(getEntitlementTier()).toBe('free')
+  })
+})
+
+describe('reset', () => {
+  it('vuelve a free al cerrar sesion', async () => {
+    readMirroredTier.mockResolvedValue(null)
+    hydrateEntitlement.mockResolvedValue({ ok: true, tier: 'advanced' })
+    await useEntitlementStore.getState().hydrate('user-1')
+
+    useEntitlementStore.getState().reset()
+
+    expect(useEntitlementStore.getState().tier).toBe('free')
+    expect(useEntitlementStore.getState().userId).toBeNull()
   })
 })
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `npx vitest run src/hooks/__tests__/useEntitlement.test.tsx`
-Expected: FAIL — no existe `../useEntitlement`
+Run: `npx vitest run src/store/__tests__/useEntitlementStore.test.ts`
+Expected: FAIL — no existe `../useEntitlementStore`
 
-- [ ] **Step 3: Write the hook**
+- [ ] **Step 3: Write the store**
+
+Create `src/store/useEntitlementStore.ts`:
+
+```ts
+import { create } from 'zustand'
+import { hydrateEntitlement, readMirroredTier } from '../services/entitlements/entitlementService'
+import type { Tier } from '../services/entitlements/entitlementPolicy'
+
+export type EntitlementSource = 'remote' | 'mirror' | 'default'
+
+interface EntitlementState {
+  tier: Tier
+  loading: boolean
+  source: EntitlementSource
+  userId: string | null
+  hydrate: (userId: string) => Promise<void>
+  reset: () => void
+}
+
+/** Deduplica hidrataciones concurrentes de la misma cuenta. */
+let inFlight: { userId: string; promise: Promise<void> } | null = null
+/** Descarta respuestas tardías de una cuenta que ya no es la activa. */
+let epoch = 0
+
+export const useEntitlementStore = create<EntitlementState>((set, get) => ({
+  tier: 'free',
+  loading: false,
+  source: 'default',
+  userId: null,
+
+  hydrate: async (userId: string) => {
+    if (inFlight && inFlight.userId === userId) return inFlight.promise
+
+    // Cambiar de cuenta descarta el tier anterior de inmediato: heredarlo aunque
+    // sea por un frame le mostraría a la cuenta nueva un plan que no tiene.
+    if (get().userId !== userId) {
+      set({ userId, tier: 'free', source: 'default', loading: true })
+    } else {
+      set({ loading: true })
+    }
+
+    const myEpoch = ++epoch
+    const promise = (async () => {
+      const mirrored = await readMirroredTier(userId)
+      if (myEpoch !== epoch) return
+      if (mirrored) set({ tier: mirrored, source: 'mirror' })
+
+      const remote = await hydrateEntitlement(userId)
+      if (myEpoch !== epoch) return
+      set({
+        tier: remote.tier,
+        source: remote.ok ? 'remote' : (mirrored ? 'mirror' : 'default'),
+        loading: false,
+      })
+    })().finally(() => {
+      if (inFlight?.userId === userId) inFlight = null
+    })
+
+    inFlight = { userId, promise }
+    return promise
+  },
+
+  reset: () => {
+    epoch++
+    inFlight = null
+    set({ tier: 'free', loading: false, source: 'default', userId: null })
+  },
+}))
+
+/** Lectura sincrónica para consumidores fuera de React (cuotas, chat store). */
+export function getEntitlementTier(): Tier {
+  return useEntitlementStore.getState().tier
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `npx vitest run src/store/__tests__/useEntitlementStore.test.ts`
+Expected: PASS — 8 tests
+
+- [ ] **Step 5: Write the selector hook**
 
 Create `src/hooks/useEntitlement.ts`:
 
 ```ts
-import { useEffect, useState } from 'react'
-import { useAuthStore } from '../store/useAuthStore'
-import { hydrateEntitlement, readMirroredTier } from '../services/entitlements/entitlementService'
+import { useEntitlementStore } from '../store/useEntitlementStore'
 import { isClassAllowed, type Tier } from '../services/entitlements/entitlementPolicy'
+import type { EntitlementSource } from '../store/useEntitlementStore'
 
-export interface EntitlementState {
+export interface EntitlementView {
   tier: Tier
   loading: boolean
-  /** 'default' mientras no hay evidencia: la UI muestra neutro, no una oferta. */
-  source: 'remote' | 'mirror' | 'default'
+  /** 'default' = sin evidencia todavía; la UI muestra neutro, no una oferta. */
+  source: EntitlementSource
   canUse: (requestClass: string) => boolean
 }
 
-export function useEntitlement(): EntitlementState {
-  const userId = useAuthStore((state) => state.user?.id ?? null)
-  const [tier, setTier] = useState<Tier>('free')
-  const [source, setSource] = useState<'remote' | 'mirror' | 'default'>('default')
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    let cancelled = false
-
-    if (!userId) {
-      setTier('free')
-      setSource('default')
-      setLoading(false)
-      return () => { cancelled = true }
-    }
-
-    setLoading(true)
-    setSource('default')
-
-    void (async () => {
-      // El espejo primero: si existe, no hay ambigüedad y se puede pintar ya.
-      const mirrored = await readMirroredTier(userId)
-      if (cancelled) return
-      if (mirrored) {
-        setTier(mirrored)
-        setSource('mirror')
-      }
-
-      const remote = await hydrateEntitlement(userId)
-      if (cancelled) return
-      setTier(remote.tier)
-      setSource(remote.ok ? 'remote' : (mirrored ? 'mirror' : 'default'))
-      setLoading(false)
-    })()
-
-    return () => { cancelled = true }
-  }, [userId])
+/** Selector puro sobre el store global. No hidrata: eso lo hace App.tsx. */
+export function useEntitlement(): EntitlementView {
+  const tier = useEntitlementStore((state) => state.tier)
+  const loading = useEntitlementStore((state) => state.loading)
+  const source = useEntitlementStore((state) => state.source)
 
   return {
     tier,
@@ -1808,37 +2048,60 @@ export function useEntitlement(): EntitlementState {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **Step 6: Mount hydration in `App.tsx`**
 
-Run: `npx vitest run src/hooks/__tests__/useEntitlement.test.tsx`
-Expected: PASS — 5 tests
+Find the authenticated bootstrap effect (the one that runs the initial pull after
+sign-in) and add, next to the existing hydrations:
 
-- [ ] **Step 5: Commit**
+```ts
+  useEffect(() => {
+    const userId = user?.id
+    if (!userId) {
+      useEntitlementStore.getState().reset()
+      return
+    }
+    void useEntitlementStore.getState().hydrate(userId)
+  }, [user?.id])
+```
+
+Import: `import { useEntitlementStore } from './store/useEntitlementStore'`
+
+- [ ] **Step 7: Run tests and typecheck**
+
+Run: `npx vitest run src/store/__tests__/useEntitlementStore.test.ts && npx tsc -b`
+Expected: verde
+
+- [ ] **Step 8: Commit**
 
 ```bash
-git add src/hooks/useEntitlement.ts src/hooks/__tests__/useEntitlement.test.tsx
-git commit -m "feat(entitlements): selector de cliente con estado neutro"
+git add src/store/useEntitlementStore.ts src/hooks/useEntitlement.ts src/App.tsx src/store/__tests__/useEntitlementStore.test.ts
+git commit -m "feat(entitlements): store global hidratado una vez y selector"
 ```
 
 ---
 
-### Task 10: Cuota local account-scoped y buckets por tier
+### Task 10: Cuotas por tier realmente cableadas
+
+Crear `QUOTA_BUCKETS` no cambia nada por sí solo. Este task conecta los buckets
+con los dos consumidores reales y estampa `userId` en las filas que se cuentan.
 
 **Files:**
-- Modify: `src/types/index.ts` — agregar `userId?: string` a `AITechnicalResult` (después de línea 56)
+- Modify: `src/types/index.ts` — `userId?: string` en `AITechnicalResult`
 - Create: `src/services/entitlements/quotaBuckets.ts`
 - Modify: `src/services/ai/aiTelemetry.ts` — `getDailyAIUsage`, `assertDailyAIRequestLimit`
+- Modify: `src/services/planBuilder/rateLimit.ts` — usar buckets en vez de `DEFAULT_DAILY_AI_LIMITS`
+- Modify: los productores de `AITechnicalResult` que estampan filas contables
 - Test: `src/services/entitlements/__tests__/quotaBuckets.test.ts`
-- Test: `src/services/ai/__tests__/aiTelemetryScope.test.ts`
+- Test: `src/services/ai/__tests__/aiTelemetryQuota.test.ts`
 
 **Interfaces:**
-- Consumes: `Tier`, `isClassAllowed` (Task 1)
+- Consumes: `Tier`, `isClassAllowed` (Task 1); `getEntitlementTier` (Task 9)
 - Produces:
-  - `const QUOTA_BUCKETS: readonly QuotaBucket[]`
-  - `function bucketForClass(requestClass: AIRequestClass): QuotaBucket | null`
-  - `function bucketLimitForTier(bucket: QuotaBucket, tier: Tier): number | null`
+  - `const QUOTA_BUCKETS`, `bucketForClass`, `bucketLimitForTier`
+  - `getDailyAIUsage(now, userId)` — filtrada por cuenta
+  - `assertDailyAIRequestLimit(requestClass, now, ctx?)` — por bucket y por tier
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Write the buckets test**
 
 Create `src/services/entitlements/__tests__/quotaBuckets.test.ts`:
 
@@ -1855,8 +2118,7 @@ const ALL_CLASSES: AIRequestClass[] = [
 describe('cobertura de buckets', () => {
   it('toda AIRequestClass pertenece a exactamente un bucket', () => {
     for (const requestClass of ALL_CLASSES) {
-      const matching = QUOTA_BUCKETS.filter((b) => b.classes.includes(requestClass))
-      expect(matching).toHaveLength(1)
+      expect(QUOTA_BUCKETS.filter((b) => b.classes.includes(requestClass))).toHaveLength(1)
     }
   })
 })
@@ -1867,14 +2129,12 @@ describe('bucket de chat compartido', () => {
   })
 
   it('free tiene 15 compartidos, no 15 + 10', () => {
-    const bucket = bucketForClass('chat_general')!
-    expect(bucketLimitForTier(bucket, 'free')).toBe(15)
+    expect(bucketLimitForTier(bucketForClass('chat_general')!, 'free')).toBe(15)
   })
 
   it('los tiers pagados conservan la capacidad total previa (80 + 40)', () => {
-    const bucket = bucketForClass('chat_general')!
-    expect(bucketLimitForTier(bucket, 'weekly')).toBe(120)
-    expect(bucketLimitForTier(bucket, 'advanced')).toBe(120)
+    expect(bucketLimitForTier(bucketForClass('chat_general')!, 'weekly')).toBe(120)
+    expect(bucketLimitForTier(bucketForClass('chat_general')!, 'advanced')).toBe(120)
   })
 })
 
@@ -1889,14 +2149,9 @@ describe('import_extract', () => {
 
 describe('clases bloqueadas NO se representan como cuota 0', () => {
   it('devuelve null, no 0, para una clase que el tier no puede usar', () => {
-    // null significa "no aplica cuota porque no está permitida". Un 0 haría que
-    // el llamador reportara `daily_quota` en vez de la oferta por plan.
-    const weekCreator = bucketForClass('week_creator')!
-    expect(bucketLimitForTier(weekCreator, 'free')).toBeNull()
-
-    const planBuilder = bucketForClass('plan_builder_week')!
-    expect(bucketLimitForTier(planBuilder, 'free')).toBeNull()
-    expect(bucketLimitForTier(planBuilder, 'weekly')).toBeNull()
+    expect(bucketLimitForTier(bucketForClass('week_creator')!, 'free')).toBeNull()
+    expect(bucketLimitForTier(bucketForClass('plan_builder_week')!, 'free')).toBeNull()
+    expect(bucketLimitForTier(bucketForClass('plan_builder_week')!, 'weekly')).toBeNull()
   })
 
   it('plan_builder_week y plan_builder_pair tienen contadores independientes', () => {
@@ -1923,48 +2178,23 @@ import { isClassAllowed, type Tier } from './entitlementPolicy'
 export interface QuotaBucket {
   id: string
   classes: readonly AIRequestClass[]
-  /** Tope diario por tier. Un tier ausente acá jamás llega: se filtra antes. */
   limits: Partial<Record<Tier, number>>
 }
 
 /**
- * Un bucket agrupa clases que comparten contador. Sólo el chat lo necesita:
- * los demás son buckets de una clase, es decir contadores por clase como hoy.
+ * Un bucket agrupa clases que comparten contador. Sólo el chat lo necesita; los
+ * demás son buckets de una clase, o sea contadores por clase como hoy.
  *
  * El bucket de chat pagado queda en 120 = 80 + 40 para preservar la capacidad
  * total previa y no introducir una regresión al unificar los dos contadores.
  */
 export const QUOTA_BUCKETS: readonly QuotaBucket[] = [
-  {
-    id: 'chat',
-    classes: ['chat_general', 'chat_action'],
-    limits: { free: 15, weekly: 120, advanced: 120 },
-  },
-  {
-    id: 'import',
-    classes: ['import_extract'],
-    limits: { free: 3, weekly: 10, advanced: 10 },
-  },
-  {
-    id: 'weekly_summary',
-    classes: ['weekly_summary'],
-    limits: { weekly: 10, advanced: 10 },
-  },
-  {
-    id: 'week_creator',
-    classes: ['week_creator'],
-    limits: { weekly: 8, advanced: 8 },
-  },
-  {
-    id: 'plan_builder_week',
-    classes: ['plan_builder_week'],
-    limits: { advanced: 12 },
-  },
-  {
-    id: 'plan_builder_pair',
-    classes: ['plan_builder_pair'],
-    limits: { advanced: 6 },
-  },
+  { id: 'chat', classes: ['chat_general', 'chat_action'], limits: { free: 15, weekly: 120, advanced: 120 } },
+  { id: 'import', classes: ['import_extract'], limits: { free: 3, weekly: 10, advanced: 10 } },
+  { id: 'weekly_summary', classes: ['weekly_summary'], limits: { weekly: 10, advanced: 10 } },
+  { id: 'week_creator', classes: ['week_creator'], limits: { weekly: 8, advanced: 8 } },
+  { id: 'plan_builder_week', classes: ['plan_builder_week'], limits: { advanced: 12 } },
+  { id: 'plan_builder_pair', classes: ['plan_builder_pair'], limits: { advanced: 6 } },
 ]
 
 export function bucketForClass(requestClass: AIRequestClass): QuotaBucket | null {
@@ -1977,8 +2207,7 @@ export function bucketForClass(requestClass: AIRequestClass): QuotaBucket | null
  * cuando el mensaje correcto es la oferta de plan.
  */
 export function bucketLimitForTier(bucket: QuotaBucket, tier: Tier): number | null {
-  const representative = bucket.classes[0]
-  if (!isClassAllowed(tier, representative)) return null
+  if (!isClassAllowed(tier, bucket.classes[0])) return null
   return bucket.limits[tier] ?? null
 }
 ```
@@ -1988,63 +2217,105 @@ export function bucketLimitForTier(bucket: QuotaBucket, tier: Tier): number | nu
 Run: `npx vitest run src/services/entitlements/__tests__/quotaBuckets.test.ts`
 Expected: PASS — 8 tests
 
-- [ ] **Step 5: Write the account-scoping test**
+- [ ] **Step 5: Write the integration test**
 
-Create `src/services/ai/__tests__/aiTelemetryScope.test.ts`:
+Create `src/services/ai/__tests__/aiTelemetryQuota.test.ts`:
 
 ```ts
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import 'fake-indexeddb/auto'
 import { db } from '../../../db/db'
-import { getDailyAIUsage, upsertAIRequestLog } from '../aiTelemetry'
 import type { AITechnicalResult } from '../../../types'
 
-function log(traceId: string, userId: string | undefined): AITechnicalResult {
-  return {
-    traceId,
-    userId,
-    surface: 'chat',
-    requestClass: 'chat_general',
-    startedAt: Date.now(),
-  } as AITechnicalResult
+let currentTier: 'free' | 'weekly' | 'advanced' = 'free'
+vi.mock('../../../store/useEntitlementStore', () => ({
+  getEntitlementTier: () => currentTier,
+}))
+
+const { assertDailyAIRequestLimit, getDailyAIUsage, upsertAIRequestLog } = await import('../aiTelemetry')
+const { AIProviderError } = await import('../types')
+
+const USER = 'user-a'
+
+function log(traceId: string, userId: string | undefined, requestClass: AITechnicalResult['requestClass']): AITechnicalResult {
+  return { traceId, userId, surface: 'chat', requestClass, startedAt: Date.now() } as AITechnicalResult
 }
 
 beforeEach(async () => {
   await db.aiRequestLogs.clear()
+  currentTier = 'free'
 })
 
-describe('getDailyAIUsage es account-scoped', () => {
+describe('account scoping', () => {
   it('no cuenta filas de otra cuenta', async () => {
-    await upsertAIRequestLog(log('t1', 'user-a'))
-    await upsertAIRequestLog(log('t2', 'user-b'))
-    await upsertAIRequestLog(log('t3', 'user-a'))
-
-    const usage = await getDailyAIUsage(Date.now(), 'user-a')
-    expect(usage.chat_general).toBe(2)
+    await upsertAIRequestLog(log('t1', 'user-a', 'chat_general'))
+    await upsertAIRequestLog(log('t2', 'user-b', 'chat_general'))
+    expect((await getDailyAIUsage(Date.now(), 'user-a')).chat_general).toBe(1)
   })
 
   it('las filas legacy sin userId no cuentan para nadie', async () => {
-    await upsertAIRequestLog(log('t1', undefined))
-    await upsertAIRequestLog(log('t2', 'user-a'))
+    await upsertAIRequestLog(log('t1', undefined, 'chat_general'))
+    expect((await getDailyAIUsage(Date.now(), 'user-a')).chat_general ?? 0).toBe(0)
+    expect((await getDailyAIUsage(Date.now(), null)).chat_general ?? 0).toBe(0)
+  })
+})
 
-    const usage = await getDailyAIUsage(Date.now(), 'user-a')
-    expect(usage.chat_general).toBe(1)
-
-    const other = await getDailyAIUsage(Date.now(), 'user-b')
-    expect(other.chat_general ?? 0).toBe(0)
+describe('BUCKET COMPARTIDO: 15 de chat_general agotan tambien chat_action', () => {
+  it('el mensaje 16 falla aunque sea de la otra clase del bucket', async () => {
+    for (let i = 0; i < 15; i++) {
+      await upsertAIRequestLog(log(`t${i}`, USER, 'chat_general'))
+    }
+    await expect(
+      assertDailyAIRequestLimit('chat_action', Date.now(), { userId: USER }),
+    ).rejects.toBeInstanceOf(AIProviderError)
   })
 
-  it('sin userId pedido, no cuenta nada scoped', async () => {
-    await upsertAIRequestLog(log('t1', 'user-a'))
-    const usage = await getDailyAIUsage(Date.now(), null)
-    expect(usage.chat_general ?? 0).toBe(0)
+  it('con 14 usados todavia pasa', async () => {
+    for (let i = 0; i < 14; i++) {
+      await upsertAIRequestLog(log(`t${i}`, USER, 'chat_general'))
+    }
+    await expect(
+      assertDailyAIRequestLimit('chat_action', Date.now(), { userId: USER }),
+    ).resolves.toBeUndefined()
+  })
+
+  it('import_extract tiene contador propio y no se agota con el chat', async () => {
+    for (let i = 0; i < 15; i++) {
+      await upsertAIRequestLog(log(`t${i}`, USER, 'chat_general'))
+    }
+    await expect(
+      assertDailyAIRequestLimit('import_extract', Date.now(), { userId: USER }),
+    ).resolves.toBeUndefined()
+  })
+})
+
+describe('el limite depende del tier', () => {
+  it('weekly aguanta 100 de chat donde free ya habria fallado', async () => {
+    currentTier = 'weekly'
+    for (let i = 0; i < 100; i++) {
+      await upsertAIRequestLog(log(`t${i}`, USER, 'chat_general'))
+    }
+    await expect(
+      assertDailyAIRequestLimit('chat_general', Date.now(), { userId: USER }),
+    ).resolves.toBeUndefined()
+  })
+})
+
+describe('ORDEN: clase bloqueada por plan NO reporta cuota', () => {
+  it('free + week_creator no lanza rate_limit: el gate de entitlement es quien rechaza', async () => {
+    currentTier = 'free'
+    // Sin filas: si la cuota mandara, un límite `null`/0 lanzaría igual.
+    // El contrato es que la cuota NO opina sobre clases no permitidas.
+    await expect(
+      assertDailyAIRequestLimit('week_creator', Date.now(), { userId: USER }),
+    ).resolves.toBeUndefined()
   })
 })
 ```
 
-- [ ] **Step 6: Implement the scoping**
+- [ ] **Step 6: Wire the quota**
 
-In `src/types/index.ts`, add to `AITechnicalResult` after `generationId` (line ~56):
+In `src/types/index.ts`, add to `AITechnicalResult` after `generationId`:
 
 ```ts
   /** Cuenta dueña de la request. Las filas legacy sin este campo no cuentan
@@ -2052,18 +2323,19 @@ In `src/types/index.ts`, add to `AITechnicalResult` after `generationId` (line ~
   userId?: string
 ```
 
-In `src/services/ai/aiTelemetry.ts`, change `getDailyAIUsage`:
+In `src/services/ai/aiTelemetry.ts`, replace `getDailyAIUsage` and
+`assertDailyAIRequestLimit`:
 
 ```ts
+import { bucketForClass, bucketLimitForTier } from '../entitlements/quotaBuckets'
+import { getEntitlementTier } from '../../store/useEntitlementStore'
+
 export async function getDailyAIUsage(
   now = Date.now(),
   userId: string | null = null,
 ): Promise<Partial<Record<AIRequestClass, number>>> {
   const start = startOfLocalDay(now)
-  const logs = await db.aiRequestLogs
-    .where('startedAt')
-    .aboveOrEqual(start)
-    .toArray()
+  const logs = await db.aiRequestLogs.where('startedAt').aboveOrEqual(start).toArray()
 
   // Account-scoped: dos cuentas en el mismo navegador no comparten cupo. Las
   // filas legacy sin `userId` no pertenecen a nadie y quedan fuera; el costo es
@@ -2073,8 +2345,7 @@ export async function getDailyAIUsage(
   // Quota is spent per logical generation, not per telemetry row. One Week
   // Creator request can log several rows -- a provider attempt, a retry, and the
   // local fallback that costs no provider call -- and charging each of them let
-  // usage run past the declared daily cap. Rows without a `generationId` (chat,
-  // Plan Builder reservations) keep counting individually.
+  // usage run past the declared daily cap.
   const counted = new Set<string>()
   return owned.reduce<Partial<Record<AIRequestClass, number>>>((acc, log) => {
     const generationKey = `${log.requestClass}:${log.generationId ?? log.traceId}`
@@ -2084,18 +2355,107 @@ export async function getDailyAIUsage(
     return acc
   }, {})
 }
+
+export async function assertDailyAIRequestLimit(
+  requestClass: AIRequestClass,
+  now = Date.now(),
+  ctx?: { userId?: string | null; tier?: Tier },
+): Promise<void> {
+  try {
+    const bucket = bucketForClass(requestClass)
+    if (!bucket) return
+
+    const tier = ctx?.tier ?? getEntitlementTier()
+    const limit = bucketLimitForTier(bucket, tier)
+    // `null` = la clase no está permitida para este tier. La cuota NO opina:
+    // rechazar acá reportaría "límite diario" cuando el mensaje correcto es la
+    // oferta de plan, y el gate server-side ya es quien rechaza.
+    if (limit == null) return
+
+    const usage = await getDailyAIUsage(now, ctx?.userId ?? null)
+    // El bucket es compartido: se suma el consumo de TODAS sus clases.
+    const used = bucket.classes.reduce((total, cls) => total + (usage[cls] ?? 0), 0)
+
+    if (used >= limit) {
+      throw new AIProviderError(
+        'gemini',
+        'rate_limit',
+        `Límite diario alcanzado (${used}/${limit}). Vuelve a intentarlo mañana.`,
+        false,
+      )
+    }
+  } catch (error) {
+    if (error instanceof AIProviderError) throw error
+    // If local telemetry cannot be read, do not block the coach.
+  }
+}
 ```
 
-- [ ] **Step 7: Run tests and fix call sites**
+Add `import type { Tier } from '../entitlements/entitlementPolicy'`.
 
-Run: `npx vitest run src/services/ai/__tests__/ && npx tsc -b`
-Expected: los llamadores de `getDailyAIUsage` compilan (el parámetro es opcional). Ajustar `getBetaQualitySnapshot` y `assertDailyAIRequestLimit` para propagar el `userId` del usuario activo.
+- [ ] **Step 7: Stamp `userId` on the rows that count**
 
-- [ ] **Step 8: Commit**
+Every producer of `AITechnicalResult` that ends up in `aiRequestLogs` has to
+stamp the active account, or the counter will always read zero. Find them with:
 
 ```bash
-git add src/types/index.ts src/services/entitlements/quotaBuckets.ts src/services/ai/aiTelemetry.ts src/services/entitlements/__tests__/quotaBuckets.test.ts src/services/ai/__tests__/aiTelemetryScope.test.ts
-git commit -m "feat(entitlements): buckets de cuota por tier y contadores account-scoped"
+grep -rn "upsertAIRequestLog(" src/ --include=*.ts --include=*.tsx | grep -v __tests__
+```
+
+For each call site, add `userId: useAuthStore.getState().user?.id`. In
+`useAIDebugStore` (which builds the rows for the chat path) stamp it where the
+row is created, so retries and fallbacks of the same generation carry it too.
+
+- [ ] **Step 8: Migrate `planBuilder/rateLimit.ts`**
+
+`assertPlanBuilderWeekRateLimit` still reads `DEFAULT_DAILY_AI_LIMITS`. Replace
+its body so the limit comes from the bucket and the tier:
+
+```ts
+export async function assertPlanBuilderWeekRateLimit(
+  weekIndexes: readonly number[],
+  now = Date.now(),
+  ctx?: { userId?: string | null; tier?: Tier },
+): Promise<void> {
+  const requested = uniqueWeekIndexes(weekIndexes).length
+  if (requested === 0) return
+
+  try {
+    const bucket = bucketForClass(REQUEST_CLASS)
+    if (!bucket) return
+    const tier = ctx?.tier ?? getEntitlementTier()
+    const limit = bucketLimitForTier(bucket, tier)
+    // Clase no permitida: el gate de entitlement rechaza, no la cuota.
+    if (limit == null) return
+
+    const usage = await getDailyAIUsage(now, ctx?.userId ?? null)
+    const used = bucket.classes.reduce((total, cls) => total + (usage[cls] ?? 0), 0)
+    const remaining = Math.max(0, limit - used)
+    if (requested > remaining) {
+      throw new PlanBuilderDailyQuotaError({ requested, remaining, limit })
+    }
+  } catch (error) {
+    if (error instanceof AIProviderError) throw error
+    // If local telemetry cannot be read, do not block generation.
+  }
+}
+```
+
+Delete the now-unused `DEFAULT_DAILY_AI_LIMITS` import from this file. Keep the
+constant exported from `aiTelemetry.ts` only if `getBetaQualitySnapshot` still
+needs it; otherwise replace its use there with the per-tier limits so Ajustes
+muestre los topes reales del plan del usuario.
+
+- [ ] **Step 9: Run the full suite**
+
+Run: `npx vitest run src/services/ai/ src/services/planBuilder/ src/services/entitlements/ && npx tsc -b`
+Expected: verde. Ajustar los tests existentes que asumían `DEFAULT_DAILY_AI_LIMITS`.
+
+- [ ] **Step 10: Commit**
+
+```bash
+git add src/types/index.ts src/services/entitlements/quotaBuckets.ts src/services/ai/aiTelemetry.ts src/services/planBuilder/rateLimit.ts src/services/entitlements/__tests__/quotaBuckets.test.ts src/services/ai/__tests__/aiTelemetryQuota.test.ts
+git commit -m "feat(entitlements): cuotas por bucket y tier, account-scoped"
 ```
 
 ---
@@ -2105,12 +2465,13 @@ git commit -m "feat(entitlements): buckets de cuota por tier y contadores accoun
 Sin esto, el arreglo del servidor (Task 5) no produce ningún cambio observable.
 
 **Files:**
-- Modify: `src/services/ai/providers/ProxyProvider.ts` — `throwHttpError` (línea 322), tipo `ProxyErrorPayload`
+- Create: `src/services/ai/providers/proxyHttpError.ts`
+- Modify: `src/services/ai/providers/ProxyProvider.ts` — eliminar el método privado, delegar en los dos call sites (líneas 135 y 185), agregar `detail?: unknown` a los dos tipos inline
 - Test: `src/services/ai/providers/__tests__/proxyEntitlementError.test.ts`
 
 **Interfaces:**
 - Consumes: `EntitlementRequiredError`, `isEntitlementRequiredDetail` (Task 2)
-- Produces: un `EntitlementRequiredError` con `detail` intacto cuando el servidor devuelve 403 `entitlement_required`
+- Produces: `function classifyProxyHttpError(res: Response, data: ProxyErrorPayload): never`
 
 - [ ] **Step 1: Write the failing test**
 
@@ -2121,28 +2482,25 @@ import { describe, expect, it } from 'vitest'
 import { classifyProxyHttpError } from '../proxyHttpError'
 import { EntitlementRequiredError } from '../../../entitlements/entitlementError'
 
-const throwHttpErrorForTest = classifyProxyHttpError
-
 function res(status: number): Response {
   return new Response(null, { status })
 }
 
-describe('throwHttpError preserva entitlement_required', () => {
+describe('classifyProxyHttpError preserva entitlement_required', () => {
   it('403 con detail produce EntitlementRequiredError con metadata intacta', () => {
     const detail = { requestClass: 'plan_builder_week', requiredTier: 'advanced', currentTier: 'free' }
     try {
-      throwHttpErrorForTest(res(403), { error: 'Requiere advanced.', errorCode: 'entitlement_required', detail })
+      classifyProxyHttpError(res(403), { error: 'Requiere advanced.', errorCode: 'entitlement_required', detail })
       throw new Error('debio lanzar')
     } catch (error) {
       expect(error).toBeInstanceOf(EntitlementRequiredError)
       expect((error as EntitlementRequiredError).detail).toEqual(detail)
-      expect((error as EntitlementRequiredError).code).toBe('entitlement_required')
     }
   })
 
   it('403 con codigo pero detail malformado NO se convierte en entitlement', () => {
     try {
-      throwHttpErrorForTest(res(403), {
+      classifyProxyHttpError(res(403), {
         error: 'Requiere advanced.',
         errorCode: 'entitlement_required',
         detail: { requiredTier: 'pro' },
@@ -2156,7 +2514,7 @@ describe('throwHttpError preserva entitlement_required', () => {
 
   it('403 sin codigo propio sigue siendo unauthorized', () => {
     try {
-      throwHttpErrorForTest(res(403), { error: 'Sesión inválida.' })
+      classifyProxyHttpError(res(403), { error: 'Sesión inválida.' })
       throw new Error('debio lanzar')
     } catch (error) {
       expect((error as { code?: string }).code).toBe('unauthorized')
@@ -2165,10 +2523,20 @@ describe('throwHttpError preserva entitlement_required', () => {
 
   it('401 sigue siendo unauthorized', () => {
     try {
-      throwHttpErrorForTest(res(401), { error: 'Sesión requerida.' })
+      classifyProxyHttpError(res(401), { error: 'Sesión requerida.' })
       throw new Error('debio lanzar')
     } catch (error) {
       expect((error as { code?: string }).code).toBe('unauthorized')
+    }
+  })
+
+  it('429 sigue siendo rate_limit reintentable', () => {
+    try {
+      classifyProxyHttpError(res(429), { error: 'Muchas.' })
+      throw new Error('debio lanzar')
+    } catch (error) {
+      expect((error as { code?: string; retryable?: boolean }).code).toBe('rate_limit')
+      expect((error as { retryable?: boolean }).retryable).toBe(true)
     }
   })
 })
@@ -2177,13 +2545,12 @@ describe('throwHttpError preserva entitlement_required', () => {
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run src/services/ai/providers/__tests__/proxyEntitlementError.test.ts`
-Expected: FAIL — `throwHttpErrorForTest` no existe
+Expected: FAIL — no existe `../proxyHttpError`
 
-- [ ] **Step 3: Extract the classifier to its own module**
+- [ ] **Step 3: Extract the classifier**
 
-La lógica hoy es un método privado, que no se puede testear sin trucos sobre el
-prototipo. Se extrae a una función libre y el método delega — así el test es
-directo y la clasificación queda aislada.
+La lógica hoy es un método privado, intesteable sin trucos sobre el prototipo.
+Se extrae a una función libre y el método desaparece.
 
 Create `src/services/ai/providers/proxyHttpError.ts`:
 
@@ -2214,61 +2581,211 @@ export function classifyProxyHttpError(res: Response, data: ProxyErrorPayload): 
   if (res.status === 401 || res.status === 403) {
     throw createProviderError('gemini', data.errorCode === 'misconfigured' ? 'misconfigured' : 'unauthorized', message)
   }
-
   if (res.status === 429 || data.errorCode === 'rate_limit') {
     throw createProviderError('gemini', 'rate_limit', message, true)
   }
-
   if (res.status === 502 || res.status === 503 || res.status === 504 || data.errorCode === 'timeout') {
     throw createProviderError('gemini', 'timeout', message, true)
   }
-
   if (data.errorCode === 'misconfigured') {
     throw createProviderError('gemini', 'misconfigured', message)
   }
-
   throw createProviderError('gemini', data.errorCode ?? 'server_error', message)
 }
 ```
 
-Verificar contra `ProxyProvider.ts:322-345` que las ramas restantes coincidan
-exactamente con las actuales antes de borrar el método; cualquier diferencia es
-una regresión silenciosa en el manejo de errores del chat.
+**Antes de borrar el método privado**, comparar rama por rama contra
+`ProxyProvider.ts:322-345`: cualquier diferencia es una regresión silenciosa en
+todo el manejo de errores del chat, no sólo en el camino de entitlement.
 
-In `src/services/ai/providers/ProxyProvider.ts`: delete the private
-`throwHttpError` method, import the new function, add `detail?: unknown` to the
-two inline response types (lines ~110-132 and ~185), and replace both call
-sites (lines 135 and 185):
-
-```ts
-import { classifyProxyHttpError } from './proxyHttpError'
-
-// en ambos call sites:
-classifyProxyHttpError(res, data)
-```
+In `ProxyProvider.ts`: delete `private throwHttpError`, import
+`classifyProxyHttpError`, add `detail?: unknown` to the two inline response
+types, and replace both call sites with `classifyProxyHttpError(res, data)`.
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `npx vitest run src/services/ai/providers/__tests__/proxyEntitlementError.test.ts`
-Expected: PASS — 4 tests
+Run: `npx vitest run src/services/ai/providers/__tests__/ && npx tsc -b`
+Expected: PASS — 5 tests
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/services/ai/providers/ProxyProvider.ts src/services/ai/providers/__tests__/proxyEntitlementError.test.ts
+git add src/services/ai/providers/proxyHttpError.ts src/services/ai/providers/ProxyProvider.ts src/services/ai/providers/__tests__/proxyEntitlementError.test.ts
 git commit -m "fix(entitlements): el cliente deja de aplanar el 403 a unauthorized"
 ```
 
 ---
 
-### Task 12: Diagnóstico `filtered_create_week`
+### Task 12: Plan Builder preserva el 403 en el enqueue
+
+`ProxyProvider` cubre el camino del coach. Plan Builder tiene el suyo propio y
+hoy descarta la metadata: `triggerBackgroundGeneration` parsea sólo
+`{ jobId, error }` y lanza `PlanEnqueueRejectedError(message, status)`. Durante
+el rollout servidor-on/cliente-off, un Free vería un fallo técnico en vez de la
+oferta.
 
 **Files:**
-- Modify: `src/services/ai/responseNormalizer.ts` (líneas 214-221)
+- Modify: `src/services/planBuilder/triggerBackgroundGeneration.ts` — parseo de la respuesta y `PlanEnqueueRejectedError`
+- Test: `src/services/planBuilder/__tests__/triggerBackgroundEntitlement.test.ts`
+
+**Interfaces:**
+- Consumes: `isEntitlementRequiredDetail`, `EntitlementRequiredDetail` (Task 2)
+- Produces: `PlanEnqueueRejectedError` con `readonly entitlement: EntitlementRequiredDetail | null`
+
+- [ ] **Step 1: Write the failing test**
+
+Create `src/services/planBuilder/__tests__/triggerBackgroundEntitlement.test.ts`:
+
+```ts
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { triggerBackgroundGeneration } from '../triggerBackgroundGeneration'
+import { PlanEnqueueRejectedError } from '../triggerBackgroundGeneration'
+
+afterEach(() => { vi.restoreAllMocks() })
+
+function mockResponse(status: number, body: unknown) {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  })))
+}
+
+const INPUT = { plan: { id: 'plan-1' }, weeks: [], targetWeekIndexes: [0] } as never
+
+describe('el 403 de entitlement conserva su metadata', () => {
+  it('expone el detail para que la UI arme la oferta', async () => {
+    const detail = { requestClass: 'plan_builder_week', requiredTier: 'advanced', currentTier: 'free' }
+    mockResponse(403, { error: 'Requiere advanced.', errorCode: 'entitlement_required', detail })
+
+    await expect(triggerBackgroundGeneration(INPUT, 'tok')).rejects.toSatisfy((error: unknown) => {
+      const err = error as PlanEnqueueRejectedError
+      return err instanceof PlanEnqueueRejectedError
+        && err.status === 403
+        && JSON.stringify(err.entitlement) === JSON.stringify(detail)
+    })
+  })
+
+  it('un 403 sin detail deja entitlement en null y sigue siendo un rechazo normal', async () => {
+    mockResponse(403, { error: 'Sesión inválida.' })
+    await expect(triggerBackgroundGeneration(INPUT, 'tok')).rejects.toSatisfy((error: unknown) => {
+      return (error as PlanEnqueueRejectedError).entitlement === null
+    })
+  })
+
+  it('un detail malformado no se propaga como oferta', async () => {
+    mockResponse(403, { errorCode: 'entitlement_required', detail: { requiredTier: 'pro' } })
+    await expect(triggerBackgroundGeneration(INPUT, 'tok')).rejects.toSatisfy((error: unknown) => {
+      return (error as PlanEnqueueRejectedError).entitlement === null
+    })
+  })
+
+  it('un 500 sigue comportandose igual que antes', async () => {
+    mockResponse(500, { error: 'boom' })
+    await expect(triggerBackgroundGeneration(INPUT, 'tok')).rejects.toSatisfy((error: unknown) => {
+      const err = error as PlanEnqueueRejectedError
+      return err.status === 500 && err.entitlement === null
+    })
+  })
+})
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `npx vitest run src/services/planBuilder/__tests__/triggerBackgroundEntitlement.test.ts`
+Expected: FAIL — `entitlement` no existe en `PlanEnqueueRejectedError`
+
+- [ ] **Step 3: Preserve the metadata**
+
+In `src/services/planBuilder/triggerBackgroundGeneration.ts`, extend the error
+class:
+
+```ts
+export class PlanEnqueueRejectedError extends Error {
+  readonly status: number
+  /** Metadata de oferta cuando el rechazo fue por plan; `null` en el resto. */
+  readonly entitlement: EntitlementRequiredDetail | null
+
+  constructor(message: string, status: number, entitlement: EntitlementRequiredDetail | null = null) {
+    super(message)
+    this.name = 'PlanEnqueueRejectedError'
+    this.status = status
+    this.entitlement = entitlement
+  }
+}
+```
+
+And widen the response parse (line ~93):
+
+```ts
+  const result = await response.json().catch(() => ({})) as {
+    jobId?: string
+    error?: string
+    errorCode?: string
+    detail?: unknown
+  }
+  if (!response.ok) {
+    // Un rechazo por plan no es un fallo técnico: conserva su metadata para que
+    // la página muestre la oferta en vez de un error.
+    const entitlement = result.errorCode === 'entitlement_required'
+      && isEntitlementRequiredDetail(result.detail)
+      ? result.detail
+      : null
+    throw new PlanEnqueueRejectedError(
+      result.error ?? `No se pudo iniciar la generación async (${response.status}).`,
+      response.status,
+      entitlement,
+    )
+  }
+```
+
+Import: `import { isEntitlementRequiredDetail, type EntitlementRequiredDetail } from '../entitlements/entitlementError'`
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `npx vitest run src/services/planBuilder/__tests__/triggerBackgroundEntitlement.test.ts`
+Expected: PASS — 4 tests
+
+- [ ] **Step 5: Surface it in the store**
+
+Find the `catch` in `usePlanBuilderStore` that handles `PlanEnqueueRejectedError`
+and add a transient field, same shape as the chat one:
+
+```ts
+  entitlementOffer: EntitlementRequiredDetail | null
+```
+
+```ts
+      if (error instanceof PlanEnqueueRejectedError && error.entitlement) {
+        set({ entitlementOffer: error.entitlement, isGenerating: false })
+        return
+      }
+```
+
+- [ ] **Step 6: Run tests and typecheck**
+
+Run: `npx vitest run src/services/planBuilder/ && npx tsc -b`
+Expected: verde
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add src/services/planBuilder/triggerBackgroundGeneration.ts src/store/usePlanBuilderStore.ts src/services/planBuilder/__tests__/triggerBackgroundEntitlement.test.ts
+git commit -m "fix(entitlements): Plan Builder conserva la metadata del 403"
+```
+
+---
+
+### Task 13: Diagnóstico `filtered_create_week` y su consumidor
+
+**Files:**
+- Modify: `src/services/ai/responseNormalizer.ts` — bloque de filtrado (líneas 214-221) y el objeto de retorno
+- Modify: `src/services/ai/types.ts` — campo nuevo en `CoachNormalizedResponse`
+- Modify: `src/store/useChatStore.ts` — traducir el diagnóstico a oferta
 - Test: `src/services/ai/__tests__/filteredCreateWeekDiagnostic.test.ts`
 
 **Interfaces:**
-- Produces: el campo `filteredCreateWeek: boolean` en el resultado de `normalizeCoachResponse` (o el nombre que use el tipo de retorno; conservarlo consistente con `createWeekDiagnostics`, que ya existe)
+- Consumes: `normalizeResponse(raw: AIRawResponse): CoachNormalizedResponse` — **ojo: la API real recibe un objeto `AIRawResponse` con `.text` y `.requestClass`, no `(string, requestClass)`**
+- Produces: `CoachNormalizedResponse.filteredCreateWeek: boolean`
 
 - [ ] **Step 1: Write the failing test**
 
@@ -2276,42 +2793,47 @@ Create `src/services/ai/__tests__/filteredCreateWeekDiagnostic.test.ts`:
 
 ```ts
 import { describe, expect, it } from 'vitest'
-import { normalizeCoachResponse } from '../responseNormalizer'
+import { normalizeResponse } from '../responseNormalizer'
+import type { AIRawResponse, AIRequestClass } from '../../../types'
 
-const RESPONSE_WITH_CREATE_WEEK = JSON.stringify({
+const CREATE_WEEK_TEXT = JSON.stringify({
   message: 'Te armo la semana.',
   actions: [{ type: 'create_week', targetDate: '2026-08-17', sessions: [] }],
 })
+
+function raw(text: string, requestClass: AIRequestClass): AIRawResponse {
+  return { text, requestClass, provider: 'gemini' } as AIRawResponse
+}
 
 describe('BARRERA DE NEGOCIO: create_week nunca sale de chat_action', () => {
   // Este filtro dejó de ser una regla de calidad: es lo que impide que un
   // usuario free obtenga una semana generada por la vía del chat, sin pasar
   // por el gate de `week_creator`. No retirarlo sin leer el spec §3.4.
   it('chat_action descarta la accion create_week', () => {
-    const result = normalizeCoachResponse(RESPONSE_WITH_CREATE_WEEK, 'chat_action')
+    const result = normalizeResponse(raw(CREATE_WEEK_TEXT, 'chat_action'))
     expect(result.actions?.some((a) => a.type === 'create_week')).toBeFalsy()
   })
 
   it('emite el diagnostico neutro filteredCreateWeek', () => {
-    const result = normalizeCoachResponse(RESPONSE_WITH_CREATE_WEEK, 'chat_action')
-    expect(result.filteredCreateWeek).toBe(true)
-  })
-
-  it('el diagnostico se emite para TODO tier: el normalizador no conoce el tier', () => {
-    // La firma no recibe tier a propósito. Si algún día lo recibe, este test
-    // deja de compilar y hay que releer el spec §6.1.
-    expect(normalizeCoachResponse.length).toBeLessThanOrEqual(2)
+    expect(normalizeResponse(raw(CREATE_WEEK_TEXT, 'chat_action')).filteredCreateWeek).toBe(true)
   })
 
   it('sin create_week el diagnostico es false', () => {
     const plain = JSON.stringify({ message: 'Hola.', actions: [] })
-    expect(normalizeCoachResponse(plain, 'chat_action').filteredCreateWeek).toBe(false)
+    expect(normalizeResponse(raw(plain, 'chat_action')).filteredCreateWeek).toBe(false)
   })
 
   it('week_creator NO filtra: ahi la accion es legitima', () => {
-    const result = normalizeCoachResponse(RESPONSE_WITH_CREATE_WEEK, 'week_creator')
+    const result = normalizeResponse(raw(CREATE_WEEK_TEXT, 'week_creator'))
     expect(result.actions?.some((a) => a.type === 'create_week')).toBe(true)
     expect(result.filteredCreateWeek).toBe(false)
+  })
+
+  it('el normalizador NO recibe tier: emite igual para todos', () => {
+    // La firma toma un solo argumento a propósito. Si algún día recibe el tier,
+    // este test deja de pasar y hay que releer el spec §6.1: la decisión
+    // comercial vive en presentación, no acá.
+    expect(normalizeResponse.length).toBe(1)
   })
 })
 ```
@@ -2323,7 +2845,7 @@ Expected: FAIL — `filteredCreateWeek` no existe en el resultado
 
 - [ ] **Step 3: Emit the diagnostic**
 
-In `src/services/ai/responseNormalizer.ts`, replace the block at lines 214-221:
+In `src/services/ai/responseNormalizer.ts`, replace lines 214-221:
 
 ```ts
   // BARRERA DE NEGOCIO, no sólo regla de calidad: esto es lo que impide que un
@@ -2342,7 +2864,8 @@ In `src/services/ai/responseNormalizer.ts`, replace the block at lines 214-221:
   }
 ```
 
-Add `filteredCreateWeek` to the returned object and to the `CoachNormalizedResponse` type:
+Add `filteredCreateWeek` to the returned object, and to `CoachNormalizedResponse`
+in `src/services/ai/types.ts`:
 
 ```ts
   /**
@@ -2359,26 +2882,60 @@ Add `filteredCreateWeek` to the returned object and to the `CoachNormalizedRespo
 Run: `npx vitest run src/services/ai/__tests__/filteredCreateWeekDiagnostic.test.ts`
 Expected: PASS — 5 tests
 
-- [ ] **Step 5: Run the full normalizer suite for regressions**
+- [ ] **Step 5: Consume it in the chat store**
 
-Run: `npx vitest run src/services/ai/__tests__/`
+Where `useChatStore` handles a successful normalized response, translate the
+diagnostic into an offer **only for tiers below `weekly`**:
+
+```ts
+      if (normalized.filteredCreateWeek && !isClassAllowed(getEntitlementTier(), 'week_creator')) {
+        set({ entitlementOffer: buildEntitlementDetail('week_creator', 'weekly', getEntitlementTier()) })
+      }
+```
+
+- [ ] **Step 6: Test the tier-dependent translation**
+
+Append to the test file:
+
+```ts
+import { isClassAllowed } from '../../entitlements/entitlementPolicy'
+
+describe('la traduccion a oferta depende del tier, no del diagnostico', () => {
+  it('weekly NO ve la tarjeta aunque el diagnostico se emita', () => {
+    const result = normalizeResponse(raw(CREATE_WEEK_TEXT, 'chat_action'))
+    expect(result.filteredCreateWeek).toBe(true)
+    // La condición exacta que usa el store:
+    expect(isClassAllowed('weekly', 'week_creator')).toBe(true)
+  })
+
+  it('free SI la ve', () => {
+    expect(isClassAllowed('free', 'week_creator')).toBe(false)
+  })
+})
+```
+
+- [ ] **Step 7: Run the full normalizer suite**
+
+Run: `npx vitest run src/services/ai/ && npx tsc -b`
 Expected: verde
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
-git add src/services/ai/responseNormalizer.ts src/services/ai/__tests__/filteredCreateWeekDiagnostic.test.ts
-git commit -m "feat(entitlements): diagnostico neutro filtered_create_week"
+git add src/services/ai/responseNormalizer.ts src/services/ai/types.ts src/store/useChatStore.ts src/services/ai/__tests__/filteredCreateWeekDiagnostic.test.ts
+git commit -m "feat(entitlements): diagnostico filtered_create_week y su traduccion a oferta"
 ```
 
 ---
 
-### Task 13: `UpsellCard` y cableado
+### Task 14: `UpsellCard` y cableado en las dos superficies
 
 **Files:**
 - Create: `src/components/entitlements/UpsellCard.tsx`
-- Modify: `src/store/useChatStore.ts` — interceptar `entitlement_required` antes de `formatError` (línea ~921)
-- Modify: `src/pages/PlanBuilderV2Page.tsx` — mostrar oferta en vez del botón cuando `!canUse('plan_builder_week')` y `!loading`
+- Modify: `src/services/entitlements/entitlementError.ts` — `toChatEntitlementOffer`
+- Modify: `src/store/useChatStore.ts` — interceptar antes de `formatError`; caso nuevo en `formatError`
+- Modify: `src/pages/ChatCoach.tsx` — render de la tarjeta
+- Modify: `src/pages/PlanBuilderV2Page.tsx` — gatear **affordances**, no la página
 - Test: `src/components/entitlements/__tests__/UpsellCard.test.tsx`
 - Test: `src/store/__tests__/chatEntitlementOffer.test.ts`
 
@@ -2465,12 +3022,11 @@ export function UpsellCard({
   requiredTier: Tier
 }) {
   const feature = FEATURE_LABEL[requestClass] ?? 'esta función'
-  const plan = TIER_LABEL[requiredTier]
 
   return (
     <div className="rounded-lg border border-brand/30 bg-brand/5 p-4">
       <p className="text-sm font-semibold text-ink">
-        {feature} está en el plan {plan}
+        {feature} está en el plan {TIER_LABEL[requiredTier]}
       </p>
       <p className="mt-1 text-sm text-ink-muted">
         Podés seguir usando el coach y registrando tus entrenamientos. Cuando
@@ -2492,32 +3048,7 @@ export function UpsellCard({
 Run: `npx vitest run src/components/entitlements/__tests__/UpsellCard.test.tsx`
 Expected: PASS — 4 tests
 
-- [ ] **Step 5: Write the chat interception test**
-
-Create `src/store/__tests__/chatEntitlementOffer.test.ts`:
-
-```ts
-import { describe, expect, it } from 'vitest'
-import {
-  EntitlementRequiredError,
-  buildEntitlementDetail,
-  toChatEntitlementOffer,
-} from '../../services/entitlements/entitlementError'
-
-describe('el 403 no llega crudo al chat', () => {
-  it('un EntitlementRequiredError se traduce a oferta, no a texto de error', () => {
-    const detail = buildEntitlementDetail('week_creator', 'weekly', 'free')
-    const offer = toChatEntitlementOffer(new EntitlementRequiredError(detail))
-    expect(offer).toEqual(detail)
-  })
-
-  it('cualquier otro error devuelve null y sigue el camino normal', () => {
-    expect(toChatEntitlementOffer(new Error('timeout'))).toBeNull()
-  })
-})
-```
-
-- [ ] **Step 6: Add the translator and wire it**
+- [ ] **Step 5: Add the chat translator**
 
 Append to `src/services/entitlements/entitlementError.ts`:
 
@@ -2534,57 +3065,66 @@ export function toChatEntitlementOffer(error: unknown): EntitlementRequiredDetai
 }
 ```
 
-La oferta es UI efímera, no un mensaje persistido: no se escribe en
-`chatMessages` ni se sincroniza, porque no es contenido de la conversación y no
-tiene sentido releerla mañana. Eso además evita tocar el tipo `ChatMessage`, su
+Create `src/store/__tests__/chatEntitlementOffer.test.ts`:
+
+```ts
+import { describe, expect, it } from 'vitest'
+import {
+  EntitlementRequiredError,
+  buildEntitlementDetail,
+  toChatEntitlementOffer,
+} from '../../services/entitlements/entitlementError'
+
+describe('el 403 no llega crudo al chat', () => {
+  it('un EntitlementRequiredError se traduce a oferta', () => {
+    const detail = buildEntitlementDetail('week_creator', 'weekly', 'free')
+    expect(toChatEntitlementOffer(new EntitlementRequiredError(detail))).toEqual(detail)
+  })
+
+  it('cualquier otro error devuelve null y sigue el camino normal', () => {
+    expect(toChatEntitlementOffer(new Error('timeout'))).toBeNull()
+  })
+})
+```
+
+- [ ] **Step 6: Wire the chat**
+
+La oferta es UI efímera: no se escribe en `chatMessages` ni se sincroniza,
+porque no es contenido de la conversación. Eso evita tocar `ChatMessage`, su
 serializador y el sync.
 
-In `src/store/useChatStore.ts`, add the transient field to the store state:
+Add to the store state (init `null`, clear at the start of every send):
 
 ```ts
   /** Oferta de plan a mostrar bajo el hilo. Efímera: no se persiste. */
   entitlementOffer: EntitlementRequiredDetail | null
 ```
 
-Initialise it to `null` and clear it at the start of every send. In the catch
-block, **before** the `coachErrorMsg` branch (line ~444):
+In the catch block, **before** the `coachErrorMsg` branch (line ~444):
 
 ```ts
       const offer = toChatEntitlementOffer(error)
       if (offer) {
         // Oferta, no error: el usuario no hizo nada mal, así que no se anexa
         // un mensaje de error ni se persiste nada.
-        set({
-          entitlementOffer: offer,
-          isLoading: false,
-          streamingText: '',
-          responsePhase: 'idle',
-        })
+        set({ entitlementOffer: offer, isLoading: false, streamingText: '', responsePhase: 'idle' })
         return { route: route.kind }
       }
-
-      const coachErrorMsg = route.kind === 'week_creator'
-        ? buildCoachErrorMessage(errorMsg, sessionId)
-        : undefined
 ```
 
-**Defensa adicional en `formatError`.** Aunque la intercepción de arriba cubra
-el camino conocido, `formatError` tiene un `default` que devuelve
-`` `Error de RallyIQ (${e.provider}): ${e.message}` ``. Agregar un caso explícito
-para que un `entitlement_required` que llegue por una ruta no prevista tampoco
-muestre texto crudo:
+Defensa adicional en `formatError`, cuyo `default` devuelve
+`` `Error de RallyIQ (${e.provider}): ${e.message}` ``:
 
 ```ts
       case 'entitlement_required':
         return 'Esta función está en un plan superior. Mirá los planes disponibles.'
 ```
 
-In `src/pages/ChatCoach.tsx`, render the card below the thread when the field is
-set:
+In `src/pages/ChatCoach.tsx`:
 
 ```tsx
   const entitlementOffer = useChatStore(s => s.entitlementOffer)
-  // ...
+  // ... bajo el hilo:
   {entitlementOffer && (
     <UpsellCard
       requestClass={entitlementOffer.requestClass}
@@ -2593,23 +3133,39 @@ set:
   )}
 ```
 
-- [ ] **Step 7: Gate the Plan Builder entry point**
+- [ ] **Step 7: Gate Plan Builder affordances, not the page**
 
-In `src/pages/PlanBuilderV2Page.tsx`, near the generate CTA:
+**No** reemplazar la página con un `return` temprano: un usuario que bajó de plan
+tiene que poder seguir viendo los planes que ya generó. Se gatean las
+**acciones** — generar, reparar, reintentar — y se muestra la oferta arriba.
 
 ```tsx
   const { canUse, loading: entitlementLoading } = useEntitlement()
-
-  // Estado neutro mientras se resuelve: afirmar "está en Avanzado" y después
-  // reemplazarlo le diría a un usuario pago que no pagó. No hay componente
-  // skeleton en esta página, así que se usa un placeholder inline neutro.
-  if (entitlementLoading) {
-    return <div className="p-4 text-sm text-ink-muted" aria-busy="true">Cargando…</div>
-  }
-  if (!canUse('plan_builder_week')) {
-    return <UpsellCard requestClass="plan_builder_week" requiredTier="advanced" />
-  }
+  const planBuilderBlocked = isProactiveEntitlementUiEnabled()
+    && !entitlementLoading
+    && !canUse('plan_builder_week')
 ```
+
+```tsx
+  {planBuilderBlocked && (
+    <UpsellCard requestClass="plan_builder_week" requiredTier="advanced" />
+  )}
+
+  {/* Los planes existentes se siguen listando siempre. */}
+  <ExistingPlansList />
+
+  {/* Cada affordance de generación queda condicionada: */}
+  {!planBuilderBlocked && <GenerateButton />}
+  {!planBuilderBlocked && <RepairWeekButton />}
+  {!planBuilderBlocked && <RetryButton />}
+```
+
+**El estado de carga no puede bloquear la página.** Con `VITE_ENTITLEMENTS`
+apagada, `planBuilderBlocked` es `false` sin mirar `loading`, así que el
+comportamiento es idéntico al de hoy — incluso si la hidratación cuelga para
+siempre. Con la flag encendida, mientras `loading` sea `true` tampoco se bloquea:
+se prefiere mostrar un botón de más a acusar de Free a quien pagó. El servidor
+rechaza igual si hace falta, y ahí entra el camino reactivo.
 
 - [ ] **Step 8: Run tests, lint and typecheck**
 
@@ -2619,24 +3175,57 @@ Expected: verde
 - [ ] **Step 9: Commit**
 
 ```bash
-git add src/components/entitlements/ src/services/entitlements/entitlementError.ts src/store/useChatStore.ts src/pages/PlanBuilderV2Page.tsx src/store/__tests__/chatEntitlementOffer.test.ts
-git commit -m "feat(entitlements): tarjeta de oferta y cableado en chat y Plan Builder"
+git add src/components/entitlements/ src/services/entitlements/entitlementError.ts src/store/useChatStore.ts src/pages/ChatCoach.tsx src/pages/PlanBuilderV2Page.tsx src/store/__tests__/chatEntitlementOffer.test.ts
+git commit -m "feat(entitlements): tarjeta de oferta en chat y affordances de Plan Builder"
 ```
 
 ---
 
-### Task 14: Flag de cliente, documentación de rollout y cierre
+### Task 15: Flag de UI proactiva
 
 **Files:**
 - Create: `src/services/entitlements/entitlementFlag.ts`
-- Modify: `README.md` — sección de variables de entorno
-- Modify: `CLAUDE.md` — Dexie v19 → v20, reglas del proyecto
-- Modify: `PROJECT_REVIEW_AND_ROADMAP.md` — §Pre-Lanzamiento punto 2 a implementado-pendiente-rollout
+- Test: `src/services/entitlements/__tests__/entitlementFlag.test.ts`
 
 **Interfaces:**
 - Produces: `function isProactiveEntitlementUiEnabled(): boolean`
 
-- [ ] **Step 1: Write the flag with its test**
+- [ ] **Step 1: Write the failing test**
+
+Create `src/services/entitlements/__tests__/entitlementFlag.test.ts`:
+
+```ts
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+afterEach(() => { vi.unstubAllEnvs(); vi.resetModules() })
+
+describe('isProactiveEntitlementUiEnabled', () => {
+  it('apagado por defecto', async () => {
+    vi.stubEnv('VITE_ENTITLEMENTS', '')
+    const { isProactiveEntitlementUiEnabled } = await import('../entitlementFlag')
+    expect(isProactiveEntitlementUiEnabled()).toBe(false)
+  })
+
+  it('solo la cadena exacta "true" enciende', async () => {
+    vi.stubEnv('VITE_ENTITLEMENTS', 'true')
+    const mod = await import('../entitlementFlag')
+    expect(mod.isProactiveEntitlementUiEnabled()).toBe(true)
+  })
+
+  it('un valor mal tipeado no enciende a medias', async () => {
+    vi.stubEnv('VITE_ENTITLEMENTS', 'TRUE')
+    const mod = await import('../entitlementFlag')
+    expect(mod.isProactiveEntitlementUiEnabled()).toBe(false)
+  })
+})
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `npx vitest run src/services/entitlements/__tests__/entitlementFlag.test.ts`
+Expected: FAIL — no existe `../entitlementFlag`
+
+- [ ] **Step 3: Write the flag**
 
 Create `src/services/entitlements/entitlementFlag.ts`:
 
@@ -2651,46 +3240,30 @@ export function isProactiveEntitlementUiEnabled(): boolean {
 }
 ```
 
-Create `src/services/entitlements/__tests__/entitlementFlag.test.ts`:
-
-```ts
-import { describe, expect, it, vi, afterEach } from 'vitest'
-
-afterEach(() => { vi.unstubAllEnvs() })
-
-describe('isProactiveEntitlementUiEnabled', () => {
-  it('apagado por defecto', async () => {
-    vi.stubEnv('VITE_ENTITLEMENTS', '')
-    const { isProactiveEntitlementUiEnabled } = await import('../entitlementFlag')
-    expect(isProactiveEntitlementUiEnabled()).toBe(false)
-  })
-
-  it('solo la cadena exacta "true" enciende', async () => {
-    vi.stubEnv('VITE_ENTITLEMENTS', 'true')
-    const mod = await import('../entitlementFlag')
-    expect(mod.isProactiveEntitlementUiEnabled()).toBe(true)
-  })
-})
-```
-
-- [ ] **Step 2: Run the flag test**
+- [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/services/entitlements/__tests__/entitlementFlag.test.ts`
-Expected: PASS
+Expected: PASS — 3 tests
 
-- [ ] **Step 3: Guard the proactive gate behind the flag**
+- [ ] **Step 5: Commit**
 
-In `src/pages/PlanBuilderV2Page.tsx`, wrap the proactive branch:
-
-```tsx
-  if (isProactiveEntitlementUiEnabled() && !entitlementLoading && !canUse('plan_builder_week')) {
-    return <UpsellCard requestClass="plan_builder_week" requiredTier="advanced" />
-  }
+```bash
+git add src/services/entitlements/entitlementFlag.ts src/services/entitlements/__tests__/entitlementFlag.test.ts
+git commit -m "feat(entitlements): flag de UI proactiva"
 ```
 
-- [ ] **Step 4: Document the rollout in README**
+---
 
-Add to the environment-variables section of `README.md`:
+### Task 16: Documentación de rollout y verificación final
+
+**Files:**
+- Modify: `README.md` — variables de entorno y orden de rollout
+- Modify: `CLAUDE.md` — **sólo** el estado actual de Dexie y las reglas del proyecto
+- Modify: `PROJECT_REVIEW_AND_ROADMAP.md` — §Pre-Lanzamiento punto 2
+
+- [ ] **Step 1: Document the rollout in README**
+
+Add to the environment-variables section:
 
 ```markdown
 ### Entitlements por plan
@@ -2722,28 +3295,37 @@ on conflict (user_id) do update
 ```
 ```
 
-- [ ] **Step 5: Update CLAUDE.md**
+- [ ] **Step 2: Update CLAUDE.md — sólo el estado actual**
 
-Replace every mention of Dexie **v19** with **v20** and add to «Reglas del proyecto»:
+**No** hacer un reemplazo global de «v19» → «v20»: las menciones históricas de
+bloques anteriores (superseries, consentimiento, Whoop) describen el estado
+*de ese momento* y reescribirlas falsearía el registro. Cambiar únicamente:
+
+- «Dexie local en **v19**» (línea de estado actual) → **v20**.
+- «El modelo local es Dexie (**v19**)» en Reglas del proyecto → **v20**.
+
+Y agregar a Reglas del proyecto:
 
 ```markdown
-- **Entitlements: `entitlementPolicy.ts` es la única autoridad de acceso por plan.** Tres tiers `free < weekly < advanced`; ausencia de fila, vencimiento o fallo de lectura resuelven a `free`; clase desconocida se deniega para todos. El gate va en las **tres** funciones (`coach.ts`, `enqueue-plan-generation`, `generate-plan-background`) porque la última acepta llamadas directas y acuña su propio `jobId`. **El chequeo de entitlement va siempre antes que el de cuota**, o una clase bloqueada por plan se reporta como límite diario. El filtro de `create_week` en `chat_action` (`responseNormalizer.ts`) es una **barrera de negocio**, no una regla de calidad.
+- **Entitlements: `entitlementPolicy.ts` es la única autoridad de acceso por plan.** Tres tiers `free < weekly < advanced`; ausencia de fila, vencimiento, vencimiento ilegible o fallo de lectura resuelven a `free`; clase desconocida se deniega para todos. El gate va en las **tres** funciones (`coach.ts`, `enqueue-plan-generation`, `generate-plan-background`) porque la última acepta llamadas directas y acuña su propio `jobId`. **El chequeo de entitlement va siempre antes que el de cuota** y una clase no permitida **nunca** se representa como cuota `0`, o se reporta como límite diario en vez de oferta. El filtro de `create_week` en `chat_action` (`responseNormalizer.ts`) es una **barrera de negocio**, no una regla de calidad.
 ```
 
-- [ ] **Step 6: Update the roadmap**
+- [ ] **Step 3: Update the roadmap**
 
-In `PROJECT_REVIEW_AND_ROADMAP.md` §Pre-Lanzamiento punto 2, change the status line to reflect implemented-pending-rollout, and mark the blocker as closed in the execution-order table once step 5 of the rollout is done (not before — the code existing is not the gate being live).
+In §Pre-Lanzamiento punto 2, change the status to implemented-pending-rollout.
+**No marcar el blocker como cerrado**: el código existiendo no es el gate
+estando vivo. Se cierra recién tras el paso 5 del rollout.
 
-- [ ] **Step 7: Full verification**
+- [ ] **Step 4: Full verification**
 
 Run: `npm test && npm run lint && npm run build && npx tsc -b && git diff --check`
 Expected: los cinco en verde. Anotar el conteo de archivos/tests para el roadmap.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add src/services/entitlements/entitlementFlag.ts src/services/entitlements/__tests__/entitlementFlag.test.ts src/pages/PlanBuilderV2Page.tsx README.md CLAUDE.md PROJECT_REVIEW_AND_ROADMAP.md
-git commit -m "feat(entitlements): flag de UI proactiva y documentacion de rollout"
+git add README.md CLAUDE.md PROJECT_REVIEW_AND_ROADMAP.md
+git commit -m "docs(entitlements): rollout, reglas del proyecto y estado del roadmap"
 ```
 
 ---
@@ -2755,22 +3337,45 @@ git commit -m "feat(entitlements): flag de UI proactiva y documentacion de rollo
 | §3.1 migración, trigger, grants por columna | 3 |
 | §3.2 orden de tiers | 1 |
 | §3.3 mapa exhaustivo, clase desconocida denegada | 1 |
-| §3.4 invariante `create_week` como barrera de negocio | 12 |
+| §3.4 invariante `create_week` como barrera de negocio | 13 |
 | §4.1 módulo puro | 1 |
-| §4.2 helper de servidor, columnas explícitas, fail-closed | 4 |
-| §4.3 tres puntos de enganche | 5, 6, 7 |
+| §4.2 helper de servidor, columnas explícitas, fail-closed, vencimiento ilegible | 4 |
+| §4.3 tres puntos de enganche, lecturas en paralelo con auth | 5, 6, 7 |
 | §4.3.1 terminalización del job rechazado | 7 |
-| §4.4 orden entitlement-antes-que-cuota | 10 (`bucketLimitForTier` → `null`) |
+| §4.4 orden entitlement-antes-que-cuota | 10 (`bucketLimitForTier` → `null`, y la cuota no opina) |
 | §4.5 error tipado compartido | 2 |
-| §4.6 los dos puntos de aplanamiento del 403 | 5 (servidor), 11 (cliente) |
+| §4.6 los dos puntos de aplanamiento del 403 | 5 (servidor), 11 (cliente coach), 12 (cliente Plan Builder) |
 | §5.1 espejo Dexie v20 con `expiresAt` | 8 |
 | §5.1.1 reconciliación de tres casos | 8 |
-| §5.1.2 estado neutro | 9 |
-| §5.2 cliente gatea affordance | 9, 13 |
+| §5.1.2 estado neutro | 9, 14 |
+| §5.2 cliente gatea affordance | 9, 14 |
 | §5.3 buckets por tier | 10 |
 | §5.4 cuota account-scoped | 10 |
-| §6 upsell como oferta | 13 |
-| §6.1 dos caminos hacia la tarjeta | 12, 13 |
-| §6.2 el 403 no llega crudo al chat | 13 |
-| §7 rollout y flags | 14 |
-| §8 verificación | distribuida; cierre en 14 |
+| §6 upsell como oferta | 14 |
+| §6.1 dos caminos hacia la tarjeta | 13 (diagnóstico), 14 (403) |
+| §6.2 el 403 no llega crudo al chat | 14 |
+| §7 rollout y flags | 15, 16 |
+| §8 verificación | distribuida; cierre en 16 |
+
+## Orden de ejecución y riesgo
+
+**Tasks 1–4** no tocan nada existente: módulos nuevos y un `.sql` que no se
+aplica. Seguras de correr de corrido.
+
+**Tasks 5–7** modifican las tres funciones Netlify. La 7 es la más delicada del
+plan por la terminalización.
+
+**Tasks 8–9** introducen Dexie v20 y el store global.
+
+**Task 10** es la de mayor superficie: toca los productores de telemetría y
+`planBuilder/rateLimit.ts`, y va a romper tests existentes que asumían
+`DEFAULT_DAILY_AI_LIMITS`. Presupuestar tiempo de ajuste.
+
+**Task 11** exige comparar rama por rama el clasificador extraído contra el
+método original: una diferencia ahí es una regresión en todo el manejo de
+errores del chat, no sólo en entitlements.
+
+**Tasks 12–16** son cliente y documentación.
+
+Al terminar las 16, producción sigue comportándose igual que hoy: la migración
+no está aplicada y las dos flags están apagadas.
