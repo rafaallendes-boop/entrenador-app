@@ -4,6 +4,7 @@ import { shouldDedupeActiveGeneration } from '../../src/services/planBuilder/act
 import {
   createJobId,
   createSupabaseWriter,
+  getBearerToken,
   isGeneratePlanPayload,
   json,
   resolveAuthContext,
@@ -12,6 +13,12 @@ import {
   type GeneratePlanPayload,
 } from './_shared/planGenerationShared'
 import { corsPreflight } from './_shared/cors'
+import type { Tier } from '../../src/services/entitlements/entitlementPolicy'
+import {
+  assertPlanGenerationEntitlement,
+  isEntitlementEnforcementEnabled,
+  resolveEntitlementTier,
+} from './_shared/resolveEntitlement'
 
 const BACKGROUND_FUNCTION = '/.netlify/functions/generate-plan-background'
 const BACKGROUND_INVOKE_TIMEOUT_MS = 10_000
@@ -64,7 +71,18 @@ export const handler: Handler = async (event) => {
 
   let durableWrite: { writer: ReturnType<typeof createSupabaseWriter>; plan: TrainingPlan } | null = null
   try {
-    const auth = await resolveAuthContext(event)
+    const bearer = getBearerToken(event)
+    const gateEnabled = isEntitlementEnforcementEnabled()
+    const [auth, gateTier] = await Promise.all([
+      resolveAuthContext(event),
+      gateEnabled && bearer
+        ? resolveEntitlementTier(bearer)
+        : Promise.resolve('free' as Tier),
+    ])
+    // Antes de cualquier escritura: un rechazo acá no debe dejar un plan en
+    // 'generating' ni un jobId huérfano.
+    if (gateEnabled) assertPlanGenerationEntitlement(gateTier)
+
     const writer = createSupabaseWriter(auth.userId, auth.token)
     const now = Date.now()
     const planId = body.plan.id
@@ -129,6 +147,12 @@ export const handler: Handler = async (event) => {
       return json(invokeStatus, { error: `No se pudo iniciar el worker de generación: ${message}` })
     }
 
-    return json(statusCode, { error: message })
+    const errorCode = (error as { errorCode?: string }).errorCode
+    const detail = (error as { detail?: unknown }).detail
+    return json(statusCode, {
+      error: message,
+      ...(errorCode ? { errorCode } : {}),
+      ...(detail !== undefined ? { detail } : {}),
+    })
   }
 }

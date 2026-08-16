@@ -1,9 +1,15 @@
 import {
+  isClassAllowed,
+  minTierForClass,
   resolveTier,
   type EntitlementRow,
   type Tier,
 } from '../../../src/services/entitlements/entitlementPolicy'
 import { USER_ENTITLEMENT_SELECT } from '../../../src/services/entitlements/entitlementColumns'
+import {
+  buildEntitlementDetail,
+  formatEntitlementMessage,
+} from '../../../src/services/entitlements/entitlementError'
 
 const READ_TIMEOUT_MS = 3_000
 
@@ -81,4 +87,29 @@ export async function resolveEntitlementTier(
   } catch {
     return 'free'
   }
+}
+
+/** La clase que representa la generación de Plan Builder en ambas funciones. */
+export const PLAN_GENERATION_REQUEST_CLASS = 'plan_builder_week' as const
+
+export interface EntitlementHttpError extends Error {
+  statusCode: number
+  errorCode: 'entitlement_required'
+  detail: ReturnType<typeof buildEntitlementDetail>
+}
+
+/**
+ * Lanza un error con forma HTTP si el tier no alcanza para generar planes.
+ * Compartido por enqueue y worker para que los dos rechacen idéntico.
+ */
+export function assertPlanGenerationEntitlement(tier: Tier): void {
+  if (isClassAllowed(tier, PLAN_GENERATION_REQUEST_CLASS)) return
+
+  const requiredTier = minTierForClass(PLAN_GENERATION_REQUEST_CLASS) ?? 'advanced'
+  const detail = buildEntitlementDetail(PLAN_GENERATION_REQUEST_CLASS, requiredTier, tier)
+  const error = new Error(formatEntitlementMessage(detail)) as EntitlementHttpError
+  error.statusCode = 403
+  error.errorCode = 'entitlement_required'
+  error.detail = detail
+  throw error
 }
