@@ -17,12 +17,10 @@ import type { AIProviderName, AIRequestClass } from '../../../types'
 import { getAIRequestPolicy } from '../requestPolicy'
 import { isSupabaseConfigured, supabase } from '../../auth'
 import { ApiUrlConfigurationError, resolveApiUrl } from '../../apiUrl'
+import { classifyProxyHttpError } from './proxyHttpError'
+import type { ProxyErrorPayload } from './proxyHttpError'
 
 const FUNCTION_PATH = '/.netlify/functions/coach'
-type ProxyErrorPayload = {
-  error?: string
-  errorCode?: AIErrorCode
-}
 
 export class ProxyProvider implements AIProvider {
   // El servidor retorna el proveedor real en la respuesta (ej: 'gemini').
@@ -113,6 +111,7 @@ export class ProxyProvider implements AIProvider {
         model?: string
         error?: string
         errorCode?: AIErrorCode
+        detail?: unknown
         traceId?: string
         generationId?: string
         finishReason?: string
@@ -132,7 +131,7 @@ export class ProxyProvider implements AIProvider {
       }
 
       if (!res.ok) {
-        this.throwHttpError(res, data)
+        classifyProxyHttpError(res, data)
       }
 
       if (!data.text) {
@@ -182,7 +181,7 @@ export class ProxyProvider implements AIProvider {
   ): Promise<AIRawResponse> {
     if (!res.ok) {
       const data = await res.json().catch(() => ({})) as ProxyErrorPayload
-      this.throwHttpError(res, data)
+      classifyProxyHttpError(res, data)
     }
 
     if (!res.body) {
@@ -317,36 +316,6 @@ export class ProxyProvider implements AIProvider {
       serverDurationMs,
       authDurationMs,
     }
-  }
-
-  private throwHttpError(res: Response, data: ProxyErrorPayload): never {
-    const message = data.error ?? `Error del servidor (${res.status}).`
-
-    if (res.status === 401 || res.status === 403) {
-      throw createProviderError('gemini', data.errorCode === 'misconfigured' ? 'misconfigured' : 'unauthorized', message)
-    }
-
-    if (res.status === 429 || data.errorCode === 'rate_limit') {
-      throw createProviderError('gemini', 'rate_limit', message, true)
-    }
-
-    if (res.status === 502 || res.status === 503 || res.status === 504 || data.errorCode === 'timeout') {
-      throw createProviderError('gemini', 'timeout', message, true)
-    }
-
-    if (data.errorCode === 'misconfigured') {
-      throw createProviderError('gemini', 'misconfigured', message)
-    }
-
-    if (data.errorCode === 'unauthorized') {
-      throw createProviderError('gemini', 'unauthorized', message)
-    }
-
-    if (res.status >= 500 || data.errorCode === 'server_error') {
-      throw createProviderError('gemini', 'server_error', message)
-    }
-
-    throw createProviderError('gemini', data.errorCode ?? 'unknown', message)
   }
 
   private shouldRetryWithoutStreaming(error: unknown): boolean {
