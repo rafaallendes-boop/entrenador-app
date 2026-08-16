@@ -154,6 +154,7 @@ export const WeekCreatorEngine = {
       return {
         message: 'Para proponer una semana necesito conocer tus deportes y disponibilidad horaria. ¿Quieres completar tu perfil de atleta primero? Puedes hacerlo desde Configuración → Perfil de atleta.',
         actions: [],
+        filteredCreateWeek: false,
         provider: 'mock',
         model: 'none',
         timestamp: Date.now(),
@@ -171,6 +172,7 @@ export const WeekCreatorEngine = {
       return {
         message: 'No pude determinar la semana objetivo. Vuelve a intentarlo indicando la semana que quieres planificar.',
         actions: [],
+        filteredCreateWeek: false,
         provider: 'mock',
         model: 'none',
         timestamp: Date.now(),
@@ -770,6 +772,7 @@ function buildInsufficientScheduleCapacityResponse(input: {
   return {
     message: `No puedo ubicar ${input.config.sessionsPerWeek} ${sessionLabel} respetando tu disponibilidad actual: hay ${input.availableSlots} ${slotLabel}. Agrega días o bloques AM/PM, o reduce la cantidad de sesiones, y vuelve a intentarlo.`,
     actions: [],
+    filteredCreateWeek: false,
     provider: 'mock',
     model: 'local-schedule-preflight',
     timestamp: generationCompletedAt,
@@ -836,6 +839,7 @@ function buildWeekCreatorRepairFailureResponse(input: {
   return {
     message: buildWeekCreatorUserFailureMessage('quality.squash.signature_uniqueness_unresolved'),
     actions: [],
+    filteredCreateWeek: false,
     provider: input.provider,
     model: input.model,
     timestamp: Date.now(),
@@ -1237,6 +1241,7 @@ function buildDeterministicWeekCreatorResponse(input: {
   return {
     message: summarizeWeekCreatorAction(action),
     actions: [action],
+    filteredCreateWeek: false,
     provider: 'mock',
     model: 'local-week-fallback',
     timestamp: Date.now(),

@@ -189,6 +189,7 @@ vi.mock('../../utils/uuid', () => ({
 
 import { getVisibleCoachStreamText, useChatStore } from '../useChatStore'
 import { useAIDebugStore } from '../useAIDebugStore'
+import { useEntitlementStore } from '../useEntitlementStore'
 
 describe('chat streaming visibility', () => {
   it('hides internal action JSON while preserving the visible explanation', () => {
@@ -274,6 +275,7 @@ beforeEach(() => {
     return context
   })
   useAIDebugStore.getState().clear()
+  useEntitlementStore.setState({ tier: 'free' })
   useChatStore.setState({
     messages: [],
     currentSessionId: 'session-1',
@@ -285,10 +287,50 @@ beforeEach(() => {
     conversationsStatus: 'idle',
     conversationsDirty: true,
     rotationSuspended: false,
+    entitlementOffer: null,
   })
 })
 
 describe('useChatStore.sendMessage', () => {
+  it('traduce filteredCreateWeek a una oferta efimera para free', async () => {
+    mocks.sendAction.mockResolvedValue({
+      message: 'Puedo ayudarte a ajustar lo que ya existe.',
+      actions: undefined,
+      filteredCreateWeek: true,
+      provider: 'gemini',
+      traceId: 'trace-filtered-free',
+      requestClass: 'chat_action',
+    })
+
+    await useChatStore.getState().sendMessage('armame la semana', makeContext())
+
+    expect(useChatStore.getState().entitlementOffer).toEqual({
+      requestClass: 'week_creator',
+      requiredTier: 'weekly',
+      currentTier: 'free',
+    })
+    expect(mocks.chatMessages).toHaveLength(2)
+  })
+
+  it.each(['weekly', 'advanced'] as const)(
+    '%s no ve una oferta por el diagnostico neutral',
+    async (tier) => {
+      useEntitlementStore.setState({ tier })
+      mocks.sendAction.mockResolvedValue({
+        message: 'Puedo ayudarte a ajustar lo que ya existe.',
+        actions: undefined,
+        filteredCreateWeek: true,
+        provider: 'gemini',
+        traceId: `trace-filtered-${tier}`,
+        requestClass: 'chat_action',
+      })
+
+      await useChatStore.getState().sendMessage('armame la semana', makeContext())
+
+      expect(useChatStore.getState().entitlementOffer).toBeNull()
+    },
+  )
+
   it('persists a successful coach response and links its proposal', async () => {
     mocks.sendAction.mockResolvedValue({
       message: 'Listo, preparé la propuesta.',

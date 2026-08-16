@@ -103,6 +103,12 @@ export interface CoachNormalizedResponse {
   message: string
   /** Structured actions extracted from the response, if any */
   actions?: CoachAction[]
+  /**
+   * Diagnostico neutro: la respuesta traia `create_week` en un turno de chat y
+   * se descarto. NO es una decision comercial: el normalizador no conoce el
+   * tier. Presentacion lo traduce a oferta solo si `week_creator` esta vedado.
+   */
+  filteredCreateWeek: boolean
   /** Nutrition tips extracted from structured response (future — always undefined v1) */
   nutritionFocus?: string[]
   provider: AIProviderName

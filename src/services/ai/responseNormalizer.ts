@@ -211,8 +211,13 @@ export function normalizeResponse(raw: AIRawResponse): CoachNormalizedResponse {
     }
   }
 
+  // BARRERA DE NEGOCIO, no solo regla de calidad: esto impide que una semana
+  // generada salga por el chat sin pasar por el gate de `week_creator`. Ver el
+  // spec de entitlements §3.4 antes de modificar este filtro.
+  let filteredCreateWeek = false
   if (requestClass === 'chat_action' && actions?.length) {
     const nextActions = actions.filter((action) => action.type !== 'create_week')
+    filteredCreateWeek = nextActions.length < actions.length
     invalidActionCount += actions.length - nextActions.length
     if (actions.length > 0 && nextActions.length === 0) {
       actionParseFailed = true
@@ -239,6 +244,7 @@ export function normalizeResponse(raw: AIRawResponse): CoachNormalizedResponse {
   return {
     message,
     actions: actions && actions.length > 0 ? actions : undefined,
+    filteredCreateWeek,
     provider: raw.provider,
     streamed: raw.streamed,
     model: raw.model,

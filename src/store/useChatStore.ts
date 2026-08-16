@@ -22,6 +22,12 @@ import {
   getSelfAthleteId,
   getSwitchEpoch,
 } from '../services/athlete/activeAthlete'
+import {
+  buildEntitlementDetail,
+  type EntitlementRequiredDetail,
+} from '../services/entitlements/entitlementError'
+import { isClassAllowed } from '../services/entitlements/entitlementPolicy'
+import { getEntitlementTier } from './useEntitlementStore'
 
 let activeChatAbortController: AbortController | null = null
 let latestHistoryLoadRequestId = 0
@@ -46,6 +52,8 @@ interface ChatState {
   conversationsStatus: 'idle' | 'loading' | 'ready' | 'error'
   conversationsDirty: boolean
   rotationSuspended: boolean
+  /** Oferta de plan bajo el hilo. Efimera: no se persiste ni sincroniza. */
+  entitlementOffer: EntitlementRequiredDetail | null
 
   loadHistory: () => Promise<void>
   loadConversations: () => Promise<void>
@@ -68,6 +76,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   conversationsStatus: 'idle',
   conversationsDirty: true,
   rotationSuspended: false,
+  entitlementOffer: null,
 
   loadHistory: async () => {
     const requestId = ++latestHistoryLoadRequestId
@@ -277,7 +286,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
       chatSessionId: sessionId,
       contextMeta: buildChatContextMetadata(context),
     })
-    set(state => ({ messages: [...state.messages, userMsg], isLoading: true, streamingText: '', responsePhase: 'connecting', error: null }))
+    set(state => ({
+      messages: [...state.messages, userMsg],
+      isLoading: true,
+      streamingText: '',
+      responsePhase: 'connecting',
+      error: null,
+      entitlementOffer: null,
+    }))
     try {
       await db.chatMessages.add(userMsg)
       set({ conversationsDirty: true })
@@ -365,6 +381,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (!isActiveChatRequest(get().currentSessionId, sessionId, abortController)) {
         return { route: route.kind }
       }
+      const currentTier = getEntitlementTier()
+      const entitlementOffer = response.filteredCreateWeek
+        && !isClassAllowed(currentTier, 'week_creator')
+        ? buildEntitlementDetail('week_creator', 'weekly', currentTier)
+        : null
 
       const coachMsg = buildCoachMessage(response, sessionId)
       await db.chatMessages.add(coachMsg)
@@ -422,7 +443,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
         await discardLateCoachArtifacts(coachMsg, proposalId)
         return { route: route.kind }
       }
-      set(state => ({ messages: [...state.messages, coachMsg], isLoading: false, streamingText: '', responsePhase: 'idle' }))
+      set(state => ({
+        messages: [...state.messages, coachMsg],
+        isLoading: false,
+        streamingText: '',
+        responsePhase: 'idle',
+        entitlementOffer,
+      }))
     } catch (e) {
       if (!abortedByWatchdog && (abortController.signal.aborted || (e instanceof DOMException && e.name === 'AbortError'))) {
         if (isCurrentChatRequestOwner(get().currentSessionId, sessionId, abortController)) {
@@ -577,6 +604,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       conversationsStatus: 'idle',
       conversationsDirty: true,
       rotationSuspended: false,
+      entitlementOffer: null,
     })
   },
 }))
@@ -731,6 +759,7 @@ async function loadSession(
     streamingText: '',
     responsePhase: 'idle',
     error: null,
+    entitlementOffer: null,
     ...(suspendRotation ? { rotationSuspended: true } : {}),
     ...(repaired.length > rows.length ? { conversationsDirty: true } : {}),
   })
@@ -756,6 +785,7 @@ function startFreshSessionSync(): string {
     streamingText: '',
     responsePhase: 'idle',
     error: null,
+    entitlementOffer: null,
     rotationSuspended: false,
     conversationsDirty: true,
   })
