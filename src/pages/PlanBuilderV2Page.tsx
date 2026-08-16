@@ -28,6 +28,8 @@ import type { AthleteProfile, PlanWizardConfig, GoalEvent, CoachSessionProposal,
 import type { PlanCommitImpact } from '../services/planBuilder/commitImpact'
 import type { TrainingPlanWeek } from '../types/planBuilder'
 import { UpsellCard } from '../components/entitlements/UpsellCard'
+import { useEntitlement } from '../hooks/useEntitlement'
+import { isProactiveEntitlementUiEnabled } from '../services/entitlements/entitlementFlag'
 
 type PlanBuilderLocationState = {
   fromWizard?: boolean
@@ -532,6 +534,13 @@ export default function PlanBuilderV2Page() {
     entitlementOffer,
     createDraft, runGeneration, retryFullGeneration, regenerateWeek, regenerateWeeks, retryFailedWeeks, retryIncompleteWeeks, cancelGeneration, acceptPlan, discard, loadDraft,
   } = usePlanBuilderStore()
+  const { canUse, loading: entitlementLoading } = useEntitlement()
+  const planBuilderBlocked = isProactiveEntitlementUiEnabled()
+    && !entitlementLoading
+    && !canUse('plan_builder_week')
+  const displayedEntitlementOffer = entitlementOffer ?? (planBuilderBlocked
+    ? { requestClass: 'plan_builder_week', requiredTier: 'advanced' as const }
+    : null)
 
   const [selectedWeekIndex, setSelectedWeekIndex] = useState<number | null>(null)
   const [initializedPlanId, setInitializedPlanId] = useState<string | null>(null)
@@ -810,7 +819,7 @@ export default function PlanBuilderV2Page() {
     : 'Hay una estructura lista para usar. Conviene preparar el plan desde una base estable y consistente.'
 
   async function handleInitializeProtocol() {
-    if (!effectiveAthleteProfile || !plan || isGenerating || status === 'committing') return
+    if (planBuilderBlocked || !effectiveAthleteProfile || !plan || isGenerating || status === 'committing') return
     if (initializeLockRef.current === plan.id) return
     initializeLockRef.current = plan.id
     setInitializedPlanId(plan.id)
@@ -822,27 +831,27 @@ export default function PlanBuilderV2Page() {
   }
 
   async function handleRetryFailedWeeks() {
-    if (!effectiveAthleteProfile || isGenerating || status === 'committing' || failedWeekIndexes.length === 0) return
+    if (planBuilderBlocked || !effectiveAthleteProfile || isGenerating || status === 'committing' || failedWeekIndexes.length === 0) return
     await retryFailedWeeks(effectiveAthleteProfile)
   }
 
   async function handleRetryFullGeneration() {
-    if (!effectiveAthleteProfile || isGenerating || status === 'committing') return
+    if (planBuilderBlocked || !effectiveAthleteProfile || isGenerating || status === 'committing') return
     await retryFullGeneration(effectiveAthleteProfile)
   }
 
   async function handleRetryIncompleteWeeks() {
-    if (!effectiveAthleteProfile || isGenerating || status === 'committing') return
+    if (planBuilderBlocked || !effectiveAthleteProfile || isGenerating || status === 'committing') return
     await retryIncompleteWeeks(effectiveAthleteProfile)
   }
 
   async function handleRegenerateSelectedWeek() {
-    if (!effectiveAthleteProfile || !selectedWeek || isGenerating || status === 'committing') return
+    if (planBuilderBlocked || !effectiveAthleteProfile || !selectedWeek || isGenerating || status === 'committing') return
     await regenerateWeek(selectedWeek.weekIndex, effectiveAthleteProfile, selectedWeekRepairInstruction)
   }
 
   async function handleRepairQualityIssues() {
-    if (!effectiveAthleteProfile || isGenerating || status === 'committing') return
+    if (planBuilderBlocked || !effectiveAthleteProfile || isGenerating || status === 'committing') return
     const weekIndexes = Object.keys(qualityRepairInstructions)
       .map((key) => Number(key))
       .filter((value) => Number.isInteger(value))
@@ -851,7 +860,7 @@ export default function PlanBuilderV2Page() {
   }
 
   async function handleConsumerPlanRecovery() {
-    if (!effectiveAthleteProfile || isGenerating || status === 'committing') return
+    if (planBuilderBlocked || !effectiveAthleteProfile || isGenerating || status === 'committing') return
     if (plan?.generationState === 'complete' && qualityBlocksAccept) {
       const weekIndexes = Object.keys(qualityRepairInstructions)
         .map((key) => Number(key))
@@ -1023,11 +1032,11 @@ export default function PlanBuilderV2Page() {
 
       {/* Main grid */}
       <div className="mx-auto max-w-5xl px-4 pt-5 md:px-6">
-        {entitlementOffer && (
+        {displayedEntitlementOffer && (
           <div className="mb-5">
             <UpsellCard
-              requestClass={entitlementOffer.requestClass}
-              requiredTier={entitlementOffer.requiredTier}
+              requestClass={displayedEntitlementOffer.requestClass}
+              requiredTier={displayedEntitlementOffer.requiredTier}
             />
           </div>
         )}
@@ -1047,7 +1056,7 @@ export default function PlanBuilderV2Page() {
               </div>
             </div>
           </div>
-        ) : shouldShowLaunchDeck ? (
+        ) : shouldShowLaunchDeck && !planBuilderBlocked ? (
           <PlanBuilderLaunchDeck
             title={PLAN_BUILDER_COMPETITIVE_LABEL}
             subtitle="Revisa el objetivo y crea un plan por semanas con control de carga, taper y sesiones clave."
@@ -1269,7 +1278,7 @@ export default function PlanBuilderV2Page() {
                       {selectedWeek.weekStartDate}
                     </p>
                   </div>
-                  {showPlanQualityDebug && plan?.generationState === 'complete' && selectedWeek.status === 'draft' && (
+                  {!planBuilderBlocked && showPlanQualityDebug && plan?.generationState === 'complete' && selectedWeek.status === 'draft' && (
                     <button
                       type="button"
                       disabled={isGenerating || status === 'committing'}
@@ -1597,7 +1606,7 @@ export default function PlanBuilderV2Page() {
             >
               Descartar
             </button>
-            {showConsumerPlanRecovery && (
+            {!planBuilderBlocked && showConsumerPlanRecovery && (
               <button
                 type="button"
                 disabled={isGenerating || status === 'committing'}
@@ -1608,7 +1617,7 @@ export default function PlanBuilderV2Page() {
                 {consumerPlanRecoveryLabel}
               </button>
             )}
-            {showPlanQualityDebug && (
+            {!planBuilderBlocked && showPlanQualityDebug && (
               <>
                 {isFailedState && (
                   <button
