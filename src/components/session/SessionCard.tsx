@@ -74,7 +74,7 @@ function WhoopSyncBadge() {
         <path d="M1 3h2l2 7 2-6h2l2 6 2-7h2l-3 10H10L8 7l-2 6H4L1 3z" />
       </svg>
       <span className="sm:hidden">Whoop</span>
-      <span className="hidden sm:inline">Sincronizado desde Whoop</span>
+      <span className="hidden sm:inline">Sincronizado Whoop</span>
     </span>
   )
 }

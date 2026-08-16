@@ -2131,7 +2131,7 @@ Estado: **implementado y con rollout operativo cerrado**. Spec retirado tras el 
 
 - [x] Decision de producto: self-only, sesiones `planned`, matching por deporte/dia, sin auto-ajuste de plan.
 - [x] Decision de datos: `actualDurationMin` si matchea; `Session.actualRpe` queda vacio.
-- [x] Decision de UX: badge "Sincronizado desde Whoop" y aviso de reconexion para `read:workout`.
+- [x] Decision de UX: badge "Sincronizado Whoop" y aviso de reconexion para `read:workout`.
 - [x] Decision de seguridad: `whoop_workouts` server-write/client-read, `athlete_id` first, borrado/export/wipe incluidos.
 - [x] Reconciliar numeracion: `012`/Dexie v16 para workouts; SP1a en `013+`/v17+.
 - [x] Agregar scope `read:workout` sin romper conexiones antiguas.

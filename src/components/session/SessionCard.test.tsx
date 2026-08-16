@@ -274,9 +274,9 @@ describe('SessionCard Whoop badge', () => {
       <SessionCard session={makeSession({ status: 'completed' })} />,
     )
 
-    expect(completed).toContain('Sincronizado desde Whoop')
-    expect(reverted).not.toContain('Sincronizado desde Whoop')
-    expect(manual).not.toContain('Sincronizado desde Whoop')
+    expect(completed).toContain('Sincronizado Whoop')
+    expect(reverted).not.toContain('Sincronizado Whoop')
+    expect(manual).not.toContain('Sincronizado Whoop')
   })
 })
 

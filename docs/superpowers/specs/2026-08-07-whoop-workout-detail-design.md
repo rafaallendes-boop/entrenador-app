@@ -14,7 +14,7 @@ y no lo usa nadie.
 (`db.whoopWorkouts`), y `dataExport.ts` los incluye en el backup. El único campo
 que algún consumidor lee es `durationMin`:
 
-- `SessionCard.tsx:253` muestra el badge «Sincronizado desde Whoop» y nada más.
+- `SessionCard.tsx:253` muestra el badge «Sincronizado Whoop» y nada más.
 - `whoopCompletionNotes.ts:12` escribe `"fecha deporte N min"`.
 - `readinessContext.ts:16` le da al coach **solo el agregado diario**: recovery,
   sueño y strain del día.
