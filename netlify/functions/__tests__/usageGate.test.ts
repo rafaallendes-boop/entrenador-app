@@ -221,6 +221,67 @@ describe('checkUsagePreflight', () => {
     await expect(checkUsagePreflight({ userId: 'u1', requestClass: 'plan_builder_week', tier: 'advanced' }))
       .rejects.toMatchObject({ statusCode: 503, errorCode: 'server_error' })
   })
+
+  it('kill switch activo rechaza antes de cualquier fetch', async () => {
+    process.env['AI_KILL_SWITCH_ENABLED'] = 'true'
+    const fetchMock = vi.fn()
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    await expect(checkUsagePreflight({ userId: 'u1', requestClass: 'plan_builder_week', tier: 'advanced' }))
+      .rejects.toMatchObject({ statusCode: 503, errorCode: 'kill_switch_active' })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('con limits apagado, no hace fetch y no rechaza', async () => {
+    process.env['AI_USAGE_LIMITS_ENABLED'] = 'false'
+    const fetchMock = vi.fn()
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    await expect(checkUsagePreflight({ userId: 'u1', requestClass: 'plan_builder_week', tier: 'advanced' }))
+      .resolves.toBeUndefined()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('un error de red en la lectura propia de ai_usage_daily se convierte en server_error', async () => {
+    // A diferencia del error de red ya cubierto para callRpc, esta lectura es
+    // un GET directo a PostgREST (no pasa por callRpc), así que necesita su
+    // propio caso: confirma que el try/catch de checkUsagePreflight alrededor
+    // de SU fetch también convierte el rechazo, no solo el de las RPC.
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.includes('/rpc/read_ai_usage_spend')) return jsonResponse([{ account_cost_usd: 0, global_cost_usd: 0 }])
+      if (url.includes('/ai_usage_daily?')) throw new TypeError('fetch failed')
+      throw new Error(`fetch inesperado: ${url}`)
+    })
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    await expect(checkUsagePreflight({ userId: 'u1', requestClass: 'plan_builder_week', tier: 'advanced' }))
+      .rejects.toMatchObject({ statusCode: 503, errorCode: 'server_error' })
+  })
+
+  it('lectura del contador con forma no-array falla cerrado', async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.includes('/rpc/read_ai_usage_spend')) return jsonResponse([{ account_cost_usd: 0, global_cost_usd: 0 }])
+      if (url.includes('/ai_usage_daily?')) return jsonResponse({ request_count: 12 })
+      throw new Error(`fetch inesperado: ${url}`)
+    })
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    await expect(checkUsagePreflight({ userId: 'u1', requestClass: 'plan_builder_week', tier: 'advanced' }))
+      .rejects.toMatchObject({ statusCode: 503, errorCode: 'server_error' })
+  })
+
+  it('cuota bajo el límite permite sin lanzar (camino feliz)', async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.includes('/rpc/read_ai_usage_spend')) return jsonResponse([{ account_cost_usd: 0, global_cost_usd: 0 }])
+      if (url.includes('/ai_usage_daily?')) return jsonResponse([{ request_count: 3 }])
+      throw new Error(`fetch inesperado: ${url}`)
+    })
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    await expect(checkUsagePreflight({ userId: 'u1', requestClass: 'plan_builder_week', tier: 'advanced' }))
+      .resolves.toBeUndefined()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
 })
 
 describe('recordUsageCost', () => {

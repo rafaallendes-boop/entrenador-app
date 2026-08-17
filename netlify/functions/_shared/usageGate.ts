@@ -157,6 +157,35 @@ export interface UsageGateReservation {
   usageDate: string
 }
 
+type GatePreamble =
+  | { skip: true }
+  | { skip: false; bucketId: string; limit: number }
+
+/**
+ * Preámbulo compartido por `assertUsageGate` y `checkUsagePreflight`: kill
+ * switch → flag de limits → resolución de bucket/tier → gasto → spend caps.
+ * Extraído a propósito (hallazgo de review) para que un cambio futuro a
+ * cualquiera de estas cinco precondiciones no pueda aplicarse por accidente
+ * a un solo entry point y no al otro — exactamente el tipo de bug que ya
+ * produjo dos hallazgos fail-open en rondas previas de este mismo plan.
+ * `{ skip: true }` cubre los dos casos "no gatea": limits apagado, o la
+ * clase no tiene bucket/límite para el tier (eso lo resuelve el gate de
+ * entitlement, no este módulo).
+ */
+async function evaluateGatePreamble(input: UsageGateInput): Promise<GatePreamble> {
+  if (isKillSwitchActive()) throw makeKillSwitchError()
+  if (!isUsageLimitsEnabled()) return { skip: true }
+
+  const resolved = resolveBucket(input.requestClass, input.tier)
+  if (!resolved) return { skip: true }
+
+  const spend = await readSpend(input.userId)
+  const capCheck = evaluateSpendCaps(spend)
+  if (capCheck.exceeded) throw makeSpendCapError(capCheck.scope, capCheck.capUsd)
+
+  return { skip: false, bucketId: resolved.bucketId, limit: resolved.limit }
+}
+
 /**
  * Gate autoritativo: chequea y CONSUME cuota. Debe llamarse inmediatamente
  * antes de la llamada real al proveedor, nunca antes. `null` significa "esta
@@ -165,23 +194,16 @@ export interface UsageGateReservation {
  * este).
  */
 export async function assertUsageGate(input: UsageGateInput): Promise<UsageGateReservation | null> {
-  if (isKillSwitchActive()) throw makeKillSwitchError()
-  if (!isUsageLimitsEnabled()) return null
-
-  const resolved = resolveBucket(input.requestClass, input.tier)
-  if (!resolved) return null
-
-  const spend = await readSpend(input.userId)
-  const capCheck = evaluateSpendCaps(spend)
-  if (capCheck.exceeded) throw makeSpendCapError(capCheck.scope, capCheck.capUsd)
+  const preamble = await evaluateGatePreamble(input)
+  if (preamble.skip) return null
 
   const rows = await callRpc<unknown>('increment_ai_usage_if_under_limit', {
     p_user_id: input.userId,
-    p_bucket_id: resolved.bucketId,
-    p_limit: resolved.limit,
+    p_bucket_id: preamble.bucketId,
+    p_limit: preamble.limit,
   })
   if (!Array.isArray(rows)) throw makeServerError('increment_ai_usage_if_under_limit devolvió una forma inesperada.')
-  if (rows.length === 0) throw makeQuotaExceededError(resolved.bucketId, resolved.limit, 0)
+  if (rows.length === 0) throw makeQuotaExceededError(preamble.bucketId, preamble.limit, 0)
   // Cardinalidad estricta (P2, ronda 2): la PK de ai_usage_daily garantiza
   // que un UPSERT nunca produce más de una fila — más de una fila acá es
   // señal de que algo está mal configurado (RPC equivocada, tabla sin PK
@@ -195,7 +217,7 @@ export async function assertUsageGate(input: UsageGateInput): Promise<UsageGateR
     throw makeServerError('increment_ai_usage_if_under_limit devolvió request_count no numérico.')
   }
 
-  return { bucketId: resolved.bucketId, limit: resolved.limit, usageDate: row.usage_date }
+  return { bucketId: preamble.bucketId, limit: preamble.limit, usageDate: row.usage_date }
 }
 
 /**
@@ -205,15 +227,8 @@ export async function assertUsageGate(input: UsageGateInput): Promise<UsageGateR
  * intento real.
  */
 export async function checkUsagePreflight(input: UsageGateInput): Promise<void> {
-  if (isKillSwitchActive()) throw makeKillSwitchError()
-  if (!isUsageLimitsEnabled()) return
-
-  const resolved = resolveBucket(input.requestClass, input.tier)
-  if (!resolved) return
-
-  const spend = await readSpend(input.userId)
-  const capCheck = evaluateSpendCaps(spend)
-  if (capCheck.exceeded) throw makeSpendCapError(capCheck.scope, capCheck.capUsd)
+  const preamble = await evaluateGatePreamble(input)
+  if (preamble.skip) return
 
   const creds = serviceRoleCredentials()
   if (!creds) throw makeServerError('Configuración de Supabase ausente en el servidor.')
@@ -221,7 +236,7 @@ export async function checkUsagePreflight(input: UsageGateInput): Promise<void> 
   const query = new URLSearchParams({
     user_id: `eq.${input.userId}`,
     usage_date: `eq.${today}`,
-    bucket_id: `eq.${resolved.bucketId}`,
+    bucket_id: `eq.${preamble.bucketId}`,
     select: 'request_count',
   })
   let response: Response
@@ -251,8 +266,8 @@ export async function checkUsagePreflight(input: UsageGateInput): Promise<void> 
   if (!isFiniteNonNegative(current)) {
     throw makeServerError('Lectura de cuota devolvió request_count no numérico.')
   }
-  if (current >= resolved.limit) {
-    throw makeQuotaExceededError(resolved.bucketId, resolved.limit, 0)
+  if (current >= preamble.limit) {
+    throw makeQuotaExceededError(preamble.bucketId, preamble.limit, 0)
   }
 }
 
