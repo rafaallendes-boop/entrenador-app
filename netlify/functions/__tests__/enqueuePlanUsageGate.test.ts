@@ -91,10 +91,31 @@ describe('enqueue-plan-generation — usage gate', () => {
 
     const response = await handler(buildEnqueueEvent(), {} as never) as { statusCode: number; body: string }
 
+    // `beforeEach` deja `isEntitlementEnforcementEnabled` en `false`: este es
+    // el único lugar que prueba que el preflight recibe el tier neutro
+    // 'advanced' en vez de 'free' en ese modo — 'free' haría que
+    // `resolveBucket` devuelva `null` para `plan_builder_week` y el preflight
+    // se vuelva un no-op silencioso (hallazgo de review, ronda 1).
     expect(handlerMocks.checkUsagePreflight).toHaveBeenCalledWith(
-      expect.objectContaining({ userId: 'user-1', requestClass: 'plan_builder_week' }),
+      expect.objectContaining({ userId: 'user-1', requestClass: 'plan_builder_week', tier: 'advanced' }),
     )
     expect(response.statusCode).not.toBe(429)
     expect(response.statusCode).not.toBe(503)
+  })
+
+  it('con entitlements habilitado, el preflight recibe el tier resuelto (no el neutro)', async () => {
+    handlerMocks.isEntitlementEnforcementEnabled.mockReturnValue(true)
+    handlerMocks.resolveEntitlementTier.mockResolvedValue('weekly')
+    handlerMocks.createSupabaseWriter.mockReturnValue({
+      getPlan: vi.fn(async () => null),
+      putPlan: vi.fn(async () => undefined),
+      putWeek: vi.fn(async () => undefined),
+    })
+
+    await handler(buildEnqueueEvent(), {} as never)
+
+    expect(handlerMocks.checkUsagePreflight).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'user-1', requestClass: 'plan_builder_week', tier: 'weekly' }),
+    )
   })
 })
