@@ -171,6 +171,9 @@ export type AIErrorCode =
   | 'misconfigured'  // server or provider config missing
   | 'server_error'   // internal proxy/backend error
   | 'entitlement_required' // el plan del usuario no alcanza para esta clase
+  | 'quota_exceeded'
+  | 'spend_cap_exceeded'
+  | 'kill_switch_active'
   | 'unknown'        // catch-all
 
 export class AIProviderError extends Error {
