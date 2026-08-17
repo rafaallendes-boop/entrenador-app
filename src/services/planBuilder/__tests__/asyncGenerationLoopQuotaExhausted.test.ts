@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { AIRequest } from '../../ai/types'
+import type { TrainingPlanWeek } from '../../../types/planBuilder'
 import {
   runAsyncPlanGeneration,
   type AsyncPlanGenerationWriter,
@@ -135,5 +136,93 @@ describe('asyncGenerationLoop — quota_exhausted', () => {
     expect(finalWeek?.generationMeta.lastError).toBe('RPC de cuota devolvió 503.')
     expect(jobs).toHaveLength(1)
     expect(jobs[0]?.outcome).toBe('failed')
+  })
+
+  function parseWeekIndexFromTraceId(traceId: string): number {
+    return Number(traceId.match(/week-(\d+)/)?.[1] ?? -1)
+  }
+
+  it('con concurrency 3 (default de producción), un rechazo casi simultáneo en varias semanas en vuelo no duplica las escrituras de las semanas restantes', async () => {
+    // Reproduce el escenario del reviewer: concurrency 3, cupo ya agotado,
+    // varios workers toman semana cada uno y rechazan por QuotaExceededError
+    // casi al mismo tiempo. Sin el guard de un solo disparo,
+    // markRemainingWeeksAsUsageGateRejected corría una vez POR worker que
+    // rechaza y cada semana restante (no lanzada) recibía hasta N putWeek
+    // redundantes en vez de 1. No fijamos cuántos workers alcanzan a
+    // lanzarse antes de que `stopLaunching` frene al resto (eso depende del
+    // scheduling exacto de microtasks, no del comportamiento bajo prueba):
+    // en cambio, derivamos qué semanas se lanzaron realmente del propio mock
+    // de `callLLM` y verificamos el conteo de escrituras esperado para cada
+    // caso — 2 para una semana lanzada (generating + error), 1 para una
+    // semana "remaining" que nunca llegó a invocar al proveedor.
+    const { input, base } = makeRunInputForTest({ weekCount: 5, concurrency: 3 })
+    const putWeekCallsByIndex = new Map<number, number>()
+    const writer: AsyncPlanGenerationWriter = {
+      ...base,
+      async putWeek(week: TrainingPlanWeek) {
+        putWeekCallsByIndex.set(week.weekIndex, (putWeekCallsByIndex.get(week.weekIndex) ?? 0) + 1)
+      },
+    }
+    const launchedWeekIndexes = new Set<number>()
+    const callLLM = vi.fn(async (request: AIRequest) => {
+      launchedWeekIndexes.add(parseWeekIndexFromTraceId(request.traceId))
+      throw new QuotaExceededError({ bucketId: 'plan_builder_week', limit: 12, remaining: 0 })
+    })
+
+    const result = await runAsyncPlanGeneration({ ...input, writer, callLLM })
+
+    // Concurrency 3 debe dar lugar a al menos 2 semanas lanzadas casi en
+    // paralelo, que es la condición de carrera que este test ejercita.
+    expect(launchedWeekIndexes.size).toBeGreaterThanOrEqual(2)
+    expect(putWeekCallsByIndex.size).toBe(5)
+    for (const [weekIndex, count] of putWeekCallsByIndex) {
+      const expectedWrites = launchedWeekIndexes.has(weekIndex) ? 2 : 1
+      expect(count).toBe(expectedWrites)
+    }
+    expect(result.weeks.every((week) => week.status === 'error')).toBe(true)
+    expect(result.weeks.every((week) => week.generationMeta.errorClass === 'quota_exceeded')).toBe(true)
+  })
+
+  it('con UsageGateUnavailableError concurrente (mensaje por instancia, no fijo), cada semana restante recibe una única escritura coherente', async () => {
+    // El caso que más importa de la carrera: a diferencia de las otras 3
+    // clases, el mensaje de UsageGateUnavailableError es por instancia. Sin
+    // el guard, dos rechazos concurrentes con mensajes distintos podían
+    // interleavear sus escrituras sobre las MISMAS semanas restantes,
+    // dejando el mensaje final de cada una a merced de cuál escritura ganó
+    // la carrera — no necesariamente relacionado con la causa real de esa
+    // semana. Con el guard, solo el primer rechazo en llegar escribe las
+    // semanas restantes, así que cada una recibe exactamente una escritura y
+    // un único mensaje coherente.
+    const { input, base } = makeRunInputForTest({ weekCount: 4, concurrency: 2 })
+    const putWeekCallsByIndex = new Map<number, number>()
+    const writer: AsyncPlanGenerationWriter = {
+      ...base,
+      async putWeek(week: TrainingPlanWeek) {
+        putWeekCallsByIndex.set(week.weekIndex, (putWeekCallsByIndex.get(week.weekIndex) ?? 0) + 1)
+      },
+    }
+    const launchedWeekIndexes = new Set<number>()
+    let call = 0
+    const callLLM = vi.fn(async (request: AIRequest) => {
+      call += 1
+      launchedWeekIndexes.add(parseWeekIndexFromTraceId(request.traceId))
+      throw new UsageGateUnavailableError(`RPC de cuota devolvió 503 (intento ${call}).`)
+    })
+
+    const result = await runAsyncPlanGeneration({ ...input, writer, callLLM })
+
+    expect(launchedWeekIndexes.size).toBeGreaterThanOrEqual(2)
+    expect(putWeekCallsByIndex.size).toBe(4)
+    for (const [weekIndex, count] of putWeekCallsByIndex) {
+      const expectedWrites = launchedWeekIndexes.has(weekIndex) ? 2 : 1
+      expect(count).toBe(expectedWrites)
+    }
+    const remaining = result.weeks.filter((week) => !launchedWeekIndexes.has(week.weekIndex))
+    expect(remaining.length).toBeGreaterThan(0)
+    expect(remaining.every((week) => week.status === 'error')).toBe(true)
+    // El mensaje de cada semana restante viene de UN único rechazo (el que
+    // ganó el guard), no de una mezcla entre los dos mensajes por instancia.
+    const remainingMessages = new Set(remaining.map((week) => week.generationMeta.lastError))
+    expect(remainingMessages.size).toBe(1)
   })
 })

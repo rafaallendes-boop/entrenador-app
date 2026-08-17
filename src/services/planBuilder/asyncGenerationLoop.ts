@@ -835,6 +835,16 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
   // éxito — son fallas operacionales, no una señal útil para planificar
   // capacidad como sí lo es agotar la cuota.
   let usageGateFailed = false
+  // Guard de un solo disparo: con concurrency > 1, varias semanas en vuelo
+  // pueden rechazar por el gate de uso casi al mismo tiempo. Sin esto, cada
+  // worker que rechaza vuelve a recorrer TODAS las semanas restantes y las
+  // reescribe — redundante, y para `UsageGateUnavailableError` (mensaje por
+  // instancia, no fijo) el mensaje final de una semana quedaría a merced de
+  // cuál escritura ganó la carrera, sin relación con la causa real de ESA
+  // semana. El check-and-set es síncrono (sin `await` entre medio), así que
+  // solo el primer worker en llegar marca las semanas restantes; los demás
+  // igual marcan su propia semana actual y disparan `stopLaunching`.
+  let usageGateMarked = false
   let firstReadyAt: number | null = null
   let allTargetsTerminalAt: number | null = null
   const terminalTargets = new Set<number>()
@@ -1292,12 +1302,20 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
           } else {
             usageGateFailed = true
           }
+          // Check-and-set síncrono, sin `await` entre medio: garantiza que
+          // solo el primer rechazo concurrente terminaliza las semanas
+          // restantes, aunque otros workers entren a este mismo branch antes
+          // de que termine su propio `await` de abajo.
+          const shouldMarkRemaining = !usageGateMarked
+          usageGateMarked = true
           const message = usageGateRejectionMessage(error)
           const erroredWeek = makeErroredWeek(generatingWeek, message, getNow(), error.code, 0)
           weeks = replaceWeek(weeks, erroredWeek)
           await input.writer.putWeek(erroredWeek)
           observeWeekWrite(erroredWeek)
-          await markRemainingWeeksAsUsageGateRejected(targetPosition, error)
+          if (shouldMarkRemaining) {
+            await markRemainingWeeksAsUsageGateRejected(targetPosition, error)
+          }
           plan = buildPlanCheckpoint(plan, weeks, {
             generationState: 'generating',
             jobId: input.jobId,
