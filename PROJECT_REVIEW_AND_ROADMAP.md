@@ -1,6 +1,6 @@
 # RallyIQ - Project Review and Roadmap
 
-Actualizado: 2026-08-15
+Actualizado: 2026-08-17
 
 Base de contraste:
 
@@ -13,13 +13,32 @@ Base de contraste:
   implementados en el repositorio, pero siguen inactivos hasta completar la
   migración y el rollout manual —el diseño quedó aprobado el 2026-08-15 en
   [`2026-08-15-entitlements-design.md`](docs/superpowers/specs/2026-08-15-entitlements-design.md),
-  con rollout pendiente—; el rate
-  limit de IA por usuario es local (Dexie) y el del servidor es un `Map` en
-  memoria de 20 req/60 s; no hay techo de gasto ni kill switch pese a un costo
-  medido de ~US$10/mes por usuario que agote Plan Builder; y `netlify.toml` no
-  define ningún header de seguridad. La sección declara explícitamente qué **no**
-  construir todavía: cola global sin medir, herramienta de analytics, gateway de
-  pago y Android.
+  con rollout pendiente—; los rate limits de IA server-side por usuario y el
+  techo de gasto/kill switch (puntos 3 y 4) **también están ya implementados**
+  —diseño aprobado el 2026-08-16 en
+  [`2026-08-16-ai-usage-rate-limits-design.md`](docs/superpowers/specs/2026-08-16-ai-usage-rate-limits-design.md),
+  ver §30—, pero igual que entitlements siguen inactivos hasta aplicar la
+  migración `021` y encender las flags; y `netlify.toml` no define ningún
+  header de seguridad. La sección declara explícitamente qué **no** construir
+  todavía: cola global sin medir, herramienta de analytics, gateway de pago y
+  Android.
+- **Límites durables de uso y gasto de IA implementados (2026-08-16/17):** ver
+  §Pre-Lanzamiento puntos 3 y 4 y §29bis. Cuota diaria durable por usuario en
+  Supabase (`ai_usage_daily`, `021`, de aplicación manual) con incremento
+  atómico check-and-increment, spend cap de US$3/cuenta y US$5/global por día,
+  y kill switch por env var — las tres cosas gatean en `coach.ts`,
+  `enqueue-plan-generation.ts` y `generate-plan-background.ts`, en el mismo
+  orden no negociable que entitlements y compartiendo su patrón de errores
+  tipados server/cliente. `enforceRateLimit` (ráfaga en memoria) se conserva
+  sin cambios como capa adicional. Trece tareas ejecutadas vía
+  subagent-driven-development, cada una con su revisión de tarea (6 de 13
+  necesitaron una ronda de fix, todas re-verificadas independientemente).
+  Verificación final: **449 archivos / 3664 tests**, lint, `tsc -b`, build y
+  `git diff --check` verdes. **Implementado y verificado localmente; pendiente
+  el mismo rollout manual que entitlements** (aplicar `021`, desplegar con
+  ambas flags apagadas, encender `AI_USAGE_LIMITS_ENABLED`, smoke dirigido de
+  cuota agotada en las tres funciones, probar y volver a apagar
+  `AI_KILL_SWITCH_ENABLED`).
 - **QA deportiva de arquetipos ejecutada y sus hallazgos cerrados (2026-08-13/14):** ver §28. Primera QA deportiva real sobre producción: cinco arquetipos, 12/12 semanas del cupo diario, ~US$0,35, **veredicto APROBADO PARCIAL**. El motor de generación quedó bien (1RM verificado contra el perfil, superseries deterministas vivas en prod, modalidad de squash sin cruces, taper protegido); la capa de persistencia de perfil y de ciclo de plan produjo siete hallazgos que el code review convirtió en nueve defectos verificados, todos corregidos. Los cuatro serios: el corte del ciclo de plan ignoraba el inicio futuro del plan nuevo y vaciaba el calendario intermedio; el preview subreportaba el borrado y su aviso nunca llegaba al usuario; conservar el perfil ante ausencia remota reabría la resurrección en el segundo dispositivo por el FK `on delete cascade` de `007`; y los planes legacy nunca se supersedían. `Session` gana `planId`/`planWeekId` sin migración. Suite: **414 archivos / 3371 tests**, `tsc -b`, lint, build y `git diff --check` verdes. Pendientes: deploy, un smoke dirigido de un solo recorrido, y el cascade de borrado de atleta, que **no se puede verificar con un solo dispositivo**.
 - **Squash — modalidad explícita y exposición semanal A2.5 implementadas (2026-08-10/11, `5ba9554`…`eed08af`):** ver §27. Los 49 drills tienen `sessionKind` y modo ejecutable explícitos; `either` queda fuera del catálogo; un hidratador compartido compone sin cruzar modalidades; y `squashKind` viaja por Plan Builder, Crear semana skeleton v2, chat, formulario, plantillas e import/export. A2.5 agrega mejor de 3 en base, regula build/peak por carga, limita taper a tres o más días del evento y hace que race cuente la competencia real, con vetos de partner, restricción médica y sobrecarga. Sin migraciones. Suite completa: **394 archivos / 3211 tests**, build, `tsc -b`, lint y `git diff --check` verdes. Pendiente rollout/monitoreo antes de retirar compatibilidad legacy.
 - **Semana y planificación endurecidas y mergeadas en `main` (2026-08-10, PR #11, `b3bb6c3` / merge `0059e6e`):** ver §26. La ausencia de macroplan pasa a ser `not_applicable` en vez de un falso `ok`; la card ofrece crear el plan sin ocultar carga/adherencia reales; la semana visible ya no reutiliza sesiones o resumen de otra semana durante un request; el arranque prioriza el pull de la semana solicitada antes del sync completo; el plan competitivo omite la semana parcial si ya no queda ningún día habilitado; y los drills de squash recuperan guía canónica aunque una fila persistida venga sin `notes`. Sin migraciones. Suite: 388 archivos / 3109 tests, `tsc -b`, lint y `git diff --check` verdes. Pendiente deploy/smoke; esto reduce el riesgo de estado obsoleto, pero **no sustituye** la validación real multi-dispositivo.
@@ -197,80 +216,121 @@ beta, punto 11). No al revés: **los entitlements no dependen de tener pagos.**
 
 ---
 
-#### 3. Rate limits de IA server-side por usuario — **P0**
+#### 3. Rate limits de IA server-side por usuario — **P0** · implementado, pendiente rollout
 
-**Estado real.** Hay dos capas y ninguna cierra el caso.
+**Estado real.** El código está implementado y verificado localmente, pero el
+blocker **sigue abierto** porque producción todavía corre con las dos capas
+viejas: `021_ai_usage_daily.sql` es de aplicación manual y `AI_USAGE_LIMITS_ENABLED`
+está apagada por defecto en runtime. Hasta completar el rollout, `coach.ts`
+sigue protegido solo por `enforceRateLimit` (ráfaga en memoria, **preservado sin
+cambios**, no reemplazado) y por la cuota local de Dexie
+(`DEFAULT_DAILY_AI_LIMITS`/`assertPlanBuilderWeekRateLimit`), ninguna de las
+cuales sobrevive un cambio de dispositivo o un borrado de IndexedDB. Verificación
+final: **449 archivos / 3664 tests**, lint, build, `tsc -b` y `git diff --check`
+verdes.
 
-- **Cliente (la que se ve en Ajustes).** `DEFAULT_DAILY_AI_LIMITS` en
-  `aiTelemetry.ts` — `chat_general` 80/día, `plan_builder_week` 12/día, etc. Se
-  evalúa **contra Dexie local**. Es una cuota por navegador: se resetea borrando
-  datos del sitio o cambiando de dispositivo. Además falla abierto a propósito
-  ("If local telemetry cannot be read, do not block the coach"). Lo mismo aplica
-  a `assertPlanBuilderWeekRateLimit` en `planBuilder/rateLimit.ts`.
-- **Servidor.** `enforceRateLimit` (`coach.ts:773`): 20 requests por 60 s
-  (`COACH_RATE_LIMIT_MAX` / `COACH_RATE_LIMIT_WINDOW_MS`), key `user:<id>`. El
-  bucket es un `Map` **en memoria del proceso**: no se comparte entre instancias
-  de Netlify y se pierde en cada cold start. Protege contra un bucle accidental,
-  no contra abuso ni contra el costo del día.
+La implementación sigue el diseño aprobado en
+[`docs/superpowers/specs/2026-08-16-ai-usage-rate-limits-design.md`](docs/superpowers/specs/2026-08-16-ai-usage-rate-limits-design.md):
 
-Un detalle a auditar junto con el punto 5: si `COACH_PROXY_REQUIRE_AUTH` quedara
-en `'false'` en producción, `resolveAuthContext` devuelve `anonymous` y el rate
-limit pasa a ser por IP sobre un endpoint abierto.
+- Tabla `ai_usage_daily` (`021`, de aplicación manual) con tres RPCs
+  `security definer`: `increment_ai_usage_if_under_limit` (check-and-increment
+  atómico, una sola sentencia SQL), `read_ai_usage_spend` (lectura agregada para
+  el spend cap del punto 4) e `increment_ai_usage_cost` (suma aditiva, no
+  sobreescritura — corrige un P0 real encontrado en revisión: todas las requests
+  de un bucket comparten fila diaria). Ningún usuario autenticado puede ejecutar
+  las tres RPC ni escribir en la tabla por ningún otro camino.
+- **Gate único, en las mismas tres funciones que ya gatea el punto 2:**
+  `coach.ts`, `enqueue-plan-generation.ts` y `generate-plan-background.ts`, en
+  el orden no negociable `auth → kill switch → entitlement → spend cap (lectura)
+  → cuota (incremento atómico) → proveedor → costo (post-respuesta)`. El
+  incremento ocurre **inmediatamente antes de cada llamada real al proveedor**
+  —cada retry y cada fallback vuelven a consumir— y **no hay reembolso**: un
+  intento que llegó al proveedor consumió cupo real sin importar el resultado.
+- **`enforceRateLimit` se conserva tal cual**, como capa adicional contra ráfagas
+  accidentales; la cuota diaria durable es una capa nueva encima, no un
+  reemplazo.
+- Fail-closed en toda la superficie del gate: un error de red, un JSON
+  ilegible, cardinalidad inesperada o una RPC ausente con los límites
+  encendidos nunca escapa como excepción cruda ni deja pasar la request — se
+  convierte en `503 server_error` y no llama al proveedor.
+- Errores tipados espejando el split ya usado por entitlements: clases
+  server-shaped (`UsageGateHttpError`) del lado de las Functions, clases
+  client-shaped (`QuotaExceededError`/`SpendCapExceededError`/
+  `KillSwitchActiveError`/`UsageGateUnavailableError`, todas `retryable = false`
+  por construcción) del lado del cliente, traducidas en el único punto donde un
+  error de servidor cruza al worker. Chat y Plan Builder muestran copy
+  específico por causa y **nunca** abren `UpsellCard` para estos tres códigos.
+- Un job de Plan Builder cortado por cuota agotada en attempt 1 no dispara
+  attempt 2, detiene el lanzamiento de semanas siguientes del mismo job (con
+  guard sincrónico contra duplicar escrituras bajo concurrencia 3) y cierra con
+  outcome `quota_exhausted` — distinto de `budget_exhausted` (wallclock).
+  Spend cap y kill switch cierran como `failed`, no `quota_exhausted`.
 
-**Qué falta.** Cuota **diaria y durable por usuario** en Supabase, leída antes de
-llamar al proveedor, en **las mismas tres funciones que gatea el punto 2**:
-`coach.ts`, `enqueue-plan-generation.ts` y `generate-plan-background.ts`. El dato
-de escritura ya existe —`coach_requests` (`018`) y `plan_generation_jobs` (`016`)
-registran por usuario—; lo que falta es el camino de lectura y el enforcement.
-
-Dos restricciones que hereda del spec de entitlements y que no se pueden
-reordenar: **el chequeo de entitlement va primero y el de cuota después** —una
-clase bloqueada por plan nunca debe reportarse como límite diario alcanzado, o el
-usuario recibe la oferta equivocada y vuelve mañana esperando que se renueve—; y
-la cuota de `chat_general` + `chat_action` es un **bucket compartido**, no dos
-contadores. El bloque de entitlements deja los contadores locales ya
-account-scoped, que hoy no lo están (`getDailyAIUsage` no filtra por usuario).
+**Qué falta.** Aplicar `021` (confirmando el nombre real del constraint contra
+el comentario que Task 1 dejó en el archivo), verificar permisos con service
+role, desplegar con `AI_USAGE_LIMITS_ENABLED=false`, y recién después encender
+la flag y correr el smoke dirigido (forzar `429 quota_exceeded` real en las tres
+funciones, confirmar `errorCode`/`detail`, confirmar que el costo se acumula en
+la fila `(user_id, usage_date, bucket_id)` correcta). El blocker se cierra sólo
+después de ese smoke.
 
 **Done.** Un usuario que agota su cuota recibe 429 desde el servidor aunque borre
 IndexedDB y entre desde otro dispositivo, con mensaje honesto y fila registrada.
 La cuota depende del tier.
 
-**Dependencias.** Punto 2. Se implementa junto con el punto 4: comparten el
-mismo camino de lectura.
+**Dependencias.** Punto 2. Comparte infraestructura y rollout con el punto 4 —
+mismo camino de lectura, mismo gate, mismas tres funciones.
 
 ---
 
-#### 4. Protección de costos y circuit breaker de IA — **P0**
+#### 4. Protección de costos y circuit breaker de IA — **P0** · implementado, pendiente rollout
 
-**Estado real.** No existe. Los únicos "presupuestos" en `coach.ts` son de
-**wallclock** (24 s de función, reparto por intento), no de dinero. No hay techo
-de gasto diario, ni kill switch, ni alerta. `estimated_cost_usd` se escribe por
-fila en `016` y `018`, pero **nadie lo lee para decidir nada**.
+**Estado real.** El código está implementado y verificado localmente junto con
+el punto 3 (mismo diseño, mismo gate, mismas tres funciones); el blocker sigue
+abierto por la misma razón: `021` sin aplicar y `AI_USAGE_LIMITS_ENABLED` /
+`AI_KILL_SWITCH_ENABLED` apagadas por defecto. Hasta entonces, los únicos
+"presupuestos" reales en producción siguen siendo de **wallclock** (24 s de
+función), no de dinero.
 
-El número que justifica esto está medido, no es miedo abstracto:
+El número que justifica esto sigue siendo el medido, no miedo abstracto:
 `OPTIMIZATION_AND_COSTS.md` §4 fija **≈US$0,029 por semana generada** y proyecta
 **≈US$10,44/mes** para un usuario que agote su rate limit de Plan Builder todos
-los días. Con 20 usuarios de beta, el peor caso es ~US$200/mes — y hoy nada lo
-detiene. El chat es mucho más barato (`gemini-2.5-flash`), así que el riesgo se
-concentra en Plan Builder.
+los días. Con 20 usuarios de beta, el peor caso es ~US$200/mes.
 
-**Qué falta.** (a) Techo de gasto diario **global** y por cuenta, evaluado desde
-las tablas que ya se escriben; (b) kill switch por variable de entorno que corte
-antes de llamar al proveedor y devuelva un error honesto; (c) una alerta cuando
-se cruza un umbral.
+- Caps **literales, no env vars**: US$3/cuenta/día, US$5/global/día
+  (`spendCapPolicy.ts`), evaluados por `evaluateSpendCaps` contra el agregado
+  de `read_ai_usage_spend`. Debajo del cap permite; igualdad y exceso rechazan;
+  cuenta y global devuelven el scope correcto — si ambos exceden a la vez,
+  prioriza el rechazo por cuenta.
+- Kill switch por variable de entorno (`AI_KILL_SWITCH_ENABLED`, solo el
+  literal `'true'` lo activa) que corta las tres funciones **antes** de tocar
+  el proveedor, incluso con `AI_USAGE_LIMITS_ENABLED` apagada — es
+  independiente del resto del gate.
+- El corte en el worker (`generate-plan-background.ts`) reutiliza el mismo
+  patrón de limpieza que ya usaba `terminalizeRejectedJob`: si el corte llega
+  después de que el enqueue ya escribió `generating`, el job se terminaliza en
+  vez de quedar colgado hasta el detector de stalled a los cinco minutos.
+- Alertas automáticas de gasto quedan **fuera de alcance** del diseño aprobado
+  (§11 del spec) — el circuit breaker es deliberadamente eso, no un dashboard.
+  El agregado server-side tampoco reemplaza la factura del proveedor, y el
+  spend cap es un breaker, no una transacción de presupuesto: la llamada que
+  cruza el cap ya se realizó, y llamadas concurrentes pueden leer un total
+  bajo el cap y quedar en vuelo al mismo tiempo — límite conocido y aceptado
+  por diseño (§10 del spec).
 
-Los tres cortes van en **las mismas tres funciones** del punto 2 —`coach.ts`,
-`enqueue-plan-generation.ts`, `generate-plan-background.ts`— y heredan de §4.3.1
-del spec de entitlements la obligación de **terminalizar el job** si el corte
-ocurre en el worker después de que el enqueue ya escribió `generating`: si no, el
-plan queda colgado cinco minutos hasta el detector de stalled.
+**Qué falta.** Los mismos pasos de rollout del punto 3 (son un solo bloque):
+aplicar `021`, desplegar con ambas flags apagadas, encender
+`AI_USAGE_LIMITS_ENABLED` y correr el smoke de cuota, y por separado confirmar
+en un ambiente de prueba que `AI_KILL_SWITCH_ENABLED=true` corta las tres
+funciones antes de volver a apagarla en producción — el kill switch queda
+listo y probado, pero apagado, para un incidente real.
 
 **Done.** Con el kill switch activo, ninguna clase de request llega al proveedor
 y la UI explica qué pasa. Superado el techo diario global, las llamadas nuevas se
-rechazan con 429 y queda registro. Ambos casos verificados con un test.
+rechazan con 429 y queda registro. Ambos casos verificados con tests.
 
-**Dependencias.** Puntos 2 y 3 — misma infraestructura de lectura, hacerlos en el
-mismo bloque.
+**Dependencias.** Puntos 2 y 3 — misma infraestructura de lectura, mismo
+rollout.
 
 ---
 
@@ -1717,6 +1777,112 @@ parte de este cierre.**
 
 Verificado: **416 archivos / 3390 tests**, `tsc -b`, lint, build y
 `git diff --check` verdes.
+
+### 30. Límites durables de uso y gasto de IA (2026-08-16/17)
+
+Cierra los Puntos 3 y 4 del §Pre-Lanzamiento: rate limit server-side por
+usuario durable en Supabase (no el `Map` en memoria de `enforceRateLimit`, que
+se conserva sin cambios como capa adicional contra ráfagas) más techo de gasto
+diario y kill switch. Diseño aprobado en
+[`docs/superpowers/specs/2026-08-16-ai-usage-rate-limits-design.md`](docs/superpowers/specs/2026-08-16-ai-usage-rate-limits-design.md),
+plan en
+[`docs/superpowers/plans/2026-08-16-ai-usage-rate-limits.md`](docs/superpowers/plans/2026-08-16-ai-usage-rate-limits.md).
+
+**Modelo de datos.** `021_ai_usage_daily.sql` (de aplicación manual): tabla
+`ai_usage_daily` con una fila por `(user_id, usage_date, bucket_id)` y tres RPC
+`security definer`, ninguna ejecutable por un usuario autenticado normal:
+
+- `increment_ai_usage_if_under_limit` — check-and-increment **atómico** en una
+  sola sentencia (`ON CONFLICT DO UPDATE ... WHERE`); cero filas devueltas
+  significa cupo agotado, exactamente el contrato que `429 quota_exceeded`
+  necesita sin condición de carrera.
+- `read_ai_usage_spend` — lectura agregada para el spend cap.
+- `increment_ai_usage_cost` — suma **aditiva** sobre `estimated_cost_usd`, no
+  un `UPDATE` que sobreescribe. Corrige un P0 real que la primera ronda de
+  revisión del plan encontró: todas las requests de un bucket comparten la
+  misma fila diaria, así que sobreescribir habría perdido el costo de cada
+  request menos la última.
+- `plan_generation_jobs.outcome` gana el valor `quota_exhausted`, distinto de
+  `budget_exhausted` (wallclock) — solo lo produce `QuotaExceededError`; spend
+  cap y kill switch cierran como `failed`.
+
+**Política pura.** `spendCapPolicy.ts`: `ACCOUNT_DAILY_SPEND_CAP_USD = 3`,
+`GLOBAL_DAILY_SPEND_CAP_USD = 5` — constantes literales, no env vars.
+`evaluateSpendCaps` es función pura sin I/O, testeada en paralelo a
+`entitlementPolicy.ts`.
+
+**Gate único, orden no negociable.** `netlify/functions/_shared/usageGate.ts`
+expone `assertUsageGate` (lanza) y `checkUsagePreflight` (no lanza, usado por
+el enqueue), cableadas en las mismas tres funciones que ya gatea entitlements
+— `coach.ts`, `enqueue-plan-generation.ts`, `generate-plan-background.ts` —
+respetando siempre `auth → kill switch → entitlement → spend cap (lectura) →
+cuota (incremento atómico) → proveedor → costo (post-respuesta)`. El
+incremento ocurre **inmediatamente antes de cada llamada real al proveedor**,
+incluyendo cada retry y cada fallback; **no hay reembolso** — no existe ningún
+camino de decremento en el código, así que un intento que llegó al proveedor
+consumió cupo real sin importar el resultado. Fail-closed en toda la
+superficie: red caída, JSON ilegible, cardinalidad inesperada o RPC ausente
+con los límites encendidos se convierten en `503 server_error` y nunca dejan
+pasar la request ni escapan como excepción cruda.
+
+**Errores tipados, mismo split que entitlements.** Server-shaped
+`UsageGateHttpError` (`.statusCode`/`.errorCode`/`.detail`) en Functions;
+client-shaped `QuotaExceededError`/`SpendCapExceededError`/
+`KillSwitchActiveError`/`UsageGateUnavailableError` en `src/`, las cuatro con
+`retryable = false` en el constructor. `translateUsageGateError` es el único
+punto donde un error server-shaped cruza a `asyncGenerationLoop.ts`. Chat
+(`formatError`) y Plan Builder (`usePlanBuilderStore.ts`, en los tres call
+sites que ya manejan rechazos de entitlement) muestran copy específico por
+causa y **nunca** abren `UpsellCard` para estos tres códigos — verificado que
+ninguno de los tres nuevos branches toca `entitlementOffer` ni
+`restoreAfterEntitlementRejection`.
+
+**Concurrencia.** Bajo `concurrency: 3` (default de producción), un rechazo de
+cuota casi simultáneo en varias semanas en vuelo no duplica escrituras de las
+semanas restantes — un guard sincrónico de un solo disparo
+(`usageGateMarked`) lo garantiza; sin él, la condición de carrera era real y
+se reprodujo con un test RED→GREEN antes del fix.
+
+**Kill switch.** `AI_KILL_SWITCH_ENABLED`, solo el literal `'true'` lo activa,
+corta las tres funciones antes de tocar el proveedor incluso con
+`AI_USAGE_LIMITS_ENABLED` apagada. En el worker, el corte reutiliza el mismo
+patrón de limpieza que `terminalizeRejectedJob` ya usaba para que un corte
+posterior a que el enqueue escribiera `generating` no deje el job colgado
+cinco minutos hasta el detector de stalled.
+
+**Ejecución.** Trece tareas vía `subagent-driven-development`: implementador
+fresco por tarea, revisión de tarea después de cada una, ciclo de fix
+retomando el mismo implementador. Seis de trece necesitaron una ronda de fix,
+todas con hallazgos reales confirmados contra el código y re-verificadas
+independientemente por un segundo revisor — no solo por el reporte del
+implementador. El plan en sí pasó cuatro rondas de revisión del owner antes de
+ejecutarse, encontrando 30 huecos reales entre las cuatro rondas (P0: el
+mismo bug de sobreescritura de costo del RPC; P1: timing del gate respecto al
+timeout y a la resolución de API key en `coach.ts`, forma no validada del
+`detail` traducido, imports rotos, método inexistente en el test de
+streaming; el resto P2/P3). Detalle completo de las cuatro rondas en el propio
+plan.
+
+**Verificación.** **449 archivos / 3664 tests**, lint, `tsc -b`, build y
+`git diff --check` verdes. Cobertura confirmada contra los 14 no-negociables
+del spec §9, uno por uno — varios por garantía estructural en vez de test con
+nombre (no existe ningún camino de decremento de cuota en el código; la fecha
+de costo se enhebra desde la reserva del gate, nunca se recalcula "hoy"; las
+cuatro clases de error tienen `retryable = false` hardcodeado en el
+constructor).
+
+**Pendiente, mismo patrón que entitlements (§Pre-Lanzamiento punto 2).**
+Aplicar `021` en producción (confirmando el nombre real del constraint,
+comentario dejado en el propio archivo), verificar permisos con service role,
+desplegar con `AI_USAGE_LIMITS_ENABLED=false` y `AI_KILL_SWITCH_ENABLED=false`,
+encender primero la cuota y correr el smoke dirigido — forzar `429
+quota_exceeded` real en las tres funciones, confirmar `errorCode`/`detail`
+correctos, confirmar que un job de Plan Builder cortado a mitad de camino
+queda `quota_exhausted` (no `generating` colgado), confirmar que el costo se
+acumula en la fila `(user_id, usage_date, bucket_id)` correcta — y probar el
+kill switch en un ambiente de prueba antes de dejarlo apagado en producción.
+**Nunca encender el cliente antes que el servidor**, mismo invariante que
+entitlements.
 
 ### Producto Publico Y Marca
 
