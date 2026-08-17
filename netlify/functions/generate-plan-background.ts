@@ -1,5 +1,6 @@
 import type { Handler } from '@netlify/functions'
 import type { TrainingPlan } from '../../src/types/planBuilder'
+import type { AIRawResponse, AIRequest } from '../../src/services/ai/types'
 import { shouldDedupeActiveGeneration } from '../../src/services/planBuilder/activeGeneration'
 import type {
   AsyncPlanGenerationWriter,
@@ -12,8 +13,21 @@ import {
   resolveEffectiveRunQualityVersion,
 } from '../../src/services/planBuilder/qualityReview'
 import { buildVariantId } from '../../src/services/planBuilder/telemetryVersions'
+import { estimateCostUsd } from '../../src/services/planBuilder/pricing'
 import { callAnthropicForWeek } from './_shared/anthropicCaller'
-import { resolveEffectivePlanBuilderConfig } from './_shared/planBuilderRunConfig'
+import {
+  resolveEffectivePlanBuilderConfig,
+  resolvePlanBuilderModel,
+  resolvePlanBuilderRequestDirectives,
+} from './_shared/planBuilderRunConfig'
+import {
+  assertUsageGate,
+  isKillSwitchActive,
+  makeKillSwitchError,
+  recordUsageCost,
+  type UsageGateHttpError,
+} from './_shared/usageGate'
+import { translateUsageGateError } from './_shared/translateUsageGateError'
 import {
   createJobId,
   createSupabaseWriter,
@@ -68,6 +82,69 @@ export async function terminalizeRejectedJob(
   }
 }
 
+/**
+ * Igual que `recordCostIfKnown` en `coach.ts` (Task 5) — duplicada a
+ * propósito, no compartida vía módulo: es una decisión revisada del plan.
+ * `promptTokens`/`completionTokens` distinguen "no reportó usage" de "cero
+ * real": un `?? 0` colapsaría ambos casos y perdería la advertencia
+ * operacional que exige el spec para usage o precio ausente.
+ * `cacheReadTokens`/`cacheCreationTokens` sí usan `?? 0` porque muchos
+ * proveedores nunca los reportan cuando no aplica caching — eso sí es cero
+ * genuino.
+ *
+ * Función de módulo, fuera del handler: recibe todo por parámetro y no
+ * depende de clausura, así que no hay razón para redefinirla en cada
+ * request.
+ */
+async function recordCostIfKnown(input: {
+  userId: string
+  reservation: { bucketId: string; usageDate: string }
+  result: {
+    // `AIRawResponse.model` es opcional (otros proveedores pueden omitirlo);
+    // `callAnthropicForWeek` siempre lo resuelve en la práctica
+    // (`anthropicCaller.ts`: `model: data.model ?? model`), pero el tipo no
+    // lo garantiza — se guarda como "costo no estimable" en vez de forzar
+    // el tipo con un cast.
+    model?: string
+    serviceTier?: string
+    promptTokens?: number
+    completionTokens?: number
+    cacheReadInputTokens?: number
+    cacheCreationInputTokens?: number
+  }
+}): Promise<void> {
+  const { model, promptTokens, completionTokens } = input.result
+  if (!model) {
+    console.warn('[usage-gate] costo no estimable: el proveedor no reportó modelo')
+    return
+  }
+  if (promptTokens == null || completionTokens == null) {
+    console.warn(`[usage-gate] costo no estimable: el proveedor no reportó usage (model=${model})`)
+    return
+  }
+  const costUsd = estimateCostUsd({
+    model,
+    at: Date.now(),
+    serviceTier: input.result.serviceTier,
+    inputTokens: promptTokens,
+    outputTokens: completionTokens,
+    cacheReadTokens: input.result.cacheReadInputTokens ?? 0,
+    cacheCreationTokens: input.result.cacheCreationInputTokens ?? 0,
+  })
+  if (costUsd == null) {
+    console.warn(`[usage-gate] costo no estimable: sin precio cargado para model=${input.result.model} serviceTier=${input.result.serviceTier ?? '(default)'}`)
+    return
+  }
+  // await, no `void`: en serverless una llamada disparada-y-olvidada puede
+  // quedar cortada si la función retorna antes de que termine el fetch.
+  await recordUsageCost({
+    userId: input.userId,
+    bucketId: input.reservation.bucketId,
+    usageDate: input.reservation.usageDate,
+    costUsd,
+  })
+}
+
 export const handler: Handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return json(405, { error: 'Method not allowed' })
@@ -97,6 +174,32 @@ export const handler: Handler = async (event) => {
         ? resolveEntitlementTier(bearer)
         : Promise.resolve('free' as Tier),
     ])
+
+    // Kill switch DESPUÉS de auth, ANTES de entitlement — mismo orden que
+    // coach.ts y enqueue-plan-generation.ts, para que las 3 funciones gateen
+    // en el mismo punto relativo del flujo. Incondicional (no depende de
+    // `gateEnabled`): igual que en coach.ts, el kill switch corta la
+    // generación completa, no solo el camino de entitlement.
+    if (isKillSwitchActive()) {
+      // Mismo tratamiento de limpieza que el rechazo de entitlement de abajo:
+      // esta función admite llamadas autenticadas directas y puede acuñar su
+      // propio jobId, así que un job ya encolado (enqueue lo dejó en
+      // `generating`) necesita terminalizarse igual que ante un rechazo de
+      // plan. El writer sólo se crea si hay un job durable que intentar
+      // limpiar.
+      const rejectedJobId = typeof body.jobId === 'string' && body.jobId
+        ? body.jobId
+        : undefined
+      const cleanupOutcome = rejectedJobId
+        ? await terminalizeRejectedJob(
+            createSupabaseWriter(auth.userId, auth.token),
+            body.plan.id,
+            rejectedJobId,
+          )
+        : 'skipped'
+      console.warn(`[generate-plan] kill switch active planId=${body.plan.id} cleanup=${cleanupOutcome}`)
+      throw makeKillSwitchError()
+    }
 
     if (gateEnabled) {
       try {
@@ -193,6 +296,55 @@ export const handler: Handler = async (event) => {
     await Promise.all(body.weeks.map((week) => writer.putWeek(week)))
     console.log(`[generate-plan] initial writes ok planId=${planId}`)
 
+    // Con `ENTITLEMENTS_ENABLED` apagado, `gateTier` resuelve siempre a
+    // 'free' — no hay auth de plan real. Si el gate de USO
+    // (`AI_USAGE_LIMITS_ENABLED`) se enciende en ese estado (rollout
+    // intermedio, o alguien lo activa sin activar entitlements), una clase
+    // `weekly`/`advanced` no tiene límite definido para 'free' en
+    // `QUOTA_BUCKETS`, así que `assertUsageGate` devolvería `null` (no
+    // gatea) justo para las clases más caras. `'advanced'` es el tier
+    // neutro acá: no bloquea nada por sí solo, solo evita que "nadie tiene
+    // límite" se lea como "cuota infinita". Mismo razonamiento que en
+    // `coach.ts`.
+    const effectiveTier: Tier = gateEnabled ? gateTier : 'advanced'
+
+    const gatedCallLLM = async (request: AIRequest): Promise<AIRawResponse> => {
+      // Config primero (síncrono, sin I/O): una config inválida no debe
+      // consumir cuota. `callAnthropicForWeek` vuelve a resolver
+      // model/directivas internamente (`anthropicCaller.ts:83-86`);
+      // redundante pero inofensivo, no se le cambia la firma pública. A
+      // diferencia de `coach.ts`, acá no hace falta reordenar ningún
+      // timeout: `callAnthropicForWeek` arma el suyo (`AbortController`)
+      // dentro de su propio cuerpo, invocado recién DESPUÉS de que el gate
+      // ya haya resuelto.
+      const apiKey = process.env['CLAUDE_API_KEY']
+      if (!apiKey) throw new Error('CLAUDE_API_KEY no configurada.')
+      const model = resolvePlanBuilderModel(process.env)
+      // Valida; el resultado se descarta a propósito — `callAnthropicForWeek`
+      // lo vuelve a resolver.
+      resolvePlanBuilderRequestDirectives(process.env, model)
+
+      let reservation: Awaited<ReturnType<typeof assertUsageGate>>
+      try {
+        reservation = await assertUsageGate({
+          userId: auth.userId,
+          requestClass: 'plan_builder_week',
+          tier: effectiveTier,
+        })
+      } catch (error) {
+        // Server-shaped (`UsageGateHttpError`) → client-shaped
+        // (`QuotaExceededError`/etc): el loop async reconoce el rechazo por
+        // `instanceof` sobre las clases de `usageGateError.ts`, no por el
+        // shape HTTP. Ver `translateUsageGateError.ts`.
+        throw translateUsageGateError(error as UsageGateHttpError)
+      }
+      const result = await callAnthropicForWeek(request)
+      if (reservation) {
+        await recordCostIfKnown({ userId: auth.userId, reservation, result })
+      }
+      return result
+    }
+
     const result = await runAsyncPlanGeneration({
       plan,
       weeks: body.weeks,
@@ -203,7 +355,7 @@ export const handler: Handler = async (event) => {
       repairInstructions: body.repairInstructions,
       jobId,
       writer,
-      callLLM: callAnthropicForWeek,
+      callLLM: gatedCallLLM,
       concurrency: effectiveConfig.concurrency,
       enqueuedAt,
       variant,
