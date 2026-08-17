@@ -1,4 +1,3 @@
-import type { HandlerEvent } from '@netlify/functions'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const handlerMocks = vi.hoisted(() => ({
@@ -26,6 +25,7 @@ vi.mock('../_shared/resolveEntitlement', async (importActual) => {
 
 import { assertPlanGenerationEntitlement } from '../_shared/resolveEntitlement'
 import { handler } from '../enqueue-plan-generation'
+import { buildEnqueueEvent } from './helpers/enqueuePlanTestHarness'
 
 const ORIGINAL_ENV = { ...process.env }
 
@@ -72,16 +72,7 @@ describe('enqueue-plan-generation entitlement wiring', () => {
     })
     handlerMocks.resolveAuthContext.mockReturnValue(authPending)
     handlerMocks.resolveEntitlementTier.mockResolvedValue('free')
-    const event = {
-      httpMethod: 'POST',
-      headers: { authorization: 'Bearer token-1' },
-      body: JSON.stringify({
-        plan: { id: 'plan-1' },
-        weeks: [{ id: 'week-1', planId: 'plan-1' }],
-        profile: {},
-        wizardConfig: {},
-      }),
-    } as unknown as HandlerEvent
+    const event = buildEnqueueEvent()
 
     const responsePending = handler(event, {} as never, () => undefined)
 

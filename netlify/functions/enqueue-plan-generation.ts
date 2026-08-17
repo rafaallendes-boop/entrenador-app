@@ -19,6 +19,7 @@ import {
   isEntitlementEnforcementEnabled,
   resolveEntitlementTier,
 } from './_shared/resolveEntitlement'
+import { checkUsagePreflight, isKillSwitchActive, makeKillSwitchError } from './_shared/usageGate'
 
 const BACKGROUND_FUNCTION = '/.netlify/functions/generate-plan-background'
 const BACKGROUND_INVOKE_TIMEOUT_MS = 10_000
@@ -81,7 +82,29 @@ export const handler: Handler = async (event) => {
     ])
     // Antes de cualquier escritura: un rechazo acá no debe dejar un plan en
     // 'generating' ni un jobId huérfano.
+    //
+    // Kill switch DESPUÉS de que `auth` está disponible (orden no negociable:
+    // auth → kill switch → entitlement), pero antes de ACTUAR sobre el
+    // entitlement o crear ningún writer/job. `resolveEntitlementTier` ya
+    // corrió en paralelo con auth arriba — eso es preexistente, no algo que
+    // este orden cambie.
+    if (isKillSwitchActive()) throw makeKillSwitchError()
+
     if (gateEnabled) assertPlanGenerationEntitlement(gateTier)
+
+    // Preflight de solo lectura: no reserva nada, solo evita crear un job que
+    // el worker (Task 8) va a rechazar igual por cuota/gasto agotados. Con
+    // gate de entitlements apagado el tier efectivo del resto del archivo es
+    // 'free', pero eso bloquearía plan_builder_week por completo en el
+    // preflight (mínimo advanced); como nadie es rechazado por plan cuando
+    // gateEnabled es false, tampoco corresponde inventar acá un tier ficticio
+    // que bloquee — se usa 'advanced' como valor neutro solo para resolver
+    // bucket/límite.
+    await checkUsagePreflight({
+      userId: auth.userId,
+      requestClass: 'plan_builder_week',
+      tier: gateEnabled ? gateTier : 'advanced',
+    })
 
     const writer = createSupabaseWriter(auth.userId, auth.token)
     const now = Date.now()
