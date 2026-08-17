@@ -118,6 +118,14 @@ grant execute on function public.increment_ai_usage_cost(uuid, text, date, numer
 -- solo cubre agotar la CUOTA DIARIA de plan_builder_week. Un rechazo por
 -- techo de gasto o kill switch durante el loop termina como 'failed' (ver
 -- asyncGenerationLoop.ts) — no comparte este outcome.
+
+-- ADVERTENCIA (paso de aplicación manual): 'plan_generation_jobs_outcome_check'
+-- es el nombre autogenerado por Postgres para el CHECK inline de
+-- 016_plan_generation_jobs.sql (que no declara constraint nombre explícito).
+-- Antes de aplicar esta migración en producción, confirmar el nombre real con:
+--   select conname from pg_constraint
+--   where conrelid = 'public.plan_generation_jobs'::regclass and contype = 'c';
+-- Si el nombre difiere, ajustar el drop constraint de abajo antes de aplicar.
 alter table public.plan_generation_jobs drop constraint plan_generation_jobs_outcome_check;
 alter table public.plan_generation_jobs add constraint plan_generation_jobs_outcome_check
   check (outcome in ('succeeded', 'partial', 'failed', 'cancelled', 'budget_exhausted', 'quota_exhausted'));
