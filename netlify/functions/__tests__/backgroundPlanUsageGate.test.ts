@@ -96,7 +96,7 @@ describe('generate-plan-background — usage gate', () => {
     expect(handlerMocks.createSupabaseWriter).not.toHaveBeenCalled()
   })
 
-  it('gate de cuota rechaza el primer attempt antes de llamar al proveedor real', async () => {
+  it('gate de cuota rechaza el primer attempt antes de llamar al proveedor real, y el rechazo llega traducido a runAsyncPlanGeneration', async () => {
     const writer = buildWriterStub(null)
     handlerMocks.createSupabaseWriter.mockReturnValue(writer)
     handlerMocks.assertUsageGate.mockRejectedValue(
@@ -106,6 +106,40 @@ describe('generate-plan-background — usage gate', () => {
     await handler(buildBackgroundEvent({ jobId: undefined }), {} as never)
 
     expect(handlerMocks.callAnthropicForWeek).not.toHaveBeenCalled()
+
+    // No basta con "el proveedor nunca se llamó" — eso también sería cierto
+    // si `gatedCallLLM` propagara el `UsageGateHttpError` crudo sin traducir
+    // (`translateUsageGateError` roto/revertido a passthrough). Estas dos
+    // aserciones sólo pueden pasar si `asyncGenerationLoop.ts` reconoció el
+    // error vía `isUsageGateRejection` (instanceof `QuotaExceededError`):
+    //
+    // 1. `assertUsageGate` se llamó UNA sola vez, sin segundo intento. Un
+    //    error crudo (no instanceof) cae al catch genérico de
+    //    `generateWeekCoreWithRetry`, que SÍ reintenta hasta
+    //    `MAX_WEEK_ATTEMPTS` (2) — así que un rechazo no reconocido habría
+    //    vuelto a invocar `gatedCallLLM`, y con él `assertUsageGate`, una
+    //    segunda vez.
+    expect(handlerMocks.assertUsageGate).toHaveBeenCalledTimes(1)
+
+    // 2. La semana final queda marcada con el mensaje por-causa que SOLO
+    //    emite la rama `isUsageGateRejection` de `asyncGenerationLoop.ts`
+    //    (`usageGateRejectionMessage`) — un literal distinto tanto del
+    //    mensaje del mock ('cupo agotado') como del mensaje propio de
+    //    `QuotaExceededError` ('Alcanzaste el cupo diario de esta
+    //    función.'). Si la traducción se rompe, ninguna de las dos ramas de
+    //    `asyncGenerationLoop.ts` produce este texto exacto.
+    const putWeekCalls = writer.putWeek.mock.calls as unknown as Array<[{
+      status: string
+      generationMeta: { lastError?: string; errorClass?: string }
+    }]>
+    const finalWeekCall = putWeekCalls[putWeekCalls.length - 1]?.[0]
+    expect(finalWeekCall).toMatchObject({
+      status: 'error',
+      generationMeta: expect.objectContaining({
+        lastError: 'Cuota diaria de IA agotada.',
+        errorClass: 'quota_exceeded',
+      }),
+    })
   })
 
   it('gate aceptado permite la llamada y registra costo después de la respuesta, esperado (no fire-and-forget)', async () => {
