@@ -83,6 +83,14 @@ export async function reservePlanBuilderWeekUsage(input: {
   return traceIds
 }
 
+/**
+ * Reserva/liberación local, solo para UX y para el snapshot de calidad del
+ * cliente (Ajustes → Diagnóstico IA). No tiene efecto sobre la cuota real:
+ * la autoridad server-side vive en `ai_usage_daily` y se consume vía
+ * `assertUsageGate` (netlify/functions/_shared/usageGate.ts), inmediatamente
+ * antes de cada llamada real al proveedor. Borrar IndexedDB reinicia este
+ * indicador local, pero nunca recupera cupo real.
+ */
 export async function releasePlanBuilderWeekReservations(input: {
   planId: string
   weekIndexes?: readonly number[]
