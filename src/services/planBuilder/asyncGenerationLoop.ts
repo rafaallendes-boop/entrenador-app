@@ -15,6 +15,12 @@ import { isLocalFallbackEligible } from './fallbackEligibility'
 import { summarizeTaxonomy } from './repairTaxonomy'
 import { estimateCostUsd } from './pricing'
 import { buildVariantId, type PlanBuilderVariantDescriptor } from './telemetryVersions'
+import {
+  KillSwitchActiveError,
+  QuotaExceededError,
+  SpendCapExceededError,
+  UsageGateUnavailableError,
+} from '../entitlements/usageGateError'
 
 export interface PlanGenerationAttemptTelemetry {
   athleteId: string
@@ -90,7 +96,7 @@ export interface PlanGenerationJobTelemetry {
   totalCacheCreationTokens: number
   /** Null si algún intento facturable no reportó usage, o el modelo no tiene precio. */
   estimatedCostUsd: number | null
-  outcome: 'succeeded' | 'partial' | 'failed' | 'cancelled' | 'budget_exhausted'
+  outcome: 'succeeded' | 'partial' | 'failed' | 'cancelled' | 'budget_exhausted' | 'quota_exhausted'
   variant: PlanGenerationJobVariant
   createdAt: number
 }
@@ -535,6 +541,36 @@ function buildAsyncRetryInstruction(
     ?? `${base} Usa formato estricto: targetDate=${week.weekStartDate}, ${expectedSessions} sesiones compactas y todas las fechas dentro de esa semana.`
 }
 
+type UsageGateRejection =
+  | QuotaExceededError
+  | SpendCapExceededError
+  | KillSwitchActiveError
+  | UsageGateUnavailableError
+
+// Un rechazo del gate de uso (cuota/gasto/kill switch) o una falla de la
+// infraestructura del gate en sí (`UsageGateUnavailableError`) no son fallos
+// del proveedor: no deben convertirse en `provider_failed`, no deben consumir
+// el segundo intento de `generateWeekCoreWithRetry` y no deben disparar
+// fallback local.
+function isUsageGateRejection(error: unknown): error is UsageGateRejection {
+  return error instanceof QuotaExceededError
+    || error instanceof SpendCapExceededError
+    || error instanceof KillSwitchActiveError
+    || error instanceof UsageGateUnavailableError
+}
+
+// Mensaje por causa para la semana marcada y para las semanas restantes del
+// mismo job. Deliberadamente NO es un único texto genérico de "cuota
+// agotada": spend cap y kill switch son fallas operacionales distintas de un
+// cupo agotado, y `UsageGateUnavailableError` conserva su mensaje real (falla
+// de infraestructura) para no perder esa señal en telemetría/UI.
+function usageGateRejectionMessage(error: UsageGateRejection): string {
+  if (error instanceof QuotaExceededError) return 'Cuota diaria de IA agotada.'
+  if (error instanceof SpendCapExceededError) return 'El servicio alcanzó su presupuesto diario.'
+  if (error instanceof KillSwitchActiveError) return 'La IA está temporalmente pausada.'
+  return error.message
+}
+
 async function generateWeekCoreWithRetry(input: {
   plan: TrainingPlan
   week: TrainingPlanWeek
@@ -606,6 +642,10 @@ async function generateWeekCoreWithRetry(input: {
         callLLM: input.callLLM,
       })
     } catch (error) {
+      // Un rechazo del gate de uso (o una falla del gate en sí) no es un fallo
+      // técnico del proveedor: se relanza sin convertir, para que no consuma
+      // el segundo intento ni se clasifique como `provider_failed`.
+      if (isUsageGateRejection(error)) throw error
       // Fallos técnicos del proveedor (timeout, 429, 5xx, red) también consumen
       // un intento y habilitan el reintento, igual que una semana inválida.
       const message = error instanceof Error ? error.message : String(error)
@@ -788,6 +828,13 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
 
   // Acumuladores del job (medición pura; no cambian la generación).
   let budgetExhausted = false
+  // Solo `QuotaExceededError` produce el outcome propio `quota_exhausted`.
+  let quotaExhausted = false
+  // Spend cap, kill switch o una falla de infraestructura del gate fuerzan
+  // `failed` sin la nuance de `partial`, aunque otra semana ya haya tenido
+  // éxito — son fallas operacionales, no una señal útil para planificar
+  // capacidad como sí lo es agotar la cuota.
+  let usageGateFailed = false
   let firstReadyAt: number | null = null
   let allTargetsTerminalAt: number | null = null
   const terminalTargets = new Set<number>()
@@ -836,10 +883,12 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
 
     const outcome: PlanGenerationJobTelemetry['outcome'] =
       cancelled ? 'cancelled'
-        : budgetExhausted ? 'budget_exhausted'
-          : succeeded === targetWeekIndexes.length && !threwDuringRun ? 'succeeded'
-            : succeeded > 0 && !threwDuringRun ? 'partial'
-              : 'failed'
+        : quotaExhausted ? 'quota_exhausted'
+          : usageGateFailed ? 'failed'
+            : budgetExhausted ? 'budget_exhausted'
+              : succeeded === targetWeekIndexes.length && !threwDuringRun ? 'succeeded'
+                : succeeded > 0 && !threwDuringRun ? 'partial'
+                  : 'failed'
 
     const job: PlanGenerationJobTelemetry = {
       jobId: input.jobId,
@@ -901,6 +950,26 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
         await input.writer.putWeek(erroredWeek)
         observeWeekWrite(erroredWeek)
         budgetExhausted = true
+      }
+    }
+
+    // Gemela de `markRemainingBudgetErrors`: terminaliza las semanas del job
+    // que todavía no se lanzaron con la causa REAL del rechazo (no un texto
+    // genérico de cuota), para que un rechazo del gate en la semana N no deje
+    // N+1..fin colgadas como `generating`/`pending` para siempre.
+    const markRemainingWeeksAsUsageGateRejected = async (
+      fromPosition: number,
+      error: UsageGateRejection,
+    ): Promise<void> => {
+      const message = usageGateRejectionMessage(error)
+      for (const remainingIndex of targetWeekIndexes.slice(fromPosition)) {
+        const remainingWeek = weeks.find((week) => week.weekIndex === remainingIndex)
+        if (!remainingWeek) continue
+        if (!input.targetWeekIndexes?.length && isReadyWeek(remainingWeek)) continue
+        const erroredWeek = makeErroredWeek(remainingWeek, message, getNow(), error.code, 0)
+        weeks = replaceWeek(weeks, erroredWeek)
+        await input.writer.putWeek(erroredWeek)
+        observeWeekWrite(erroredWeek)
       }
     }
 
@@ -1212,6 +1281,33 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
         })
         await input.writer.putPlan(plan)
       } catch (error) {
+        if (isUsageGateRejection(error)) {
+          // Un rechazo del gate de uso (o una falla del gate en sí) es
+          // terminal para todo el job, no solo para esta semana: no tiene
+          // sentido seguir lanzando semanas nuevas que van a chocar con el
+          // mismo cupo/presupuesto/kill switch.
+          stopLaunching = true
+          if (error instanceof QuotaExceededError) {
+            quotaExhausted = true
+          } else {
+            usageGateFailed = true
+          }
+          const message = usageGateRejectionMessage(error)
+          const erroredWeek = makeErroredWeek(generatingWeek, message, getNow(), error.code, 0)
+          weeks = replaceWeek(weeks, erroredWeek)
+          await input.writer.putWeek(erroredWeek)
+          observeWeekWrite(erroredWeek)
+          await markRemainingWeeksAsUsageGateRejected(targetPosition, error)
+          plan = buildPlanCheckpoint(plan, weeks, {
+            generationState: 'generating',
+            jobId: input.jobId,
+            startedAt,
+            updatedAt: erroredWeek.updatedAt,
+            cancelRequested: cancelled || undefined,
+          })
+          await input.writer.putPlan(plan)
+          return
+        }
         const message = error instanceof Error ? error.message : String(error)
         const erroredWeek = providerResult
           ? makeErroredWeekFromResult(
