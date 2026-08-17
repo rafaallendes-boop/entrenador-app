@@ -25,20 +25,31 @@ export const MAX_PAYLOAD_BYTES = 200 * 1024
  * path is reserved for ambiguous network failures where the request may still
  * have reached the server.
  */
+export type PlanEnqueueUsageRejectionCode = 'quota_exceeded' | 'spend_cap_exceeded' | 'kill_switch_active'
+
+export interface PlanEnqueueUsageRejectionDetail {
+  errorCode: PlanEnqueueUsageRejectionCode
+  detail?: unknown
+}
+
 export class PlanEnqueueRejectedError extends Error {
   readonly statusCode: number
   /** Metadata de oferta cuando el rechazo fue por plan; `null` en el resto. */
   readonly entitlement: EntitlementRequiredDetail | null
+  /** Cuota diaria, techo de gasto o kill switch; distinto de `entitlement`, `null` en el resto. */
+  readonly usageRejection: PlanEnqueueUsageRejectionDetail | null
 
   constructor(
     message: string,
     statusCode: number,
     entitlement: EntitlementRequiredDetail | null = null,
+    usageRejection: PlanEnqueueUsageRejectionDetail | null = null,
   ) {
     super(message)
     this.name = 'PlanEnqueueRejectedError'
     this.statusCode = statusCode
     this.entitlement = entitlement
+    this.usageRejection = usageRejection
   }
 }
 
@@ -118,10 +129,18 @@ export async function triggerBackgroundGeneration(
       && isEntitlementRequiredDetail(result.detail)
       ? result.detail
       : null
+    const usageRejection: PlanEnqueueUsageRejectionDetail | null = (
+      result.errorCode === 'quota_exceeded'
+      || result.errorCode === 'spend_cap_exceeded'
+      || result.errorCode === 'kill_switch_active'
+    )
+      ? { errorCode: result.errorCode, detail: result.detail }
+      : null
     throw new PlanEnqueueRejectedError(
       result.error ?? `No se pudo iniciar la generación async (${response.status}).`,
       response.status,
       entitlement,
+      usageRejection,
     )
   }
   return { jobId: result.jobId }

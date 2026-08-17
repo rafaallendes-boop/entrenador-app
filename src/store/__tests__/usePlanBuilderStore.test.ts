@@ -552,6 +552,127 @@ describe('usePlanBuilderStore', () => {
     expect(state.entitlementOffer).toBeNull()
   })
 
+  it('shows the daily quota copy on runGeneration rejection, never the entitlement offer', async () => {
+    const profile = await createShell()
+    const plan = usePlanBuilderStore.getState().plan!
+    mocks.supabase = { auth: {} }
+    mocks.authUser = { id: 'user-1' }
+    mocks.triggerBackgroundGeneration.mockRejectedValueOnce(
+      new PlanEnqueueRejectedError(
+        'Alcanzaste el cupo diario.',
+        429,
+        null,
+        { errorCode: 'quota_exceeded', detail: { bucketId: 'plan_builder_week', limit: 12, remaining: 0 } },
+      ),
+    )
+
+    await usePlanBuilderStore.getState().runGeneration(profile)
+
+    const state = usePlanBuilderStore.getState()
+    expect(state.status).toBe('error')
+    expect(state.plan?.generationState).toBe('failed')
+    expect(state.lastError).toContain('cupo diario')
+    expect(state.entitlementOffer).toBeNull()
+    expect(mocks.pollPlanGeneration).not.toHaveBeenCalled()
+    expect(mocks.plans.get(plan.id)?.generationState).toBe('failed')
+    expect(mocks.releasePlanBuilderWeekReservations).toHaveBeenCalledWith({
+      planId: plan.id,
+      weekIndexes: expect.arrayContaining(usePlanBuilderStore.getState().weeks.map((week) => week.weekIndex)),
+    })
+  })
+
+  it('shows the spend cap copy on regenerateWeek rejection, never the entitlement offer', async () => {
+    const profile = await createShell()
+    const shell = usePlanBuilderStore.getState()
+    const partialWeeks = shell.weeks.map((week, index) => (
+      index === 0 ? failedWeek(week) : generatedWeek(week)
+    ))
+    const partialPlan: TrainingPlan = {
+      ...shell.plan!,
+      generationState: 'partial',
+      generationSummary: {
+        startedAt: 1,
+        completedAt: 2,
+        heartbeatAt: 2,
+        strategy: 'single',
+        completedWeeks: partialWeeks.length - 1,
+        failedWeeks: [partialWeeks[0].weekIndex],
+        totalAttempts: 1,
+      },
+    }
+    await mocks.db.trainingPlans.put(partialPlan)
+    await mocks.db.trainingPlanWeeks.bulkPut(partialWeeks)
+    usePlanBuilderStore.setState({
+      plan: partialPlan,
+      weeks: partialWeeks,
+      status: 'partial',
+      completedWeeks: partialWeeks.length - 1,
+      failedWeekIndexes: [partialWeeks[0].weekIndex],
+      lastError: null,
+    })
+    mocks.supabase = { auth: {} }
+    mocks.authUser = { id: 'user-1' }
+    mocks.triggerBackgroundGeneration.mockRejectedValueOnce(
+      new PlanEnqueueRejectedError(
+        'El servicio alcanzó su presupuesto diario.',
+        429,
+        null,
+        { errorCode: 'spend_cap_exceeded', detail: { scope: 'global', capUsd: 5 } },
+      ),
+    )
+
+    await usePlanBuilderStore.getState().regenerateWeek(partialWeeks[0].weekIndex, profile)
+
+    const state = usePlanBuilderStore.getState()
+    expect(state.status).toBe('error')
+    expect(state.plan?.generationState).toBe('failed')
+    expect(state.lastError).toContain('presupuesto')
+    expect(state.entitlementOffer).toBeNull()
+  })
+
+  it('shows the kill switch copy on retryFailedWeeks rejection, never the entitlement offer', async () => {
+    const profile = await createShell()
+    const shell = usePlanBuilderStore.getState()
+    const failedWeeks = shell.weeks.map(failedWeek)
+    const failedIndexes = failedWeeks.map((week) => week.weekIndex)
+    const failedPlan: TrainingPlan = {
+      ...shell.plan!,
+      generationState: 'failed',
+      generationSummary: {
+        startedAt: 1,
+        completedAt: 2,
+        heartbeatAt: 2,
+        strategy: 'single',
+        completedWeeks: 0,
+        failedWeeks: failedIndexes,
+        totalAttempts: 1,
+      },
+    }
+    await mocks.db.trainingPlans.put(failedPlan)
+    await mocks.db.trainingPlanWeeks.bulkPut(failedWeeks)
+    usePlanBuilderStore.setState({
+      plan: failedPlan,
+      weeks: failedWeeks,
+      status: 'failed',
+      completedWeeks: 0,
+      failedWeekIndexes: failedIndexes,
+      lastError: null,
+    })
+    mocks.supabase = { auth: {} }
+    mocks.authUser = { id: 'user-1' }
+    mocks.triggerBackgroundGeneration.mockRejectedValueOnce(
+      new PlanEnqueueRejectedError('IA pausada.', 503, null, { errorCode: 'kill_switch_active' }),
+    )
+
+    await usePlanBuilderStore.getState().retryFailedWeeks(profile)
+
+    const state = usePlanBuilderStore.getState()
+    expect(state.status).toBe('error')
+    expect(state.plan?.generationState).toBe('failed')
+    expect(state.lastError).toContain('pausada')
+    expect(state.entitlementOffer).toBeNull()
+  })
+
   it('turns an entitlement rejection into an ephemeral offer and restores the pre-attempt snapshot', async () => {
     const profile = await createShell()
     const originalPlan = usePlanBuilderStore.getState().plan!

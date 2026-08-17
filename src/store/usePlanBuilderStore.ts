@@ -29,7 +29,11 @@ import {
   pollPlanGeneration,
   type PlanGenerationSnapshot,
 } from '../services/planBuilder/pollPlanGeneration'
-import { PlanEnqueueRejectedError, triggerBackgroundGeneration } from '../services/planBuilder/triggerBackgroundGeneration'
+import {
+  PlanEnqueueRejectedError,
+  triggerBackgroundGeneration,
+  type PlanEnqueueUsageRejectionCode,
+} from '../services/planBuilder/triggerBackgroundGeneration'
 import {
   assertPlanBuilderWeekRateLimit,
   releasePlanBuilderWeekReservations,
@@ -43,6 +47,15 @@ import { ATHLETE_PROFILE_LOCAL_ID, getActiveAthleteId, getSwitchEpoch } from '..
 import type { EntitlementRequiredDetail } from '../services/entitlements/entitlementError'
 
 const EMPTY_DRAFT_WEEKS_MESSAGE = 'No encontramos semanas para este plan. Descártalo y vuelve a prepararlo desde el inicio.'
+
+// Copy específico para rechazos de cuota/costo/kill switch (servidor).
+// Deliberadamente NO abre UpsellCard: no es una oferta de plan, es un límite
+// operativo temporal — ver PlanEnqueueRejectedError.usageRejection.
+const USAGE_REJECTION_COPY: Record<PlanEnqueueUsageRejectionCode, string> = {
+  quota_exceeded: 'Alcanzaste el cupo diario de Plan Builder. Vuelve a intentarlo mañana.',
+  spend_cap_exceeded: 'El servicio alcanzó su presupuesto diario. Vuelve a intentarlo mañana.',
+  kill_switch_active: 'La IA está temporalmente pausada. Volvé a intentarlo más tarde.',
+}
 
 export type PlanBuilderStatus =
   | 'idle'
@@ -708,6 +721,22 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
         })
         return
       }
+      // Cuota/costo/kill switch: rechazo definitivo pero no es una oferta de
+      // plan, así que nunca toca entitlementOffer/UpsellCard.
+      if (error instanceof PlanEnqueueRejectedError && error.usageRejection) {
+        if (reservedRemoteUsage) {
+          await releaseReservedRemoteUsage(nextPlan.id, targetWeekIndexes)
+        }
+        await markGenerationStartRejected({
+          plan: nextPlan,
+          weeks: resetWeeks,
+          message: USAGE_REJECTION_COPY[error.usageRejection.errorCode],
+          set,
+          publishRemote: remotePlanPublished,
+          epochAtStart: switchEpochAtStart,
+        })
+        return
+      }
       // A definitive start failure means the worker never started: surface it
       // instead of resuming into a poll that can only end in a stalled state.
       if (error instanceof PlanEnqueueRejectedError || !remotePlanPublished) {
@@ -863,6 +892,23 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
         })
         return
       }
+      // Cuota/costo/kill switch: rechazo definitivo pero no es una oferta de
+      // plan, así que nunca toca entitlementOffer/UpsellCard.
+      if (error instanceof PlanEnqueueRejectedError && error.usageRejection) {
+        if (reservedRemoteUsage) {
+          await releaseReservedRemoteUsage(generatingPlan.id, targetWeekIndexes)
+        }
+        await markGenerationStartRejected({
+          plan: generatingPlan,
+          weeks: nextWeeks,
+          message: USAGE_REJECTION_COPY[error.usageRejection.errorCode],
+          set,
+          publishRemote: remotePlanPublished,
+          failedWeekIndexes: targetWeekIndexes,
+          epochAtStart: switchEpochAtStart,
+        })
+        return
+      }
       // A definitive start failure means the worker never started: surface it
       // instead of resuming into a poll that can only end in a stalled state.
       if (error instanceof PlanEnqueueRejectedError || !remotePlanPublished) {
@@ -988,6 +1034,23 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
           set,
           publishRemote: remotePlanPublished,
           accountUserIdAtStart,
+          epochAtStart: switchEpochAtStart,
+        })
+        return
+      }
+      // Cuota/costo/kill switch: rechazo definitivo pero no es una oferta de
+      // plan, así que nunca toca entitlementOffer/UpsellCard.
+      if (error instanceof PlanEnqueueRejectedError && error.usageRejection) {
+        if (reservedRemoteUsage) {
+          await releaseReservedRemoteUsage(generatingPlan.id, failedWeekIndexes)
+        }
+        await markGenerationStartRejected({
+          plan: generatingPlan,
+          weeks: nextWeeks,
+          message: USAGE_REJECTION_COPY[error.usageRejection.errorCode],
+          set,
+          publishRemote: remotePlanPublished,
+          failedWeekIndexes,
           epochAtStart: switchEpochAtStart,
         })
         return
