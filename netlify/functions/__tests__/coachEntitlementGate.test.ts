@@ -1,10 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Sin este mock se ejerce el wrapper de AWS (`awslambda`) en vez del handler.
-vi.mock('@netlify/functions', () => ({
-  stream: <T>(handler: T) => handler,
-}))
-
 const mocks = vi.hoisted(() => ({
   entitlementEnabled: vi.fn(() => false),
   resolveEntitlementTier: vi.fn(async () => 'free' as const),
@@ -25,33 +20,14 @@ vi.mock('../_shared/coachRequestTelemetry', async (importOriginal) => {
   return { ...actual, insertCoachRequestRow: mocks.insertCoachRequestRow }
 })
 
-import { handler, normalizeErrorForTest } from '../coach'
+// Importado ANTES que `../coach`: el harness registra el mock de
+// `@netlify/functions` como efecto de su propia carga, y `coach.ts` debe
+// verlo ya registrado cuando se evalúe (acá mismo, o transitivamente vía
+// el harness) — ver el comentario en `helpers/coachTestHarness.ts`.
+import { callHandler, stubAuthFetch } from './helpers/coachTestHarness'
+import { normalizeErrorForTest } from '../coach'
 
 const AUTHED_USER_ID = '55555555-5555-4555-8555-555555555555'
-
-interface HandlerResult {
-  statusCode: number
-  body?: unknown
-}
-
-function callHandler(
-  body: Record<string, unknown>,
-  token = 'tok',
-): Promise<HandlerResult> {
-  return (handler as unknown as (
-    event: unknown,
-    context: unknown,
-    callback: () => void,
-  ) => Promise<HandlerResult>)(
-    {
-      httpMethod: 'POST',
-      body: JSON.stringify(body),
-      headers: { authorization: `Bearer ${token}` },
-    },
-    {},
-    () => undefined,
-  )
-}
 
 function makeDeferred<T>(): {
   promise: Promise<T>
@@ -70,12 +46,7 @@ beforeEach(() => {
   mocks.resolveEntitlementTier.mockReset()
   mocks.resolveEntitlementTier.mockResolvedValue('free')
   mocks.insertCoachRequestRow.mockClear()
-  vi.stubEnv('SUPABASE_URL', 'https://example.supabase.co')
-  vi.stubEnv('SUPABASE_ANON_KEY', 'anon')
-  vi.stubGlobal('fetch', vi.fn(async () => ({
-    ok: true,
-    json: async () => ({ id: AUTHED_USER_ID }),
-  })))
+  stubAuthFetch({ userId: AUTHED_USER_ID })
 })
 
 afterEach(() => {

@@ -37,6 +37,13 @@ import {
   isEntitlementEnforcementEnabled,
   resolveEntitlementTier,
 } from './_shared/resolveEntitlement'
+import {
+  assertUsageGate,
+  isKillSwitchActive,
+  makeKillSwitchError,
+  recordUsageCost,
+} from './_shared/usageGate'
+import { estimateCostUsd } from '../../src/services/planBuilder/pricing'
 
 export { mapGeminiUsage, mapOpenAIUsage } from '../../src/services/ai/providerUsage'
 
@@ -49,7 +56,10 @@ type RequestClass =
   | 'plan_builder_week'
   | 'plan_builder_pair'
   | 'import_extract'
-type TechnicalErrorCode = 'timeout' | 'rate_limit' | 'parse_error' | 'server_error' | 'misconfigured' | 'unknown' | 'unauthorized' | 'entitlement_required'
+type TechnicalErrorCode =
+  | 'timeout' | 'rate_limit' | 'parse_error' | 'server_error' | 'misconfigured'
+  | 'unknown' | 'unauthorized' | 'entitlement_required'
+  | 'quota_exceeded' | 'spend_cap_exceeded' | 'kill_switch_active'
 type ResponseSchema = Record<string, unknown>
 
 interface CoachRequest {
@@ -518,6 +528,20 @@ function normalizeError(error: unknown): NormalizedServerError {
   // descartaría su `detail`, dejando la oferta sin datos para armarse.
   if (statusCode === 403 && err.errorCode === 'entitlement_required') {
     return makeError(message, 403, 'entitlement_required', false, err.detail)
+  }
+  // Igual razonamiento que entitlement_required: estos tres ya traen su
+  // propio código y `detail` desde `_shared/usageGate` — aplanarlos a
+  // `rate_limit`/`timeout` genéricos los volvería reintentables (serían
+  // retryable=true) y les borraría el `detail` que la UI necesita para
+  // mostrar la oferta/cupo correctos en vez de un error técnico.
+  if (statusCode === 429 && err.errorCode === 'quota_exceeded') {
+    return makeError(message, 429, 'quota_exceeded', false, err.detail)
+  }
+  if (statusCode === 429 && err.errorCode === 'spend_cap_exceeded') {
+    return makeError(message, 429, 'spend_cap_exceeded', false, err.detail)
+  }
+  if (statusCode === 503 && err.errorCode === 'kill_switch_active') {
+    return makeError(message, 503, 'kill_switch_active', false)
   }
   if (statusCode === 401 || statusCode === 403) {
     return makeError(message, statusCode, 'unauthorized')
@@ -1364,8 +1388,65 @@ async function invokeProvider(
   }
 }
 
+/**
+ * Registra el costo solo cuando el proveedor efectivamente reportó usage —
+ * ver §3.3 del spec de entitlements. `promptTokens`/`completionTokens`
+ * ausentes (no `0`, ausentes) NO deben leerse como "cero tokens": eso
+ * colapsaría "desconocido" y "cero real" en el mismo valor y perdería la
+ * advertencia operacional que el spec exige para usage desconocido o precio
+ * ausente. `cacheReadTokens`/`cacheCreationTokens` sí usan `?? 0` porque
+ * muchos modelos/proveedores nunca los reportan cuando no aplica caching —
+ * eso es genuinamente cero, no "desconocido".
+ *
+ * Función de módulo, fuera de `executeWithPolicy`: recibe todo por
+ * parámetro y no depende de su clausura, así que no hay razón para
+ * redefinirla en cada request.
+ */
+async function recordCostIfKnown(input: {
+  userId: string
+  reservation: { bucketId: string; usageDate: string }
+  result: {
+    model: string
+    serviceTier?: string
+    promptTokens?: number
+    completionTokens?: number
+    cacheReadInputTokens?: number
+    cacheCreationInputTokens?: number
+  }
+}): Promise<void> {
+  const { promptTokens, completionTokens } = input.result
+  if (promptTokens == null || completionTokens == null) {
+    console.warn(`[usage-gate] costo no estimable: el proveedor no reportó usage (model=${input.result.model})`)
+    return
+  }
+  const costUsd = estimateCostUsd({
+    model: input.result.model,
+    at: Date.now(),
+    serviceTier: input.result.serviceTier,
+    inputTokens: promptTokens,
+    outputTokens: completionTokens,
+    cacheReadTokens: input.result.cacheReadInputTokens ?? 0,
+    cacheCreationTokens: input.result.cacheCreationInputTokens ?? 0,
+  })
+  if (costUsd == null) {
+    console.warn(`[usage-gate] costo no estimable: sin precio cargado para model=${input.result.model} serviceTier=${input.result.serviceTier ?? '(default)'}`)
+    return
+  }
+  // await, no `void`: en serverless una llamada disparada-y-olvidada puede
+  // quedar cortada si la función retorna antes de que termine el fetch.
+  // `recordUsageCost` nunca lanza (best-effort interno), así que esperar
+  // acá no arriesga la respuesta al usuario.
+  await recordUsageCost({
+    userId: input.userId,
+    bucketId: input.reservation.bucketId,
+    usageDate: input.reservation.usageDate,
+    costUsd,
+  })
+}
+
 async function executeWithPolicy(
   req: CoachRequest,
+  gateContext: { userId: string; tier: Tier },
   onChunk?: (chunk: string) => void,
 ): Promise<ProviderExecutionResult> {
   const requestClass = normalizeRequestClass(req.requestClass)
@@ -1389,8 +1470,25 @@ async function executeWithPolicy(
   const runAttempt = async (provider: ProviderName, attemptsRemaining: number) => {
     attemptIndex += 1
     const thisAttempt = attemptIndex
-    let attemptTimeoutMs = computeAttemptTimeoutMs(deadline, attemptsRemaining)
+
+    // Telemetría del intento COMPLETO, incluido el tiempo del gate — usada
+    // por `logCoachAttempt` en las dos ramas (éxito y error). No confundir
+    // con `providerStartedAt` más abajo, que arranca después del gate y
+    // mide únicamente la ventana real del timer/proveedor.
     const attemptStartedAt = Date.now()
+
+    // Config primero (síncrono, sin I/O): una config inválida no debe
+    // consumir cuota. `invokeProvider` los vuelve a resolver internamente;
+    // redundante pero inofensivo, no se le cambia la firma.
+    resolveModel(provider, requestClass)
+    resolveApiKey(provider)
+
+    // Cálculo del presupuesto, en la misma posición que antes de este
+    // cambio (antes del `try`, antes del gate): si no queda presupuesto,
+    // lanza acá y nunca llega al gate — gastar cuota en un intento
+    // condenado a 504 sería peor que no gatear.
+    let attemptTimeoutMs = computeAttemptTimeoutMs(deadline, attemptsRemaining)
+
     const controller = new AbortController()
     let timeoutId: ReturnType<typeof setTimeout> | undefined
     let streamingDeadlineExtended = false
@@ -1398,19 +1496,36 @@ async function executeWithPolicy(
       if (timeoutId) clearTimeout(timeoutId)
       timeoutId = setTimeout(() => controller.abort(), ms)
     }
-    const extendTimeoutForStreaming = () => {
-      if (streamingDeadlineExtended) return
-      streamingDeadlineExtended = true
-      const remainingBudget = deadline - Date.now()
-      if (remainingBudget <= 0) {
-        controller.abort()
-        return
-      }
-      attemptTimeoutMs = Date.now() - attemptStartedAt + remainingBudget
-      armTimeout(remainingBudget)
-    }
-    armTimeout(attemptTimeoutMs)
+
     try {
+      // Gate de cuota/costo: después de validar config y calcular (no
+      // armar) el presupuesto, antes del timer real y antes de
+      // `invokeProvider` — así el RPC del gate (hasta 3s) no le come reloj
+      // al proveedor.
+      const reservation = await assertUsageGate({
+        userId: gateContext.userId,
+        requestClass,
+        tier: gateContext.tier,
+      })
+
+      // El timer real arranca DESPUÉS del gate. `providerStartedAt` es el
+      // punto desde el que cuenta `attemptTimeoutMs` — `extendTimeoutForStreaming`
+      // necesita este punto, no `attemptStartedAt`, para no confundir la
+      // latencia del gate con la latencia del proveedor.
+      const providerStartedAt = Date.now()
+      const extendTimeoutForStreaming = () => {
+        if (streamingDeadlineExtended) return
+        streamingDeadlineExtended = true
+        const remainingBudget = deadline - Date.now()
+        if (remainingBudget <= 0) {
+          controller.abort()
+          return
+        }
+        attemptTimeoutMs = Date.now() - providerStartedAt + remainingBudget
+        armTimeout(remainingBudget)
+      }
+      armTimeout(attemptTimeoutMs)
+
       const result = await invokeProvider(
         provider,
         req,
@@ -1446,6 +1561,9 @@ async function executeWithPolicy(
         responseSchemaCharCount,
         maxTokens: req.maxTokens,
       })
+      if (reservation) {
+        await recordCostIfKnown({ userId: gateContext.userId, reservation, result })
+      }
       return result
     } catch (error) {
       const normalized = (error as Error).name === 'AbortError'
@@ -1539,6 +1657,7 @@ async function executeWithPolicy(
 
 function streamResponse(
   req: CoachRequest,
+  gateContext: { userId: string; tier: Tier },
   timing: { requestReceivedAt: number; authDurationMs: number },
   persistence?: { userId: string; token: string },
 ): StreamingResponse {
@@ -1551,7 +1670,7 @@ function streamResponse(
       void (async () => {
         let sentAnyChunk = false
         try {
-          const result = await executeWithPolicy(req, (chunk) => {
+          const result = await executeWithPolicy(req, gateContext, (chunk) => {
             sentAnyChunk = true
             controller.enqueue(encoder.encode(`${JSON.stringify({ type: 'chunk', chunk, traceId })}\n`))
           })
@@ -1608,6 +1727,7 @@ function streamResponse(
             requestClass,
             error: normalized.message,
             errorCode: normalized.errorCode ?? 'unknown',
+            ...(normalized.detail !== undefined ? { detail: normalized.detail } : {}),
             authDurationMs: timing.authDurationMs,
             serverDurationMs,
           })}\n`))
@@ -1644,6 +1764,11 @@ export const handler = stream(async (event: HandlerEvent): Promise<StreamingResp
   const authStartedAt = Date.now()
   let authDurationMs = 0
   let persistence: { userId: string; token: string } | undefined
+  // Hoisteado, mismo patrón que `persistence`: `auth`/`gateTier` se declaran
+  // con `const` dentro del `try` de abajo, así que lo que se necesita
+  // después de ese bloque (las 2 llamadas a `executeWithPolicy`/`streamResponse`)
+  // tiene que vivir afuera.
+  let gateContext: { userId: string; tier: Tier } | undefined
   try {
     const bearer = getBearerToken(event)
     const gateEnabled = isEntitlementEnforcementEnabled()
@@ -1653,20 +1778,30 @@ export const handler = stream(async (event: HandlerEvent): Promise<StreamingResp
         ? resolveEntitlementTier(bearer)
         : Promise.resolve('free' as Tier),
     ])
+
+    // Kill switch DESPUÉS de auth (orden no negociable: auth → kill switch
+    // → entitlement), no antes — mismo orden que `enqueue-plan-generation.ts`
+    // y `generate-plan-background.ts`, para que las 3 funciones gateen en el
+    // mismo punto relativo del flujo.
+    if (isKillSwitchActive()) {
+      throw makeKillSwitchError()
+    }
+
     const token = bearer
     if (token && auth.userId !== ANONYMOUS_USER_ID) {
       persistence = { userId: auth.userId, token }
     }
     enforceRateLimit(auth)
 
+    // Con auth desactivada no existe una identidad verificada a la cual
+    // atribuir un tier: ese caller es Free, incluso si envía un bearer.
+    const currentTier = auth.userId === ANONYMOUS_USER_ID ? 'free' : gateTier
+
     // Entitlement ANTES que cualquier cuota: una clase bloqueada por plan no
     // puede reportarse como límite diario, o el usuario recibe la oferta
     // equivocada y vuelve mañana esperando que se le renueve.
     if (gateEnabled) {
       const gateClass = normalizeRequestClass(req.requestClass)
-      // Con auth desactivada no existe una identidad verificada a la cual
-      // atribuir un tier: ese caller es Free, incluso si envía un bearer.
-      const currentTier = auth.userId === ANONYMOUS_USER_ID ? 'free' : gateTier
       if (!isClassAllowed(currentTier, gateClass)) {
         const requiredTier = minTierForClass(gateClass) ?? 'advanced'
         const detail = buildEntitlementDetail(gateClass, requiredTier, currentTier)
@@ -1679,6 +1814,18 @@ export const handler = stream(async (event: HandlerEvent): Promise<StreamingResp
         )
       }
     }
+
+    // Con `ENTITLEMENTS_ENABLED` apagado, `gateTier`/`currentTier` resuelven
+    // siempre a 'free' — no hay auth de plan real. Si el gate de USO
+    // (`AI_USAGE_LIMITS_ENABLED`) se enciende en ese estado (rollout
+    // intermedio, o alguien lo activa sin activar entitlements), una clase
+    // `weekly`/`advanced` no tiene límite definido para 'free' en
+    // `QUOTA_BUCKETS`, así que `assertUsageGate` devolvería `null` (no
+    // gatea) justo para las clases más caras. `'advanced'` es el tier
+    // neutro acá: no bloquea nada por sí solo, solo evita que "nadie tiene
+    // límite" se lea como "cuota infinita".
+    gateContext = { userId: auth.userId, tier: gateEnabled ? currentTier : 'advanced' }
+
     authDurationMs = Date.now() - authStartedAt
   } catch (error) {
     authDurationMs = Date.now() - authStartedAt
@@ -1762,11 +1909,13 @@ export const handler = stream(async (event: HandlerEvent): Promise<StreamingResp
   }
 
   if (req.stream) {
-    return streamResponse(req, { requestReceivedAt, authDurationMs }, persistence)
+    // `gateContext!`: si llegamos hasta acá, el try del bloque de auth de
+    // arriba no lanzó, así que está asignado.
+    return streamResponse(req, gateContext!, { requestReceivedAt, authDurationMs }, persistence)
   }
 
   try {
-    const result = await executeWithPolicy(req)
+    const result = await executeWithPolicy(req, gateContext!)
     const serverDurationMs = Date.now() - requestReceivedAt
     const response = { ...result, authDurationMs, serverDurationMs }
     recordCoachRequest({
@@ -1811,6 +1960,7 @@ export const handler = stream(async (event: HandlerEvent): Promise<StreamingResp
     return json(normalized.statusCode ?? 500, {
       error: normalized.message,
       errorCode: normalized.errorCode ?? 'unknown',
+      ...(normalized.detail !== undefined ? { detail: normalized.detail } : {}),
       traceId: req.traceId,
       requestClass: normalizeRequestClass(req.requestClass),
       generationId: req.generationId,
