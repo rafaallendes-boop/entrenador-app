@@ -19,6 +19,13 @@ import { isSupabaseConfigured, supabase } from '../../auth'
 import { ApiUrlConfigurationError, resolveApiUrl } from '../../apiUrl'
 import { classifyProxyHttpError } from './proxyHttpError'
 import type { ProxyErrorPayload } from './proxyHttpError'
+import {
+  KillSwitchActiveError,
+  QuotaExceededError,
+  SpendCapExceededError,
+  isQuotaExceededDetail,
+  isSpendCapExceededDetail,
+} from '../../entitlements/usageGateError'
 
 const FUNCTION_PATH = '/.netlify/functions/coach'
 
@@ -230,6 +237,7 @@ export class ProxyProvider implements AIProvider {
             fallbackUsed?: boolean
             error?: string
             errorCode?: AIErrorCode
+            detail?: unknown
             traceId?: string
             truncated?: boolean
             finishReason?: string
@@ -278,6 +286,15 @@ export class ProxyProvider implements AIProvider {
               truncated = true
               truncatedErrorClass = event.errorCode
               break
+            }
+            if (event.errorCode === 'quota_exceeded' && isQuotaExceededDetail(event.detail)) {
+              throw new QuotaExceededError(event.detail)
+            }
+            if (event.errorCode === 'spend_cap_exceeded' && isSpendCapExceededDetail(event.detail)) {
+              throw new SpendCapExceededError(event.detail)
+            }
+            if (event.errorCode === 'kill_switch_active') {
+              throw new KillSwitchActiveError()
             }
             throw createProviderError('gemini', event.errorCode ?? 'unknown', event.error ?? 'Streaming falló.')
           }

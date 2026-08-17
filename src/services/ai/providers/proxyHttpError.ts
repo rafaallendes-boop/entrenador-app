@@ -2,6 +2,13 @@ import {
   EntitlementRequiredError,
   isEntitlementRequiredDetail,
 } from '../../entitlements/entitlementError'
+import {
+  KillSwitchActiveError,
+  QuotaExceededError,
+  SpendCapExceededError,
+  isQuotaExceededDetail,
+  isSpendCapExceededDetail,
+} from '../../entitlements/usageGateError'
 import { createProviderError } from '../types'
 import type { AIErrorCode } from '../types'
 
@@ -28,6 +35,26 @@ export function classifyProxyHttpError(
     && isEntitlementRequiredDetail(data.detail)
   ) {
     throw new EntitlementRequiredError(data.detail)
+  }
+
+  if (
+    res.status === 429
+    && data.errorCode === 'quota_exceeded'
+    && isQuotaExceededDetail(data.detail)
+  ) {
+    throw new QuotaExceededError(data.detail)
+  }
+
+  if (
+    res.status === 429
+    && data.errorCode === 'spend_cap_exceeded'
+    && isSpendCapExceededDetail(data.detail)
+  ) {
+    throw new SpendCapExceededError(data.detail)
+  }
+
+  if (res.status === 503 && data.errorCode === 'kill_switch_active') {
+    throw new KillSwitchActiveError()
   }
 
   if (res.status === 401 || res.status === 403) {
