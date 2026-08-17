@@ -952,7 +952,7 @@ function buildNormalizationWarnings(response: CoachNormalizedResponse): string[]
 
 // ─── Error formatting ──────────────────────────────────────────────────────────
 
-function formatError(e: unknown): string {
+export function formatError(e: unknown): string {
   if (e instanceof AIProviderError) {
     switch (e.code) {
       case 'unauthorized':
@@ -961,6 +961,12 @@ function formatError(e: unknown): string {
         return 'RallyIQ no está configurado correctamente en el servidor.'
       case 'entitlement_required':
         return 'Esta función está en un plan superior. Mirá los planes disponibles.'
+      case 'quota_exceeded':
+        return 'Alcanzaste el cupo diario de esta función. Vuelve a intentarlo mañana.'
+      case 'spend_cap_exceeded':
+        return 'El servicio alcanzó su presupuesto diario. Vuelve a intentarlo mañana.'
+      case 'kill_switch_active':
+        return 'La IA está temporalmente pausada. Volvé a intentarlo más tarde.'
       case 'rate_limit':
         if (e.message.includes('Límite diario')) return e.message
         return `Límite de uso alcanzado en ${e.provider}. Espera unos minutos e intenta de nuevo.`
