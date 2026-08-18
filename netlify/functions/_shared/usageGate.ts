@@ -83,7 +83,7 @@ function serviceRoleCredentials(): { url: string; key: string } | null {
  * intentar la llamada real. Ahora TODO camino de salida de `callRpc` es
  * `UsageGateHttpError`, nunca un error crudo.
  */
-async function callRpc<T>(functionName: string, args: Record<string, unknown>): Promise<T> {
+async function callRpc<T>(functionName: string, args: Record<string, unknown>, timeoutMs = RPC_TIMEOUT_MS): Promise<T> {
   const creds = serviceRoleCredentials()
   if (!creds) throw makeServerError('Configuración de Supabase ausente en el servidor.')
 
@@ -97,7 +97,7 @@ async function callRpc<T>(functionName: string, args: Record<string, unknown>): 
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(args),
-      signal: AbortSignal.timeout(RPC_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     })
   } catch (error) {
     throw makeServerError(`RPC ${functionName} no se pudo completar: ${error instanceof Error ? error.message : 'error de red'}.`)
@@ -276,6 +276,17 @@ export interface RecordUsageCostInput {
   bucketId: string
   usageDate: string
   costUsd: number
+  /**
+   * Techo del RPC de costo, en ms. Opcional — sin él usa `RPC_TIMEOUT_MS`
+   * (comportamiento previo, para callers como `generate-plan-background.ts`
+   * cuyo presupuesto de worker de 13 min no está en riesgo). `coach.ts` sí lo
+   * pasa: ese camino corre bajo el wall-clock síncrono de Netlify (~26s) y
+   * un `RPC_TIMEOUT_MS` fijo de 3s, sumado DESPUÉS de que el proveedor ya
+   * respondió, puede empujar la respuesta más allá del corte real (hallazgo
+   * de revisión externa). Un valor `<= 0` salta el RPC directamente: no tiene
+   * sentido intentar un fetch con presupuesto negativo.
+   */
+  timeoutMs?: number
 }
 
 /**
@@ -292,13 +303,17 @@ export interface RecordUsageCostInput {
  */
 export async function recordUsageCost(input: RecordUsageCostInput): Promise<void> {
   if (input.costUsd <= 0) return
+  if (input.timeoutMs !== undefined && input.timeoutMs <= 0) {
+    console.warn(`[usage-gate] recordUsageCost omitido: sin presupuesto de wallclock restante (user=${input.userId} bucket=${input.bucketId} date=${input.usageDate})`)
+    return
+  }
   try {
     const rows = await callRpc<unknown>('increment_ai_usage_cost', {
       p_user_id: input.userId,
       p_bucket_id: input.bucketId,
       p_usage_date: input.usageDate,
       p_delta: input.costUsd,
-    })
+    }, input.timeoutMs)
     // Corrección tras revisión (P2, ronda 2): la versión anterior ignoraba
     // el resultado por completo — un UPDATE que afecta 0 filas (la fila que
     // `assertUsageGate` debió reservar no existe: bug de otra parte, drift

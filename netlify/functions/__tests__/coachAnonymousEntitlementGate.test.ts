@@ -116,4 +116,27 @@ describe('gate anónimo de entitlement en coach', () => {
     })
     expect(fetchMock).not.toHaveBeenCalled()
   })
+
+  it('con AI_USAGE_LIMITS_ENABLED encendida, un caller anonimo no manda "anonymous" a las RPC de cuota', async () => {
+    // Regresión: `p_user_id` de `ai_usage_daily` es `uuid`. Sin el bypass,
+    // `assertUsageGate` mandaría el literal 'anonymous' a `read_ai_usage_spend`
+    // y el stub de proveedor (que responde con forma `{ candidates }` para
+    // cualquier URL) haría fallar el parseo de la RPC con 503 server_error
+    // antes de llegar al proveedor. Con el bypass, el gate nunca corre y la
+    // request llega directo al proveedor.
+    vi.resetModules()
+    vi.stubEnv('COACH_PROXY_REQUIRE_AUTH', 'false')
+    vi.stubEnv('ENTITLEMENTS_ENABLED', 'false')
+    vi.stubEnv('AI_USAGE_LIMITS_ENABLED', 'true')
+    vi.stubEnv('GEMINI_API_KEY', 'test-key')
+    vi.stubEnv('SUPABASE_URL', 'https://example.supabase.co')
+    vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', 'service-role-key')
+    const fetchMock = stubSuccessfulProvider()
+    const { handler } = await import('../coach')
+
+    const response = await callHandler(handler as unknown as CoachHandler, 'chat_general')
+
+    expect(response.statusCode).toBe(200)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
 })

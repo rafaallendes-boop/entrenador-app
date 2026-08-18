@@ -543,6 +543,20 @@ function normalizeError(error: unknown): NormalizedServerError {
   if (statusCode === 503 && err.errorCode === 'kill_switch_active') {
     return makeError(message, 503, 'kill_switch_active', false)
   }
+  // El gate de uso (`_shared/usageGate.ts`) también puede fallar por su
+  // propia infraestructura (RPC caída, red, JSON ilegible) y lo reporta como
+  // 503 'server_error' sin haber invocado nunca al proveedor. Igual que los
+  // tres rechazos de arriba, no puede caer en el branch genérico de abajo
+  // (502/503/504 → 'timeout', retryable=true): reintentar dispara un
+  // segundo request al gate — y, si sigue caído, un segundo golpe fallido —
+  // por un fallo que nunca llegó al proveedor, justo lo que el spec §5.1
+  // prohíbe ("un error del gate no entra en la política de retry del
+  // proveedor"). Es la única combinación real de 503 + 'server_error' en
+  // este archivo: los productores propios (fetchJsonOrThrow, streaming) usan
+  // 500, o ya interceptan 502/503/504 como 'timeout' antes de esta función.
+  if (statusCode === 503 && err.errorCode === 'server_error') {
+    return makeError(message, 503, 'server_error', false)
+  }
   if (statusCode === 401 || statusCode === 403) {
     return makeError(message, statusCode, 'unauthorized')
   }
@@ -1413,6 +1427,15 @@ async function recordCostIfKnown(input: {
     cacheReadInputTokens?: number
     cacheCreationInputTokens?: number
   }
+  /**
+   * Deadline de wall-clock de la función (hallazgo de revisión externa): se
+   * registra el costo DESPUÉS de que el proveedor ya respondió, así que su
+   * propio RPC (hasta `RPC_TIMEOUT_MS` = 3s por default) se suma al tiempo
+   * real de la función sin que nada lo cuente contra el corte de Netlify. Se
+   * acota al presupuesto que realmente queda hasta `deadline`, en vez de usar
+   * siempre el techo fijo.
+   */
+  deadline: number
 }): Promise<void> {
   const { promptTokens, completionTokens } = input.result
   if (promptTokens == null || completionTokens == null) {
@@ -1441,6 +1464,7 @@ async function recordCostIfKnown(input: {
     bucketId: input.reservation.bucketId,
     usageDate: input.reservation.usageDate,
     costUsd,
+    timeoutMs: input.deadline - Date.now(),
   })
 }
 
@@ -1502,11 +1526,37 @@ async function executeWithPolicy(
       // armar) el presupuesto, antes del timer real y antes de
       // `invokeProvider` — así el RPC del gate (hasta 3s) no le come reloj
       // al proveedor.
-      const reservation = await assertUsageGate({
-        userId: gateContext.userId,
-        requestClass,
-        tier: gateContext.tier,
-      })
+      //
+      // Con `AUTH_REQUIRED=false` (modo anónimo local/loadtest, ver
+      // `resolveAuthContext`), `gateContext.userId` es el literal
+      // `'anonymous'`, no un uuid — igual que el entitlement de arriba, que
+      // ya trata esa identidad como 'free' sin consultar el tier real. Las
+      // RPC de `ai_usage_daily` declaran `p_user_id uuid`: mandarles
+      // `'anonymous'` no gatea nada, solo le devuelve un 503 `server_error`
+      // a cada request que pasa por acá con `AI_USAGE_LIMITS_ENABLED`
+      // encendida. No hay una identidad real a la cual atribuir cuota, así
+      // que el bypass es el mismo tratamiento que "gate apagado".
+      const reservation = gateContext.userId === ANONYMOUS_USER_ID
+        ? null
+        : await assertUsageGate({
+          userId: gateContext.userId,
+          requestClass,
+          tier: gateContext.tier,
+        })
+
+      // Recalcular el presupuesto real DESPUÉS del gate (hallazgo de
+      // revisión externa): el `attemptTimeoutMs` de arriba se computó ANTES
+      // de pagar el reloj del gate (hasta 3s de `readSpend` + hasta 3s de
+      // `increment_ai_usage_if_under_limit`) y `armTimeout` lo usaba tal
+      // cual, sin descontar ese tiempo — el proveedor recibía su ventana
+      // completa otra vez, empujando el wall-clock real por encima de
+      // `deadline` (y del margen de 24s frente al corte real de ~26s de
+      // Netlify). `computeAttemptTimeoutMs` es la misma función de arriba:
+      // usa el `Date.now()` actual, así que el segundo llamado ya reflejó lo
+      // que el gate consumió, y si el gate se comió TODO el presupuesto
+      // restante, lanza acá (504) en vez de armar un timer que igual iba a
+      // vencer contra el deadline real.
+      attemptTimeoutMs = computeAttemptTimeoutMs(deadline, attemptsRemaining)
 
       // El timer real arranca DESPUÉS del gate. `providerStartedAt` es el
       // punto desde el que cuenta `attemptTimeoutMs` — `extendTimeoutForStreaming`
@@ -1562,7 +1612,7 @@ async function executeWithPolicy(
         maxTokens: req.maxTokens,
       })
       if (reservation) {
-        await recordCostIfKnown({ userId: gateContext.userId, reservation, result })
+        await recordCostIfKnown({ userId: gateContext.userId, reservation, result, deadline })
       }
       return result
     } catch (error) {

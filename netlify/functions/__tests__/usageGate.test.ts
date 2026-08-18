@@ -346,4 +346,28 @@ describe('recordUsageCost', () => {
 
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('no confirmó un valor válido'))
   })
+
+  it('timeoutMs <= 0 salta el fetch directamente y loguea (sin presupuesto de wallclock)', async () => {
+    const fetchMock = vi.fn()
+    global.fetch = fetchMock as unknown as typeof fetch
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    await recordUsageCost({ userId: 'u1', bucketId: 'chat', usageDate: '2026-08-16', costUsd: 0.02, timeoutMs: 0 })
+
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('sin presupuesto de wallclock restante'))
+  })
+
+  it('un timeoutMs positivo se respeta (no usa el default fijo)', async () => {
+    const fetchMock = vi.fn<(url: string, init: RequestInit) => Promise<Response>>(
+      async () => jsonResponse([{ estimated_cost_usd: 0.05 }]),
+    )
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    await recordUsageCost({ userId: 'u1', bucketId: 'chat', usageDate: '2026-08-16', costUsd: 0.02, timeoutMs: 500 })
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [, init] = fetchMock.mock.calls[0]
+    expect(init.signal).toBeInstanceOf(AbortSignal)
+  })
 })

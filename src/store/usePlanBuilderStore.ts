@@ -166,6 +166,40 @@ function buildGenerationFailureMessage(failedWeekIndexes: number[]): string | nu
   return `No se pudieron preparar ${failedWeekIndexes.length} semanas. Ajústalas para continuar.`
 }
 
+// El worker persiste una falla de infraestructura del propio gate (RPC
+// caída, red, JSON ilegible — `UsageGateUnavailableError`) con `errorClass:
+// 'server_error'` (asyncGenerationLoop.ts), igual que los 3 rechazos de
+// política. No es un código de `PlanEnqueueUsageRejectionCode` porque el
+// preflight de enqueue nunca la produce — solo puede ocurrir dentro del
+// worker, donde el gate autoritativo corre de verdad.
+const GATE_INFRA_FAILURE_MESSAGE = 'No pudimos verificar el uso de IA. Intenta de nuevo en unos minutos.'
+
+/**
+ * Hallazgo de revisión externa: cuando el preflight del enqueue acepta un
+ * job con poco cupo restante y el gate autoritativo lo agota a mitad del
+ * worker, `asyncGenerationLoop.ts` persiste correctamente `errorClass` con
+ * el código de rechazo (`quota_exceeded`/`spend_cap_exceeded`/
+ * `kill_switch_active`/`server_error`) en `generationMeta` de cada semana
+ * afectada — pero `applyGenerationSnapshot` lo ignoraba por completo y
+ * mostraba siempre el mensaje genérico por cantidad de
+ * `buildGenerationFailureMessage`. El usuario no se enteraba de que debía
+ * esperar y podía reintentar de inmediato, chocando con el mismo rechazo.
+ * Reusa el mismo copy que ya existe para el rechazo en el enqueue
+ * (`USAGE_REJECTION_COPY`) — es la misma causa, solo que detectada más
+ * tarde.
+ */
+function resolveUsageGateFailureMessage(weeks: TrainingPlanWeek[]): string | null {
+  const rejectedWeek = weeks.find((week) => {
+    const errorClass = week.generationMeta.errorClass
+    return week.status === 'error' && errorClass != null
+      && (errorClass === 'server_error' || errorClass in USAGE_REJECTION_COPY)
+  })
+  if (!rejectedWeek) return null
+  const errorClass = rejectedWeek.generationMeta.errorClass
+  if (errorClass === 'server_error') return GATE_INFRA_FAILURE_MESSAGE
+  return USAGE_REJECTION_COPY[errorClass as PlanEnqueueUsageRejectionCode]
+}
+
 function toBuilderStatus(generationState: TrainingPlan['generationState']): PlanBuilderStatus {
   switch (generationState) {
     case 'shell': return 'shell_ready'
@@ -190,7 +224,7 @@ function applyGenerationSnapshot(
   const lastError = snapshot.isStalled
     ? 'La preparación quedó sin señales de progreso. Puedes reintentar las semanas pendientes.'
     : snapshot.plan.generationState === 'partial' || snapshot.plan.generationState === 'failed'
-      ? buildGenerationFailureMessage(failedWeekIndexes)
+      ? resolveUsageGateFailureMessage(orderedWeeks) ?? buildGenerationFailureMessage(failedWeekIndexes)
       : snapshot.plan.generationState === 'cancelled'
         ? 'Preparación detenida. Puedes reintentar cuando quieras.'
         : null

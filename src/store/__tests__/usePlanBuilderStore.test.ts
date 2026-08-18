@@ -429,6 +429,52 @@ describe('usePlanBuilderStore', () => {
     expect(usePlanBuilderStore.getState().status).toBe('generating')
   })
 
+  it('shows the specific quota copy when the worker (not the enqueue preflight) rejects mid-generation', async () => {
+    // Regresión (hallazgo de revisión externa): el preflight de enqueue
+    // puede aceptar un job con poco cupo restante y el gate autoritativo del
+    // worker lo agota a mitad de camino. `asyncGenerationLoop.ts` persiste
+    // el rechazo en `generationMeta.errorClass` de la semana afectada, pero
+    // `applyGenerationSnapshot` lo ignoraba y mostraba siempre el mensaje
+    // genérico por cantidad de semanas fallidas.
+    const profile = await createShell()
+    const stateBefore = usePlanBuilderStore.getState()
+    const plan = stateBefore.plan!
+    const weeks = stateBefore.weeks
+    const rejectedWeeks = weeks.map((week, index) => (
+      index === 0
+        ? {
+          ...failedWeek(week),
+          generationMeta: { ...week.generationMeta, attempts: 1, strategy: 'single' as const, errorClass: 'quota_exceeded', lastError: 'Cuota diaria de IA agotada.' },
+        }
+        : generatedWeek(week)
+    ))
+    mocks.supabase = { auth: {} }
+    mocks.authUser = { id: 'user-1' }
+    mocks.fetchPlanGenerationSnapshot.mockResolvedValue({
+      plan: {
+        ...plan,
+        generationState: 'failed',
+        generationSummary: {
+          startedAt: Date.now(),
+          jobId: 'existing-job',
+          strategy: 'single',
+          completedWeeks: rejectedWeeks.length - 1,
+          failedWeeks: [rejectedWeeks[0].weekIndex],
+          totalAttempts: 1,
+          heartbeatAt: Date.now(),
+        },
+      },
+      weeks: rejectedWeeks,
+      isTerminal: true,
+      isStalled: false,
+    })
+
+    await usePlanBuilderStore.getState().runGeneration(profile)
+
+    const state = usePlanBuilderStore.getState()
+    expect(state.lastError).toBe('Alcanzaste el cupo diario de Plan Builder. Vuelve a intentarlo mañana.')
+  })
+
   it('ignores an orphan remote generating marker without job id or week progress', async () => {
     const profile = await createShell()
     const stateBefore = usePlanBuilderStore.getState()

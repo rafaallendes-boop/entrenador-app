@@ -87,6 +87,35 @@ describe('coach.ts — usage gate', () => {
     expect(providerFetch).not.toHaveBeenCalled()
   })
 
+  it('recalcula el timeout del proveedor DESPUÉS de una latencia real del gate, no reusa el valor pre-gate', async () => {
+    // Regresión (hallazgo de revisión externa): `attemptTimeoutMs` se
+    // calculaba antes del gate y `armTimeout` reusaba ese mismo valor
+    // después, sin descontar lo que el gate tardó — el proveedor recibía su
+    // ventana completa otra vez y el wall-clock real podía superar el
+    // deadline de la función. Simula una latencia real del gate (~150ms) y
+    // confirma, vía la telemetría emitida por `console.info`, que el
+    // `attemptTimeoutMs` logueado del intento exitoso es estrictamente menor
+    // al que se calcularía sin descontar esa latencia.
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    handlerMocks.assertUsageGate.mockImplementation(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 150))
+      return { bucketId: 'chat', limit: 15, usageDate: '2026-08-16' }
+    })
+    stubProviderFetch()
+
+    const response = await callHandler(coachBody({ requestClass: 'chat_general', userMessage: 'hola' }), 'token-1')
+
+    expect(response.statusCode).toBe(200)
+    const attemptLog = infoSpy.mock.calls
+      .map(([line]) => JSON.parse(String(line)) as { event: string; outcome?: string; attemptTimeoutMs?: number })
+      .find((entry) => entry.event === 'coach.attempt' && entry.outcome === 'ok')
+    expect(attemptLog).toBeDefined()
+    // chat_general reparte timeoutMs=15000 entre hasta 2 intentos ⇒ ~7500ms
+    // sin descontar el gate. Con 150ms reales de latencia del gate ya
+    // consumidos, el valor recalculado tiene que quedar por debajo de eso.
+    expect(attemptLog!.attemptTimeoutMs).toBeLessThan(7500)
+  })
+
   it('un retry consume el gate de nuevo, cada intento por separado', async () => {
     handlerMocks.assertUsageGate
       .mockResolvedValueOnce({ bucketId: 'chat', limit: 15, usageDate: '2026-08-16' })
@@ -179,6 +208,23 @@ describe('coach.ts — usage gate', () => {
     )
 
     expect(JSON.parse(response.body).detail).toEqual({ bucketId: 'chat', limit: 15, remaining: 0 })
+  })
+
+  it('una falla de infraestructura del gate (503 server_error) no reintenta ni golpea al proveedor dos veces', async () => {
+    const gateInfraError = Object.assign(new Error('RPC read_ai_usage_spend devolvió 500.'), {
+      statusCode: 503,
+      errorCode: 'server_error',
+    })
+    handlerMocks.assertUsageGate.mockRejectedValue(gateInfraError)
+    const providerFetch = stubProviderFetch()
+
+    const response = await callHandler(coachBody({ requestClass: 'chat_general', userMessage: 'hola' }), 'token-1')
+
+    expect(response.statusCode).toBe(503)
+    expect(JSON.parse(response.body).errorCode).toBe('server_error')
+    expect(providerFetch).not.toHaveBeenCalled()
+    // No retryable: un solo intento consulta el gate, no dos.
+    expect(handlerMocks.assertUsageGate).toHaveBeenCalledTimes(1)
   })
 
   it('el chunk de error streaming incluye detail para spend_cap_exceeded', async () => {
