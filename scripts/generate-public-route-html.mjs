@@ -29,6 +29,11 @@ function metadataBlock(route, siteOrigin, siteName, ogImagePath) {
   return [
     METADATA_START,
     `  <meta name="description" content="${description}" />`,
+    // Todo `route` que llega acá viene de publicRouteMetadata.json — esa lista
+    // ES el whitelist de indexación. index.html trae "noindex, nofollow" como
+    // default seguro para el fallback SPA; esta es la única de las 8 copias
+    // generadas que lo pisa a "index, follow".
+    '  <meta name="robots" content="index, follow" />',
     `  <meta property="og:title" content="${title}" />`,
     `  <meta property="og:description" content="${description}" />`,
     '  <meta property="og:type" content="website" />',
@@ -84,11 +89,19 @@ async function generate() {
   const { siteName, ogImagePath, routes } = await loadMetadata()
   const template = await readFile(new URL('index.html', DIST_DIR), 'utf8')
 
+  // Snapshot the unmodified build output (noindex,nofollow default) as the SPA
+  // fallback BEFORE any route rewrite touches dist/index.html. Netlify's catch-all
+  // redirect serves this file for every private/unknown path, so it must never
+  // pick up the "/" route's index,follow rewrite below — Google cannot honor a
+  // <meta name="robots" content="noindex"> on a page robots.txt already blocked,
+  // so this file also has to stay reachable by crawlers (see robots.txt).
+  await writeFile(new URL('spa-fallback.html', DIST_DIR), template)
+
   await Promise.all(
     routes.map(async (route) => {
       const html = routeHtml(template, route, siteOrigin, siteName, ogImagePath)
-      // "/" rewrites dist/index.html itself, which is also the SPA fallback Netlify
-      // serves for every unmatched path.
+      // "/" rewrites dist/index.html itself — the public homepage, distinct from
+      // the spa-fallback.html snapshot just written above.
       const target =
         route.path === '/'
           ? new URL('index.html', DIST_DIR)

@@ -228,10 +228,22 @@ const AUTH_REQUIRED = process.env['COACH_PROXY_REQUIRE_AUTH'] !== 'false'
 const RATE_LIMIT_WINDOW_MS = parsePositiveInteger(process.env['COACH_RATE_LIMIT_WINDOW_MS'], 60_000)
 const RATE_LIMIT_MAX = parsePositiveInteger(process.env['COACH_RATE_LIMIT_MAX'], 20)
 
-const JSON_HEADERS = { 'Content-Type': 'application/json', ...CORS_HEADERS }
+// nosniff + no-store: respuestas con contenido de chat/plan del usuario,
+// nunca deben cachearse ni reinterpretarse como otro Content-Type
+// (Pre-Lanzamiento §5). 'no-cache' (el valor previo de STREAM_HEADERS) sigue
+// permitiendo que un cache la guarde con revalidación; 'no-store' prohíbe
+// guardarla del todo (RFC 9111) y es compatible con 'no-transform', que se
+// conserva para que un proxy intermedio no bufferee/reescriba el stream SSE.
+const JSON_HEADERS = {
+  'Content-Type': 'application/json',
+  'X-Content-Type-Options': 'nosniff',
+  'Cache-Control': 'no-store',
+  ...CORS_HEADERS,
+}
 const STREAM_HEADERS = {
   'Content-Type': 'application/x-ndjson; charset=utf-8',
-  'Cache-Control': 'no-cache, no-transform',
+  'X-Content-Type-Options': 'nosniff',
+  'Cache-Control': 'no-store, no-transform',
   'Connection': 'keep-alive',
   ...CORS_HEADERS,
 }

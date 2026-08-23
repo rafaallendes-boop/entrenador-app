@@ -19,7 +19,7 @@ interface PdfJsModule {
   GlobalWorkerOptions: {
     workerSrc: string
   }
-  getDocument: (src: { data: ArrayBuffer }) => {
+  getDocument: (src: { data: ArrayBuffer; isEvalSupported?: boolean }) => {
     promise: Promise<{
       numPages: number
       getPage: (pageNumber: number) => Promise<{
@@ -50,7 +50,11 @@ async function loadPdfJs(): Promise<PdfJsModule> {
 export async function extractTextFromPDF(file: File): Promise<string> {
   const pdfjsLib = await loadPdfJs()
   const arrayBuffer = await file.arrayBuffer()
-  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+  // isEvalSupported: false evita que pdf.worker intente `new Function` para
+  // parsear PDFFunction (bloqueado por script-src del CSP, ver netlify.toml).
+  // Sin esto, pdf.js igual degrada a su intérprete, pero solo después de que
+  // el CSP corte el intento y lo loguee en consola en cada import.
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer, isEvalSupported: false }).promise
 
   const pages: string[] = []
 

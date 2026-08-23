@@ -8,6 +8,13 @@
   <!-- Rewritten per public route at build time by scripts/generate-public-route-html.mjs.
        Keep these markers: the generator fails the build if it cannot find them. -->
   <meta name="description" content="Planifica, registra y ajusta tu entrenamiento de squash, running, fuerza y movilidad con un coach AI que entiende tu semana." />
+  <!-- Deny-by-default: dist/index.html es el mismo archivo físico para "/" y
+       para el fallback SPA de TODA ruta privada/desconocida (ver
+       scripts/generate-public-route-html.mjs), así que un valor estático no
+       puede diferenciarlas. El generador lo reescribe a "index, follow" solo
+       en las 8 copias de rutas públicas; RouteRobotsMeta (src/components/seo)
+       lo corrige en runtime para navegación cliente a rutas privadas. -->
+  <meta name="robots" content="noindex, nofollow" />
   <!-- route-metadata:end -->
   <meta name="theme-color" content="#0e0e0e" />
   <meta name="apple-mobile-web-app-capable" content="yes" />

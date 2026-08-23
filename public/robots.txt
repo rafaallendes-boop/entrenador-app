@@ -1,0 +1,17 @@
+# Antes: whitelist de 8 rutas exactas vía Disallow: / + Allow: /ruta$. Eso
+# bloqueaba /sitemap.xml, cualquier variante con querystring o slash final de
+# una ruta pública, y — el problema real — impedía que Googlebot rastreara
+# /settings, /dashboard y cualquier ruta desconocida para leer su propio
+# <meta name="robots" content="noindex, nofollow">. Google es explícito: un
+# noindex solo funciona si la URL puede rastrearse; bloqueada por robots.txt,
+# la URL puede igual aparecer en resultados sin descripción si alguien la
+# enlaza. https://developers.google.com/search/docs/crawling-indexing/block-indexing
+#
+# Ahora spa-fallback.html (scripts/generate-public-route-html.mjs) sirve ese
+# noindex correctamente para toda ruta privada/desconocida, así que el
+# bloqueo por robots.txt dejó de ser necesario: la autenticación protege los
+# datos, el meta tag controla la indexación.
+User-agent: *
+Allow: /
+
+Sitemap: https://app.rallyiq.cl/sitemap.xml

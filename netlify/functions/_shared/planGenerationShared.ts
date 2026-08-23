@@ -28,7 +28,17 @@ export interface AuthContext {
   token: string
 }
 
-export const JSON_HEADERS = { 'Content-Type': 'application/json', ...CORS_HEADERS }
+// nosniff + no-store: respuestas JSON con datos de cuenta/plan/Whoop, nunca
+// deben cachearse (intermediarios ni back-forward cache) ni reinterpretarse
+// como otro Content-Type. Cubre enqueue-plan-generation, generate-plan-
+// background, whoop-sync, whoop-status y whoop-oauth-start — todas importan
+// json()/JSON_HEADERS de acá (Pre-Lanzamiento §5).
+export const JSON_HEADERS = {
+  'Content-Type': 'application/json',
+  'X-Content-Type-Options': 'nosniff',
+  'Cache-Control': 'no-store',
+  ...CORS_HEADERS,
+}
 export const MAX_WEEKS = 40
 export const AUTH_TIMEOUT_MS = 10_000
 export const SUPABASE_OP_TIMEOUT_MS = 15_000

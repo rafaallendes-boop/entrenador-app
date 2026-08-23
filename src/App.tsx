@@ -27,6 +27,7 @@ import { backfillLocalAthleteScope } from './services/athlete/athleteScopeMigrat
 import { hydrateActiveAthlete } from './services/athlete/hydrateActiveAthlete'
 import { getActiveAthleteId } from './services/athlete/activeAthlete'
 import NativeBridge from './components/native/NativeBridge'
+import RouteRobotsMeta from './components/seo/RouteRobotsMeta'
 import { NATIVE_RESUME_EVENT } from './services/nativeApp'
 import { pullWorkouts } from './services/readiness/pullWorkouts'
 import { autoCompleteFromWorkouts } from './services/readiness/autoCompleteFromWorkouts'
@@ -383,6 +384,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <NativeBridge />
+      <RouteRobotsMeta />
       <Suspense fallback={<RouteFallback />}>
         <Routes>
           {isIOSPlatform() && !user && !isAuthLoading && (
