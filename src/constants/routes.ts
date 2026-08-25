@@ -17,5 +17,6 @@ export const ROUTES = {
   IMPORT:           '/import',
   ONBOARDING:       '/onboarding',
   COACH:            '/coach',
+  OPS:              '/ops',
   IOS_WELCOME_PREVIEW: '/preview/ios-welcome',
 } as const

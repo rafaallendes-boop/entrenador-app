@@ -1,6 +1,6 @@
 # RallyIQ - Project Review and Roadmap
 
-Actualizado: 2026-08-17
+Actualizado: 2026-08-23
 
 Base de contraste:
 
@@ -10,21 +10,22 @@ Base de contraste:
   con prioridad, estado contrastado contra el código de `7fc7d4f`, criterio de
   Done y dependencias. **Cinco son bloqueantes reales:** OAuth de Google todavía
   depende de la lista de Test Users; los entitlements de tres tiers ya están
-  implementados en el repositorio, pero siguen inactivos hasta completar la
-  migración y el rollout manual —el diseño quedó aprobado el 2026-08-15 en
+  implementados y su migración `020` está aplicada en producción, pero siguen
+  inactivos hasta completar el rollout de los gates y sus smokes —el diseño quedó aprobado el 2026-08-15 en
   [`2026-08-15-entitlements-design.md`](docs/superpowers/specs/2026-08-15-entitlements-design.md),
   con rollout pendiente—; los rate limits de IA server-side por usuario y el
   techo de gasto/kill switch (puntos 3 y 4) **también están ya implementados**
   —diseño aprobado el 2026-08-16 en
   [`2026-08-16-ai-usage-rate-limits-design.md`](docs/superpowers/specs/2026-08-16-ai-usage-rate-limits-design.md),
-  ver §30—, pero igual que entitlements siguen inactivos hasta aplicar la
-  migración `021` y encender las flags; y `netlify.toml` no define ningún
-  header de seguridad. La sección declara explícitamente qué **no** construir
+  ver §30—, pero igual que entitlements siguen inactivos hasta completar los
+  gates, sus flags y los smokes; y `netlify.toml` ya define headers de seguridad
+  y CSP que deben verificarse sobre el deploy. La sección declara explícitamente
+  qué **no** construir
   todavía: cola global sin medir, herramienta de analytics, gateway de pago y
   Android.
 - **Límites durables de uso y gasto de IA implementados (2026-08-16/17):** ver
   §Pre-Lanzamiento puntos 3 y 4 y §29bis. Cuota diaria durable por usuario en
-  Supabase (`ai_usage_daily`, `021`, de aplicación manual) con incremento
+  Supabase (`ai_usage_daily`, `021`, aplicada en producción) con incremento
   atómico check-and-increment, spend cap de US$3/cuenta y US$5/global por día,
   y kill switch por env var — las tres cosas gatean en `coach.ts`,
   `enqueue-plan-generation.ts` y `generate-plan-background.ts`, en el mismo
@@ -35,8 +36,8 @@ Base de contraste:
   necesitaron una ronda de fix, todas re-verificadas independientemente).
   Verificación final: **449 archivos / 3664 tests**, lint, `tsc -b`, build y
   `git diff --check` verdes. **Implementado y verificado localmente; pendiente
-  el mismo rollout manual que entitlements** (aplicar `021`, desplegar con
-  ambas flags apagadas, encender `AI_USAGE_LIMITS_ENABLED`, smoke dirigido de
+  el mismo rollout de gates que entitlements** (con ambas flags apagadas,
+  encender `AI_USAGE_LIMITS_ENABLED`, smoke dirigido de
   cuota agotada en las tres funciones, probar y volver a apagar
   `AI_KILL_SWITCH_ENABLED`).
 - **QA deportiva de arquetipos ejecutada y sus hallazgos cerrados (2026-08-13/14):** ver §28. Primera QA deportiva real sobre producción: cinco arquetipos, 12/12 semanas del cupo diario, ~US$0,35, **veredicto APROBADO PARCIAL**. El motor de generación quedó bien (1RM verificado contra el perfil, superseries deterministas vivas en prod, modalidad de squash sin cruces, taper protegido); la capa de persistencia de perfil y de ciclo de plan produjo siete hallazgos que el code review convirtió en nueve defectos verificados, todos corregidos. Los cuatro serios: el corte del ciclo de plan ignoraba el inicio futuro del plan nuevo y vaciaba el calendario intermedio; el preview subreportaba el borrado y su aviso nunca llegaba al usuario; conservar el perfil ante ausencia remota reabría la resurrección en el segundo dispositivo por el FK `on delete cascade` de `007`; y los planes legacy nunca se supersedían. `Session` gana `planId`/`planWeekId` sin migración. Suite: **414 archivos / 3371 tests**, `tsc -b`, lint, build y `git diff --check` verdes. Pendientes: deploy, un smoke dirigido de un solo recorrido, y el cascade de borrado de atleta, que **no se puede verificar con un solo dispositivo**.
@@ -169,13 +170,14 @@ desbloquea todos los demás — sin esto no hay a quién invitar.
 
 ---
 
-#### 2. Feature flags y entitlements por plan — **P0** · implementado, pendiente rollout
+#### 2. Feature flags y entitlements por plan — **P0** · migración aplicada, gates pendientes
 
-**Estado real.** El código está implementado y verificado localmente, pero el
-blocker **sigue abierto** porque producción continúa permisiva: `020` es de
-aplicación manual, `ENTITLEMENTS_ENABLED` está apagada por defecto en runtime y
-`VITE_ENTITLEMENTS` está apagada por defecto en el build. Hasta completar el
-rollout, cualquiera que se registre conserva acceso al comportamiento previo.
+**Estado real.** El código está implementado y verificado localmente; `020` ya
+está aplicada en producción y el owner tiene tier `advanced`. El blocker sigue
+abierto porque producción continúa permisiva: `ENTITLEMENTS_ENABLED` permanece
+apagada en runtime y `VITE_ENTITLEMENTS` apagada en el build. Hasta completar
+el rollout de los gates, cualquiera que se registre conserva acceso al
+comportamiento previo.
 Verificación final: **437 archivos / 3576 tests**, lint, build, `tsc -b` y
 `git diff --check` verdes.
 
@@ -199,10 +201,11 @@ La implementación sigue el diseño aprobado el 2026-08-15 en
 - Upsell como oferta con metadata tipada (`requestClass`, `requiredTier`), nunca
   como error.
 
-**Qué falta.** Aplicar `020`, asignar `advanced` al owner, desplegar con ambas
-flags apagadas, encender primero el gate servidor y recién después redesplegar
-el cliente con su flag. **Nunca se enciende el cliente antes que el servidor.**
-El blocker se cierra sólo después del último paso y de su smoke en producción.
+**Qué falta.** Confirmar el deploy con ambas flags apagadas, encender primero
+el gate servidor y correr el smoke con una cuenta `free` y el owner `advanced`;
+recién después redesplegar el cliente con su flag. **Nunca se enciende el
+cliente antes que el servidor.** El blocker se cierra sólo después del último
+paso y de su smoke en producción.
 
 **Done.** Un usuario `free` no puede generar un plan **ni desde la UI, ni
 llamando a `enqueue-plan-generation`, ni llamando a `generate-plan-background`
@@ -216,12 +219,12 @@ beta, punto 11). No al revés: **los entitlements no dependen de tener pagos.**
 
 ---
 
-#### 3. Rate limits de IA server-side por usuario — **P0** · implementado, pendiente rollout
+#### 3. Rate limits de IA server-side por usuario — **P0** · migración aplicada, gate pendiente
 
-**Estado real.** El código está implementado y verificado localmente, pero el
-blocker **sigue abierto** porque producción todavía corre con las dos capas
-viejas: `021_ai_usage_daily.sql` es de aplicación manual y `AI_USAGE_LIMITS_ENABLED`
-está apagada por defecto en runtime. Hasta completar el rollout, `coach.ts`
+**Estado real.** El código está implementado y verificado localmente, y `021`
+ya está aplicada en producción. El blocker sigue abierto porque
+`AI_USAGE_LIMITS_ENABLED` está apagada en runtime. Hasta completar el rollout,
+`coach.ts`
 sigue protegido solo por `enforceRateLimit` (ráfaga en memoria, **preservado sin
 cambios**, no reemplazado) y por la cuota local de Dexie
 (`DEFAULT_DAILY_AI_LIMITS`/`assertPlanBuilderWeekRateLimit`), ninguna de las
@@ -266,10 +269,9 @@ La implementación sigue el diseño aprobado en
   outcome `quota_exhausted` — distinto de `budget_exhausted` (wallclock).
   Spend cap y kill switch cierran como `failed`, no `quota_exhausted`.
 
-**Qué falta.** Aplicar `021` (confirmando el nombre real del constraint contra
-el comentario que Task 1 dejó en el archivo), verificar permisos con service
-role, desplegar con `AI_USAGE_LIMITS_ENABLED=false`, y recién después encender
-la flag y correr el smoke dirigido (forzar `429 quota_exceeded` real en las tres
+**Qué falta.** Confirmar permisos con service role y el deploy con
+`AI_USAGE_LIMITS_ENABLED=false`; recién después encender la flag y correr el
+smoke dirigido (forzar `429 quota_exceeded` real en las tres
 funciones, confirmar `errorCode`/`detail`, confirmar que el costo se acumula en
 la fila `(user_id, usage_date, bucket_id)` correcta). El blocker se cierra sólo
 después de ese smoke.
@@ -283,12 +285,12 @@ mismo camino de lectura, mismo gate, mismas tres funciones.
 
 ---
 
-#### 4. Protección de costos y circuit breaker de IA — **P0** · implementado, pendiente rollout
+#### 4. Protección de costos y circuit breaker de IA — **P0** · migración aplicada, gates pendientes
 
 **Estado real.** El código está implementado y verificado localmente junto con
-el punto 3 (mismo diseño, mismo gate, mismas tres funciones); el blocker sigue
-abierto por la misma razón: `021` sin aplicar y `AI_USAGE_LIMITS_ENABLED` /
-`AI_KILL_SWITCH_ENABLED` apagadas por defecto. Hasta entonces, los únicos
+el punto 3 (mismo diseño, mismo gate, mismas tres funciones); `021` está
+aplicada, pero el blocker sigue abierto porque `AI_USAGE_LIMITS_ENABLED` /
+`AI_KILL_SWITCH_ENABLED` permanecen apagadas. Hasta entonces, los únicos
 "presupuestos" reales en producción siguen siendo de **wallclock** (24 s de
 función), no de dinero.
 
@@ -319,7 +321,7 @@ los días. Con 20 usuarios de beta, el peor caso es ~US$200/mes.
   por diseño (§10 del spec).
 
 **Qué falta.** Los mismos pasos de rollout del punto 3 (son un solo bloque):
-aplicar `021`, desplegar con ambas flags apagadas, encender
+confirmar el deploy con ambas flags apagadas, encender
 `AI_USAGE_LIMITS_ENABLED` y correr el smoke de cuota, y por separado confirmar
 en un ambiente de prueba que `AI_KILL_SWITCH_ENABLED=true` corta las tres
 funciones antes de volver a apagarla en producción — el kill switch queda
@@ -341,11 +343,13 @@ tokens Whoop cifrados AES-256-GCM y server-only, credenciales fuera del cliente,
 consentimiento bloqueante. Lo que no hay es una **pasada transversal registrada**
 antes de abrir a terceros.
 
-Cuatro puntos ya detectables sin auditar:
+Tres puntos siguen detectables sin auditar, y uno ya está endurecido:
 
-- **`netlify.toml` no tiene ningún bloque `[[headers]]`, y no existe
-  `public/_headers`.** Hoy el sitio se sirve sin CSP, sin HSTS, sin
-  `X-Frame-Options` ni `X-Content-Type-Options`.
+- **Headers de seguridad ya configurados en `netlify.toml`:** CSP,
+  `Strict-Transport-Security`, `X-Frame-Options: DENY`,
+  `X-Content-Type-Options: nosniff`, `Referrer-Policy` y
+  `Permissions-Policy`. Falta confirmarlos sobre el deploy productivo dentro
+  de la auditoría transversal, no volver a implementarlos.
 - `COACH_PROXY_REQUIRE_AUTH` es un interruptor de un solo carácter entre
   "autenticado" y "abierto al mundo" (ver punto 3).
 - `018` inserta con el token del usuario; el propio §22 registra que un cliente
@@ -356,7 +360,8 @@ Cuatro puntos ya detectables sin auditar:
 **Qué falta.** Recorrer un checklist con evidencia: inventario de variables de
 entorno de producción (y confirmar que ninguna `VITE_*` lleva un secreto),
 `grep` de secretos sobre `dist/`, RLS probada con un segundo usuario real
-intentando leer datos ajenos, headers de seguridad configurados, y revisión de
+intentando leer datos ajenos, headers de seguridad activos verificados sobre el
+deploy, y revisión de
 las funciones Netlify que aceptan input del cliente.
 
 **Done.** Checklist completo con evidencia adjunta por ítem, headers activos
@@ -431,22 +436,27 @@ beta ya andando.
 
 #### 9. Landing final — **P1**
 
-**Estado real.** Mejor de lo que decía el roadmap. Las cuatro rutas públicas son
+**Estado real.** Mejor de lo que decía el roadmap. Las ocho rutas públicas son
 páginas React reales con metadata y OG por ruta, prerenderizadas para crawlers.
+El dominio de producción `app.rallyiq.cl` ya está conectado, verificado en
+Google Search Console mediante DNS y con el sitemap enviado.
 Pricing tiene tres tiers con precios y toggle anual.
 
 Huecos verificados en el repo:
 
-- **No existe `public/robots.txt` ni `public/sitemap.xml`.**
+- `public/robots.txt` permite el rastreo general y declara el sitemap;
+  `public/sitemap.xml` enumera las ocho rutas públicas reales.
 - Los únicos assets son `public/landing/cycling.jpg`, `public/og/rallyiq.png` y
   tres `.webp` de bienvenida iOS: **cero screenshots del producto real**.
 - `/coaches` sigue sin imágenes de producto, tal como el roadmap ya anotaba.
 
-**Qué falta.** Screenshots mobile reales, `robots.txt` + `sitemap.xml`, pasada
-responsive a 360/768/1280, y CTA único coherente.
+**Qué falta.** Screenshots mobile reales, confirmación posterior de que Google
+procesó el sitemap, pasada responsive a 360/768/1280, y CTA único coherente.
 
-**Done.** Las cuatro rutas se ven correctas en los tres anchos, muestran producto
-real, sirven robots y sitemap, y el CTA lleva a un flujo que existe.
+**Done.** Las ocho rutas se sirven con metadata pública específica, el dominio
+`app.rallyiq.cl` está verificado, robots y sitemap están publicados y enviados a
+Search Console, y el CTA lleva a un flujo que existe. Queda pendiente solo la
+confirmación de procesamiento del sitemap por Google y la QA visual pendiente.
 
 **Dependencias.** Punto 7 para el mensaje de precios. Los screenshots conviene
 tomarlos **después** de la beta inicial, con datos reales de un usuario que no
@@ -462,17 +472,22 @@ sea el owner.
 "Diagnóstico IA" en Ajustes (`BetaQualitySnapshot`: requests, feedback, uso
 diario contra límites) y export de trazas.
 
-Lo que no existe: **agregación, alertas y una vista única**. Y no hay ningún
-reporter de errores de frontend — cero ocurrencias de Sentry o equivalente en el
-repo, así que un error de JS en el dispositivo de un beta tester es invisible.
+La agregación y vista única de la **Entrega A** están implementadas localmente:
+`022_operations_metrics.sql`, función Netlify `operations-dashboard` y ruta
+privada `/ops`. Aún no están operativas en producción: falta aplicar `022`,
+configurar el allowlist server-only `OPERATIONS_ADMIN_USER_IDS` y desplegar.
+No hay alertas ni reporter de errores de frontend; esa captura corresponde a la
+Entrega B/`023` y sigue pendiente.
 
-**Qué falta.** Un puñado de queries SQL guardadas (errores por clase, p90 de
-latencia, costo diario, corridas fallidas, usuarios activos), un reporter de
-errores de frontend, y un umbral que dispare aviso.
+**Qué falta.** Ejecutar el rollout de la Entrega A y su smoke con dos cuentas;
+después, reporter de errores de frontend, triage de `unknown` y una política de
+alertas. Las métricas de cuentas deben seguir nombrándose por lo que miden
+(`uso de IA` y `planificación`), nunca como "usuarios activos".
 
-**Done.** Responder en menos de cinco minutos, sin abrir el código: cuántos
-usuarios activos hubo hoy, cuántas requests fallaron y por qué, cuánto se gastó,
-y si apareció un error nuevo.
+**Done Entrega A.** Responder en menos de cinco minutos, sin abrir el código:
+cuántas cuentas usaron IA o planificación, cuántas requests fallaron y por qué,
+latencias p50/p90/p95, costo síncrono/asíncrono/total y cuotas registradas.
+**Done completo.** Además, detectar y triagear errores nuevos de frontend.
 
 **Dependencias.** Ninguna dura — las tablas ya están. Comparte trabajo con el
 backlog 6 de `OPTIMIZATION_AND_COSTS.md`, que pide exactamente esta agregación.
@@ -1788,7 +1803,8 @@ diario y kill switch. Diseño aprobado en
 plan en
 [`docs/superpowers/plans/2026-08-16-ai-usage-rate-limits.md`](docs/superpowers/plans/2026-08-16-ai-usage-rate-limits.md).
 
-**Modelo de datos.** `021_ai_usage_daily.sql` (de aplicación manual): tabla
+**Modelo de datos.** `021_ai_usage_daily.sql` (aplicada manualmente en
+producción): tabla
 `ai_usage_daily` con una fila por `(user_id, usage_date, bucket_id)` y tres RPC
 `security definer`, ninguna ejecutable por un usuario autenticado normal:
 
@@ -1872,10 +1888,10 @@ cuatro clases de error tienen `retryable = false` hardcodeado en el
 constructor).
 
 **Pendiente, mismo patrón que entitlements (§Pre-Lanzamiento punto 2).**
-Aplicar `021` en producción (confirmando el nombre real del constraint,
-comentario dejado en el propio archivo), verificar permisos con service role,
-desplegar con `AI_USAGE_LIMITS_ENABLED=false` y `AI_KILL_SWITCH_ENABLED=false`,
-encender primero la cuota y correr el smoke dirigido — forzar `429
+La `021` ya está aplicada en producción. Verificar permisos con service role,
+confirmar el deploy con `AI_USAGE_LIMITS_ENABLED=false` y
+`AI_KILL_SWITCH_ENABLED=false`, encender primero la cuota y correr el smoke
+dirigido — forzar `429
 quota_exceeded` real en las tres funciones, confirmar `errorCode`/`detail`
 correctos, confirmar que un job de Plan Builder cortado a mitad de camino
 queda `quota_exhausted` (no `generating` colgado), confirmar que el costo se
@@ -1883,6 +1899,32 @@ acumula en la fila `(user_id, usage_date, bucket_id)` correcta — y probar el
 kill switch en un ambiente de prueba antes de dejarlo apagado en producción.
 **Nunca encender el cliente antes que el servidor**, mismo invariante que
 entitlements.
+
+### 31. Dashboard operacional — Entrega A (2026-08-23)
+
+La Entrega A está implementada y verificada localmente: migración manual
+`022_operations_metrics.sql`, RPC `security definer`
+`read_operations_metrics`, función Netlify `operations-dashboard`, contrato
+validado y ruta privada `/ops`. El RPC devuelve únicamente agregados de
+`coach_requests`, `plan_generation_jobs`, `plan_generation_attempts` y, si
+existe, `ai_usage_daily`; nunca filas ni `user_id`.
+
+La vista separa costo de IA síncrona, Plan Builder asíncrono y total; muestra
+cobertura de costo, p50/p90/p95, outcomes de corridas e intentos y cuotas por
+días calendario. `OPERATIONS_ADMIN_USER_IDS` es una variable **server-only**
+con UUIDs de Supabase separados por coma; ausente, vacía o inválida no autoriza
+a nadie.
+
+**Pendiente de rollout (owner):** aplicar `022`, verificar que `authenticated`
+no tiene `execute` sobre el RPC, configurar `OPERATIONS_ADMIN_USER_IDS` sólo en
+Production, desplegar y probar `/ops` con el owner y una segunda cuenta (403).
+Hasta configurar esa variable, incluso el owner recibe 403; no es un fallo del
+RPC. El reporter de errores frontend pertenece a la Entrega B/`023` y no forma
+parte de este despliegue.
+
+`022` crea tres índices por `created_at` sin `CONCURRENTLY`, para que el script
+manual pueda ejecutarse como una unidad. En el volumen actual el bloqueo breve
+de escrituras es aceptable; aplicarla en una ventana de bajo tráfico.
 
 ### Producto Publico Y Marca
 
@@ -2120,6 +2162,8 @@ Objetivo: confianza antes que explicacion tecnica.
 - [x] SEO: cada ruta publica con title/description/OG unico (prerender para crawlers).
 - [x] Deep links nativos para OAuth callback en iOS.
 - [x] Landing `/coaches` en modo prelanzamiento con 3 planes y copy orientado.
+- [x] Dominio `app.rallyiq.cl` conectado y verificado en Google Search Console (2026-08-23).
+- [x] `robots.txt` y `sitemap.xml` publicados con las 8 rutas públicas (2026-08-23).
 - [x] Smoke DEV de `/`, `/features`, `/pricing`, `/coaches` y rutas legales (Fase 0 verificado).
 - [x] Smoke PROD/deploy de las mismas rutas (Fase 0 en vivo).
 - [ ] Agregar 2-4 screenshots reales o mockups honestos a `/coaches` (hoy placeholders).
