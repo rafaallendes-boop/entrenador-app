@@ -47,7 +47,7 @@ function clonedStrengthTemplate(date: string): CoachSessionProposal {
     { name: 'Press vertical', sets: 4, reps: 6, group: 'push' },
     { name: 'Remo con barra', sets: 3, reps: 8, group: 'pull' },
     { name: 'Dead bug — control de tronco', sets: 3, reps: 10, group: 'core' },
-    { name: 'Lanzamiento rotacional', sets: 3, reps: 6, group: 'core' },
+    { name: 'Lanzamiento rotacional con balón medicinal', sets: 3, reps: 6, group: 'core' },
   ]
   return {
     date, timeBlock: 'AM', sessionType: 'strength',

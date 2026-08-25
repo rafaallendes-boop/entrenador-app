@@ -71,6 +71,8 @@ export interface PlanGenerationMeta {
   /** Política de rotación (no entra en countRepairsV2). */
   strengthAccessoryRotationActionCount?: number
   strengthAccessoryRotationSessionsAffected?: number
+  /** Diagnóstico de la columna local del allocator de fuerza. */
+  strengthAllocator?: StrengthAllocatorMetrics
   squashDrillRotationActionCount?: number
   squashDrillRotationSessionsAffected?: number
   squashDrillRotationOmittedCount?: number
@@ -84,6 +86,21 @@ export interface PlanGenerationMeta {
   stageTimings?: StageTiming[]
   errorClass?: string
   generationSource?: 'ai' | 'deterministic' | 'fallback'
+}
+
+/**
+ * Métricas de la columna materializada por un worker. La matriz se calcula
+ * completa en cada worker, por lo que estos valores no suman semanas virtuales.
+ */
+export interface StrengthAllocatorMetrics {
+  slotCount: number
+  assignedCount: number
+  infeasibleIntraWeekCount: number
+  insufficientPoolCount: number
+  unresolvedIdentityCount: number
+  searchExhaustedCount: number
+  /** La matriz asignó la celda, pero el repair ya no encontró su sesión viva. */
+  unmaterializedCount: number
 }
 
 export interface PlanGenerationSummary {

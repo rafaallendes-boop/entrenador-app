@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { repairGeneratedWeek } from '../repairWeek'
+import { resolveStrengthExercise } from '../../training/exerciseLibrary'
 import { resolveSessionStrengthRoles } from '../strengthRoleContract'
 import { buildRepairContextForTest, buildSkeletonSessionForTest } from './helpers/repairTestFixtures'
 
@@ -38,15 +39,20 @@ describe('cableado de superseries en Plan Builder', () => {
 
     expect(failure).toBeUndefined()
     const exercises = sessions.find((session) => session.sessionType === 'strength')?.exercises ?? []
-    const plancha = exercises.findIndex((exercise) => exercise.name === 'Plancha frontal')
+    // La proyección estructural del bloque reemplaza el foundation core del
+    // template por su id canónico de la semana 0 (`dead_bug`). La superserie
+    // debe conservarse sobre el core proyectado, no sobre el nombre de entrada.
+    const core = exercises.findIndex(
+      (exercise) => resolveStrengthExercise(exercise)?.definition?.id === 'dead_bug',
+    )
     const pallof = exercises.findIndex((exercise) => exercise.name === 'Pallof press')
     const groupIds = new Set(exercises.map((exercise) => exercise.supersetGroup).filter(Boolean))
 
     expect(groupIds.size).toBeGreaterThan(0)
-    expect(plancha).toBeGreaterThanOrEqual(0)
-    expect(pallof).toBe(plancha + 1)
-    expect(exercises[plancha]?.supersetGroup).toBeDefined()
-    expect(exercises[plancha]?.supersetGroup).toBe(exercises[pallof]?.supersetGroup)
+    expect(core).toBeGreaterThanOrEqual(0)
+    expect(pallof).toBe(core + 1)
+    expect(exercises[core]?.supersetGroup).toBeDefined()
+    expect(exercises[core]?.supersetGroup).toBe(exercises[pallof]?.supersetGroup)
     expect(mainLiftName(exercises)).toBe(baselineMainLift)
   })
 

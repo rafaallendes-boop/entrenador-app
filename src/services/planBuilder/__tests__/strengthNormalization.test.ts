@@ -3,7 +3,7 @@ import type { CoachSessionProposal } from '../../../types'
 import type { TrainingPlanWeek } from '../../../types/planBuilder'
 import { findStrengthExerciseByName } from '../../training/exerciseLibrary'
 import { selectStrengthSession } from '../../training/strengthSelector'
-import { repairGeneratedWeek } from '../repairWeek'
+import { repairGeneratedWeek, resolveStrengthBlockAllocation } from '../repairWeek'
 import { summarizeTaxonomy } from '../repairTaxonomy'
 import { resolveSessionStrengthRoles } from '../strengthRoleContract'
 import { buildRepairContextForTest, buildSkeletonSessionForTest } from './helpers/repairTestFixtures'
@@ -78,6 +78,74 @@ function readyPrevious(names = NAMES, weekIndex = 0, phase: TrainingPlanWeek['ph
 }
 
 describe('normalización única de fuerza', () => {
+  it('ancla los slots al date|timeBlock cuando el balance elimina sesiones del template', () => {
+    const context = buildRepairContextForTest({
+      primarySport: 'squash',
+      phase: 'peak',
+      sessionsPerWeek: 2,
+      targetLoadBySport: { squash: 60, strength: 30 },
+    })
+    context.wizardConfig.complementarySports = ['strength']
+    context.plan = {
+      ...context.plan,
+      totalWeeks: 2,
+      endDate: '2026-08-16',
+      wizardConfig: context.wizardConfig,
+      phases: [{ phase: 'peak', startWeekIndex: 0, endWeekIndex: 1, blockFocus: '', intentBySport: {} }],
+    }
+    context.week = {
+      ...context.week,
+      weekIndex: 1,
+      weekStartDate: '2026-08-10',
+      phase: 'peak',
+      targetLoadBySport: { squash: 60, strength: 30 },
+    }
+    context.planWeekDescriptors = [
+      { weekIndex: 0, phase: 'peak' },
+      { weekIndex: 1, phase: 'peak' },
+    ]
+
+    const result = repairGeneratedWeek([
+      strengthSession('2026-08-10'),
+      strengthSession('2026-08-11'),
+      buildSkeletonSessionForTest({
+        date: '2026-08-12', sessionType: 'squash', title: 'Squash', durationMin: 45,
+      }),
+    ], context)
+
+    // En peak el balance conserva squash y una fuerza, después la dominancia
+    // convierte la fuerza restante. Antes el ordinal congelado lanzaba aquí.
+    expect(result.sessions.some((session) => session.sessionType === 'strength')).toBe(false)
+    expect(result.meta.strengthAllocator?.unmaterializedCount).toBeGreaterThan(0)
+  })
+
+  it('materializa cada ocurrencia duplicada antes de mutar la primera', () => {
+    const raw = strengthSession('2026-08-03', [
+      'Sentadilla trasera',
+      'Remo con barra',
+      'Remo con barra',
+      'Press vertical',
+      'Dead bug — control de tronco',
+    ])
+    const context = contextFor({ weekIndex: 1 })
+    const allocation = resolveStrengthBlockAllocation([raw], context)
+    const duplicatedSlots = allocation.snapshot.slots.filter((slot) => slot.canonicalId === 'bent_over_row')
+    const assignedIds = duplicatedSlots.map((slot) => allocation.matrix[1]?.get(slot.slotKey))
+
+    const result = repairGeneratedWeek([raw], context)
+    const ids = result.sessions[0]?.exercises
+      ?.map((exercise) => findStrengthExerciseByName(exercise.name)?.id)
+      .filter((id): id is string => id != null) ?? []
+
+    expect(duplicatedSlots).toHaveLength(2)
+    expect(new Set(assignedIds).size).toBe(2)
+    for (const id of assignedIds) expect(ids).toContain(id)
+    expect(result.meta.strengthAllocator).toMatchObject({
+      assignedCount: allocation.matrix[1]?.size,
+      unmaterializedCount: 0,
+    })
+  })
+
   it('conserva el main lift programado cuando otro lift del mismo bloque ordena antes alfabéticamente', () => {
     const programmedMainLift = 'Sentadilla trasera con barra'
     const result = repairGeneratedWeek([
@@ -93,7 +161,7 @@ describe('normalización única de fuerza', () => {
     expect(exercises[mainLiftIndex]?.name).toBe(programmedMainLift)
   })
 
-  it('no toca el main lift ni con una colisión corrective', () => {
+  it('no depende de una semana anterior lista para conservar el main lift', () => {
     const baseline = repairGeneratedWeek([strengthSession()], contextFor({ weekIndex: 0 }))
     const result = repairGeneratedWeek([strengthSession()], contextFor({ weekIndex: 0, previous: readyPrevious() }))
     const getMainLift = (session: CoachSessionProposal | undefined) => {
@@ -116,13 +184,15 @@ describe('normalización única de fuerza', () => {
     expect(result.meta.strengthAccessoryRotationSessionsAffected).toBeUndefined()
   })
 
-  it('semana 0 con colisión observada corrige sin contar política', () => {
+  it('la columna 0 no reabre una corrección desde la semana anterior', () => {
+    const baseline = repairGeneratedWeek([strengthSession()], contextFor({ weekIndex: 0 }))
     const result = repairGeneratedWeek([strengthSession()], contextFor({ weekIndex: 0, previous: readyPrevious() }))
-    expect(summarizeTaxonomy(result.meta.taxonomy).correctiveActionCount).toBeGreaterThan(0)
+    expect(summarizeTaxonomy(result.meta.taxonomy).correctiveActionCount)
+      .toBe(summarizeTaxonomy(baseline.meta.taxonomy).correctiveActionCount)
     expect(result.meta.strengthAccessoryRotationActionCount).toBeUndefined()
   })
 
-  it('no trata una semana de otro bloque como colisión corrective', () => {
+  it('no deriva decisiones de una semana anterior de otro bloque', () => {
     const previous = readyPrevious(NAMES, 2, 'peak')
     const baseline = repairGeneratedWeek([strengthSession()], contextFor({ weekIndex: 0 }))
     const result = repairGeneratedWeek([strengthSession()], contextFor({
@@ -134,7 +204,7 @@ describe('normalización única de fuerza', () => {
       .toBe(summarizeTaxonomy(baseline.meta.taxonomy).correctiveActionCount)
   })
 
-  it('no usa shells como contexto corrective', () => {
+  it('no usa shells como contexto de asignación', () => {
     const previous = { ...readyPrevious(), status: 'pending' as const }
     const baseline = repairGeneratedWeek([strengthSession()], contextFor({ weekIndex: 0 }))
     const result = repairGeneratedWeek([strengthSession()], contextFor({ weekIndex: 0, previous }))
@@ -142,20 +212,21 @@ describe('normalización única de fuerza', () => {
       .toBe(summarizeTaxonomy(baseline.meta.taxonomy).correctiveActionCount)
   })
 
-  it('desempata a favor de corrective y cuenta una sesión una vez', () => {
+  it('la matriz reemplaza el desempate corrective y no duplica reparaciones', () => {
     const baseline = repairGeneratedWeek([strengthSession()], contextFor())
     const result = repairGeneratedWeek([strengthSession()], contextFor({ previous: readyPrevious() }))
     expect(summarizeTaxonomy(result.meta.taxonomy).correctiveActionCount)
-      .toBe(summarizeTaxonomy(baseline.meta.taxonomy).correctiveActionCount + 1)
-    expect(result.meta.repairedSessionCount).toBe(baseline.meta.repairedSessionCount + 1)
+      .toBe(summarizeTaxonomy(baseline.meta.taxonomy).correctiveActionCount)
+    expect(result.meta.repairedSessionCount).toBe(baseline.meta.repairedSessionCount)
   })
 
-  it('mide la razón sobre la entrada original', () => {
+  it('la política no depende de observar la sesión anterior', () => {
     const baseline = repairGeneratedWeek([strengthSession()], contextFor())
     const result = repairGeneratedWeek([strengthSession()], contextFor({ previous: readyPrevious() }))
     expect(summarizeTaxonomy(result.meta.taxonomy).correctiveActionCount)
-      .toBe(summarizeTaxonomy(baseline.meta.taxonomy).correctiveActionCount + 1)
-    expect(result.meta.strengthAccessoryRotationActionCount ?? 0).toBe(0)
+      .toBe(summarizeTaxonomy(baseline.meta.taxonomy).correctiveActionCount)
+    expect(result.meta.strengthAccessoryRotationActionCount)
+      .toBe(baseline.meta.strengthAccessoryRotationActionCount)
   })
 
   it('cuenta política por ejercicio y sesiones afectadas por sesión', () => {

@@ -78,6 +78,42 @@ export interface StrengthReplacementRequest {
   exerciseIndex: number
 }
 
+/**
+ * El pool canónico de un slot de rotación, antes de exclusiones locales.
+ *
+ * La asignación de bloque necesita conocer el dominio completo y compartido de
+ * cada slot. Las exclusiones por columna pertenecen al allocator; incluirlas
+ * aquí volvería a hacer que el pool dependiera de mutaciones locales.
+ */
+export function getStrengthReplacementPool(
+  original: { name: string; libraryRef?: ExerciseLibraryRef },
+  context: StrengthContext,
+): string[] {
+  const resolved = resolveStrengthExercise(original)?.definition
+  if (!resolved) return []
+
+  return STRENGTH_EXERCISE_LIBRARY
+    .filter((candidate) => candidate.movement === resolved.movement)
+    .filter((candidate) => candidate.id !== resolved.id)
+    .filter((candidate) => isCandidateAllowedInContext(candidate, context))
+    .map((candidate) => candidate.id)
+    .sort((left, right) => left.localeCompare(right))
+}
+
+/**
+ * Materializa una prescripción para un id que ya eligió el allocator. Devuelve
+ * `undefined` si el catálogo o el contexto dejaron de hacerlo elegible.
+ */
+export function buildStrengthReplacementById(
+  candidateId: string,
+  context: StrengthContext,
+  exerciseIndex: number,
+): StrengthSelectionExercise | undefined {
+  const candidate = STRENGTH_EXERCISE_LIBRARY.find((exercise) => exercise.id === candidateId)
+  if (!candidate || !isCandidateAllowedInContext(candidate, context)) return undefined
+  return buildPrescribedExercise(candidate, context, exerciseIndex)
+}
+
 export interface StarLiftInfo {
   name: string
   targetPercent1RM?: number
@@ -357,30 +393,30 @@ function isCandidateAllowedInContext(
 }
 
 /**
+ * Adaptador de compatibilidad para consumidores externos del selector escalar.
+ * El Plan Builder no lo usa: toma `getStrengthReplacementPool` y materializa
+ * con `buildStrengthReplacementById` el id que decidió su allocator de bloque.
  * Determinista: el orden del pool es total y estable, con `id` como desempate.
  */
 export function selectStrengthReplacement(
   request: StrengthReplacementRequest,
 ): StrengthSelectionExercise | undefined {
-  const original = resolveStrengthExercise({
+  const original = {
     name: request.originalName,
     libraryRef: request.originalRef,
-  })?.definition
-  if (!original) return undefined
-
-  const candidates = STRENGTH_EXERCISE_LIBRARY
-    .filter((candidate) => candidate.movement === original.movement)
-    .filter((candidate) =>
-      !request.excludedKeys.has(getStrengthExerciseKey(candidate)) &&
-      !request.excludedKeys.has(normalizeStrengthExerciseKey(candidate.name)),
-    )
-    .filter((candidate) => isCandidateAllowedInContext(candidate, request.context))
-    .sort((a, b) => a.id.localeCompare(b.id))
+  }
+  const candidates = getStrengthReplacementPool(original, request.context)
+    .filter((candidateId) => {
+      const candidate = STRENGTH_EXERCISE_LIBRARY.find((exercise) => exercise.id === candidateId)
+      return candidate != null
+        && !request.excludedKeys.has(getStrengthExerciseKey(candidate))
+        && !request.excludedKeys.has(normalizeStrengthExerciseKey(candidate.name))
+    })
 
   if (candidates.length === 0) return undefined
 
   const picked = candidates[request.rotationIndex % candidates.length]!
-  return buildPrescribedExercise(picked, request.context, request.exerciseIndex)
+  return buildStrengthReplacementById(picked, request.context, request.exerciseIndex)
 }
 
 export function selectStarLift(

@@ -1,7 +1,7 @@
 import type { AIProvider, AIRawResponse } from '../ai/types'
 import { getProviderForRequestClass } from '../ai/providerResolver'
 import type { AthleteProfile, CoachAction, PlanWizardConfig, StageTiming } from '../../types'
-import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
+import type { StrengthAllocatorMetrics, TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import { buildAITraceId, getAIRequestPolicy } from '../ai/requestPolicy'
 import { normalizeResponse } from '../ai/responseNormalizer'
 import { assertDailyAIRequestLimit } from '../ai/aiTelemetry'
@@ -103,6 +103,7 @@ interface BatchWeekExtraction extends SerializedRepairTaxonomy {
   filteredSportCount?: number
   strengthAccessoryRotationActionCount?: number
   strengthAccessoryRotationSessionsAffected?: number
+  strengthAllocator?: StrengthAllocatorMetrics
   squashDrillRotationActionCount?: number
   squashDrillRotationSessionsAffected?: number
   squashDrillRotationOmittedCount?: number
@@ -137,6 +138,7 @@ interface ResolvedWeekInput extends SerializedRepairTaxonomy {
   previousWeekContextSource?: 'none' | 'shell' | 'ready'
   strengthAccessoryRotationActionCount?: number
   strengthAccessoryRotationSessionsAffected?: number
+  strengthAllocator?: StrengthAllocatorMetrics
   squashDrillRotationActionCount?: number
   squashDrillRotationSessionsAffected?: number
   squashDrillRotationOmittedCount?: number
@@ -243,6 +245,7 @@ function makeResolvedWeek(
       previousWeekContextSource: input.previousWeekContextSource,
       strengthAccessoryRotationActionCount: input.strengthAccessoryRotationActionCount,
       strengthAccessoryRotationSessionsAffected: input.strengthAccessoryRotationSessionsAffected,
+      strengthAllocator: input.strengthAllocator,
       squashDrillRotationActionCount: input.squashDrillRotationActionCount,
       squashDrillRotationSessionsAffected: input.squashDrillRotationSessionsAffected,
       squashDrillRotationOmittedCount: input.squashDrillRotationOmittedCount,
@@ -298,6 +301,7 @@ function makeDeterministicResolvedWeek(input: {
     filteredSportCount: result.meta.filteredSportCount,
     strengthAccessoryRotationActionCount: result.meta.strengthAccessoryRotationActionCount,
     strengthAccessoryRotationSessionsAffected: result.meta.strengthAccessoryRotationSessionsAffected,
+    strengthAllocator: result.meta.strengthAllocator,
     squashDrillRotationActionCount: result.meta.squashDrillRotationActionCount,
     squashDrillRotationSessionsAffected: result.meta.squashDrillRotationSessionsAffected,
     squashDrillRotationOmittedCount: result.meta.squashDrillRotationOmittedCount,
@@ -381,6 +385,7 @@ function makeLocalFallbackResolvedWeek(input: {
     filteredSportCount: fallback.meta.filteredSportCount,
     strengthAccessoryRotationActionCount: fallback.meta.strengthAccessoryRotationActionCount,
     strengthAccessoryRotationSessionsAffected: fallback.meta.strengthAccessoryRotationSessionsAffected,
+    strengthAllocator: fallback.meta.strengthAllocator,
     squashDrillRotationActionCount: fallback.meta.squashDrillRotationActionCount,
     squashDrillRotationSessionsAffected: fallback.meta.squashDrillRotationSessionsAffected,
     squashDrillRotationOmittedCount: fallback.meta.squashDrillRotationOmittedCount,
@@ -481,6 +486,7 @@ export async function generateSingleWeekWithRetry(
         filteredSportCount: result.meta.filteredSportCount,
         strengthAccessoryRotationActionCount: result.meta.strengthAccessoryRotationActionCount,
         strengthAccessoryRotationSessionsAffected: result.meta.strengthAccessoryRotationSessionsAffected,
+        strengthAllocator: result.meta.strengthAllocator,
         squashDrillRotationActionCount: result.meta.squashDrillRotationActionCount,
         squashDrillRotationSessionsAffected: result.meta.squashDrillRotationSessionsAffected,
         squashDrillRotationOmittedCount: result.meta.squashDrillRotationOmittedCount,
@@ -515,6 +521,7 @@ export async function generateSingleWeekWithRetry(
         droppedSessionCount,
         strengthAccessoryRotationActionCount: result.meta.strengthAccessoryRotationActionCount,
         strengthAccessoryRotationSessionsAffected: result.meta.strengthAccessoryRotationSessionsAffected,
+        strengthAllocator: result.meta.strengthAllocator,
         squashDrillRotationActionCount: result.meta.squashDrillRotationActionCount,
         squashDrillRotationSessionsAffected: result.meta.squashDrillRotationSessionsAffected,
         squashDrillRotationOmittedCount: result.meta.squashDrillRotationOmittedCount,
@@ -688,6 +695,7 @@ async function generateWeekPair(
         filteredSportCount: evaluation.filteredSportCount,
         strengthAccessoryRotationActionCount: evaluation.strengthAccessoryRotationActionCount,
         strengthAccessoryRotationSessionsAffected: evaluation.strengthAccessoryRotationSessionsAffected,
+        strengthAllocator: evaluation.strengthAllocator,
         squashDrillRotationActionCount: evaluation.squashDrillRotationActionCount,
         squashDrillRotationSessionsAffected: evaluation.squashDrillRotationSessionsAffected,
         squashDrillRotationOmittedCount: evaluation.squashDrillRotationOmittedCount,
@@ -859,6 +867,7 @@ export async function generatePlanWeeks(input: GeneratePlanWeeksInput): Promise<
             filteredSportCount: batchWeekResult.filteredSportCount,
             strengthAccessoryRotationActionCount: batchWeekResult.strengthAccessoryRotationActionCount,
             strengthAccessoryRotationSessionsAffected: batchWeekResult.strengthAccessoryRotationSessionsAffected,
+            strengthAllocator: batchWeekResult.strengthAllocator,
             squashDrillRotationActionCount: batchWeekResult.squashDrillRotationActionCount,
             squashDrillRotationSessionsAffected: batchWeekResult.squashDrillRotationSessionsAffected,
             squashDrillRotationOmittedCount: batchWeekResult.squashDrillRotationOmittedCount,
@@ -946,6 +955,7 @@ export async function generatePlanWeeks(input: GeneratePlanWeeksInput): Promise<
               filteredSportCount: batchWeekResult.filteredSportCount,
               strengthAccessoryRotationActionCount: batchWeekResult.strengthAccessoryRotationActionCount,
               strengthAccessoryRotationSessionsAffected: batchWeekResult.strengthAccessoryRotationSessionsAffected,
+              strengthAllocator: batchWeekResult.strengthAllocator,
               squashDrillRotationActionCount: batchWeekResult.squashDrillRotationActionCount,
               squashDrillRotationSessionsAffected: batchWeekResult.squashDrillRotationSessionsAffected,
               squashDrillRotationOmittedCount: batchWeekResult.squashDrillRotationOmittedCount,

@@ -340,6 +340,8 @@ export interface SessionMetadata {
   planBuilderStrengthRotation?: {
     blockId: string
     signature: string
+    /** Firma del template antes de proyectar core, allocator y densidad. */
+    templateSignature?: string
   }
   /** Proyección de squash ya resuelta: evita volver a permutar slots equivalentes. */
   planBuilderSquashRotation?: {

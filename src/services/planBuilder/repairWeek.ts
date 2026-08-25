@@ -16,8 +16,11 @@ import type {
   SupportedSport,
   WizardFatigueLevel,
 } from '../../types'
-import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
-import type { ExerciseLibraryRef } from '../../types/exerciseLibraryRef'
+import type {
+  StrengthAllocatorMetrics,
+  TrainingPlan,
+  TrainingPlanWeek,
+} from '../../types/planBuilder'
 import { getExpectedSessionsForPlanWeek, getPlanWeekDateRange, isDateInsidePlanWeekRange } from './dateRange'
 import {
   selectSquashDrillReplacement,
@@ -38,20 +41,20 @@ import {
 import { selectRunningSession, type RunningPhase, type RunningSportProfile } from '../training/runningSelector'
 import {
   getTargetExerciseDensity,
-  selectStrengthReplacement,
   selectStrengthSession,
+  buildStrengthReplacementById,
+  getStrengthReplacementPool,
   type StrengthContext,
   type StrengthPhase,
-  type StrengthSelectionExercise,
   type StrengthSportProfile,
 } from '../training/strengthSelector'
 import {
   enhanceStrengthSessionExercises,
-  isSelectedInjectedCore,
+  isFoundationCore,
   resolveStrengthExerciseBlock,
 } from '../training/strengthSessionStructure'
 import { planSupersetGroups, shouldApplySupersetPolicy } from '../training/supersetPolicy'
-import { type ExperienceLevel } from '../training/exerciseLibrary'
+import { resolveStrengthExercise, type ExperienceLevel } from '../training/exerciseLibrary'
 import { getStrengthExerciseKey, toStrengthProposal } from '../training/strengthExerciseProposal'
 import { selectMobilitySession, type MobilityPhase } from '../training/mobilitySelector'
 import { selectCyclingSession, type CyclingPhase, type CyclingSportProfile } from '../training/cyclingSelector'
@@ -61,11 +64,25 @@ import { normalizeSport } from '../../utils/athlete'
 import { buildAthleteParameters } from './profileAdapter'
 import { resolveBlockPositions, type PlanWeekDescriptor } from './blockIdentity'
 import {
-  collectAllStrengthKeys,
-  collectCountableKeys,
   isCountableRole,
-  resolveSessionStrengthRoles,
 } from './strengthRoleContract'
+import {
+  allocateStrengthBlock,
+  type AllocationDegradationReason,
+  type AllocatorResult,
+} from './strengthBlockAllocator'
+import {
+  captureStrengthTemplateSnapshot,
+  computeTemplateSignature,
+  strengthTemplateSessionKey,
+  type StrengthTemplateSlot,
+  type StrengthTemplateSnapshot,
+} from './strengthTemplateSnapshot'
+import {
+  INJECTED_CORE_ROTATION,
+  projectStructuralCoreSlot,
+  type StructuralCoreProjection,
+} from './strengthStructuralCore'
 import { isReadyWeek } from './weekUtils'
 import {
   resolveSquashWeeklyExposurePolicy,
@@ -117,6 +134,7 @@ export interface RepairMeta {
   /** Política determinista de accesorios; undefined significa no aplicable. */
   strengthAccessoryRotationActionCount?: number
   strengthAccessoryRotationSessionsAffected?: number
+  strengthAllocator?: StrengthAllocatorMetrics
   squashDrillRotationActionCount?: number
   squashDrillRotationSessionsAffected?: number
   squashDrillRotationOmittedCount?: number
@@ -152,6 +170,22 @@ export interface RepairResult {
   failure?: RepairFailure
 }
 
+/**
+ * Proyección completa y transitoria del bloque de fuerza. Cada worker la
+ * reconstruye desde el mismo template y consume sólo su columna local; nunca
+ * cruza una frontera de serialización ni se persiste en la semana.
+ */
+export interface StrengthBlockAllocation {
+  snapshot: StrengthTemplateSnapshot
+  templateSignature: string
+  matrix: AllocatorResult['matrix']
+  degradedCells: AllocatorResult['degradedCells']
+  searchExhausted: boolean
+  localWeek: number
+  /** Core estructural por semana virtual, indexado por identidad de sesión. */
+  structuralCoreByWeek: ReadonlyArray<ReadonlyMap<string, StructuralCoreProjection>>
+}
+
 export interface RepairFailure {
   errorClass: 'quality.squash.signature_uniqueness_unresolved'
   message: string
@@ -171,7 +205,7 @@ export function createRepairMeta(rawSessionCount: number): RepairMeta {
 }
 
 function sessionKeyOf(session: { date?: string; timeBlock?: string }): string {
-  return `${session.date ?? '?'}|${session.timeBlock ?? '?'}`
+  return strengthTemplateSessionKey(session)
 }
 
 /** Incrementa el contador legacy Y la taxonomía. Usar donde hoy se incrementa `repairedSessionCount`. */
@@ -247,46 +281,60 @@ export function repairGeneratedWeek(
   // 5. Filter disallowed sports
   sessions = filterDisallowedSports(sessions, context, meta)
 
-  // 6. Complete sport details (best-effort)
-  completeSportDetails(sessions, context, meta)
+  // 6. Orden congelado de fuerza: el template se observa ANTES de core y
+  // densidad. Cada paso posterior consume esta proyección; ninguno vuelve a
+  // derivar el dominio desde una lista ya mutada.
+  const strengthAllocation = resolveStrengthBlockAllocation(
+    sessions.filter((session) => session.sessionType === 'strength'),
+    context,
+  )
+  const strengthDensityOverlapGuard = createStrengthDensityOverlapGuard(
+    strengthAllocation,
+    context,
+    sessions.filter((session) => session.sessionType === 'strength'),
+  )
+  recordDivergentStrengthTemplateWarning(meta, context, strengthAllocation)
+
+  // 7. Complete sport details (best-effort)
+  completeSportDetails(sessions, context, meta, strengthAllocation, strengthDensityOverlapGuard)
   sanitizeSquashDrillSets(sessions, context, meta)
   normalizeSquashSemanticMetadata(sessions, meta, context)
   normalizeLateTaperSquashMatchPlay(sessions, context, meta)
   sessions = ensureSquashCompetitionMatchExposure(sessions, context, meta)
   sessions = normalizeSquashEventWindow(sessions, context, meta)
 
-  // 7. Keep squash drill/block timing aligned with the session duration.
+  // 8. Keep squash drill/block timing aligned with the session duration.
   normalizeSquashDurationConsistency(sessions, meta)
 
-  // 8. Keep taper/race weeks fresh even when model output is too voluminous.
+  // 9. Keep taper/race weeks fresh even when model output is too voluminous.
   sessions = normalizeCompetitionTaperLoad(sessions, context, meta)
 
-  // 9. Taper caps can shorten sessions, so re-fit nested squash blocks after caps.
+  // 10. Taper caps can shorten sessions, so re-fit nested squash blocks after caps.
   normalizeSquashDurationConsistency(sessions, meta)
 
-  // 10. Keep aerobic support non-interfering when squash is the primary target.
+  // 11. Keep aerobic support non-interfering when squash is the primary target.
   sessions = normalizeSquashSupportAerobicLoad(sessions, context, meta)
 
-  // 10b. If the macro allocated running load, it must exist as running, not as
+  // 11b. If the macro allocated running load, it must exist as running, not as
   // an aerobic-looking squash drill.
   sessions = ensureTargetRunningSupportSession(sessions, context, meta)
 
-  // 11. Balance session count
+  // 12. Balance session count
   sessions = balanceSessionCount(sessions, context, meta)
 
-  // 12. Preserve primary-sport minimums after fallback/trim decisions
+  // 13. Preserve primary-sport minimums after fallback/trim decisions
   sessions = ensurePrimarySportMinimum(sessions, context, meta)
 
-  // 12b. In build/peak the primary sport must outweigh accessory work
+  // 13b. In build/peak the primary sport must outweigh accessory work
   sessions = ensurePrimarySportDominance(sessions, context, meta)
 
-  // 13. Alinear metadatos antes de proyectar una única asignación canónica.
+  // 14. Alinear metadatos antes de proyectar una única asignación canónica.
   normalizeSquashSemanticMetadata(sessions, meta, context)
   normalizeLateTaperSquashMatchPlay(sessions, context, meta)
   sessions = ensureSquashCompetitionMatchExposure(sessions, context, meta)
   sessions = normalizeSquashEventWindow(sessions, context, meta)
 
-  // 13b. Política de rotación y corrección de firmas comparten una sola pasada.
+  // 14b. Política de rotación y corrección de firmas comparten una sola pasada.
   const squashNormalization = normalizeSquashSessionContent(sessions, context, meta)
   if (squashNormalization.failure) {
     measureSquashMatchRoles(sessions, meta)
@@ -295,9 +343,15 @@ export function repairGeneratedWeek(
   ensureSquashDrillGuidance(sessions)
   normalizeSquashDurationConsistency(sessions, meta)
 
-  // 14. Una única proyección canónica de fuerza evita que dos mutadores se
+  // 15. Una única proyección canónica de fuerza evita que dos mutadores se
   // deshagan entre sí y mantiene la segunda pasada como punto fijo.
-  normalizeStrengthSessions(sessions, context, meta)
+  const strengthMaterialization = normalizeStrengthSessions(
+    sessions,
+    context,
+    meta,
+    strengthAllocation,
+  )
+  recordStrengthAllocatorMetrics(meta, strengthAllocation, strengthMaterialization)
 
   // 15. Check double session utilization
   sessions = enforceDoubleSessionDayConstraints(sessions, context, meta)
@@ -542,9 +596,12 @@ function completeSportDetails(
   sessions: CoachSessionProposal[],
   context: RepairContext,
   meta: RepairMeta,
+  strengthAllocation: StrengthBlockAllocation,
+  strengthDensityOverlapGuard: StrengthDensityOverlapGuard,
 ): void {
   const currentWeekSquashDrills = extractRecentSquashDrills(context.previousWeek)
   const currentWeekStrengthExercises = extractRecentStrengthExercises(context.previousWeek)
+  const committedStrengthIds = getCommittedStrengthIds(strengthAllocation)
 
   for (const session of sessions) {
     try {
@@ -569,15 +626,32 @@ function completeSportDetails(
             recordRepair(meta, 'hydration', sessionKeyOf(session))
           }
           break
-        case 'strength':
+        case 'strength': {
+          const structuralCore = strengthAllocation.structuralCoreByWeek[strengthAllocation.localWeek]
+            ?.get(sessionKeyOf(session))
           if (!session.exercises || session.exercises.length === 0) {
-            completeStrengthExercises(session, context, currentWeekStrengthExercises)
+            completeStrengthExercises(
+              session,
+              context,
+              currentWeekStrengthExercises,
+              structuralCore,
+              committedStrengthIds,
+              strengthDensityOverlapGuard,
+            )
             recordRepair(meta, 'hydration', sessionKeyOf(session))
-          } else if (enhanceStrengthSessionDetails(session, context, currentWeekStrengthExercises)) {
+          } else if (enhanceStrengthSessionDetails(
+            session,
+            context,
+            currentWeekStrengthExercises,
+            structuralCore,
+            committedStrengthIds,
+            strengthDensityOverlapGuard,
+          )) {
             recordRepair(meta, 'corrective', sessionKeyOf(session))
           }
           currentWeekStrengthExercises.push(...(session.exercises ?? []).map((exercise) => exercise.name))
           break
+        }
         case 'mobility':
           if (!session.mobilityDetails) {
             completeMobilityDetails(session, context)
@@ -2015,157 +2089,487 @@ function inferSquashKindFromProposalDetails(session: CoachSessionProposal): Squa
   return topKind
 }
 
-type StrengthSubstitutionReason = 'policy' | 'corrective'
+/**
+ * Resuelve la matriz completa desde el template intacto. Es deliberadamente
+ * pura: los workers concurrentes no coordinan por estado compartido, cada uno
+ * calcula las mismas columnas y sólo materializa la propia.
+ */
+export function resolveStrengthBlockAllocation(
+  strengthSessions: ReadonlyArray<CoachSessionProposal>,
+  context: RepairContext,
+): StrengthBlockAllocation {
+  const snapshot = captureStrengthTemplateSnapshot(strengthSessions)
+  const positions = resolveBlockPositions(getPlanPhaseDescriptors(context), getPlanWeekDescriptors(context))
+  const currentPosition = positions.get(context.week.weekIndex)
+  const blockId = currentPosition?.blockId ?? `${context.week.phase}:${context.week.weekIndex}:${context.week.weekIndex}`
+  const localWeek = currentPosition?.indexInBlock ?? 0
+  const weekCount = Math.max(
+    1,
+    localWeek + 1,
+    [...positions.values()].filter((position) => position.blockId === blockId).length,
+  )
 
-interface StrengthRotationSlot {
-  session: CoachSessionProposal
-  sessionOrdinal: number
-  position: number
-  currentName: string
-  currentRef?: ExerciseLibraryRef
-  reason?: StrengthSubstitutionReason
+  const availableEquipment = buildAthleteParameters(context.profile, context.wizardConfig).availableEquipment
+  const structuralCoreByWeek = Array.from({ length: weekCount }, (_, weekIndex) => {
+    const projections = new Map<string, StructuralCoreProjection>()
+    strengthSessions.forEach((session) => {
+      // El enriquecedor histórico sólo inserta core desde 45 minutos. Mantener
+      // ese límite evita que la proyección agregue una estructura nueva a una
+      // sesión corta que hoy no la recibe.
+      if (session.durationMin < 45) return
+      projections.set(
+        sessionKeyOf(session),
+        projectStructuralCoreSlot(session.exercises ?? [], weekIndex, availableEquipment),
+      )
+    })
+    return projections
+  })
+
+  const isStructuralCoreSlot = (slot: StrengthTemplateSlot): boolean =>
+    structuralCoreByWeek[0]?.get(slot.sessionKey)?.slotIndex === slot.positionInSession
+  // Un id del ciclo estructural sólo puede ocupar el slot estructural
+  // proyectado. Si apareciera como reemplazo de otro core, una segunda pasada
+  // vería dos foundations y perdería la identidad de la proyección.
+  const structuralCoreIds = new Set<string>(INJECTED_CORE_ROTATION)
+
+  const allocatorSlots = snapshot.slots
+    .filter((slot) => isCountableRole(slot.role) && !isStructuralCoreSlot(slot))
+    .map((slot) => {
+      const session = strengthSessions[slot.sessionOrdinal]!
+      const selectionContext = buildStrengthSelectionContext(session, context, [])
+      return {
+        slotKey: slot.slotKey,
+        canonicalId: canonicalSnapshotSlotId(slot),
+        candidateIds: getStrengthReplacementPool(
+          { name: slot.name, libraryRef: slot.libraryRef },
+          selectionContext,
+        ).filter((candidateId) => !structuralCoreIds.has(candidateId)),
+      }
+    })
+
+  const mainLiftIds = snapshot.slots
+    .filter((slot) => !isCountableRole(slot.role))
+    .map(canonicalSnapshotSlotId)
+
+  const fixedIdsByWeek = structuralCoreByWeek.map((projections) => {
+    const coreIds = [...projections.values()].map((projection) => projection.coreId)
+    return {
+      // I1 es direccional: el main lift sólo vive en `all`, mientras que el
+      // core estructural es contable y debe entrar en ambas proyecciones.
+      all: [...mainLiftIds, ...coreIds],
+      countable: coreIds,
+    }
+  })
+
+  const allocator = allocateStrengthBlock({
+    slots: allocatorSlots,
+    blockId,
+    weekCount,
+    fixedIdsByWeek,
+  })
+
+  return {
+    snapshot,
+    templateSignature: computeTemplateSignature(snapshot),
+    matrix: allocator.matrix,
+    degradedCells: allocator.degradedCells,
+    searchExhausted: allocator.searchExhausted,
+    localWeek,
+    structuralCoreByWeek,
+  }
+}
+
+/** Emite sólo la columna local; las restantes son cálculo virtual del worker. */
+function recordStrengthAllocatorMetrics(
+  meta: RepairMeta,
+  allocation: StrengthBlockAllocation,
+  materialization: StrengthAllocationMaterialization,
+): void {
+  const localMatrix = allocation.matrix[allocation.localWeek]
+  if (!localMatrix || localMatrix.size === 0) return
+
+  const localDegraded = allocation.degradedCells
+    .filter((cell) => cell.week === allocation.localWeek)
+  const countBy = (reason: AllocationDegradationReason): number =>
+    localDegraded.filter((cell) => cell.reason === reason).length
+
+  meta.strengthAllocator = {
+    slotCount: localMatrix.size,
+    // La columna 0 es referencia, no una sustitución. En las restantes el
+    // contador acredita sólo una celda que realmente se pudo materializar.
+    assignedCount: materialization.assignedSlotKeys.size,
+    infeasibleIntraWeekCount: countBy('infeasible_intra_week'),
+    insufficientPoolCount: countBy('insufficient_pool'),
+    unresolvedIdentityCount: countBy('unresolved_identity'),
+    searchExhaustedCount: countBy('search_exhausted'),
+    unmaterializedCount: materialization.unmaterializedSlotKeys.size,
+  }
 }
 
 /**
- * Una sola asignación canónica por semana para fuerza. La decisión de razón se
- * toma sobre la entrada original: corrective gana el desempate y policy nunca
- * vuelve a tocar el mismo slot.
+ * Las semanas en vuelo no sirven de referencia: sólo una hermana lista ya
+ * persistió una firma pre-rotación con la que sea seguro comparar.
  */
+function recordDivergentStrengthTemplateWarning(
+  meta: RepairMeta,
+  context: RepairContext,
+  allocation: StrengthBlockAllocation,
+): void {
+  const previous = context.previousWeek
+  if (!previous || !isReadyWeek(previous) || !isPreviousWeekInSameBlock(context)) return
+
+  const previousSignatures = new Set(
+    previous.sessions
+      .filter((session) => session.sessionType === 'strength')
+      .map((session) => session.metadata?.planBuilderStrengthRotation?.templateSignature)
+      .filter((signature): signature is string => typeof signature === 'string' && signature.length > 0),
+  )
+  if (previousSignatures.size === 0 || previousSignatures.has(allocation.templateSignature)) return
+
+  meta.warnings.push({
+    code: 'allocator.divergent_template',
+    message: 'La semana anterior lista usó un template de fuerza distinto; la asignación coordinada es best-effort.',
+    sessionDate: context.week.weekStartDate,
+  })
+}
+
+interface StrengthAllocationMaterialization {
+  assignedSlotKeys: ReadonlySet<string>
+  unmaterializedSlotKeys: ReadonlySet<string>
+}
+
+/** Aplica exclusivamente la columna local sobre la sesión ya enriquecida. */
 function normalizeStrengthSessions(
   sessions: CoachSessionProposal[],
   context: RepairContext,
   meta: RepairMeta,
-): void {
+  allocation: StrengthBlockAllocation,
+): StrengthAllocationMaterialization {
   const strengthSessions = sessions.filter((session) => session.sessionType === 'strength')
-  if (strengthSessions.length === 0) return
+  const assignedSlotKeys = new Set<string>()
+  const unmaterializedSlotKeys = new Set<string>()
+  if (strengthSessions.length === 0) {
+    for (const slot of allocation.snapshot.slots) {
+      const assignedId = allocation.matrix[allocation.localWeek]?.get(slot.slotKey)
+      if (allocation.localWeek > 0 && assignedId && assignedId !== canonicalSnapshotSlotId(slot)) {
+        unmaterializedSlotKeys.add(slot.slotKey)
+      }
+    }
+    return { assignedSlotKeys, unmaterializedSlotKeys }
+  }
 
-  // El contrato de roles es posicional: el primer lift reconocido que no es
-  // core/power es el main lift. La normalización estructural posterior conserva
-  // el orden relativo dentro de cada grupo; imponer aquí un desempate
-  // alfabético convertiría un accesorio en main lift y rotaría el lift
-  // programado.
-
-  const weekIndexInBlock = getWeekIndexInBlock(context)
-  const availableEquipment = buildAthleteParameters(context.profile, context.wizardConfig).availableEquipment
+  const localMatrix = allocation.matrix[allocation.localWeek]
+  const committedStrengthIds = getCommittedStrengthIds(allocation)
   const currentBlockId = resolveBlockPositions(getPlanPhaseDescriptors(context), getPlanWeekDescriptors(context))
     .get(context.week.weekIndex)?.blockId
-  const previous = context.previousWeek
-  const previousUsable = previous != null && isReadyWeek(previous) && isPreviousWeekInSameBlock(context)
-  const previousKeys = previousUsable ? collectAllStrengthKeys(previous.sessions) : new Set<string>()
-  const originalCountable = collectCountableKeys(sessions)
-  const hasObservedCollision = [...originalCountable]
-    .filter((key) => previousKeys.has(key))
-    .length >= 3
-  const applyPolicy = weekIndexInBlock > 0
-
-  const slots: StrengthRotationSlot[] = []
-  const assignedKeys = new Set<string>()
-  strengthSessions.forEach((session, sessionOrdinal) => {
-    const exercises = session.exercises ?? []
-    const roles = resolveSessionStrengthRoles(exercises)
-    const alreadyCanonical = currentBlockId != null && hasCanonicalStrengthRotation(session, currentBlockId)
-    exercises.forEach((exercise, position) => {
-      const key = getStrengthExerciseKey(exercise)
-      if (!key) return
-      const isProtectedInjectedCore = isSelectedInjectedCore(exercise, {
-        weekIndexInBlock,
-        availableEquipment,
-      })
-      if (!isCountableRole(roles[position]!) || alreadyCanonical || isProtectedInjectedCore) {
-        assignedKeys.add(key)
-        return
-      }
-      const reason: StrengthSubstitutionReason | undefined = hasObservedCollision && previousKeys.has(key)
-        ? 'corrective'
-        : applyPolicy
-          ? 'policy'
-          : undefined
-      if (!reason) assignedKeys.add(key)
-      slots.push({
-        session,
-        sessionOrdinal,
-        position,
-        currentName: exercise.name,
-        currentRef: exercise.libraryRef,
-        reason,
-      })
-    })
-  })
-
-  // Reserva previa completa: los slot inmutables, main lifts y los slots que
-  // quedan sin candidato no pueden volver a aparecer en otro ejercicio.
-  const assignments = new Map<StrengthRotationSlot, StrengthSelectionExercise | undefined>()
-  for (const slot of slots) {
-    if (!slot.reason) continue
-    const replacement = selectStrengthReplacement({
-      originalName: slot.currentName,
-      originalRef: slot.currentRef,
-      context: buildStrengthSelectionContext(slot.session, context, []),
-      excludedKeys: new Set([...assignedKeys, ...previousKeys]),
-      rotationIndex: weekIndexInBlock * 31 + slot.sessionOrdinal * 7 + slot.position,
-      exerciseIndex: slot.position,
-    })
-    assignments.set(slot, replacement)
-    assignedKeys.add(getStrengthExerciseKey(
-      replacement ?? { name: slot.currentName, libraryRef: slot.currentRef },
-    ))
-  }
+  const applyPolicy = allocation.localWeek > 0
+  const alreadyCanonicalSessions = new Set(
+    strengthSessions
+      .filter((session) => currentBlockId != null && hasCanonicalStrengthRotation(session, currentBlockId))
+      .map(sessionKeyOf),
+  )
+  // Se calcula antes de sustituir cualquier slot: para [A, A] ambos índices
+  // viven todavía en la lista original y la segunda celda no se pierde al
+  // dejar de encontrar el primer A después de reemplazarlo.
+  const liveTargets = resolveLiveSnapshotSlotTargets(strengthSessions, allocation.snapshot)
 
   let policyActions = 0
   const policySessions = new Set<string>()
-  const correctiveSessions = new Set<string>()
-  for (const slot of slots) {
-    const replacement = assignments.get(slot)
-    if (
-      !replacement ||
-      getStrengthExerciseKey(replacement) === getStrengthExerciseKey({ name: slot.currentName, libraryRef: slot.currentRef })
-    ) continue
-    const exercises = slot.session.exercises
-    if (!exercises) continue
-    exercises[slot.position] = toStrengthProposal(replacement)
-    if (slot.reason === 'corrective') correctiveSessions.add(sessionKeyOf(slot.session))
-    else if (slot.reason === 'policy') {
-      policyActions++
-      policySessions.add(sessionKeyOf(slot.session))
+  for (const slot of allocation.snapshot.slots) {
+    const assignedId = localMatrix?.get(slot.slotKey)
+    if (!assignedId || assignedId === canonicalSnapshotSlotId(slot)) continue
+    if (!applyPolicy || alreadyCanonicalSessions.has(slot.sessionKey)) continue
+
+    const target = liveTargets.get(slot.slotKey)
+    if (!target) {
+      unmaterializedSlotKeys.add(slot.slotKey)
+      continue
     }
+
+    const replacement = buildStrengthReplacementById(
+      assignedId,
+      buildStrengthSelectionContext(target.session, context, []),
+      target.index,
+    )
+    if (!replacement) {
+      unmaterializedSlotKeys.add(slot.slotKey)
+      continue
+    }
+
+    target.session.exercises![target.index] = toStrengthProposal(replacement)
+    assignedSlotKeys.add(slot.slotKey)
+    policyActions++
+    policySessions.add(sessionKeyOf(target.session))
   }
 
-  for (const key of correctiveSessions) recordRepair(meta, 'corrective', key)
-  // El hidratador preserva el orden relativo dentro de cada bloque. Esto mantiene
-  // el main lift programado en su posición semántica aun al insertar core.
+  // Segunda pasada: conserva el core proyectado y no permite que `ensureCore`
+  // reemplace una identidad comprometida por la matriz.
   for (const session of strengthSessions) {
+    const structuralCore = allocation.structuralCoreByWeek[allocation.localWeek]?.get(sessionKeyOf(session))
     session.exercises = enhanceStrengthSessionExercises(session.exercises, {
       durationMin: session.durationMin,
       strengthProfile: context.profile.strengthProfile,
-      weekIndexInBlock: getWeekIndexInBlock(context),
-      availableEquipment,
+      weekIndexInBlock: allocation.localWeek,
+      availableEquipment: buildAthleteParameters(context.profile, context.wizardConfig).availableEquipment,
+      structuralCoreId: structuralCore?.coreId,
+      protectedExerciseIds: committedStrengthIds,
     })
     if (session.exercises) {
       const mode = shouldApplySupersetPolicy({
         phase: context.week.phase,
         sportProfile: deriveStrengthSportProfile(context),
         sessionDurationMin: session.durationMin,
-        // Sin `intent`: el wizard no tiene hoy ningun campo que exprese
-        // preferencia ni rechazo, y reutilizar uno con otro significado seria
-        // inventar una señal. Ausencia deja decidir al contexto.
       })
       session.exercises = planSupersetGroups(session.exercises, mode).exercises
     }
-    if (currentBlockId != null && (applyPolicy || correctiveSessions.has(sessionKeyOf(session)))) {
+    if (currentBlockId != null) {
       session.metadata = {
         ...(session.metadata ?? {}),
         planBuilderStrengthRotation: {
           blockId: currentBlockId,
           signature: canonicalStrengthSignature(session),
+          templateSignature: allocation.templateSignature,
         },
       }
     }
   }
+
   if (applyPolicy) {
     meta.strengthAccessoryRotationActionCount = (meta.strengthAccessoryRotationActionCount ?? 0) + policyActions
     meta.strengthAccessoryRotationSessionsAffected =
       (meta.strengthAccessoryRotationSessionsAffected ?? 0) + policySessions.size
   }
+  return { assignedSlotKeys, unmaterializedSlotKeys }
+}
+
+function canonicalSnapshotSlotId(slot: StrengthTemplateSlot): string {
+  return slot.canonicalId ?? `unresolved:${slot.name}`
+}
+
+function getCommittedStrengthIds(allocation: StrengthBlockAllocation): Set<string> {
+  const ids = new Set(allocation.matrix[allocation.localWeek]?.values() ?? [])
+  for (const projection of allocation.structuralCoreByWeek[allocation.localWeek]?.values() ?? []) {
+    ids.add(projection.coreId)
+  }
+  return ids
+}
+
+interface StrengthDensityOverlapGuard {
+  /** No deja que un extra local lleve algún par virtual por encima de I1. */
+  canAdd(id: string): boolean
+  /** Confirma un extra que sí entró para que el siguiente vea la misma columna final. */
+  commit(id: string): void
+}
+
+/**
+ * El allocator no decide el relleno, pero el relleno tampoco puede gastar el
+ * margen I1 que la matriz dejó exacto. Cada worker reconstruye un plan global
+ * y determinista de extras desde el mismo template, y materializa únicamente
+ * su columna. Así el guard ve también los extras de las semanas hermanas, sin
+ * la reserva FNV que dejaba 11/12 candidatos fuera de cada semana.
+ */
+function createStrengthDensityOverlapGuard(
+  allocation: StrengthBlockAllocation,
+  context: RepairContext,
+  strengthSessions: ReadonlyArray<CoachSessionProposal>,
+): StrengthDensityOverlapGuard {
+  const allByWeek = allocation.matrix.map((column, week) => {
+    const ids = new Set(column.values())
+    for (const slot of allocation.snapshot.slots) {
+      if (!isCountableRole(slot.role)) ids.add(canonicalSnapshotSlotId(slot))
+    }
+    for (const projection of allocation.structuralCoreByWeek[week]?.values() ?? []) {
+      ids.add(projection.coreId)
+    }
+    return ids
+  })
+  const countableByWeek = allocation.matrix.map((column, week) => {
+    const ids = new Set(column.values())
+    for (const projection of allocation.structuralCoreByWeek[week]?.values() ?? []) {
+      ids.add(projection.coreId)
+    }
+    return ids
+  })
+  const baseIdsByWeek = allByWeek.map((ids) => new Set(ids))
+
+  const pairStaysWithinBudget = (): boolean => {
+    for (let earlier = 0; earlier < allByWeek.length; earlier++) {
+      for (let later = earlier + 1; later < allByWeek.length; later++) {
+        let shared = 0
+        for (const id of countableByWeek[later]!) {
+          if (allByWeek[earlier]!.has(id)) shared++
+        }
+        if (shared > 2) return false
+      }
+    }
+    return true
+  }
+
+  const allowedByWeek = allByWeek.map(() => new Set<string>())
+  const positions = resolveBlockPositions(getPlanPhaseDescriptors(context), getPlanWeekDescriptors(context))
+  const currentBlockId = positions.get(context.week.weekIndex)?.blockId
+  const virtualWeeks = [...positions.entries()]
+    .filter(([, position]) => position.blockId === currentBlockId)
+    .sort((left, right) => left[1].indexInBlock - right[1].indexInBlock)
+
+  const reserve = (week: number, id: string): boolean => {
+    if (allByWeek[week]?.has(id)) return false
+    allByWeek[week]?.add(id)
+    countableByWeek[week]?.add(id)
+    const allowed = pairStaysWithinBudget()
+    if (allowed) {
+      allowedByWeek[week]?.add(id)
+    } else {
+      allByWeek[week]?.delete(id)
+      countableByWeek[week]?.delete(id)
+    }
+    return allowed
+  }
+
+  interface DensityPlan {
+    week: number
+    baseLength: number
+    target: number
+    candidates: CoachExerciseProposal[]
+    additions: number
+    minimumReserved: string[]
+  }
+
+  const plans: DensityPlan[] = []
+  const recentExercises = extractRecentStrengthExercises(context.previousWeek)
+  for (const [absoluteWeekIndex, position] of virtualWeeks) {
+    const week = position.indexInBlock
+    if (week >= allByWeek.length) continue
+    const virtualContext: RepairContext = {
+      ...context,
+      week: { ...context.week, weekIndex: absoluteWeekIndex },
+    }
+    for (const session of strengthSessions) {
+      const sourceExercises = session.exercises ?? []
+      if (sourceExercises.length === 0) continue
+
+      const selectionContext = buildStrengthSelectionContext(session, virtualContext, recentExercises)
+      const density = getTargetExerciseDensity(selectionContext)
+      const hasStructuralCore = session.durationMin >= 45 || sourceExercises.some(isFoundationCore)
+      const baseLength = sourceExercises.length + (hasStructuralCore && !sourceExercises.some(isFoundationCore) ? 1 : 0)
+      if (baseLength >= density.target) continue
+
+      const existingKeys = baseIdsByWeek[week]!
+      const candidates = selectStrengthDensityCandidates(selectionContext, existingKeys, hasStructuralCore)
+      plans.push({ week, baseLength, target: density.target, candidates, additions: 0, minimumReserved: [] })
+    }
+  }
+
+  const reserveFromPlan = (plan: DensityPlan, limit: number): void => {
+    const ordered = [
+      ...plan.candidates.filter(isStrengthWorkExercise),
+      ...plan.candidates.filter((candidate) => !isStrengthWorkExercise(candidate)),
+    ]
+    for (const candidate of ordered) {
+      if (plan.additions >= limit || plan.baseLength + plan.additions >= plan.target) break
+      const id = getStrengthExerciseKey(candidate)
+      if (allByWeek[plan.week]!.has(id)) continue
+      if (reserve(plan.week, id)) plan.additions++
+    }
+  }
+
+  // Primero se reparte el mínimo operativo entre TODAS las columnas. Llenar la
+  // semana 0 hasta el target antes de mirar la 11 sería determinista, pero
+  // volvería a dejar semanas cortas aunque existiera una solución factible.
+  const minimumRequests = plans.flatMap((plan, planIndex) =>
+    Array.from(
+      { length: Math.max(0, Math.min(plan.target - plan.baseLength, 5 - plan.baseLength)) },
+      () => planIndex,
+    ),
+  )
+  const orderedCandidates = (plan: DensityPlan): CoachExerciseProposal[] => [
+    ...plan.candidates.filter(isStrengthWorkExercise),
+    ...plan.candidates.filter((candidate) => !isStrengthWorkExercise(candidate)),
+  ]
+  let minimumNodes = 0
+  const MAX_MINIMUM_NODES = 30_000
+  const reserveMinimum = (requestIndex: number): boolean => {
+    if (requestIndex === minimumRequests.length) return true
+    if (++minimumNodes > MAX_MINIMUM_NODES) return false
+    const plan = plans[minimumRequests[requestIndex]!]!
+    for (const candidate of orderedCandidates(plan)) {
+      const id = getStrengthExerciseKey(candidate)
+      if (allByWeek[plan.week]!.has(id)) continue
+      allByWeek[plan.week]!.add(id)
+      countableByWeek[plan.week]!.add(id)
+      if (pairStaysWithinBudget()) {
+        plan.minimumReserved.push(id)
+        if (reserveMinimum(requestIndex + 1)) return true
+        plan.minimumReserved.pop()
+      }
+      allByWeek[plan.week]!.delete(id)
+      countableByWeek[plan.week]!.delete(id)
+    }
+    return false
+  }
+
+  if (reserveMinimum(0)) {
+    for (const plan of plans) {
+      for (const id of plan.minimumReserved) allowedByWeek[plan.week]!.add(id)
+      plan.additions = plan.minimumReserved.length
+    }
+  } else {
+    // La densidad es best-effort: si un template realmente no tiene una
+    // cobertura factible, conserva la búsqueda lineal y no bloquea el repair.
+    for (const plan of plans) {
+      reserveFromPlan(plan, Math.max(0, Math.min(plan.target - plan.baseLength, 5 - plan.baseLength)))
+    }
+  }
+  // Recién con ese suelo reservado se aprovecha el resto de la densidad.
+  for (const plan of plans) reserveFromPlan(plan, plan.target - plan.baseLength)
+
+  const localWeek = allocation.localWeek
+  const committed = new Set(baseIdsByWeek[localWeek] ?? [])
+
+  return {
+    canAdd(id: string): boolean {
+      return allowedByWeek[localWeek]?.has(id) === true && !committed.has(id)
+    },
+    commit(id: string): void {
+      committed.add(id)
+    },
+  }
+}
+
+/**
+ * Ancla slots a `date|timeBlock` y resuelve todas las ocurrencias antes de
+ * mutar. Los ordinales sólo sirven para la matriz virtual; nunca para volver a
+ * encontrar una sesión que el repair pudo reordenar o eliminar.
+ */
+function resolveLiveSnapshotSlotTargets(
+  strengthSessions: ReadonlyArray<CoachSessionProposal>,
+  snapshot: StrengthTemplateSnapshot,
+): Map<string, { session: CoachSessionProposal; index: number }> {
+  const sessionsByKey = new Map(strengthSessions.map((session) => [sessionKeyOf(session), session]))
+  const targets = new Map<string, { session: CoachSessionProposal; index: number }>()
+  const slotsBySession = new Map<string, StrengthTemplateSlot[]>()
+  for (const slot of snapshot.slots) {
+    slotsBySession.set(slot.sessionKey, [...(slotsBySession.get(slot.sessionKey) ?? []), slot])
+  }
+
+  for (const [sessionKey, slots] of slotsBySession) {
+    const session = sessionsByKey.get(sessionKey)
+    if (!session?.exercises) continue
+    const indexesByIdentity = new Map<string, number[]>()
+    for (const [index, exercise] of session.exercises.entries()) {
+      const identity = resolveStrengthExercise(exercise)?.definition?.id ?? `unresolved:${exercise.name}`
+      indexesByIdentity.set(identity, [...(indexesByIdentity.get(identity) ?? []), index])
+    }
+    const nextOccurrence = new Map<string, number>()
+    for (const slot of [...slots].sort((left, right) => left.positionInSession - right.positionInSession)) {
+      const identity = canonicalSnapshotSlotId(slot)
+      const occurrence = nextOccurrence.get(identity) ?? 0
+      nextOccurrence.set(identity, occurrence + 1)
+      const index = indexesByIdentity.get(identity)?.[occurrence]
+      if (index != null) targets.set(slot.slotKey, { session, index })
+    }
+  }
+  return targets
 }
 
 function canonicalStrengthSignature(session: CoachSessionProposal): string {
@@ -2799,6 +3203,9 @@ function completeStrengthExercises(
   session: CoachSessionProposal,
   context: RepairContext,
   recentExercises = extractRecentStrengthExercises(context.previousWeek),
+  structuralCore?: StructuralCoreProjection,
+  committedStrengthIds?: ReadonlySet<string>,
+  densityOverlapGuard?: StrengthDensityOverlapGuard,
 ): void {
   const result = selectStrengthSession(buildStrengthSelectionContext(session, context, recentExercises))
   session.exercises = result.exercises.map(toStrengthProposal)
@@ -2808,13 +3215,23 @@ function completeStrengthExercises(
       starLift: result.starLift,
     }
   }
-  enhanceStrengthSessionDetails(session, context, recentExercises)
+  enhanceStrengthSessionDetails(
+    session,
+    context,
+    recentExercises,
+    structuralCore,
+    committedStrengthIds,
+    densityOverlapGuard,
+  )
 }
 
 function enhanceStrengthSessionDetails(
   session: CoachSessionProposal,
   context: RepairContext,
   recentExercises = extractRecentStrengthExercises(context.previousWeek),
+  structuralCore?: StructuralCoreProjection,
+  committedStrengthIds?: ReadonlySet<string>,
+  densityOverlapGuard?: StrengthDensityOverlapGuard,
 ): boolean {
   const before = JSON.stringify(session.exercises ?? [])
   const enhanced = enhanceStrengthSessionExercises(session.exercises, {
@@ -2822,8 +3239,18 @@ function enhanceStrengthSessionDetails(
     strengthProfile: context.profile.strengthProfile,
     weekIndexInBlock: getWeekIndexInBlock(context),
     availableEquipment: buildAthleteParameters(context.profile, context.wizardConfig).availableEquipment,
+    structuralCoreId: structuralCore?.coreId,
+    protectedExerciseIds: committedStrengthIds,
   })
-  session.exercises = completeStrengthExerciseDensity(session, context, recentExercises, enhanced)
+  session.exercises = completeStrengthExerciseDensity(
+    session,
+    context,
+    recentExercises,
+    enhanced,
+    committedStrengthIds,
+    structuralCore,
+    densityOverlapGuard,
+  )
   return before !== JSON.stringify(session.exercises ?? [])
 }
 
@@ -2856,6 +3283,9 @@ function completeStrengthExerciseDensity(
   context: RepairContext,
   recentExercises: string[],
   exercises: CoachExerciseProposal[] | undefined,
+  committedStrengthIds?: ReadonlySet<string>,
+  structuralCore?: StructuralCoreProjection,
+  densityOverlapGuard?: StrengthDensityOverlapGuard,
 ): CoachExerciseProposal[] | undefined {
   if (!exercises || exercises.length === 0) return exercises
 
@@ -2863,21 +3293,25 @@ function completeStrengthExerciseDensity(
   const density = getTargetExerciseDensity(selectionContext)
   if (exercises.length >= density.target) return exercises
 
-  const selected = selectStrengthSession(selectionContext).exercises
-  const existingKeys = new Set(exercises.map(getStrengthExerciseKey))
+  const hasStructuralCore = exercises.some(isFoundationCore)
+  const existingKeys = new Set([
+    ...(committedStrengthIds ?? []),
+    ...exercises.map(getStrengthExerciseKey),
+  ])
   const additions: CoachExerciseProposal[] = []
   const minimumStrengthWork = getMinimumStrengthWorkCount(session.durationMin)
   let strengthWorkCount = exercises.filter(isStrengthWorkExercise).length
 
-  const candidates = selected
-    .map(toStrengthProposal)
-    .filter((exercise) => !existingKeys.has(getStrengthExerciseKey(exercise)))
+  const candidates = selectStrengthDensityCandidates(selectionContext, existingKeys, hasStructuralCore)
 
   for (const candidate of candidates) {
     if (exercises.length + additions.length >= density.target) break
     if (!isStrengthWorkExercise(candidate)) continue
+    const key = getStrengthExerciseKey(candidate)
+    if (densityOverlapGuard && !densityOverlapGuard.canAdd(key)) continue
     additions.push(candidate)
-    existingKeys.add(getStrengthExerciseKey(candidate))
+    existingKeys.add(key)
+    densityOverlapGuard?.commit(key)
     strengthWorkCount++
     if (strengthWorkCount >= minimumStrengthWork) break
   }
@@ -2886,8 +3320,10 @@ function completeStrengthExerciseDensity(
     if (exercises.length + additions.length >= density.target) break
     const key = getStrengthExerciseKey(candidate)
     if (existingKeys.has(key)) continue
+    if (densityOverlapGuard && !densityOverlapGuard.canAdd(key)) continue
     additions.push(candidate)
     existingKeys.add(key)
+    densityOverlapGuard?.commit(key)
   }
 
   if (additions.length === 0) return exercises
@@ -2897,7 +3333,42 @@ function completeStrengthExerciseDensity(
     strengthProfile: context.profile.strengthProfile,
     weekIndexInBlock: getWeekIndexInBlock(context),
     availableEquipment: buildAthleteParameters(context.profile, context.wizardConfig).availableEquipment,
+    structuralCoreId: structuralCore?.coreId,
+    protectedExerciseIds: committedStrengthIds,
   })
+}
+
+/**
+ * El selector entrega una primera sesión compacta, pero si el allocator dejó
+ * sin margen a esos ids necesitamos alternativas elegibles, no abandonar la
+ * densidad ni inventar ejercicios. Repetir el selector marcando el lote previo
+ * como reciente conserva fase/equipo/prescripción y abre candidatos reales.
+ */
+function selectStrengthDensityCandidates(
+  context: StrengthContext,
+  existingKeys: ReadonlySet<string>,
+  hasStructuralCore: boolean,
+): CoachExerciseProposal[] {
+  const candidates: CoachExerciseProposal[] = []
+  const seen = new Set(existingKeys)
+  let recentExercises = [...context.recentExercises]
+
+  for (let pass = 0; pass < 4; pass++) {
+    const selected = selectStrengthSession({ ...context, recentExercises }).exercises
+    let found = false
+    for (const selection of selected) {
+      const exercise = toStrengthProposal(selection)
+      const key = getStrengthExerciseKey(exercise)
+      if (seen.has(key) || (hasStructuralCore && isFoundationCore(exercise))) continue
+      seen.add(key)
+      candidates.push(exercise)
+      found = true
+    }
+    if (!found) break
+    recentExercises = [...recentExercises, ...selected.map(getStrengthExerciseKey)]
+  }
+
+  return candidates
 }
 
 function getMinimumStrengthWorkCount(durationMin: number): number {

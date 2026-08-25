@@ -1,5 +1,5 @@
 import type { AthleteProfile, CoachAction, CoachSessionProposal, PlanWizardConfig, StageTiming } from '../../types'
-import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
+import type { StrengthAllocatorMetrics, TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import type { AIRawResponse, AIRequest, CreateWeekNormalizationDiagnostic } from '../ai/types'
 import { normalizeResponse } from '../ai/responseNormalizer'
 import { buildWeekStructuredSystemPromptMinimal, buildWeekUserPrompt } from '../week/prompts/weekPrompt'
@@ -54,6 +54,7 @@ export interface GenerateWeekResult {
     structurallyRepairedSessionsAffected: number
     strengthAccessoryRotationActionCount?: number
     strengthAccessoryRotationSessionsAffected?: number
+    strengthAllocator?: StrengthAllocatorMetrics
     squashDrillRotationActionCount?: number
     squashDrillRotationSessionsAffected?: number
     squashDrillRotationOmittedCount?: number
@@ -80,6 +81,7 @@ export interface WeekActionEvaluation extends RepairTaxonomySummary {
   repairTaxonomyVersion: 2
   strengthAccessoryRotationActionCount?: number
   strengthAccessoryRotationSessionsAffected?: number
+  strengthAllocator?: StrengthAllocatorMetrics
   squashDrillRotationActionCount?: number
   squashDrillRotationSessionsAffected?: number
   squashDrillRotationOmittedCount?: number
@@ -280,6 +282,7 @@ export function validateGeneratedWeekAction(
       filteredSportCount: repairResult.meta.filteredSportCount,
       strengthAccessoryRotationActionCount: repairResult.meta.strengthAccessoryRotationActionCount,
       strengthAccessoryRotationSessionsAffected: repairResult.meta.strengthAccessoryRotationSessionsAffected,
+      strengthAllocator: repairResult.meta.strengthAllocator,
       squashDrillRotationActionCount: repairResult.meta.squashDrillRotationActionCount,
       squashDrillRotationSessionsAffected: repairResult.meta.squashDrillRotationSessionsAffected,
       squashDrillRotationOmittedCount: repairResult.meta.squashDrillRotationOmittedCount,
@@ -303,6 +306,7 @@ export function validateGeneratedWeekAction(
     filteredSportCount: repairResult.meta.filteredSportCount,
     strengthAccessoryRotationActionCount: repairResult.meta.strengthAccessoryRotationActionCount,
     strengthAccessoryRotationSessionsAffected: repairResult.meta.strengthAccessoryRotationSessionsAffected,
+    strengthAllocator: repairResult.meta.strengthAllocator,
     squashDrillRotationActionCount: repairResult.meta.squashDrillRotationActionCount,
     squashDrillRotationSessionsAffected: repairResult.meta.squashDrillRotationSessionsAffected,
     squashDrillRotationOmittedCount: repairResult.meta.squashDrillRotationOmittedCount,
@@ -399,6 +403,7 @@ export async function generateWeekCore(input: GenerateWeekCoreInput): Promise<Ge
       structurallyRepairedSessionsAffected: evaluation.structurallyRepairedSessionsAffected,
       strengthAccessoryRotationActionCount: evaluation.strengthAccessoryRotationActionCount,
       strengthAccessoryRotationSessionsAffected: evaluation.strengthAccessoryRotationSessionsAffected,
+      strengthAllocator: evaluation.strengthAllocator,
       squashDrillRotationActionCount: evaluation.squashDrillRotationActionCount,
       squashDrillRotationSessionsAffected: evaluation.squashDrillRotationSessionsAffected,
       squashDrillRotationOmittedCount: evaluation.squashDrillRotationOmittedCount,

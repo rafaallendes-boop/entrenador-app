@@ -1,6 +1,10 @@
 import type { AthleteProfile, PlanWizardConfig } from '../../types'
 import type { AIRawResponse, AIRequest } from '../ai/types'
-import type { PlanGenerationSummary, TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
+import type {
+  PlanGenerationSummary,
+  TrainingPlan,
+  TrainingPlanWeek,
+} from '../../types/planBuilder'
 import { generateWeekCore, summarizeWeekGenerationError } from './generateWeekCore'
 import { countReadyWeeks, isReadyWeek, sortWeeks } from './weekUtils'
 import { getExpectedSessionsForPlanWeek } from './dateRange'
@@ -367,6 +371,7 @@ function makeResolvedWeek(
       structurallyRepairedSessionsAffected: result.meta.structurallyRepairedSessionsAffected,
       strengthAccessoryRotationActionCount: result.meta.strengthAccessoryRotationActionCount,
       strengthAccessoryRotationSessionsAffected: result.meta.strengthAccessoryRotationSessionsAffected,
+      strengthAllocator: result.meta.strengthAllocator,
       squashDrillRotationActionCount: result.meta.squashDrillRotationActionCount,
       squashDrillRotationSessionsAffected: result.meta.squashDrillRotationSessionsAffected,
       squashDrillRotationOmittedCount: result.meta.squashDrillRotationOmittedCount,
@@ -423,6 +428,7 @@ function makeFallbackResolvedWeek(
       ...taxonomySummary,
       strengthAccessoryRotationActionCount: fallback.meta.strengthAccessoryRotationActionCount,
       strengthAccessoryRotationSessionsAffected: fallback.meta.strengthAccessoryRotationSessionsAffected,
+      strengthAllocator: fallback.meta.strengthAllocator,
       squashDrillRotationActionCount: fallback.meta.squashDrillRotationActionCount,
       squashDrillRotationSessionsAffected: fallback.meta.squashDrillRotationSessionsAffected,
       squashDrillRotationOmittedCount: fallback.meta.squashDrillRotationOmittedCount,

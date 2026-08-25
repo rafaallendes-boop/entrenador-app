@@ -73,7 +73,10 @@ describe('conversión canónica a CoachExerciseProposal', () => {
       {
         file: 'src/services/planBuilder/repairWeek.ts',
         canonicalCalls: /(?:\.map\(toStrengthProposal\)|=\s*toStrengthProposal\(replacement\))/g,
-        expectedCalls: 3,
+        // La densidad ahora centraliza su conversión en
+        // `selectStrengthDensityCandidates`; los dos sitios restantes son la
+        // materialización de allocator y la hidratación completa.
+        expectedCalls: 2,
       },
       {
         file: 'src/services/ai/promptModules/strengthPrompt.ts',

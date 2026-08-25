@@ -30,7 +30,7 @@ const BLOCK_ORDER: ExerciseGroup[] = ['core', 'olympic', 'legs', 'push', 'pull',
  * `dead_bug` va primero a propósito: es lo que devuelve el camino sin contexto
  * de semana, que es el del chat, y así ese comportamiento no cambia.
  */
-const INJECTED_CORE_ROTATION = [
+export const INJECTED_CORE_ROTATION = [
   'dead_bug',
   'plank',
   'side_plank',
@@ -41,7 +41,7 @@ const INJECTED_CORE_ROTATION = [
  * Determinista y total: sin índice —o con uno no utilizable— devuelve el
  * primero del pool, que es el comportamiento previo a la rotación.
  */
-function resolveInjectedCoreId(
+export function resolveInjectedCoreId(
   weekIndexInBlock?: number,
   availableEquipment?: EquipmentType[],
 ): string {
@@ -71,6 +71,17 @@ export interface StrengthStructureOptions {
   weekIndexInBlock?: number
   /** Equipamiento declarado por el atleta; limita variantes no universales. */
   availableEquipment?: EquipmentType[]
+  /**
+   * Proyección del core estructural calculada desde el snapshot del template.
+   * Si está presente, reemplaza al primer foundation core o se antepone de
+   * forma idempotente; nunca se vuelve a derivar desde la lista ya mutada.
+   */
+  structuralCoreId?: string
+  /**
+   * Identidades de celdas ya comprometidas por el allocator. El enriquecedor
+   * no puede reemplazarlas al intentar restaurar estructura de core.
+   */
+  protectedExerciseIds?: ReadonlySet<string>
 }
 
 export function normalizeStrengthSessionExercises<T extends StrengthExerciseLike>(
@@ -84,10 +95,13 @@ export function normalizeStrengthSessionExercises<T extends StrengthExerciseLike
   const expanded = expandGenericFootworkBlocks(protocolFiltered)
   const normalized = expanded.map((exercise) => normalizeStrengthExerciseGroup(exercise))
   const withCore = durationMin >= 45
-    ? ensureCoreBlock(
-        normalized,
-        resolveInjectedCoreId(options.weekIndexInBlock, options.availableEquipment),
-      )
+    ? options.structuralCoreId
+      ? ensureProjectedCoreBlock(normalized, options.structuralCoreId, options.protectedExerciseIds)
+      : ensureCoreBlock(
+          normalized,
+          resolveInjectedCoreId(options.weekIndexInBlock, options.availableEquipment),
+          options.protectedExerciseIds,
+        )
     : normalized
 
   return sortStrengthSessionUnits(withCore)
@@ -261,6 +275,7 @@ function inferExerciseGroup(exercise: Pick<StrengthExerciseLike, 'name' | 'group
 function ensureCoreBlock<T extends StrengthExerciseLike>(
   exercises: T[],
   coreId: string,
+  protectedExerciseIds?: ReadonlySet<string>,
 ): T[] {
   const core = exercises.filter((exercise) => exercise.group === 'core')
   if (core.length === 0) {
@@ -284,6 +299,7 @@ function ensureCoreBlock<T extends StrengthExerciseLike>(
   let replaced = false
   return exercises.map((exercise) => {
     if (replaced || exercise.group !== 'core') return exercise
+    if (isProtectedExercise(exercise, protectedExerciseIds)) return exercise
     replaced = true
     const replacement = makeCoreExercise<T>(coreId, 'Zona media: anti-extensión y control lumbo-pélvico.')
     if (!exercise.supersetGroup) return replacement
@@ -298,6 +314,44 @@ function ensureCoreBlock<T extends StrengthExerciseLike>(
       supersetGroup: exercise.supersetGroup,
     }
   })
+}
+
+/**
+ * Aplica la proyección decidida antes de cualquier mutación de la sesión. Es
+ * idempotente: después de anteponer el core virtual, la segunda pasada lo ve
+ * como foundation core y sólo lo reemite con la misma identidad.
+ */
+function ensureProjectedCoreBlock<T extends StrengthExerciseLike>(
+  exercises: T[],
+  coreId: string,
+  protectedExerciseIds?: ReadonlySet<string>,
+): T[] {
+  const foundationIndex = exercises.findIndex(isFoundationCore)
+  if (foundationIndex < 0) {
+    return [
+      makeCoreExercise<T>(coreId, 'Zona media: anti-extensión y control lumbo-pélvico.'),
+      ...exercises,
+    ]
+  }
+
+  const current = exercises[foundationIndex]!
+  const currentId = resolveStrengthExercise(current)?.definition?.id
+  if (currentId === coreId || isProtectedExercise(current, protectedExerciseIds)) return exercises
+
+  const replacement = makeCoreExercise<T>(coreId, 'Zona media: anti-extensión y control lumbo-pélvico.')
+  if (current.supersetGroup) {
+    replacement.sets = current.sets
+    replacement.supersetGroup = current.supersetGroup
+  }
+  return exercises.map((exercise, index) => index === foundationIndex ? replacement : exercise)
+}
+
+function isProtectedExercise(
+  exercise: Pick<StrengthExerciseLike, 'name'> & { libraryRef?: ExerciseLibraryRef },
+  protectedExerciseIds?: ReadonlySet<string>,
+): boolean {
+  const id = resolveStrengthExercise(exercise)?.definition?.id
+  return id != null && protectedExerciseIds?.has(id) === true
 }
 
 export function isSelectedInjectedCore(
@@ -536,7 +590,9 @@ function makeCoreExercise<T extends StrengthExerciseLike>(id: string, notes: str
   } as T
 }
 
-function isFoundationCore(exercise: StrengthExerciseLike): boolean {
+export function isFoundationCore(
+  exercise: Pick<StrengthExerciseLike, 'name'> & { libraryRef?: ExerciseLibraryRef },
+): boolean {
   const definition = resolveStrengthExercise(exercise)?.definition
   if (definition) {
     return (

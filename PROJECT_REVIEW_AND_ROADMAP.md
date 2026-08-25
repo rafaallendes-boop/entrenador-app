@@ -1752,7 +1752,7 @@ de atleta no se puede verificar con un solo dispositivo** y es el cambio con
 mayor alcance destructivo del bloque: queda absorbido por la validación
 multi-dispositivo que ya es prioridad 6.
 
-### 29. Fuerza — rotación del core inyectado (2026-08-14)
+### 29. Fuerza — core inyectado y allocator coordinado de bloque (2026-08-14/25)
 
 Cierra la **Causa A** del Hallazgo 5 de §28. Sin migraciones, dos archivos de
 producción, tres call sites y dos archivos de test.
@@ -1796,19 +1796,51 @@ accesorios no puede volver a rotarlo en la pasada final del repair.
 no arregla la rotación. En la reproducción baja el solape de 3 a 2 y el warning
 deja de dispararse, pero los otros dos compartidos siguen ahí.
 
-**Causa B, abierta y explícita.** `selectStrengthReplacement` hace
-`candidates[rotationIndex % candidates.length]` (`strengthSelector.ts:382`).
-Los pools no son el cuello de botella —medidos: rotación 7, push 10, pull 13—;
-lo que pasa es que el pool *después de exclusiones* difiere entre semanas, así
-que índices distintos aterrizan en el mismo candidato. La semana 0 de un bloque
-no rota nunca (`applyPolicy = weekIndexInBlock > 0`), así que 0 vs 1 diverge y
-el choque queda entre las dos que sí rotan. Resolverlo pide darle a la
-reparación conocimiento del bloque, o que la política garantice divergencia
-entre semanas hermanas bajo concurrencia. **Es trabajo separado y no forma
-parte de este cierre.**
+**Causa B, cerrada (2026-08-25).** La rotación escalar se reemplazó por un
+coordinador puro de bloque: congela el template antes de core/densidad, proyecta
+el core estructural para todas las semanas virtuales y resuelve una matriz por
+`slotKey` estable. El allocator aplica el presupuesto direccional I1
+(`|countables(P_j) ∩ all(P_i)| ≤ 2`), exclusión intra-semana e identidad
+canónica; explora también degradaciones para conservar el óptimo lexicográfico.
+Cada worker calcula la misma matriz y materializa exclusivamente su columna.
+El main lift queda fijo y no contable; el core proyectado entra como fijo
+contable en las N semanas. El slot se ancla al `date|timeBlock` de la sesión,
+no al ordinal de una lista que el repair puede recortar o reordenar; además se
+localizan todas las ocurrencias contra la lista viva antes de reemplazar la
+primera. Si la sesión ya no existe, no se lanza: la celda queda explícitamente
+como no materializada en telemetría.
 
-Verificado: **416 archivos / 3390 tests**, `tsc -b`, lint, build y
-`git diff --check` verdes.
+Un core foundation prescrito que no es parte de la allowlist inyectada —por
+ejemplo Copenhagen— se conserva como core estructural fijo y contable; no se
+sobrescribe para hacer rotar relleno. La densidad sigue siendo **best-effort**,
+pero ya no queda fuera del presupuesto: cada worker reconstruye un plan global
+de extras desde el template, reparte primero el mínimo operativo de todas las
+columnas y luego el resto, y materializa sólo su columna. El plan conserva los
+filtros del selector y explora alternativas elegibles marcando lotes previos
+como recientes; no hay reserva FNV por semana. Así los extras no llevan I1 por
+encima de dos en las sesiones finales de templates hermanos iguales.
+
+La metadata persiste dos firmas distintas: `templateSignature` describe la
+entrada congelada y `signature` el resultado post-rotación. Si una semana
+anterior ya lista declara un template distinto, se emite
+`allocator.divergent_template`: no se finge la garantía de una matriz que las
+dos semanas no compartieron. La telemetría publica sólo la columna local
+(slots, asignaciones realmente materializadas, no-materializadas y causa
+precisa de cada degradación), nunca el cálculo virtual de los hermanos. La
+semana 0 es referencia: sus slots no se contabilizan como asignaciones. Una
+degradación real no se relabela como `search_exhausted` sólo porque el
+presupuesto haya terminado más tarde.
+
+`selectStrengthReplacement` se conserva como API de compatibilidad del
+selector, pero la ruta productiva del Plan Builder consume el pool canónico y
+materializa el id decidido por el allocator; sus contratos se prueban sobre esa
+ruta, no sobre el selector escalar legado.
+
+**Límite declarado.** La garantía se verifica sobre templates hermanos iguales,
+incluido un bloque real de 12 semanas con densidad final y uno esparso. Una
+entrada divergente, una sesión eliminada o una identidad fuera de catálogo se
+mantiene best-effort y se observa explícitamente; no se inventan identidades
+para fingir cobertura.
 
 ### 30. Límites durables de uso y gasto de IA (2026-08-16/17)
 
@@ -2272,7 +2304,7 @@ Objetivo: que el primer plan pagado se pueda mirar a la cara.
 - [x] Guardar backup/export de cada plan arquetipo.
 - [x] Crear checklist manual de revision de entrenador.
 - [ ] Revisar warnings de variedad de drills en build/peak.
-- [ ] Confirmar que fuerza no repita plantillas clonadas semana a semana. (Hallazgo 5 de §28. **Causa A cerrada** el 2026-08-14 — el core inyectado ahora rota por semana, ver §29. **Causa B abierta**: dos semanas rotadas por política siguen pudiendo converger bajo concurrencia.)
+- [x] Confirmar que fuerza no repita plantillas clonadas semana a semana. (Hallazgo 5 de §28. **Causa A:** el core inyectado rota por semana. **Causa B:** el allocator coordinado resuelve el bloque completo por slot estable bajo concurrencia; ver §29.)
 - [x] Confirmar que 1RM se usa cuando existe. (Verificado numericamente contra el perfil guardado.)
 - [x] Confirmar que running/ciclismo aparecen solo si aportan al objetivo. (No aparecieron cuando no se seleccionaron como complementarios.)
 
