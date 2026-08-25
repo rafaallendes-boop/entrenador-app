@@ -59,6 +59,21 @@ describe('operations-dashboard', () => {
     expect(mocks.readOperationsMetrics).not.toHaveBeenCalled()
   })
 
+  it('un fallo de auth sin statusCode 401 (config o timeout) devuelve 500, no 401, y no filtra la causa cruda', async () => {
+    // resolveAuthContext también puede rechazar sin `statusCode` — p. ej.
+    // SUPABASE_URL/SUPABASE_ANON_KEY ausentes o un timeout de
+    // `auth.v1/user` — a diferencia del rechazo explícito por sesión
+    // ausente/inválida, que siempre trae `statusCode: 401`. Ese caso no debe
+    // tratarse como "sin sesión": es un fallo del servidor.
+    mocks.resolveAuthContext.mockRejectedValue(new Error('SUPABASE_URL no configurada.'))
+
+    const response = await invoke()
+
+    expect(response.statusCode).toBe(500)
+    expect(response.body).not.toContain('SUPABASE_URL no configurada')
+    expect(mocks.readOperationsMetrics).not.toHaveBeenCalled()
+  })
+
   it('una cuenta autenticada no listada devuelve 403 y no consulta telemetría', async () => {
     mocks.resolveAuthContext.mockResolvedValue({ userId: OTHER_ID, token: 'tok' })
 

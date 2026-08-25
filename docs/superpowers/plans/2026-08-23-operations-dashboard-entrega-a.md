@@ -1,6 +1,6 @@
 # Dashboard de operación (Entrega A) — plan de implementación
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox syntax for tracking.
 
 **Goal:** Una vista privada `/ops`, accesible sólo por los UUID listados en
 `OPERATIONS_ADMIN_USER_IDS`, que responde en una pantalla cuánta actividad,
@@ -18,6 +18,14 @@ Functions (TypeScript, `@netlify/functions`), React + React Router + Zustand,
 Vitest.
 
 **Spec:** [`docs/superpowers/specs/2026-08-23-operations-dashboard-and-client-errors-design.md`](../specs/2026-08-23-operations-dashboard-and-client-errors-design.md)
+
+**Estado de ejecución (2026-08-24):** Entrega A completada y desplegada en
+`839f665`. Se marcaron todos los pasos realizados. El resultado incorpora
+cuatro mejoras respecto al borrador: `totalCostUsd`/`totalCostCoverage` y el
+guard `isOperationsMetrics`; latencias de Plan Builder end-to-end desde
+`enqueued_at`; truncación de `error_code` a 40 caracteres; y tres índices
+por `created_at desc`. La evidencia de código y del rollout 7/7 cerrado está en
+[`2026-08-23-operations-dashboard-smoke.md`](../smokes/2026-08-23-operations-dashboard-smoke.md).
 
 ## Global Constraints
 
@@ -106,7 +114,7 @@ ya refleja la versión correcta.
   `OperationsWindow`, `OperationsMetrics`; type guard
   `isOperationsWindow(value: unknown): value is OperationsWindow`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 // src/services/operations/__tests__/operationsMetricsContract.test.ts
@@ -193,12 +201,12 @@ describe('operationsMetricsContract', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run src/services/operations/__tests__/operationsMetricsContract.test.ts`
 Expected: FAIL — "Failed to resolve import ../operationsMetricsContract".
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```ts
 // src/services/operations/operationsMetricsContract.ts
@@ -381,12 +389,12 @@ export function isOperationsWindow(value: unknown): value is OperationsWindow {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/services/operations/__tests__/operationsMetricsContract.test.ts`
 Expected: PASS, 8 tests.
 
-- [ ] **Step 5: Verify and hand off**
+- [x] **Step 5: Verify and hand off**
 
 Run: `npm run lint && npx tsc -b`
 Expected: sin errores.
@@ -410,7 +418,7 @@ vacuas— las dos aserciones de columnas de tokens. Se renombró esa variable a
 - Produces: RPC `public.read_operations_metrics(p_since timestamptz) returns jsonb`,
   ejecutable **sólo** por `service_role`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 El `.sql` no se puede ejecutar en CI (aplicación manual), así que el guard
 verifica sobre el texto las propiedades que, si se rompen, sólo se descubrirían
@@ -477,12 +485,12 @@ describe('022_operations_metrics.sql', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run src/services/operations/__tests__/operationsMetricsMigrationGuard.test.ts`
 Expected: FAIL — `ENOENT: no such file ... supabase/022_operations_metrics.sql`.
 
-- [ ] **Step 3: Write the migration**
+- [x] **Step 3: Write the migration**
 
 ```sql
 -- supabase/022_operations_metrics.sql
@@ -649,12 +657,12 @@ grant execute on function public.read_operations_metrics(timestamptz)
   to service_role;
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/services/operations/__tests__/operationsMetricsMigrationGuard.test.ts`
 Expected: PASS, 7 tests.
 
-- [ ] **Step 5: Verificar que el guard no es vacuo**
+- [x] **Step 5: Verificar que el guard no es vacuo**
 
 Editar temporalmente el `.sql` cambiando `to service_role;` por
 `to authenticated;`, correr el test y confirmar que **falla**. Revertir la
@@ -684,7 +692,7 @@ fue renombrado para declarar lo que realmente verifica.
 - Consumes: nada.
 - Produces: `isOperationsAdmin(userId: string, env?: NodeJS.ProcessEnv): boolean`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 // netlify/functions/__tests__/operationsAdmins.test.ts
@@ -744,12 +752,12 @@ describe('isOperationsAdmin', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run netlify/functions/__tests__/operationsAdmins.test.ts`
 Expected: FAIL — no se resuelve `../_shared/operationsAdmins`.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```ts
 // netlify/functions/_shared/operationsAdmins.ts
@@ -784,12 +792,12 @@ export function isOperationsAdmin(
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run netlify/functions/__tests__/operationsAdmins.test.ts`
 Expected: PASS, 9 tests.
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 Run: `npm run lint && npx tsc -b`
 
@@ -806,7 +814,7 @@ Run: `npm run lint && npx tsc -b`
 - Produces: `readOperationsMetrics(now?: number): Promise<OperationsMetrics>`;
   `OperationsMetricsError` con `.statusCode`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 // netlify/functions/__tests__/operationsMetrics.test.ts
@@ -914,12 +922,12 @@ describe('readOperationsMetrics', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run netlify/functions/__tests__/operationsMetrics.test.ts`
 Expected: FAIL — no se resuelve `../_shared/operationsMetrics`.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```ts
 // netlify/functions/_shared/operationsMetrics.ts
@@ -1000,12 +1008,12 @@ export async function readOperationsMetrics(
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run netlify/functions/__tests__/operationsMetrics.test.ts`
 Expected: PASS, 7 tests.
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 Run: `npm run lint && npx tsc -b`
 
@@ -1024,7 +1032,7 @@ Run: `npm run lint && npx tsc -b`
 - Produces: `handler` (`@netlify/functions`), en `GET
   /.netlify/functions/operations-dashboard`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 // netlify/functions/__tests__/operationsDashboard.test.ts
@@ -1124,12 +1132,12 @@ describe('operations-dashboard', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run netlify/functions/__tests__/operationsDashboard.test.ts`
 Expected: FAIL — no se resuelve `../operations-dashboard`.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```ts
 // netlify/functions/operations-dashboard.ts
@@ -1169,12 +1177,12 @@ export const handler: Handler = async (event) => {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run netlify/functions/__tests__/operationsDashboard.test.ts`
 Expected: PASS, 6 tests.
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 Run: `npm run lint && npx tsc -b`
 
@@ -1192,7 +1200,7 @@ Run: `npm run lint && npx tsc -b`
 - Produces: `fetchOperationsMetrics(): Promise<OperationsMetrics>`;
   `OperationsAccessError` con `.kind: 'unauthenticated' | 'forbidden' | 'unavailable'`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 // src/services/operations/__tests__/fetchOperationsMetrics.test.ts
@@ -1262,12 +1270,12 @@ describe('fetchOperationsMetrics', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run src/services/operations/__tests__/fetchOperationsMetrics.test.ts`
 Expected: FAIL — no se resuelve `../fetchOperationsMetrics`.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```ts
 // src/services/operations/fetchOperationsMetrics.ts
@@ -1323,12 +1331,12 @@ export async function fetchOperationsMetrics(): Promise<OperationsMetrics> {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/services/operations/__tests__/fetchOperationsMetrics.test.ts`
 Expected: PASS, 6 tests.
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 Run: `npm run lint && npx tsc -b`
 
@@ -1354,7 +1362,7 @@ en `afterEach`. **No hay `@testing-library/jest-dom`**: se usa
   `OperationsMetrics` (Task 1).
 - Produces: `OperationsPage` (default export), ruta `ROUTES.OPS`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```tsx
 // src/pages/__tests__/OperationsPage.test.tsx
@@ -1477,12 +1485,12 @@ describe('OperationsPage', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run src/pages/__tests__/OperationsPage.test.tsx`
 Expected: FAIL — no se resuelve `../OperationsPage`.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```tsx
 // src/pages/OperationsPage.tsx
@@ -1650,18 +1658,18 @@ Y la ruta, junto a la de `ROUTES.COACH` (~línea 417):
                     <Route path={ROUTES.OPS} element={<RouteBoundary><OperationsPage /></RouteBoundary>} />
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run src/pages/__tests__/OperationsPage.test.tsx`
 Expected: PASS, 8 tests.
 
-- [ ] **Step 5: Confirmar que la ruta no aparece en navegación**
+- [x] **Step 5: Confirmar que la ruta no aparece en navegación**
 
 Run: `grep -rn "ROUTES.OPS" src/ | grep -v "App.tsx\|routes.ts"`
 Expected: **sin resultados**. Si algún componente de navegación la enlaza, hay
 que quitarlo: la ruta es privada y no se anuncia.
 
-- [ ] **Step 6: Verify**
+- [x] **Step 6: Verify**
 
 Run: `npm run lint && npm test && npm run build && npx tsc -b && git diff --check`
 Expected: todo verde. Anotar el conteo de archivos/tests para el roadmap.

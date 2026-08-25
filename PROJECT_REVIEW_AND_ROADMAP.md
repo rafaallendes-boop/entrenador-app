@@ -1,6 +1,6 @@
 # RallyIQ - Project Review and Roadmap
 
-Actualizado: 2026-08-23
+Actualizado: 2026-08-25
 
 Base de contraste:
 
@@ -23,6 +23,20 @@ Base de contraste:
   qué **no** construir
   todavía: cola global sin medir, herramienta de analytics, gateway de pago y
   Android.
+- **Dashboard operacional Entrega A desplegado y smoke 7/7 cerrado (2026-08-23/25):**
+  ver §31 y §Pre-Lanzamiento punto 10. `022_operations_metrics.sql`, RPC
+  `read_operations_metrics`, función Netlify `operations-dashboard` y ruta
+  privada `/ops` están commiteados en `839f665` y desplegados. Se observó
+  directamente el panel del owner con agregados reales y cuotas en `0` (no
+  "sin datos"); también la env server-only correcta en Production y el deploy
+  publicado. El query de privilegios también devolvió `false` en producción:
+  `authenticated` no ejecuta el RPC. El 403 quedó cerrado el 2026-08-25 por
+  método equivalente (ver §31).
+  La QA de código aprobó las 7/7 tasks, guard de `service_role` no vacuo,
+  lint, `tsc -b`, build y 458 archivos / 3746 tests; una revalidación
+  posterior del árbol actual pasó **458 archivos / 3747 tests**. El test
+  adicional de auth sin `statusCode` se incorpora en el commit de cierre. Reporte en
+  [`docs/superpowers/smokes/2026-08-23-operations-dashboard-smoke.md`](docs/superpowers/smokes/2026-08-23-operations-dashboard-smoke.md).
 - **Límites durables de uso y gasto de IA implementados (2026-08-16/17):** ver
   §Pre-Lanzamiento puntos 3 y 4 y §29bis. Cuota diaria durable por usuario en
   Supabase (`ai_usage_daily`, `021`, aplicada en producción) con incremento
@@ -472,16 +486,19 @@ sea el owner.
 "Diagnóstico IA" en Ajustes (`BetaQualitySnapshot`: requests, feedback, uso
 diario contra límites) y export de trazas.
 
-La agregación y vista única de la **Entrega A** están implementadas localmente:
-`022_operations_metrics.sql`, función Netlify `operations-dashboard` y ruta
-privada `/ops`. Aún no están operativas en producción: falta aplicar `022`,
-configurar el allowlist server-only `OPERATIONS_ADMIN_USER_IDS` y desplegar.
+La agregación y vista única de la **Entrega A** están implementadas,
+commiteadas (`839f665`) y **desplegadas**: `022_operations_metrics.sql`, función
+Netlify `operations-dashboard` y ruta privada `/ops`. El smoke observó en
+producción datos agregados reales y el bloque de cuotas en `0` (no "sin
+datos"), además de la variable de allowlist en Production y el deploy publicado.
+Los siete pasos de rollout están cerrados: el privilegio de `authenticated`
+fue comprobado por SQL y el 403 se ejercitó por método equivalente — ver §31 y
+[`docs/superpowers/smokes/2026-08-23-operations-dashboard-smoke.md`](docs/superpowers/smokes/2026-08-23-operations-dashboard-smoke.md).
 No hay alertas ni reporter de errores de frontend; esa captura corresponde a la
 Entrega B/`023` y sigue pendiente.
 
-**Qué falta.** Ejecutar el rollout de la Entrega A y su smoke con dos cuentas;
-después, reporter de errores de frontend, triage de `unknown` y una política de
-alertas. Las métricas de cuentas deben seguir nombrándose por lo que miden
+**Qué falta.** Reporter de errores de frontend, triage de `unknown` y una
+política de alertas. Las métricas de cuentas deben seguir nombrándose por lo que miden
 (`uso de IA` y `planificación`), nunca como "usuarios activos".
 
 **Done Entrega A.** Responder en menos de cinco minutos, sin abrir el código:
@@ -1900,9 +1917,9 @@ kill switch en un ambiente de prueba antes de dejarlo apagado en producción.
 **Nunca encender el cliente antes que el servidor**, mismo invariante que
 entitlements.
 
-### 31. Dashboard operacional — Entrega A (2026-08-23)
+### 31. Dashboard operacional — Entrega A (2026-08-23, QA de cierre 2026-08-25)
 
-La Entrega A está implementada y verificada localmente: migración manual
+La Entrega A está implementada, commiteada en `839f665` y desplegada: migración manual
 `022_operations_metrics.sql`, RPC `security definer`
 `read_operations_metrics`, función Netlify `operations-dashboard`, contrato
 validado y ruta privada `/ops`. El RPC devuelve únicamente agregados de
@@ -1915,12 +1932,55 @@ días calendario. `OPERATIONS_ADMIN_USER_IDS` es una variable **server-only**
 con UUIDs de Supabase separados por coma; ausente, vacía o inválida no autoriza
 a nadie.
 
-**Pendiente de rollout (owner):** aplicar `022`, verificar que `authenticated`
-no tiene `execute` sobre el RPC, configurar `OPERATIONS_ADMIN_USER_IDS` sólo en
-Production, desplegar y probar `/ops` con el owner y una segunda cuenta (403).
-Hasta configurar esa variable, incluso el owner recibe 403; no es un fallo del
-RPC. El reporter de errores frontend pertenece a la Entrega B/`023` y no forma
-parte de este despliegue.
+**QA de cierre (2026-08-24).** Veredicto **APROBADO Y DESPLEGADO**. Reporte en
+[`docs/superpowers/smokes/2026-08-23-operations-dashboard-smoke.md`](docs/superpowers/smokes/2026-08-23-operations-dashboard-smoke.md).
+Las 7 tasks del plan están implementadas y verificadas por test, con cuatro
+desviaciones respecto al plan escrito, todas hacia más rigor y cada una con su
+propio test: el contrato agrega `totalCostUsd`/`totalCostCoverage` y un guard
+`isOperationsMetrics` del sobre completo; las latencias del Plan Builder miden
+**end-to-end desde `enqueued_at`** en vez del timing interno del worker;
+`error_code` se trunca a 40 caracteres; y el servicio de cliente valida la forma
+del payload en vez del cast ciego que proponía el plan. La función Netlify
+distingue además un `401` real de un fallo de auth sin `statusCode` —config
+ausente o timeout— que debe cerrar en `500`. El test que cubre ese camino no
+estaba en `839f665`; se incorpora en el commit de cierre para conservar la
+cobertura. Suite al cierre de esa QA: **458 archivos / 3746 tests**,
+lint, `tsc -b`, build y `git diff --check` verdes; la revalidación
+posterior del árbol actual pasó **458 archivos / 3747 tests**. El guard de
+"sólo `service_role`" se verificó **no vacuo** por mutación controlada y
+reversión.
+
+**Rollout verificado.** Se observó directamente `/ops` con la cuenta del owner:
+recibió agregados reales de siete días y el bloque de cuotas mostró `0`, no
+"sin datos". Esto confirma por efecto que `022` está aplicada y que el RPC de
+producción ve `ai_usage_daily`. También se verificó `OPERATIONS_ADMIN_USER_IDS`
+en el contexto Production con un UUID de Supabase (no email ni `VITE_*`) y se
+publicó el deploy de `839f665`, que construyó las 11 funciones.
+
+**Controles de cierre.** El (a) se ejecutó en el SQL editor de producción el
+2026-08-25:
+`select has_function_privilege('authenticated', 'public.read_operations_metrics(timestamptz)', 'execute')`
+devolvió **`false`**, confirmando el privilegio aplicado y no sólo el archivo.
+El (b) quedó cerrado por método equivalente: no existe una segunda cuenta real
+—el owner es hoy el único usuario—, así que se quitó su UUID de
+`OPERATIONS_ADMIN_USER_IDS`, se redesplegó, se comprobó el 403 sobre su propia
+cuenta y se repuso el valor. Ejercita la misma rama
+`isOperationsAdmin(...) === false`; no demuestra que dos UUID distintos se
+distingan entre sí. El reporter de errores frontend pertenece a la Entrega
+B/`023` y no forma parte de este despliegue.
+
+**Hallazgo operativo del cierre (2026-08-25):** cambiar
+`OPERATIONS_ADMIN_USER_IDS` **no surte efecto hasta un redeploy**. El código no
+cachea (`operationsAdmins.ts` lee la variable en cada invocación); la retención
+es de Netlify, que fija las variables al publicar. **Revocar acceso al panel no
+es inmediato:** ante un incidente hay que redesplegar, no basta con editar o
+borrar la variable.
+
+Tres huecos de cobertura quedan declarados y **no son cerrables con más
+JavaScript**: percentiles sobre muestra vacía y cobertura de costo parcial con
+filas mixtas. Ambos necesitan un Postgres real poblado. El tercer caso original
+(`ai_usage_daily` ausente vs. presente con cero filas) sí quedó cerrado en
+producción: se observó el estado presente con cero filas.
 
 `022` crea tres índices por `created_at` sin `CONCURRENTLY`, para que el script
 manual pueda ejecutarse como una unidad. En el volumen actual el bloqueo breve
