@@ -147,6 +147,89 @@ Estos tres eventos venían señalados desde el smoke anterior y **nunca se
 validaron contra Supabase real**. Es la ocasión para cerrarlos o confirmarlos
 como reales.
 
+## Caso 8 — Cascade de borrado de atleta gestionado
+
+Agregado el 2026-08-24. **Es el cambio destructivo de mayor alcance sin
+verificar del proyecto** (§28 del roadmap) y por construcción no se puede probar
+con un solo dispositivo: la lógica que se ejercita sólo corre cuando un
+dispositivo pulea un roster del que otro ya borró una identidad.
+
+Sólo aplica si tenés al menos un atleta gestionado descartable. **Creá uno
+nuevo para esto** — el caso termina con ese atleta y todos sus datos
+permanentemente borrados en ambos dispositivos, que es el punto.
+
+### Precondición que hay que respetar, o el caso no prueba nada
+
+D2 sólo interpreta la ausencia remota como borrado si **ya reconoció esa
+identidad antes**: `pullAthletes` compara contra el registro durable
+`entrenador_remote_athlete_ack_v1:<userId>` en `localStorage`
+(`syncService.ts:3286`). Un id que D2 nunca vio en un pull previo se **conserva**
+y la fila remota se repara — que es exactamente la corrección de §28 y el
+comportamiento correcto.
+
+Por eso el orden importa:
+
+1. En D1, crear el atleta gestionado `Borrar QA`.
+2. En D1, crear al menos una sesión y un check-in **dentro del scope de ese
+   atleta**, y sincronizar.
+3. **En D2, sincronizar y confirmar que el atleta aparece en el roster.** Este
+   paso es el que escribe el reconocimiento. Sin él, el resto del caso mide otra
+   cosa.
+
+### Ejecución
+
+4. En D1: Coach → Alumnos → archivar `Borrar QA` y después borrarlo
+   definitivamente, escribiendo el nombre para confirmar.
+5. Dejar que D1 termine de sincronizar.
+6. En D2, forzar un sync (o abrir la app) y esperar.
+
+### Qué tiene que pasar en D2
+
+- [ ] El atleta **desaparece** del roster sin intervención manual.
+- [ ] Sus sesiones, check-ins y resumen semanal desaparecen con él — el purgado
+      es transaccional sobre todas las tablas athlete-scoped, así que no puede
+      quedar mitad.
+- [ ] Un refresco posterior **no lo resucita**. El tombstone es durable y
+      sobrevive a propósito al borrado exitoso.
+- [ ] El chat del atleta borrado no queda accesible ni retoma su hilo.
+
+### Qué NO tiene que pasar — y es lo que más importa
+
+- [ ] **El self queda intacto.** Ninguna sesión, check-in, resumen ni plan del
+      atleta propio desaparece ni cambia de dueño. El filtro excluye
+      explícitamente el self (`athlete.id !== selfAthleteId`), así que cualquier
+      pérdida acá es un defecto grave y hay que parar el smoke.
+- [ ] **No aparece `queue:op_failed` en ninguno de los dos dispositivos.** Ese
+      evento es la firma exacta del defecto que §28 corrigió: D2 empujando para
+      siempre contra un `athlete_id` que ya no existe, porque `007` define
+      `athlete_profiles_athlete_fk … on delete cascade not valid` y `NOT VALID`
+      **sí** valida inserts nuevos.
+- [ ] Otros atletas gestionados, si los hay, no se tocan.
+
+### Si falla
+
+Anotar **cuál** de los dos dispositivos quedó inconsistente y en qué dirección,
+porque el diagnóstico es distinto:
+
+- **El atleta vuelve en D2 tras refrescar** → la barrera de tombstone no está
+  reteniendo; mirar si `pullAthletes:remote_delete_applied` llegó a emitirse.
+- **El atleta desaparece pero sus datos quedan huérfanos** → el purgado
+  transaccional falló a mitad, que es el escenario peor.
+- **D2 nunca lo borra** → lo más probable es que la precondición del paso 3 no
+  se cumplió y D2 nunca reconoció la identidad. **No es una falla**: es el
+  fail-safe funcionando. Rehacer el caso respetando el orden antes de reportarlo.
+- **El sync de D2 queda en error y reintenta** → esperado si el pull falla:
+  desde §28 la falla de `pullAthletes` **aborta el sync completo** de forma
+  reintentable, a propósito. Anotarlo, pero no confundirlo con corrupción.
+
+**Este caso no es reproducible en el harness** (`src/testing/syncHarness/`): el
+doble de PostgREST no evalúa el `on delete cascade` de `007` ni las políticas
+RLS, que son justamente los dos mecanismos bajo prueba. Si falla, la
+reproducción mínima hay que buscarla contra Supabase real, no convertirla en un
+caso rojo del harness como pide la regla general de este documento.
+
+---
+
 ---
 
 ## Al cerrar

@@ -23,6 +23,9 @@ const fakes = vi.hoisted(() => {
           else rows.push(it)
         }
       },
+      async bulkDelete(ids: string[]) {
+        rows = rows.filter((row) => !ids.includes(row.id))
+      },
       async toArray() {
         return rows.map((r) => ({ ...r }))
       },
@@ -165,6 +168,32 @@ describe('backfillLocalAthleteScope', () => {
     await fakes.db.sessions.put({ id: 's2', date: 'x', athleteId: 'ath_other' })
     await backfillLocalAthleteScope('user-1')
     expect((await fakes.db.sessions.get('s2'))?.athleteId).toBe('ath_other')
+  })
+
+  it('preserva la fila legacy que chocaría con una clave natural scoped', async () => {
+    await fakes.db.dayLogs.put({
+      id: 'legacy-day', date: '2026-06-29', updatedAt: 200,
+    })
+    await fakes.db.dayLogs.put({
+      id: 'scoped-day', date: '2026-06-29', updatedAt: 100, athleteId: 'ath_user-1',
+    })
+    await fakes.db.weekSummaries.put({
+      id: 'legacy-week', weekStartDate: '2026-06-29', updatedAt: 100,
+    })
+    await fakes.db.weekSummaries.put({
+      id: 'scoped-week', weekStartDate: '2026-06-29', updatedAt: 200, athleteId: 'ath_user-1',
+    })
+
+    await backfillLocalAthleteScope('user-1')
+
+    const dayLogs = await fakes.db.dayLogs.toArray()
+    const weekSummaries = await fakes.db.weekSummaries.toArray()
+    expect(dayLogs).toHaveLength(2)
+    expect(dayLogs.find((row) => row.id === 'legacy-day')?.athleteId).toBeUndefined()
+    expect(dayLogs.find((row) => row.id === 'scoped-day')?.athleteId).toBe('ath_user-1')
+    expect(weekSummaries).toHaveLength(2)
+    expect(weekSummaries.find((row) => row.id === 'legacy-week')?.athleteId).toBeUndefined()
+    expect(weekSummaries.find((row) => row.id === 'scoped-week')?.athleteId).toBe('ath_user-1')
   })
 
   it('re-scans once for clients that completed the old v1 marker', async () => {

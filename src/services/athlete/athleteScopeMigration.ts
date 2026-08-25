@@ -22,16 +22,52 @@ function isPending(athleteId: string | null | undefined): boolean {
 interface ScopableRow {
   id: string
   athleteId?: string
+  updatedAt?: number
+  date?: string
+  weekStartDate?: string
 }
 interface ScopableTable {
   toArray(): Promise<ScopableRow[]>
   bulkPut(rows: ScopableRow[]): Promise<unknown>
 }
 
+/**
+ * Las dos claves naturales que se volvieron athlete-scoped en Dexie v14. Al
+ * estampar una fila legacy, puede chocar con una fila ya scoped de otra sesión
+ * de sync aunque sus `id` sean distintos. Esa fila se deja legacy en este paso
+ * aditivo: Dexie mantiene su índice único y el sync posterior decide el LWW.
+ */
+function scopedNaturalKeyFor(
+  table: ScopableTable,
+  row: ScopableRow,
+): string | undefined {
+  if (table === (db.dayLogs as unknown as ScopableTable)) return row.date ? `day:${row.date}` : undefined
+  if (table === (db.weekSummaries as unknown as ScopableTable)) {
+    return row.weekStartDate ? `week:${row.weekStartDate}` : undefined
+  }
+  return undefined
+}
+
 async function patchTable(table: ScopableTable, athleteId: string): Promise<number> {
   const rows = await table.toArray()
-  const patched = rows
+  const pending = rows
     .filter((row) => isPending(row.athleteId))
+  const scopedNaturalKeys = new Set(
+    rows
+      .filter((row) => row.athleteId === athleteId)
+      .map((row) => scopedNaturalKeyFor(table, row))
+      .filter((key): key is string => key != null),
+  )
+
+  // El backfill es aditivo: una legacy que chocaría con un índice compuesto
+  // ya scoped se deja intacta. La migración inicial coalesce su payload y el
+  // full sync siguiente tiene la reparación durable/LWW transaccional; borrar
+  // o elegir una ganadora aquí perdería datos antes de poder sincronizarlos.
+  const patched = pending
+    .filter((row) => {
+      const key = scopedNaturalKeyFor(table, row)
+      return key == null || !scopedNaturalKeys.has(key)
+    })
     .map((row) => ({ ...row, athleteId }))
   if (patched.length) await table.bulkPut(patched)
   return patched.length

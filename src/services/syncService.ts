@@ -142,6 +142,16 @@ export type SyncPushOutcome = 'pushed' | 'queued' | 'no_remote' | 'failed'
 type AthleteProfilePersistMode = 'normal' | 'technical_marker' | 'post_reset_onboarding'
 type ProfileResetLockStatus = 'pending_remote_wipe' | 'awaiting_bootstrap_ack' | 'awaiting_onboarding_recreation' | 'released'
 
+class MigrationPartialFailure extends Error {
+  readonly failures: ReadonlyArray<{ table: SupabaseTable; error: unknown }>
+
+  constructor(failures: ReadonlyArray<{ table: SupabaseTable; error: unknown }>) {
+    super(`Migration partial failure: ${failures.map((failure) => failure.table).join(', ')}`)
+    this.name = 'MigrationPartialFailure'
+    this.failures = failures
+  }
+}
+
 interface ProfileResetLockEntry {
   resetAt: number
   status: ProfileResetLockStatus
@@ -4192,6 +4202,43 @@ function compareWeekSummaryConflictCandidates(a: WeekSummary, b: WeekSummary): n
   return compareWeekSummariesForRepair(a, b)
 }
 
+/**
+ * Coalescencia sólo para el primer bulk-upsert. La reparación durable de Dexie
+ * queda en `repairLocalNaturalKeyConflicts`, que se ejecuta en el sync completo
+ * inmediatamente posterior a una migración exitosa.
+ */
+function coalesceMigrationDayLogs(rows: DayLog[], userId: string): DayLog[] {
+  const selfAthleteId = athleteIdForOwner(userId)
+  return coalesceRowsByNaturalKey(
+    rows,
+    (row) => `${effectiveAthleteKey(row.athleteId, selfAthleteId)}::${row.date}`,
+    compareDayLogsForRepair,
+  )
+}
+
+function coalesceMigrationWeekSummaries(rows: WeekSummary[], userId: string): WeekSummary[] {
+  const selfAthleteId = athleteIdForOwner(userId)
+  return coalesceRowsByNaturalKey(
+    rows,
+    (row) => `${effectiveAthleteKey(row.athleteId, selfAthleteId)}::${row.weekStartDate}`,
+    compareWeekSummariesForRepair,
+  )
+}
+
+function coalesceRowsByNaturalKey<T>(
+  rows: T[],
+  keyFor: (row: T) => string,
+  compare: (a: T, b: T) => number,
+): T[] {
+  const winners = new Map<string, T>()
+  for (const row of rows) {
+    const key = keyFor(row)
+    const current = winners.get(key)
+    if (!current || compare(row, current) < 0) winners.set(key, row)
+  }
+  return [...winners.values()]
+}
+
 function resolveDayLogConflict(local: DayLog | undefined, remote: DayLog): MergeResolution<DayLog> {
   if (!local) {
     return { winner: remote }
@@ -4674,14 +4721,23 @@ export async function migrateLocalDataToCloud(userId: string): Promise<void> {
         db.athleteProfiles.toArray(),
       ])
 
+    // La migración inicial ocurre antes de `runFullSync`, que normalmente repara
+    // duplicados locales por clave natural. Un cliente que conserva una fila
+    // legacy y otra ya scoped para la misma fecha/semana no puede enviarlas juntas:
+    // Postgres rechaza un `ON CONFLICT DO UPDATE` que intenta actualizar dos veces
+    // la misma clave. Coalescemos sólo el payload de migración con la misma regla
+    // LWW determinista; el full sync posterior limpia la fila perdedora en Dexie.
+    const migrationDayLogs = coalesceMigrationDayLogs(dayLogs, userId)
+    const migrationWeekSummaries = coalesceMigrationWeekSummaries(weekSummaries, userId)
+
     const syncablePlans = trainingPlans.filter((plan) => isSyncablePlanStatus(plan.status))
     const syncablePlanIds = new Set(syncablePlans.map((plan) => plan.id))
     const syncablePlanAthleteIds = new Map(syncablePlans.map((plan) => [plan.id, plan.athleteId]))
     const syncableWeeks = trainingPlanWeeks.filter((week) => syncablePlanIds.has(week.planId))
 
     const sessionRows = sessions.map((session) => withAthleteId(sessionToRow(session, userId), session.athleteId))
-    const dayLogRows = dayLogs.map((dayLog) => withAthleteId(dayLogToRow(dayLog, userId), dayLog.athleteId))
-    const weekRows = weekSummaries.map((summary) => withAthleteId(weekSummaryToRow(summary, userId), summary.athleteId))
+    const dayLogRows = migrationDayLogs.map((dayLog) => withAthleteId(dayLogToRow(dayLog, userId), dayLog.athleteId))
+    const weekRows = migrationWeekSummaries.map((summary) => withAthleteId(weekSummaryToRow(summary, userId), summary.athleteId))
     const trainingPlanRows = syncablePlans.map((plan) => trainingPlanToRow(plan, userId))
     const trainingPlanWeekRows = syncableWeeks.map((week) =>
       withAthleteId(trainingPlanWeekToRow(week, userId), week.athleteId ?? syncablePlanAthleteIds.get(week.planId)),
@@ -4734,14 +4790,20 @@ export async function migrateLocalDataToCloud(userId: string): Promise<void> {
 
     const failedTables = migrationResults.filter((result) => result.error != null)
     if (failedTables.length > 0) {
-      throw new Error(`Migration partial failure: ${failedTables.map((result) => result.table).join(', ')}`)
+      throw new MigrationPartialFailure(failedTables as Array<{ table: SupabaseTable; error: unknown }>)
     }
 
     localStorage.setItem(getMigrationKey(userId), '1')
     localStorage.setItem(LAST_SYNC_USER_KEY, userId)
     console.log('[sync] Initial migration complete')
   } catch (error) {
-    applySyncFailure(error, 'No se pudo migrar los datos locales a la nube.')
+    const blockedTable = error instanceof MigrationPartialFailure
+      ? error.failures[0]?.table
+      : undefined
+    const rootCause = error instanceof MigrationPartialFailure
+      ? error.failures[0]?.error ?? error
+      : error
+    applySyncFailure(rootCause, 'No se pudo migrar los datos locales a la nube.', blockedTable)
     console.error('[sync] Migration failed:', error)
     throw error
   }

@@ -1629,7 +1629,16 @@ describe('syncService', () => {
 
     const syncService = await import('../syncService')
 
-    await expect(syncService.migrateLocalDataToCloud('user-1')).rejects.toThrow('Migration partial failure')
+    const migrationError = await syncService.migrateLocalDataToCloud('user-1').catch((error: unknown) => error)
+    expect(migrationError).toMatchObject({
+      name: 'MigrationPartialFailure',
+      message: 'Migration partial failure: sessions',
+      failures: [{ table: 'sessions', error: { message: 'jwt expired', status: 401 } }],
+    })
+    expect(storeState.syncDetails).toMatchObject({
+      lastBlockedTable: 'sessions',
+      lastErrorCategory: 'auth_error',
+    })
     expect(localStorage.getItem('entrenador_migrated_v1:user-1')).toBeNull()
   })
 
@@ -1658,6 +1667,95 @@ describe('syncService', () => {
     expect(weekSummaryUpsert).toBeTruthy()
     expect((weekSummaryUpsert?.payload as Array<Record<string, unknown>>)[0]?.updated_at).toBe(777)
     expect(weekSummaryUpsert?.options).toEqual({ onConflict: 'athlete_id,week_start_date' })
+  })
+
+  it('coalesces legacy and scoped week summaries before the initial bulk migration', async () => {
+    weekSummaryRows = [
+      {
+        id: 'legacy-week',
+        weekStartDate: '2026-04-06',
+        updatedAt: 100,
+        totalSessions: 1,
+        totalMinutes: 45,
+        plannedSessions: 1,
+        completedSessions: 0,
+        plannedMinutes: 45,
+        completedMinutes: 0,
+        squashSessions: 0,
+        runningSessions: 1,
+        strengthSessions: 0,
+      },
+      {
+        id: 'scoped-week',
+        athleteId: 'ath_user-1',
+        weekStartDate: '2026-04-06',
+        updatedAt: 200,
+        totalSessions: 2,
+        totalMinutes: 90,
+        plannedSessions: 2,
+        completedSessions: 1,
+        plannedMinutes: 90,
+        completedMinutes: 45,
+        squashSessions: 1,
+        runningSessions: 1,
+        strengthSessions: 0,
+      },
+    ]
+
+    const syncService = await import('../syncService')
+    await syncService.migrateLocalDataToCloud('user-1')
+
+    // La ruta real llama a ensureRemoteAthlete → backfill antes del bulk-upsert.
+    // Para no borrar datos ni violar el índice Dexie v14, la fila legacy queda
+    // sin scope; el payload de migración la coalesce de forma determinista.
+    expect(weekSummaryRows.find((row) => row.id === 'legacy-week')).not.toHaveProperty('athleteId')
+    expect(weekSummaryRows).toContainEqual(expect.objectContaining({
+      id: 'scoped-week', athleteId: 'ath_user-1',
+    }))
+    const weekSummaryUpsert = upsertCalls.find((call) => call.table === 'week_summaries')
+    expect(weekSummaryUpsert?.payload).toEqual([
+      expect.objectContaining({
+        id: 'scoped-week',
+        athlete_id: 'ath_user-1',
+        week_start_date: '2026-04-06',
+        updated_at: 200,
+      }),
+    ])
+  })
+
+  it('coalesces legacy and scoped day logs before the initial bulk migration', async () => {
+    dayLogRows = [
+      {
+        id: 'legacy-day',
+        date: '2026-04-06',
+        updatedAt: 100,
+        sleepHours: 6,
+      },
+      {
+        id: 'scoped-day',
+        athleteId: 'ath_user-1',
+        date: '2026-04-06',
+        updatedAt: 200,
+        sleepHours: 8,
+      },
+    ]
+
+    const syncService = await import('../syncService')
+    await syncService.migrateLocalDataToCloud('user-1')
+
+    expect(dayLogRows.find((row) => row.id === 'legacy-day')).not.toHaveProperty('athleteId')
+    expect(dayLogRows).toContainEqual(expect.objectContaining({
+      id: 'scoped-day', athleteId: 'ath_user-1',
+    }))
+    const dayLogUpsert = upsertCalls.find((call) => call.table === 'day_logs')
+    expect(dayLogUpsert?.payload).toEqual([
+      expect.objectContaining({
+        id: 'scoped-day',
+        athlete_id: 'ath_user-1',
+        date: '2026-04-06',
+        updated_at: 200,
+      }),
+    ])
   })
 
   it('uses logical unique keys for migration upserts that can collide across devices', async () => {
