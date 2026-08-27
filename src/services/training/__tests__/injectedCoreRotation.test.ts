@@ -8,7 +8,7 @@ import { resolveStrengthExercise } from '../exerciseLibrary'
  * Hallazgo 5 de la QA deportiva del 2026-08-13. El core de fundación se
  * inyectaba siempre como `dead_bug`, así que aparecía idéntico en todas las
  * semanas de un bloque y aportaba un ejercicio compartido gratis a cada par,
- * empujando `quality.strength.repeated_template` sobre su umbral.
+ * empujando el detector histórico de repetición sobre su umbral.
  *
  * El contrato nuevo: con contexto de semana el core inyectado rota; sin
  * contexto —el caso del chat— sigue siendo `dead_bug`.

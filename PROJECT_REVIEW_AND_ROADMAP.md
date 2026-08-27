@@ -1,6 +1,6 @@
 # RallyIQ - Project Review and Roadmap
 
-Actualizado: 2026-08-25
+Actualizado: 2026-08-27
 
 Base de contraste:
 
@@ -1766,9 +1766,10 @@ Como `isCountableRole` solo excluye `main_lift`, ese core contaba de lleno para
 
 **Reproducción antes de tocar código.** `strengthTemplateRotationConcurrent.test.ts`
 reconstruye la condición real: con `DEFAULT_CONCURRENCY = 3` las semanas de un
-bloque se reparan en paralelo, así que `isReadyWeek(previousWeek)` es `false`,
-`previousKeys` queda vacío y el modelo devuelve la misma plantilla de fuerza
-para todas. Tres semanas de peak dieron exactamente 3 contables compartidos
+bloque se reparan en paralelo, así que `isReadyWeek(previousWeek)` es `false`
+y `previousKeys` queda vacío. La lectura original atribuyó la plantilla
+repetida al modelo; la revisión del 2026-08-27 confirmó que era la salida del
+selector local. Tres semanas de peak dieron exactamente 3 contables compartidos
 entre las semanas 1 y 2 —`dead_bug`, `med_ball_slam`, `close_grip_bench_press`—
 que es el umbral del warning.
 
@@ -1796,7 +1797,8 @@ accesorios no puede volver a rotarlo en la pasada final del repair.
 no arregla la rotación. En la reproducción baja el solape de 3 a 2 y el warning
 deja de dispararse, pero los otros dos compartidos siguen ahí.
 
-**Causa B, cerrada (2026-08-25).** La rotación escalar se reemplazó por un
+**Causa B — primera implementación del 2026-08-25; el smoke de producción del
+2026-08-26 encontró que no estaba teniendo efecto (ver más abajo).** La rotación escalar se reemplazó por un
 coordinador puro de bloque: congela el template antes de core/densidad, proyecta
 el core estructural para todas las semanas virtuales y resuelve una matriz por
 `slotKey` estable. El allocator aplica el presupuesto direccional I1
@@ -1841,6 +1843,114 @@ incluido un bloque real de 12 semanas con densidad final y uno esparso. Una
 entrada divergente, una sesión eliminada o una identidad fuera de catálogo se
 mantiene best-effort y se observa explícitamente; no se inventan identidades
 para fingir cobertura.
+
+**Smoke de producción ejecutado tres veces; veredicto final FALLIDO
+(2026-08-25/26).** Guion y las tres corridas completas en
+[`docs/superpowers/smokes/2026-08-25-strength-block-allocator-smoke.md`](docs/superpowers/smokes/2026-08-25-strength-block-allocator-smoke.md).
+Confirmado por Netlify que producción servía `main@b2c8738` en las tres
+corridas (sin deploy nuevo entre medio). Corrida 1 (US$0,206061) generó un
+plan sin ninguna sesión de fuerza por un perfil de prueba incompleto — hueco
+de datos, no del código. Corrida 2 (US$0) quedó bloqueada por cuota diaria de
+cliente antes de llamar al proveedor. **Corrida 3 (2026-08-26, US$0,295830)
+sí generó un plan real de 11 semanas con fuerza en las 6 semanas de `build`, y
+encontró que `generation_meta.strengthAllocator` está ausente en las 11
+semanas** (`recordStrengthAllocatorMetrics` nunca escribe el objeto porque,
+por lectura de código sin confirmar con debugging en vivo, la matriz local
+llega vacía en todas — hipótesis: el snapshot que alimenta al allocator se
+toma sobre `session.exercises` antes del enriquecimiento determinista que en
+esta clase de sesión aporta el contenido real). Comparando directamente los
+nombres de ejercicio persistidos (sin depender de la telemetría ausente), el
+Criterio 3 del smoke (solape de accesorios < 3 entre pares de semanas del
+bloque) **falló con evidencia directa**: hasta 9 de 9 accesorios idénticos
+entre semanas no contiguas del mismo bloque de 6 semanas, en tres pares
+distintos y en ambas sesiones de fuerza semanales — el defecto original de
+Causa B, reproducido en producción con mayor severidad que la medida en §28.
+La rotación del core inyectado (Causa A) sí se verificó funcionando
+correctamente y de forma independiente. El plan draft de Corrida 3
+(`fd13848b-895c-4631-87f1-35d27758dd4e`) quedó sin aceptar ni descartar.
+**Causa B no está resuelta en producción** pese a estar implementada en
+código; al cerrar esa corrida, la causa de por qué el allocator no se
+ejecutaba quedó como hipótesis sin confirmar.
+
+**Revisión local y corrección del cableado (2026-08-27, pendiente deploy).**
+La causa quedó confirmada: desde el 2026-07-12, antes de la QA de §28,
+`buildWeekStructuredSystemPromptMinimal` prohíbe al modelo incluir
+`exercises`, y `generateWeekCore` usa ese contrato. El snapshot previo a
+`completeSportDetails` observaba cero ejercicios; el contenido persistido lo
+producía después `completeStrengthExercises` → `selectStrengthSession`. Por
+eso el allocator no tenía dominio y su telemetría tampoco existía.
+
+La atribución original de §28 se corrige: el warning y el solape medidos eran
+reales, pero la "plantilla devuelta por el modelo" era en realidad la salida
+del selector determinista. El repair materializa ahora sólo esa salida antes
+del snapshot y mantiene core y densidad después del allocator. Como el selector
+alterna subtemplates A/B/C (A/B en taper), la coordinación se hace por familia
+repetida; tratarlos como una única plantilla introduce infactibilidad
+artificial. Un marker `templateSource` conserva el dominio en re-repair y queda
+idempotente.
+
+La regresión usa la forma productiva que faltaba en toda la entrega: 6 semanas
+`build`, 2 sesiones de fuerza por semana, todas sin `exercises`. Verifica
+`strengthAllocator` presente en 6/6, asignaciones en las segundas ocurrencias
+A→A/B→B/C→C y menos de 3 accesorios compartidos por sesión anclada en
+los pares 0→3, 1→4 y 2→5. Costo: US$0. Esa fue la evidencia provisional;
+el contrato final y su alcance se fijan después de registrar abajo la falla
+del gate heredado.
+
+**Revisión del gate heredado (2026-08-27; conclusión histórica, superada por el
+contrato final de abajo).** `quality.strength.repeated_template` cruzaba los
+contables de toda la semana posterior contra todo el contenido de fuerza de
+cada semana anterior. La aserción equivalente sobre el mismo fixture dejó
+**12/15 pares en infracción y las cinco semanas posteriores marcadas**, igual
+cantidad de semanas fallidas que antes. Coordinar A/B/C por separado calculaba
+`≤2` contra un template que las otras familias nunca tuvieron. También se
+desacopló la prehidratación de `previousWeek`, se exigió que todo el dominio
+fuera selector-owned antes de particionar y los markers legacy sin
+`templateSource` pasaron a cicatrizar como `provided`.
+
+**Contrato deportivo final y cierre técnico local (2026-08-27).** El gate
+heredado mezclaba dos fenómenos distintos: una sesión casi clonada —el 9/9
+observado en producción— y la continuidad normal de accesorios con progresión
+de carga. Además, exigir `≤2` en los 15 pares de seis semanas requeriría un pool
+de accesorios desproporcionado y empujaría al selector hacia opciones peores
+sólo para fingir novedad.
+
+`quality.strength.repeated_template` mide ahora el daño real:
+
+- ordena las sesiones de fuerza de cada semana por fecha, bloque horario y
+  título, y compara sólo el mismo ordinal semanal; D1 y D2 nunca se agregan;
+- calcula el solape direccional entre los contables de la sesión posterior y
+  todo el contenido de la sesión anclada anterior del mismo bloque;
+- alerta con **≥3 compartidos y similitud ≥80%**, una vez por semana posterior
+  contra el peor caso previo. Esto detecta 7/8, 8/9 y 9/9, pero permite 6/8 y
+  6/9 como continuidad defendible dentro de un bloque.
+
+La regresión productiva de seis semanas queda verde: allocator presente en
+6/6, coordinación A→A/B→B/C→C, idempotencia preservada y **cero**
+`quality.strength.repeated_template`. Hay casos de borde explícitos para 7/8
+(alerta), 6/8 (no alerta) y dos sesiones cuya unión semanal parece repetida
+pero cuyos ordinales no son clones (no alerta). Costo API: **US$0**. Con esto
+la Causa B queda cerrada en código y en smoke local; producción sigue pendiente
+del deploy y de observar el primer bloque real, sin justificar otra generación
+completa pagada sólo para este hallazgo.
+
+El control contrafactual confirma que el detector no quedó vacuo: con el motor
+viejo y el detector nuevo, el mismo fixture emite **3 alertas**, exactamente en
+los pares A→A/B→B/C→C, cada uno con 7/8 = 88% en ambas sesiones. Con el motor
+nuevo emite 0; esos pares bajan a 0–25% y el peor caso restante es A→C sesión 2,
+6/8 = 75%. Los 9/9 y 8/8 de producción siguen siendo 100% bajo el contrato
+nuevo. En el primer bloque real conviene vigilar ese margen de cinco puntos,
+especialmente con restricciones de equipamiento que estrechen el pool.
+
+**Comparabilidad de score.** No se incrementa `quality_version`: §16 ya define
+`repeated_template` como métrica mutable y sus comparaciones como descriptivas.
+Sin embargo, cada warning eliminado quita 5 puntos de penalización directa de
+`planScore` y 7 de `weekScore`; el control viejo acumulaba tres warnings, es
+decir, 15 puntos de penalización directa del plan. Por tanto, los `planScore` y
+`weekScore` anteriores a este cambio —incluidos el p50 80→89 y el control
+congelado de §16— **no son directamente comparables** con los posteriores. Un
+escalón al desplegar refleja en parte cambio de definición, no necesariamente
+mejora del motor.
 
 ### 30. Límites durables de uso y gasto de IA (2026-08-16/17)
 
@@ -2304,7 +2414,8 @@ Objetivo: que el primer plan pagado se pueda mirar a la cara.
 - [x] Guardar backup/export de cada plan arquetipo.
 - [x] Crear checklist manual de revision de entrenador.
 - [ ] Revisar warnings de variedad de drills en build/peak.
-- [x] Confirmar que fuerza no repita plantillas clonadas semana a semana. (Hallazgo 5 de §28. **Causa A:** el core inyectado rota por semana. **Causa B:** el allocator coordinado resuelve el bloque completo por slot estable bajo concurrencia; ver §29.)
+- [x] Confirmar localmente que fuerza no repita sesiones casi clonadas semana a semana. (Hallazgo 5 de §28. **Causa A:** core rotativo, verificado en producción. **Causa B:** cableado productivo + gate proporcional por sesión anclada verdes a costo US$0; ver §29.)
+- [ ] Tras el deploy, observar `strengthAllocator` y ausencia de sesiones ≥80% similares en el primer bloque real; no generar un plan completo pagado sólo para repetir este smoke.
 - [x] Confirmar que 1RM se usa cuando existe. (Verificado numericamente contra el perfil guardado.)
 - [x] Confirmar que running/ciclismo aparecen solo si aportan al objetivo. (No aparecieron cuando no se seleccionaron como complementarios.)
 
@@ -2752,8 +2863,10 @@ Orden recomendado (Athlete-Aware Core + Coach F2-lite Parte 2b + Whoop v1/Workou
    ejecutó (§28, APROBADO PARCIAL). Queda preparar la oferta (duracion, precio,
    soporte, reembolso) y, si se quiere cerrar lo que el smoke dejó abierto,
    cubrir "mejor de 3 en base" y la convergencia restante de accesorios de
-   fuerza (Hallazgo 5, **Causa A cerrada; Causa B abierta**), que sigue siendo la
-   única falla deportiva medida sin cierre completo.
+   fuerza (Hallazgo 5, **Causa A verificada en producción; Causa B cerrada en
+   código y smoke local** con detector proporcional por sesión anclada). Queda
+   sólo observar el primer bloque real después del deploy, sin comprar otra
+   generación completa específicamente para este punto; ver §29.
 9. **Primer cliente acompanado** (ejecutar en paralelo con abogado): elegir 1 candidato, onboarding 1:1, generar semana 1, iniciar protocolo de revision semanal.
 
 **Siguiente bloque de desarrollo recomendado, después de los smokes:**

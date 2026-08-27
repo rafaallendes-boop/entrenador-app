@@ -342,6 +342,8 @@ export interface SessionMetadata {
     signature: string
     /** Firma del template antes de proyectar core, allocator y densidad. */
     templateSignature?: string
+    /** Origen del template: el selector local hidrata los esqueletos productivos. */
+    templateSource?: 'selector' | 'provided'
   }
   /** Proyección de squash ya resuelta: evita volver a permutar slots equivalentes. */
   planBuilderSquashRotation?: {

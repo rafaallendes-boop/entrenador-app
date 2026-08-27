@@ -48,6 +48,7 @@ import {
   type StrengthPhase,
   type StrengthSportProfile,
 } from '../training/strengthSelector'
+import { getStrengthBlockTemplateCycleLength } from '../training/strengthBlocks'
 import {
   enhanceStrengthSessionExercises,
   isFoundationCore,
@@ -181,8 +182,15 @@ export interface StrengthBlockAllocation {
   matrix: AllocatorResult['matrix']
   degradedCells: AllocatorResult['degradedCells']
   searchExhausted: boolean
+  /** Columna local dentro del grupo que comparte el mismo template. */
   localWeek: number
-  /** Core estructural por semana virtual, indexado por identidad de sesión. */
+  /** Índice real dentro del bloque de fase; no siempre coincide con la columna. */
+  localBlockWeek: number
+  /** Índices reales del bloque representados por las columnas de `matrix`. */
+  blockWeekIndices: ReadonlyArray<number>
+  /** Distingue el esqueleto productivo hidratado de una plantilla provista. */
+  selectorHydrated: boolean
+  /** Core estructural por columna virtual, indexado por identidad de sesión. */
   structuralCoreByWeek: ReadonlyArray<ReadonlyMap<string, StructuralCoreProjection>>
 }
 
@@ -281,12 +289,23 @@ export function repairGeneratedWeek(
   // 5. Filter disallowed sports
   sessions = filterDisallowedSports(sessions, context, meta)
 
-  // 6. Orden congelado de fuerza: el template se observa ANTES de core y
+  // 6. El contrato productivo entrega esqueletos sin `exercises`. Materializa
+  // primero la selección determinista y captura ese template ANTES de core y
   // densidad. Cada paso posterior consume esta proyección; ninguno vuelve a
   // derivar el dominio desde una lista ya mutada.
+  const prehydratedStrengthSessions = hydrateStrengthTemplatesBeforeAllocation(sessions, context)
+  const strengthSessionsForAllocation = sessions.filter((session) => session.sessionType === 'strength')
+  // El dominio sólo se considera selector-owned si TODAS las sesiones de
+  // fuerza lo son. Un payload mixto no sigue un ciclo A/B/C reconstruible.
+  const selectorHydrated = strengthSessionsForAllocation.length > 0
+    && strengthSessionsForAllocation.every(
+      (session) => prehydratedStrengthSessions.has(session)
+        || session.metadata?.planBuilderStrengthRotation?.templateSource === 'selector',
+    )
   const strengthAllocation = resolveStrengthBlockAllocation(
-    sessions.filter((session) => session.sessionType === 'strength'),
+    strengthSessionsForAllocation,
     context,
+    { selectorHydrated },
   )
   const strengthDensityOverlapGuard = createStrengthDensityOverlapGuard(
     strengthAllocation,
@@ -296,7 +315,14 @@ export function repairGeneratedWeek(
   recordDivergentStrengthTemplateWarning(meta, context, strengthAllocation)
 
   // 7. Complete sport details (best-effort)
-  completeSportDetails(sessions, context, meta, strengthAllocation, strengthDensityOverlapGuard)
+  completeSportDetails(
+    sessions,
+    context,
+    meta,
+    strengthAllocation,
+    strengthDensityOverlapGuard,
+    prehydratedStrengthSessions,
+  )
   sanitizeSquashDrillSets(sessions, context, meta)
   normalizeSquashSemanticMetadata(sessions, meta, context)
   normalizeLateTaperSquashMatchPlay(sessions, context, meta)
@@ -592,12 +618,50 @@ function isPhaseAllowedSessionType(session: CoachSessionProposal, context: Repai
 
 // ─── 6. Complete sport details ──────────────────────────────────────────────
 
+/**
+ * El prompt estructurado de Plan Builder prohíbe `exercises`: una sesión de
+ * fuerza productiva llega como esqueleto y su primer template real lo produce
+ * `selectStrengthSession`. Debe existir antes de resolver la matriz; de lo
+ * contrario el allocator recibe cero slots y desaparecen también sus métricas.
+ *
+ * El Set conserva la semántica de telemetría del repair: estas sesiones se
+ * siguen contando como `hydration`, aunque core y densidad se apliquen en la
+ * pasada deportiva inmediatamente posterior.
+ */
+function hydrateStrengthTemplatesBeforeAllocation(
+  sessions: CoachSessionProposal[],
+  context: RepairContext,
+): ReadonlySet<CoachSessionProposal> {
+  const hydrated = new Set<CoachSessionProposal>()
+  // La entrada del selector debe depender sólo del payload del worker actual.
+  // `previousWeek` puede variar según qué hermana concurrente aterrizó primero
+  // y queda reservado para densidad/enriquecimiento posteriores al allocator.
+  const recentExercises: string[] = []
+
+  for (const session of sessions) {
+    if (session.sessionType !== 'strength') continue
+    if (!session.exercises || session.exercises.length === 0) {
+      try {
+        hydrateStrengthExerciseTemplate(session, context, recentExercises)
+        if (session.exercises && session.exercises.length > 0) hydrated.add(session)
+      } catch {
+        // `completeSportDetails` conserva el segundo intento dentro de su
+        // frontera best-effort y emite el warning histórico `repair_failed`.
+      }
+    }
+    recentExercises.push(...(session.exercises ?? []).map((exercise) => exercise.name))
+  }
+
+  return hydrated
+}
+
 function completeSportDetails(
   sessions: CoachSessionProposal[],
   context: RepairContext,
   meta: RepairMeta,
   strengthAllocation: StrengthBlockAllocation,
   strengthDensityOverlapGuard: StrengthDensityOverlapGuard,
+  prehydratedStrengthSessions: ReadonlySet<CoachSessionProposal>,
 ): void {
   const currentWeekSquashDrills = extractRecentSquashDrills(context.previousWeek)
   const currentWeekStrengthExercises = extractRecentStrengthExercises(context.previousWeek)
@@ -629,7 +693,17 @@ function completeSportDetails(
         case 'strength': {
           const structuralCore = strengthAllocation.structuralCoreByWeek[strengthAllocation.localWeek]
             ?.get(sessionKeyOf(session))
-          if (!session.exercises || session.exercises.length === 0) {
+          if (prehydratedStrengthSessions.has(session)) {
+            enhanceStrengthSessionDetails(
+              session,
+              context,
+              currentWeekStrengthExercises,
+              structuralCore,
+              committedStrengthIds,
+              strengthDensityOverlapGuard,
+            )
+            recordRepair(meta, 'hydration', sessionKeyOf(session))
+          } else if (!session.exercises || session.exercises.length === 0) {
             completeStrengthExercises(
               session,
               context,
@@ -2091,26 +2165,39 @@ function inferSquashKindFromProposalDetails(session: CoachSessionProposal): Squa
 
 /**
  * Resuelve la matriz completa desde el template intacto. Es deliberadamente
- * pura: los workers concurrentes no coordinan por estado compartido, cada uno
- * calcula las mismas columnas y sólo materializa la propia.
+ * pura: los workers concurrentes de una misma familia de template no coordinan
+ * por estado compartido, cada uno calcula las mismas columnas y sólo
+ * materializa la propia.
  */
 export function resolveStrengthBlockAllocation(
   strengthSessions: ReadonlyArray<CoachSessionProposal>,
   context: RepairContext,
+  options: { selectorHydrated?: boolean } = {},
 ): StrengthBlockAllocation {
   const snapshot = captureStrengthTemplateSnapshot(strengthSessions)
   const positions = resolveBlockPositions(getPlanPhaseDescriptors(context), getPlanWeekDescriptors(context))
   const currentPosition = positions.get(context.week.weekIndex)
   const blockId = currentPosition?.blockId ?? `${context.week.phase}:${context.week.weekIndex}:${context.week.weekIndex}`
-  const localWeek = currentPosition?.indexInBlock ?? 0
-  const weekCount = Math.max(
+  const localBlockWeek = currentPosition?.indexInBlock ?? 0
+  const blockWeekCount = Math.max(
     1,
-    localWeek + 1,
+    localBlockWeek + 1,
     [...positions.values()].filter((position) => position.blockId === blockId).length,
   )
+  const cycleLength = options.selectorHydrated
+    ? getStrengthBlockTemplateCycleLength(mapStrengthPhase(context.week.phase) as StrengthPhase)
+    : 1
+  const selectorTemplateOffset = localBlockWeek % cycleLength
+  const blockWeekIndices = Array.from({ length: blockWeekCount }, (_, index) => index)
+    .filter((index) => !options.selectorHydrated || index % cycleLength === selectorTemplateOffset)
+  const localWeek = Math.max(0, blockWeekIndices.indexOf(localBlockWeek))
+  const allocatorBlockId = options.selectorHydrated
+    ? `${blockId}|selector-template:${selectorTemplateOffset}`
+    : blockId
+  const weekCount = blockWeekIndices.length
 
   const availableEquipment = buildAthleteParameters(context.profile, context.wizardConfig).availableEquipment
-  const structuralCoreByWeek = Array.from({ length: weekCount }, (_, weekIndex) => {
+  const structuralCoreByWeek = blockWeekIndices.map((weekIndex) => {
     const projections = new Map<string, StructuralCoreProjection>()
     strengthSessions.forEach((session) => {
       // El enriquecedor histórico sólo inserta core desde 45 minutos. Mantener
@@ -2163,7 +2250,7 @@ export function resolveStrengthBlockAllocation(
 
   const allocator = allocateStrengthBlock({
     slots: allocatorSlots,
-    blockId,
+    blockId: allocatorBlockId,
     weekCount,
     fixedIdsByWeek,
   })
@@ -2175,6 +2262,9 @@ export function resolveStrengthBlockAllocation(
     degradedCells: allocator.degradedCells,
     searchExhausted: allocator.searchExhausted,
     localWeek,
+    localBlockWeek,
+    blockWeekIndices,
+    selectorHydrated: options.selectorHydrated === true,
     structuralCoreByWeek,
   }
 }
@@ -2217,6 +2307,9 @@ function recordDivergentStrengthTemplateWarning(
 ): void {
   const previous = context.previousWeek
   if (!previous || !isReadyWeek(previous) || !isPreviousWeekInSameBlock(context)) return
+  // Los esqueletos productivos alternan subtemplates A/B/C (A/B en taper).
+  // Una hermana adyacente de otra familia es divergencia esperada, no drift.
+  if (!allocation.blockWeekIndices.includes(allocation.localBlockWeek - 1)) return
 
   const previousSignatures = new Set(
     previous.sessions
@@ -2309,7 +2402,7 @@ function normalizeStrengthSessions(
     session.exercises = enhanceStrengthSessionExercises(session.exercises, {
       durationMin: session.durationMin,
       strengthProfile: context.profile.strengthProfile,
-      weekIndexInBlock: allocation.localWeek,
+      weekIndexInBlock: allocation.localBlockWeek,
       availableEquipment: buildAthleteParameters(context.profile, context.wizardConfig).availableEquipment,
       structuralCoreId: structuralCore?.coreId,
       protectedExerciseIds: committedStrengthIds,
@@ -2323,12 +2416,20 @@ function normalizeStrengthSessions(
       session.exercises = planSupersetGroups(session.exercises, mode).exercises
     }
     if (currentBlockId != null) {
+      const sessionKey = sessionKeyOf(session)
+      const previousMarker = session.metadata?.planBuilderStrengthRotation
+      const preserveCanonicalMarker = alreadyCanonicalSessions.has(sessionKey)
       session.metadata = {
         ...(session.metadata ?? {}),
         planBuilderStrengthRotation: {
           blockId: currentBlockId,
           signature: canonicalStrengthSignature(session),
-          templateSignature: allocation.templateSignature,
+          templateSignature: preserveCanonicalMarker
+            ? previousMarker?.templateSignature
+            : allocation.templateSignature,
+          templateSource: preserveCanonicalMarker
+            ? previousMarker?.templateSource ?? (allocation.selectorHydrated ? 'selector' : 'provided')
+            : allocation.selectorHydrated ? 'selector' : 'provided',
         },
       }
     }
@@ -2408,9 +2509,15 @@ function createStrengthDensityOverlapGuard(
   const allowedByWeek = allByWeek.map(() => new Set<string>())
   const positions = resolveBlockPositions(getPlanPhaseDescriptors(context), getPlanWeekDescriptors(context))
   const currentBlockId = positions.get(context.week.weekIndex)?.blockId
-  const virtualWeeks = [...positions.entries()]
+  const blockWeeks = [...positions.entries()]
     .filter(([, position]) => position.blockId === currentBlockId)
     .sort((left, right) => left[1].indexInBlock - right[1].indexInBlock)
+  const virtualWeeks = allocation.blockWeekIndices
+    .map((blockWeekIndex, matrixWeek) => {
+      const descriptor = blockWeeks.find(([, position]) => position.indexInBlock === blockWeekIndex)
+      return descriptor ? { matrixWeek, absoluteWeekIndex: descriptor[0] } : undefined
+    })
+    .filter((entry): entry is { matrixWeek: number; absoluteWeekIndex: number } => entry != null)
 
   const reserve = (week: number, id: string): boolean => {
     if (allByWeek[week]?.has(id)) return false
@@ -2437,8 +2544,7 @@ function createStrengthDensityOverlapGuard(
 
   const plans: DensityPlan[] = []
   const recentExercises = extractRecentStrengthExercises(context.previousWeek)
-  for (const [absoluteWeekIndex, position] of virtualWeeks) {
-    const week = position.indexInBlock
+  for (const { matrixWeek: week, absoluteWeekIndex } of virtualWeeks) {
     if (week >= allByWeek.length) continue
     const virtualContext: RepairContext = {
       ...context,
@@ -3207,14 +3313,7 @@ function completeStrengthExercises(
   committedStrengthIds?: ReadonlySet<string>,
   densityOverlapGuard?: StrengthDensityOverlapGuard,
 ): void {
-  const result = selectStrengthSession(buildStrengthSelectionContext(session, context, recentExercises))
-  session.exercises = result.exercises.map(toStrengthProposal)
-  if (result.starLift) {
-    session.metadata = {
-      ...(session.metadata ?? {}),
-      starLift: result.starLift,
-    }
-  }
+  hydrateStrengthExerciseTemplate(session, context, recentExercises)
   enhanceStrengthSessionDetails(
     session,
     context,
@@ -3223,6 +3322,26 @@ function completeStrengthExercises(
     committedStrengthIds,
     densityOverlapGuard,
   )
+}
+
+/**
+ * Materializa solamente la salida del selector, sin core estructural ni
+ * densidad. Es el primer contenido real disponible en el camino productivo y,
+ * por lo tanto, el template que debe observar el allocator.
+ */
+function hydrateStrengthExerciseTemplate(
+  session: CoachSessionProposal,
+  context: RepairContext,
+  recentExercises: string[],
+): void {
+  const result = selectStrengthSession(buildStrengthSelectionContext(session, context, recentExercises))
+  session.exercises = result.exercises.map(toStrengthProposal)
+  if (result.starLift) {
+    session.metadata = {
+      ...(session.metadata ?? {}),
+      starLift: result.starLift,
+    }
+  }
 }
 
 function enhanceStrengthSessionDetails(

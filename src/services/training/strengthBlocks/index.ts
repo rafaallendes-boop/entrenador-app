@@ -34,4 +34,9 @@ export function selectStrengthBlockTemplate(
   return candidates[Math.abs(weekIndexInBlock) % candidates.length]!
 }
 
+/** Cantidad de subtemplates antes de que el selector repita su estructura. */
+export function getStrengthBlockTemplateCycleLength(phase: ExercisePhase): number {
+  return (PHASE_SUBTEMPLATES[phase] ?? PHASE_SUBTEMPLATES.build).length
+}
+
 export type { StrengthBlockPattern, StrengthBlockSlot, StrengthBlockTemplate } from './types'

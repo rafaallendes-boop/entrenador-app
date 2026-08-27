@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { CoachSessionProposal, PlanWizardConfig } from '../../../types'
 import type { TrainingPlan, TrainingPlanWeek } from '../../../types/planBuilder'
 import { reviewPlanQuality } from '../qualityReview'
+import { collectAllStrengthKeys, collectCountableKeys } from '../strengthRoleContract'
 
 function plan(): TrainingPlan {
   const wizardConfig: PlanWizardConfig = {
@@ -81,13 +82,34 @@ function squashWeek(weekIndex: number, sessions: CoachSessionProposal[]): Traini
 }
 
 describe('qualityReview repeated strength templates', () => {
-  it('warns when two weeks of the same block share at least 3 ejercicios contables', () => {
+  it('warns when an anchored session repeats 4 of 5 countable accessories', () => {
     const review = reviewPlanQuality(plan(), [
-      week(0, ['Dead bug', 'Back squat', 'Bench press', 'Pull up']),
-      week(1, ['Dead bug', 'Back squat', 'Bench press', 'Pull up', 'Farmer carry']),
+      week(0, ['Dead bug', 'Back squat', 'Bench press', 'Pull up', 'Farmer carry']),
+      week(1, [
+        'Dead bug', 'Front squat', 'Bench press', 'Pull up',
+        'Farmer carry', 'Romanian deadlift',
+      ]),
     ])
 
     expect(review.issues.some((issue) => issue.code === 'quality.strength.repeated_template')).toBe(true)
+  })
+
+  it('warns for a production-shaped near clone with only one accessory changed', () => {
+    const review = reviewPlanQuality(plan(), [
+      week(0, [
+        'Dead bug', 'Back squat', 'Bench press', 'Pull up', 'Farmer carry',
+        'Romanian deadlift', 'Overhead press', 'Cable chop', 'Bulgarian split squat',
+      ]),
+      week(1, [
+        'Side plank', 'Front squat', 'Bench press', 'Pull up', 'Farmer carry',
+        'Romanian deadlift', 'Overhead press', 'Cable chop', 'Bulgarian split squat',
+      ]),
+    ])
+
+    const repeated = review.issues.find(
+      (issue) => issue.code === 'quality.strength.repeated_template',
+    )
+    expect(repeated?.message).toContain('7 de 8 accesorios (88%)')
   })
 
   it('does not warn when weeks share fewer than 3 exercises', () => {
@@ -96,6 +118,46 @@ describe('qualityReview repeated strength templates', () => {
       week(1, ['Side plank', 'Front squat', 'Incline dumbbell press']),
     ])
 
+    expect(review.issues.some((issue) => issue.code === 'quality.strength.repeated_template')).toBe(false)
+  })
+
+  it('allows 6 of 8 shared accessories as continuity with progression', () => {
+    const earlier = week(0, [
+      'Dead bug', 'Back squat', 'Bench press', 'Pull up',
+      'Farmer carry', 'Romanian deadlift', 'Overhead press', 'Cable chop',
+    ])
+    const later = week(1, [
+      'Side plank', 'Front squat', 'Bench press', 'Pull up',
+      'Farmer carry', 'Romanian deadlift', 'Overhead press', 'Cable chop',
+      'Incline dumbbell press',
+    ])
+    const earlierAll = collectAllStrengthKeys(earlier.sessions)
+    const laterCountable = collectCountableKeys(later.sessions)
+
+    expect(laterCountable.size).toBe(8)
+    expect([...laterCountable].filter((key) => earlierAll.has(key))).toHaveLength(6)
+
+    const review = reviewPlanQuality(plan(), [earlier, later])
+
+    // 6/8 accesorios contables se conservan: progresión, no clonación.
+    expect(review.issues.some((issue) => issue.code === 'quality.strength.repeated_template')).toBe(false)
+  })
+
+  it('compares strength sessions by weekly order instead of aggregating D1 and D2', () => {
+    const first = week(0, [])
+    first.sessions = [
+      { ...strength(['Dead bug', 'Back squat', 'Bench press', 'Pull up']), date: '2026-06-01' },
+      { ...strength(['Side plank', 'Front squat', 'Farmer carry', 'Romanian deadlift']), date: '2026-06-03' },
+    ]
+    const second = week(1, [])
+    second.sessions = [
+      { ...strength(['Pallof press', 'Goblet squat', 'Bench press', 'Farmer carry']), date: '2026-06-08' },
+      { ...strength(['Bird dog', 'Hip thrust', 'Pull up', 'Romanian deadlift']), date: '2026-06-10' },
+    ]
+
+    const review = reviewPlanQuality(plan(), [first, second])
+
+    // El agregado semanal comparte 4 nombres, pero cada sesión anclada sólo 1.
     expect(review.issues.some((issue) => issue.code === 'quality.strength.repeated_template')).toBe(false)
   })
 

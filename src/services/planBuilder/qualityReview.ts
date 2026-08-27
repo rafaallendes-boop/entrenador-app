@@ -496,6 +496,35 @@ export function getPlanPhaseForWeekForTest(
   return positions.get(week.weekIndex)?.blockId ?? `${week.phase}:legacy`
 }
 
+const STRENGTH_CLONE_MIN_SHARED_ACCESSORIES = 3
+/**
+ * Cuatro de cinco, siete de ocho u ocho de nueve dejan como máximo un quinto
+ * de variación: eso describe una plantilla clonada con cambios cosméticos.
+ * Seis de ocho o seis de nueve permite conservar accesorios y progresar carga
+ * dentro del bloque sin fingir novedad.
+ */
+const STRENGTH_CLONE_SIMILARITY_THRESHOLD = 0.8
+
+interface AnchoredStrengthSessionKeys {
+  ordinal: number
+  countable: ReadonlySet<string>
+  all: ReadonlySet<string>
+}
+
+function getAnchoredStrengthSessionKeys(week: TrainingPlanWeek): AnchoredStrengthSessionKeys[] {
+  return week.sessions
+    .filter((session) => session.sessionType === 'strength')
+    .sort((left, right) =>
+      left.date.localeCompare(right.date)
+      || left.timeBlock.localeCompare(right.timeBlock)
+      || left.title.localeCompare(right.title))
+    .map((session, ordinal) => ({
+      ordinal,
+      countable: collectCountableKeys([session]),
+      all: collectAllStrengthKeys([session]),
+    }))
+}
+
 function getRepeatedStrengthTemplateIssues(plan: TrainingPlan, weeks: TrainingPlanWeek[]): PlanValidationIssue[] {
   const issues: PlanValidationIssue[] = []
   const generated = weeks.filter((week) => week.sessions.length > 0).sort((a, b) => a.weekIndex - b.weekIndex)
@@ -513,35 +542,57 @@ function getRepeatedStrengthTemplateIssues(plan: TrainingPlan, weeks: TrainingPl
   for (const blockWeeks of byBlock.values()) {
     const keysByWeek = blockWeeks.map((week) => ({
       week,
-      countable: collectCountableKeys(week.sessions),
-      all: collectAllStrengthKeys(week.sessions),
+      sessions: getAnchoredStrengthSessionKeys(week),
     }))
 
     for (let j = 1; j < keysByWeek.length; j++) {
       const current = keysByWeek[j]
-      if (current.countable.size === 0) continue
 
-      // Flag each week at most once: against the earlier week in the same block
-      // with the largest exercise overlap. Avoids quadratic warning blow-up that
-      // would over-penalize a single non-rotating block in scorePlan/scoreWeek.
-      let worstOverlap = 0
-      let worstWeek: TrainingPlanWeek | undefined
+      // Flag each week at most once: conserva el peor clon proporcional entre
+      // sesiones del mismo ordinal semanal. No agrega D1+D2 en un único set,
+      // porque eso confunde progresión compartida con una semana clonada.
+      let worst: {
+        overlap: number
+        currentCountable: number
+        similarity: number
+        ordinal: number
+        week: TrainingPlanWeek
+      } | undefined
       for (let i = 0; i < j; i++) {
         const earlier = keysByWeek[i]
-        if (earlier.all.size === 0) continue
-        const overlap = [...current.countable].filter((key) => earlier.all.has(key)).length
-        if (overlap > worstOverlap) {
-          worstOverlap = overlap
-          worstWeek = earlier.week
+        for (const currentSession of current.sessions) {
+          if (currentSession.countable.size === 0) continue
+          const earlierSession = earlier.sessions[currentSession.ordinal]
+          if (!earlierSession || earlierSession.all.size === 0) continue
+          const overlap = [...currentSession.countable]
+            .filter((key) => earlierSession.all.has(key)).length
+          const similarity = overlap / currentSession.countable.size
+          if (
+            overlap < STRENGTH_CLONE_MIN_SHARED_ACCESSORIES
+            || similarity < STRENGTH_CLONE_SIMILARITY_THRESHOLD
+          ) continue
+          if (
+            !worst
+            || similarity > worst.similarity
+            || (similarity === worst.similarity && overlap > worst.overlap)
+          ) {
+            worst = {
+              overlap,
+              currentCountable: currentSession.countable.size,
+              similarity,
+              ordinal: currentSession.ordinal,
+              week: earlier.week,
+            }
+          }
         }
       }
 
-      if (worstOverlap < 3 || !worstWeek) continue
+      if (!worst) continue
 
       issues.push(issue({
         severity: 'warning',
         code: 'quality.strength.repeated_template',
-        message: `Semanas ${worstWeek.weekIndex + 1} y ${current.week.weekIndex + 1} del bloque ${current.week.phase} comparten ${worstOverlap} accesorios de fuerza.`,
+        message: `Semanas ${worst.week.weekIndex + 1} y ${current.week.weekIndex + 1} del bloque ${current.week.phase} repiten ${worst.overlap} de ${worst.currentCountable} accesorios (${Math.round(worst.similarity * 100)}%) en la sesión de fuerza ${worst.ordinal + 1}.`,
         weekIndex: current.week.weekIndex,
       }))
     }

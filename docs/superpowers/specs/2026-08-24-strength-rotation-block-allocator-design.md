@@ -1,8 +1,48 @@
 # Allocator de bloque para la rotación de accesorios de fuerza — diseño
 
 Fecha: 2026-08-24
-Estado: **aprobada por el owner el 2026-08-25** tras tres rondas de revisión.
+Estado: **implementación y contrato deportivo cerrados localmente el
+2026-08-27; pendiente deploy y observación del primer bloque real.** La
+aprobación histórica del 2026-08-25 no cubría el camino productivo.
 No se modificó producción.
+
+> **Adenda post-smoke (2026-08-27).** La premisa "template de fuerza del
+> modelo" de §7 era falsa para Plan Builder: desde el 2026-07-12 el prompt
+> productivo prohíbe `exercises`. La Corrida 3 demostró que el snapshot quedaba
+> vacío y el allocator no se ejecutaba. El orden corregido es: hidratar sólo
+> `selectStrengthSession` cuando llega un esqueleto vacío → snapshot → core →
+> allocator → densidad. Como el selector alterna subtemplates, la matriz se
+> coordina por familia repetida (A/B/C; A/B en taper). Esta adenda reemplaza
+> las afirmaciones incompatibles de §7 y "Templates hermanos distintos"; el
+> resto del diseño sigue describiendo el allocator de plantillas provistas.
+>
+> **Segunda revisión post-smoke (2026-08-27).** La partición por familia no
+> satisfacía el contrato observable heredado, que comparaba semanas completas
+> sin distinguir A/B/C. Al subir el fixture productivo a ese predicado,
+> `quality.strength.repeated_template`, 12/15 pares quedan con 3+ accesorios y
+> las cinco semanas posteriores siguen marcadas. La prehidratación se desacopla
+> de `previousWeek`, los payloads mixtos dejan de fingirse selector-owned y los
+> markers legacy cicatrizan como `provided`; nada de eso cierra la coordinación
+> cruzada. Esta conclusión queda como registro del contraejemplo que obligó a
+> revisar el contrato.
+>
+> **Contrato final (2026-08-27; reemplaza la conclusión de la segunda
+> revisión).** La métrica semanal absoluta confundía clonación con continuidad
+> deportiva y su `≤2` no era factible con el catálogo elegible sin degradar la
+> selección. El gate compara ahora sesiones por ordinal semanal dentro del
+> bloque. Alerta cuando la sesión posterior comparte al menos 3 contables y al
+> menos 80% de su contenido contable con la sesión anclada anterior. Así captura
+> 7/8, 8/9 y 9/9, y permite 6/8 o 6/9 con progresión. El fixture productivo de
+> seis semanas queda verde y conserva allocator, telemetría e idempotencia.
+> Costo API: US$0. La Causa B queda cerrada en código; no se repite un plan
+> completo pagado sólo para este smoke.
+>
+> **Límite deliberado del detector.** El anclaje por ordinal no busca clones
+> cruzados: D2 de una semana que copie D1 de otra no se compara. Si dos semanas
+> tienen distinta cantidad de sesiones de fuerza, sólo se emparejan los
+> ordinales presentes en ambas. Es una decisión de dominio —seguir D1↔D1 y
+> D2↔D2 sin agregar la semana completa—, no cobertura total de cualquier par
+> posible de sesiones.
 
 Cierra la **Causa B** del Hallazgo 5 de §28, que §29 dejó explícitamente
 abierta. Reemplaza la decorrelación por una asignación coordinada entre las
@@ -197,7 +237,7 @@ arquitectónico, no un detalle:
 | Entrada | ¿Pura y compartida? |
 |---|---|
 | `blockId`, `indexInBlock`, tamaño del bloque | **Sí.** `resolveBlockPositions` sobre datos del plan |
-| Template de fuerza del modelo | **Sí** en el caso que causa el bug (§9) |
+| Template de fuerza | **Sí tras hidratar localmente el selector**; el modelo productivo no emite `exercises` |
 | Core estructural de §29 | **No, tal como está hoy.** Ver abajo |
 | Relleno de densidad | **No.** Ver abajo |
 | `previousWeek` | **No.** Shell o ready según timing |
@@ -356,10 +396,11 @@ falla de schema.
 
 ### Templates hermanos distintos
 
-Si el modelo devuelve templates diferentes entre hermanas, cada worker computa
+Si un consumidor provee templates diferentes entre hermanas, cada worker computa
 una matriz distinta y **la garantía desaparece: pasa a best-effort**. Es
-aceptable y se documenta, porque el solape nace precisamente de que el modelo
-clona la plantilla.
+aceptable y se documenta. En el camino productivo, las familias distintas del
+selector son variación intencional y se coordinan por separado; no se reportan
+como drift entre templates.
 
 Para que sea observable hace falta una **firma pre-rotación nueva**: la metadata
 actual (`planBuilderStrengthRotation.signature`, `repairWeek.ts:2153`) guarda

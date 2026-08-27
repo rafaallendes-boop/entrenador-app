@@ -16,6 +16,29 @@ densidad— y ningún mutador estructural posterior puede pisar una celda asigna
 
 **Spec:** [`docs/superpowers/specs/2026-08-24-strength-rotation-block-allocator-design.md`](../specs/2026-08-24-strength-rotation-block-allocator-design.md)
 
+> **Adenda post-smoke (2026-08-27).** Este plan se ejecutó sobre una premisa
+> de fixture que producción no cumple: `buildWeekStructuredSystemPromptMinimal`
+> prohíbe `exercises`, así que no existe un "template del modelo" antes de
+> `completeSportDetails`. La corrección posterior hidrata primero sólo la salida
+> del selector, captura ese template antes de core/densidad y coordina por la
+> familia periódica A/B/C (A/B en taper). Ver la sección post-smoke del reporte
+> y §29 del roadmap. Las tareas siguientes quedan como registro histórico de
+> la primera implementación, no como instrucciones vigentes de cableado.
+>
+> **Gate heredado (2026-08-27; conclusión superada).** El test con la forma
+> productiva y la métrica semanal absoluta quedó rojo: 12/15 pares infringían y
+> las cinco semanas posteriores conservaban `quality.strength.repeated_template`.
+> La coordinación por familia sólo mejoraba A→A/B→B/C→C por sesión. Este
+> contraejemplo demostró que el predicado mezclaba clonación con continuidad.
+>
+> **Cierre final (2026-08-27).** El contrato deportivo compara sesiones de
+> fuerza por ordinal semanal y alerta con ≥3 contables compartidos y similitud
+> direccional ≥80%. Detecta sesiones casi clonadas (7/8, 8/9, 9/9) y permite
+> continuidad defendible (6/8, 6/9). El fixture productivo de seis semanas queda
+> verde, con allocator presente, A→A/B→B/C→C coordinado e idempotencia. Costo
+> API: US$0. Este plan permanece como registro de implementación; no hace falta
+> un rediseño heterogéneo ni repetir una generación completa pagada.
+
 ## Global Constraints
 
 - **Sin migraciones.** Dexie queda en v20 y Supabase no cambia.
@@ -57,7 +80,7 @@ del bloque de rotación, corre **antes**, dentro de `completeSportDetails`.
 
 | Orden | Sitio | Qué muta | Dueño tras el cambio |
 |---|---|---|---|
-| 1 | `repairGeneratedWeek` línea ~250, justo antes de `completeSportDetails` | — | **Captura del snapshot.** Es el último punto en que las sesiones de fuerza son todavía el template del modelo |
+| 1 | `repairGeneratedWeek` línea ~250, justo antes de `completeSportDetails` | — | **Supuesto original (invalidado por la adenda):** captura del supuesto template del modelo; producción llega sin `exercises` |
 | 2 | `completeSportDetails:576` → `enhanceStrengthSessionDetails:2814` | Llama a `enhanceStrengthSessionExercises` (inyecta/reemplaza core) y después a `completeStrengthExerciseDensity` | Debe recibir la **proyección del core** y el **conjunto de ids comprometidos**, hoy inexistentes en ese punto |
 | 3 | `enhanceStrengthSessionDetails:2826` → `completeStrengthExerciseDensity:2854` | Agrega ejercicios hasta la densidad objetivo, sin marca de procedencia | Consumidor: excluye los ids comprometidos |
 | 4 | `normalizeStrengthSessions:2034` | Hoy hace la rotación por índice escalar | Pasa a **aplicar** la columna local de la matriz |
@@ -493,7 +516,8 @@ import type { StrengthContractRole } from './strengthRoleContract'
 import type { CoachSessionProposal, ExerciseLibraryRef } from '../../types'
 
 /**
- * Registro transitorio e inmutable del template tal como llegó del modelo,
+ * Registro transitorio e inmutable del primer template observable. En el
+ * camino productivo corregido lo materializa antes el selector local,
  * paso 1 del orden congelado de la spec. Vive dentro de una sola pasada de
  * repair y NO cruza ninguna frontera de serialización: no se persiste, no va a
  * backup, no va a plantillas. Esa es la razón de que no haga falta un campo de

@@ -11,8 +11,9 @@ import { collectAllStrengthKeys, collectCountableKeys } from '../strengthRoleCon
  *
  * Reproduce la condición real de generación: con `DEFAULT_CONCURRENCY = 3` las
  * semanas de un bloque se reparan en paralelo, así que la anterior todavía no
- * es `isReadyWeek` cuando la siguiente se normaliza. El modelo, además, tiende a
- * devolver la misma plantilla de fuerza para todas las semanas del bloque.
+ * es `isReadyWeek` cuando la siguiente se normaliza. Este fixture poblado fija
+ * el dominio legacy/provisto; el camino productivo real usa esqueletos vacíos
+ * y queda cubierto por `strengthNormalization.test.ts`.
  */
 
 const PLAN = {
@@ -39,7 +40,7 @@ const WIZARD_CONFIG = {
 const WEEK_START_DATES = ['2026-06-08', '2026-06-15', '2026-06-22', '2026-06-29']
 const SESSION_DATES = ['2026-06-09', '2026-06-16', '2026-06-23', '2026-06-30']
 
-/** La plantilla clonada que el modelo devolvió en el arquetipo 1. */
+/** Plantilla poblada que reproduce el contenido final observado en el arquetipo 1. */
 function clonedStrengthTemplate(date: string): CoachSessionProposal {
   const exercises: CoachExerciseProposal[] = [
     { name: 'Sentadilla trasera', sets: 4, reps: 5, group: 'legs' },
@@ -103,8 +104,8 @@ describe('rotación de fuerza entre semanas reparadas en paralelo', () => {
   it('no deja 3+ accesorios contables compartidos entre semanas del mismo bloque', () => {
     const repaired = [0, 1, 2].map(repairWeekAt)
 
-    // Mismo predicado que `quality.strength.repeated_template`: los contables de
-    // la semana posterior contra todos los ejercicios de fuerza de la anterior.
+    // Presupuesto interno estricto del allocator para templates provistos. El
+    // gate deportivo final es proporcional y vive en `qualityReview`.
     const overlaps: Array<{ pair: string; shared: string[] }> = []
     for (let later = 1; later < repaired.length; later++) {
       for (let earlier = 0; earlier < later; earlier++) {

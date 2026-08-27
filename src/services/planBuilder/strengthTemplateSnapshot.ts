@@ -5,11 +5,12 @@ import type { CoachSessionProposal } from '../../types'
 import type { ExerciseLibraryRef } from '../../types/exerciseLibraryRef'
 
 /**
- * Registro transitorio e inmutable del template tal como llegó del modelo,
- * paso 1 del orden congelado de la spec. Vive dentro de una sola pasada de
- * repair y NO cruza ninguna frontera de serialización: no se persiste, no va a
- * backup, no va a plantillas. Esa es la razón de que no haga falta un campo de
- * procedencia como el `libraryRef` de §19.
+ * Registro transitorio e inmutable del primer template de fuerza observable.
+ * En Plan Builder productivo lo crea el selector local porque el contrato del
+ * modelo prohíbe `exercises`; otros consumidores todavía pueden proveer una
+ * plantilla poblada. Vive dentro de una sola pasada de repair y NO cruza
+ * ninguna frontera de serialización: no se persiste, no va a backup ni a
+ * plantillas.
  */
 export interface StrengthTemplateSlot {
   slotKey: string

@@ -5,7 +5,12 @@ import { findStrengthExerciseByName } from '../../training/exerciseLibrary'
 import { selectStrengthSession } from '../../training/strengthSelector'
 import { repairGeneratedWeek, resolveStrengthBlockAllocation } from '../repairWeek'
 import { summarizeTaxonomy } from '../repairTaxonomy'
-import { resolveSessionStrengthRoles } from '../strengthRoleContract'
+import { reviewPlanQuality } from '../qualityReview'
+import {
+  collectAllStrengthKeys,
+  collectCountableKeys,
+  resolveSessionStrengthRoles,
+} from '../strengthRoleContract'
 import { buildRepairContextForTest, buildSkeletonSessionForTest } from './helpers/repairTestFixtures'
 
 const SELECTED_EXERCISES = selectStrengthSession({
@@ -78,6 +83,163 @@ function readyPrevious(names = NAMES, weekIndex = 0, phase: TrainingPlanWeek['ph
 }
 
 describe('normalización única de fuerza', () => {
+  it('gate de Causa B: el esqueleto productivo no deja sesiones clonadas en 6 semanas', () => {
+    const descriptors = Array.from({ length: 6 }, (_, weekIndex) => ({
+      weekIndex,
+      phase: 'build',
+    }))
+    const contextAt = (weekIndex: number) => {
+      const context = buildRepairContextForTest({
+        primarySport: 'squash',
+        phase: 'build',
+        sessionsPerWeek: 5,
+        planWeekDescriptors: descriptors,
+      })
+      context.wizardConfig.complementarySports = ['strength']
+      context.plan = {
+        ...context.plan,
+        totalWeeks: descriptors.length,
+        phases: [{
+          phase: 'build',
+          startWeekIndex: 0,
+          endWeekIndex: descriptors.length - 1,
+          blockFocus: 'fixture',
+          intentBySport: {},
+        }],
+      }
+      context.week = {
+        ...context.week,
+        weekIndex,
+        weekStartDate: new Date(Date.UTC(2026, 7, 3 + weekIndex * 7)).toISOString().slice(0, 10),
+        phase: 'build',
+      }
+      return context
+    }
+
+    const repaired = descriptors.map(({ weekIndex }) => {
+      const context = contextAt(weekIndex)
+      return repairGeneratedWeek([
+        buildSkeletonSessionForTest({
+          date: context.week.weekStartDate,
+          sessionType: 'strength',
+          title: 'Fuerza',
+          objective: 'Desarrollar fuerza',
+          durationMin: 60,
+          rpe: 6,
+        }),
+        buildSkeletonSessionForTest({
+          date: new Date(Date.parse(`${context.week.weekStartDate}T00:00:00.000Z`) + 86_400_000)
+            .toISOString().slice(0, 10),
+          sessionType: 'strength',
+          title: 'Fuerza complementaria',
+          objective: 'Desarrollar fuerza unilateral',
+          durationMin: 60,
+          rpe: 6,
+        }),
+        ...[2, 3, 4].map((dayOffset) => buildSkeletonSessionForTest({
+          date: new Date(Date.parse(`${context.week.weekStartDate}T00:00:00.000Z`) + dayOffset * 86_400_000)
+            .toISOString().slice(0, 10),
+          sessionType: 'squash',
+          subtype: 'technical',
+          title: 'Squash técnico',
+          objective: 'Calidad de golpeo',
+          durationMin: 60,
+          rpe: 6,
+        })),
+      ], context)
+    })
+
+    for (const [weekIndex, result] of repaired.entries()) {
+      expect(result.meta.strengthAllocator, `semana ${weekIndex}`).toBeDefined()
+      expect(result.meta.strengthAllocator?.slotCount, `semana ${weekIndex}`).toBeGreaterThan(0)
+      expect(result.sessions[0]?.exercises?.length, `semana ${weekIndex}`).toBeGreaterThan(0)
+    }
+    expect(repaired.slice(0, 3).map((result) => result.meta.strengthAllocator?.assignedCount))
+      .toEqual([0, 0, 0])
+
+    for (const [earlier, later] of [[0, 3], [1, 4], [2, 5]] as const) {
+      const earlierStrength = repaired[earlier]!.sessions.filter((session) => session.sessionType === 'strength')
+      const laterStrength = repaired[later]!.sessions.filter((session) => session.sessionType === 'strength')
+      expect(laterStrength).toHaveLength(earlierStrength.length)
+      for (const [sessionIndex, laterSession] of laterStrength.entries()) {
+        const earlierKeys = collectAllStrengthKeys([earlierStrength[sessionIndex]!])
+        const shared = [...collectCountableKeys([laterSession])]
+          .filter((key) => earlierKeys.has(key))
+        expect(shared.length, `par ${earlier}->${later}, sesión ${sessionIndex}: ${JSON.stringify(shared)}`)
+          .toBeLessThan(3)
+      }
+      expect(repaired[later]!.meta.strengthAllocator?.assignedCount).toBeGreaterThan(0)
+    }
+
+    const rerun = repairGeneratedWeek(structuredClone(repaired[3]!.sessions), contextAt(3))
+    const strengthOnly = (sessions: CoachSessionProposal[]) =>
+      sessions.filter((session) => session.sessionType === 'strength')
+    expect(strengthOnly(rerun.sessions)).toEqual(strengthOnly(repaired[3]!.sessions))
+    expect(strengthOnly(rerun.sessions)
+      .every((session) => session.metadata?.planBuilderStrengthRotation?.templateSource === 'selector'))
+      .toBe(true)
+
+    const repairedWeeks = repaired.map((result, weekIndex) => ({
+      ...contextAt(weekIndex).week,
+      sessions: result.sessions,
+    }))
+    const repeatedTemplateIssues = reviewPlanQuality(contextAt(0).plan, repairedWeeks)
+      .issues.filter((issue) => issue.code === 'quality.strength.repeated_template')
+    expect(repeatedTemplateIssues).toEqual([])
+  })
+
+  it('hidrata el template sin depender de qué previousWeek aterrizó primero', () => {
+    const raw = () => buildSkeletonSessionForTest({
+      date: '2026-08-03',
+      sessionType: 'strength',
+      title: 'Fuerza',
+      objective: 'Desarrollar fuerza',
+      durationMin: 60,
+      rpe: 6,
+    })
+    const baseline = repairGeneratedWeek([raw()], contextFor({ weekIndex: 0 }))
+    const baselineNames = baseline.sessions[0]?.exercises?.map((exercise) => exercise.name) ?? []
+    const withPrevious = repairGeneratedWeek(
+      [raw()],
+      contextFor({ weekIndex: 0, previous: readyPrevious(baselineNames) }),
+    )
+
+    expect(withPrevious.sessions[0]?.metadata?.planBuilderStrengthRotation?.templateSignature)
+      .toBe(baseline.sessions[0]?.metadata?.planBuilderStrengthRotation?.templateSignature)
+  })
+
+  it('trata un payload mixto como provisto, no como un dominio A/B/C completo', () => {
+    const context = buildRepairContextForTest({ sessionsPerWeek: 2, primarySport: 'strength' })
+    const result = repairGeneratedWeek([
+      strengthSession('2026-08-03'),
+      buildSkeletonSessionForTest({
+        date: '2026-08-04',
+        sessionType: 'strength',
+        title: 'Fuerza vacía',
+        durationMin: 45,
+        rpe: 5,
+      }),
+    ], context)
+
+    expect(result.sessions
+      .filter((session) => session.sessionType === 'strength')
+      .every((session) =>
+        session.metadata?.planBuilderStrengthRotation?.templateSource === 'provided'))
+      .toBe(true)
+  })
+
+  it('cicatriza un marker legacy sin templateSource como provided', () => {
+    const context = contextFor({ weekIndex: 0 })
+    const first = repairGeneratedWeek([strengthSession()], context)
+    const legacy = structuredClone(first.sessions[0]!)
+    if (legacy.metadata?.planBuilderStrengthRotation) {
+      delete legacy.metadata.planBuilderStrengthRotation.templateSource
+    }
+
+    const rerun = repairGeneratedWeek([legacy], context)
+    expect(rerun.sessions[0]?.metadata?.planBuilderStrengthRotation?.templateSource).toBe('provided')
+  })
+
   it('ancla los slots al date|timeBlock cuando el balance elimina sesiones del template', () => {
     const context = buildRepairContextForTest({
       primarySport: 'squash',

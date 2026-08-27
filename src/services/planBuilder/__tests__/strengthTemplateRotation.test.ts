@@ -3,8 +3,8 @@ import { repairGeneratedWeek } from '../repairWeek'
 import type { RepairContext } from '../repairWeek'
 import type { CoachExerciseProposal, CoachSessionProposal } from '../../../types'
 
-// Mirrors qualityReview.normalizeExerciseName so the assertion matches the rule
-// that emits `quality.strength.repeated_template`.
+// Cobertura legacy del presupuesto estricto de rotación sobre nombres visibles.
+// El gate deportivo final usa identidad canónica, roles y similitud proporcional.
 function normalizeExerciseName(name: string): string {
   return name
     .toLowerCase()
