@@ -24,7 +24,7 @@ afterEach(() => {
 })
 
 describe('PricingPage authenticated state', () => {
-  it('replaces every signup CTA with a link back to the panel', () => {
+  it('replaces the free-tier signup CTA with a link back to the panel', () => {
     useAuthStore.setState({ user: { id: 'signed-in-user' } as User })
 
     const html = renderToStaticMarkup(
@@ -36,7 +36,9 @@ describe('PricingPage authenticated state', () => {
     expect(html).toContain('Ir a mi panel')
     expect(html).not.toContain('Iniciar sesión')
     expect(html).not.toContain('Empezar gratis')
-    expect(html).not.toContain('Probar Coach Semanal')
-    expect(html).not.toContain('Preparar un objetivo')
   })
+
+  // Los tiers pagados NO siguen esta regla: mientras no exista cobro, tener
+  // sesión iniciada no habilita comprar, así que su CTA sigue pidiendo acceso.
+  // El contrato completo vive en `PricingPage.betaAccess.test.tsx`.
 })

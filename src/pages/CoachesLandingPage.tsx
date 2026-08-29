@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { buildPrelaunchMailto } from '../constants/prelaunchContact'
 import { ROUTES } from '../constants/routes'
 import { getPublicRouteMetadata } from '../constants/publicRouteMetadata'
 import { usePageMetadata } from '../hooks/usePageMetadata'
@@ -12,9 +13,9 @@ const SURFACE_BORDER = 'rgba(255,255,255,0.08)'
 const FONT_DISPLAY = "'Lexend', 'Inter', system-ui, sans-serif"
 const FONT_MONO = "'JetBrains Mono', 'Fira Mono', monospace"
 
-const PRELAUNCH_MAILTO =
-  'mailto:hola@rallyiq.cl?subject=' +
-  encodeURIComponent('Quiero recibir novedades del lanzamiento de RallyIQ para coaches')
+const PRELAUNCH_MAILTO = buildPrelaunchMailto(
+  'Quiero recibir novedades del lanzamiento de RallyIQ para coaches',
+)
 
 const PARA_QUIEN_ES = [
   'Ya llevas entre 1 y 5 atletas y quieres ordenar planificación y adherencia en un solo lugar.',

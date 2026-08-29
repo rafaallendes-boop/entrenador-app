@@ -3,9 +3,12 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../store/useAuthStore'
 import { isSupabaseConfigured } from '../services/auth'
 import SharedPublicNav from '../components/SharedPublicNav'
+import { buildBetaAccessMailto, PRELAUNCH_CONTACT_EMAIL } from '../constants/prelaunchContact'
 import { ROUTES } from '../constants/routes'
 import { getPublicRouteMetadata } from '../constants/publicRouteMetadata'
 import { usePageMetadata } from '../hooks/usePageMetadata'
+
+const BETA_BADGE = 'Beta cerrada · sin cobro todavía'
 
 // ── Design tokens ────────────────────────────────────────────────────────────
 const BRAND = '#ff4d00'
@@ -27,34 +30,6 @@ const css = `
 
   .pricing-wrap { max-width: 1240px; margin: 0 auto; padding: 0 32px; }
   .pricing-wrap-wide { max-width: 1400px; margin: 0 auto; padding: 0 32px; }
-
-  /* Nav */
-  .pricing-nav {
-    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
-    background: rgba(8,8,8,0.82); backdrop-filter: blur(14px);
-    border-bottom: 1px solid ${SURFACE_BORDER};
-    height: 64px; display: flex; align-items: center;
-  }
-  .pricing-nav-inner {
-    max-width: 1240px; margin: 0 auto; padding: 0 32px;
-    width: 100%; display: flex; align-items: center; gap: 40px;
-  }
-  .pricing-nav-logo {
-    font-family: ${FONT_DISPLAY}; font-weight: 700; font-size: 18px;
-    color: ${INK}; text-decoration: none; display: flex; align-items: center; gap: 8px;
-  }
-  .pricing-nav-logo .bolt {
-    width: 28px; height: 28px; background: linear-gradient(135deg,#ff6020,#cc2c00);
-    border-radius: 7px; display: flex; align-items: center; justify-content: center;
-  }
-  .pricing-nav-links { display: flex; gap: 28px; flex: 1; }
-  .pricing-nav-links a {
-    font-family: ${FONT_DISPLAY}; font-size: 14px; font-weight: 500;
-    color: ${INK_FAINT}; text-decoration: none; transition: color .15s;
-  }
-  .pricing-nav-links a:hover { color: ${INK}; }
-  .pricing-nav-links a.active { color: ${INK}; }
-  .pricing-nav-actions { display: flex; align-items: center; gap: 10px; }
 
   /* Buttons */
   .p-btn {
@@ -154,6 +129,12 @@ const css = `
     padding: 4px 10px; border-radius: 6px;
     font-family: ${FONT_MONO}; font-size: 9px; font-weight: 700;
     letter-spacing: 0.28em; text-transform: uppercase;
+  }
+  .tier-badge {
+    font-family: ${FONT_MONO}; font-size: 10px; font-weight: 600;
+    letter-spacing: 0.16em; text-transform: uppercase; color: ${INK_MUTED};
+    background: rgba(255,255,255,0.05); border: 1px solid ${SURFACE_BORDER};
+    border-radius: 8px; padding: 9px 12px; margin-bottom: 14px; text-align: center;
   }
   .tier h3 {
     font-family: ${FONT_DISPLAY}; font-size: 20px; font-weight: 700;
@@ -332,6 +313,37 @@ const css = `
     color: ${INK}; max-width: 700px; margin-left: auto; margin-right: auto;
   }
   .section-header .r { font-size: 14px; color: ${INK_MUTED}; max-width: 56ch; margin: 14px auto 0; line-height: 1.55; }
+  /* ── Responsive ───────────────────────────────────────────────────────────
+     La página nació sin un solo breakpoint: .pricing-grid era repeat(3,1fr)
+     fijo, así que a 360px eran tres columnas de ~100px. Los margin negativos
+     de .tier-divider tienen que seguir al padding de .tier en cada corte, o el
+     divisor sobresale y produce scroll horizontal. */
+  @media (max-width: 1080px) {
+    .pricing-grid { grid-template-columns: 1fr; max-width: 520px; margin-left: auto; margin-right: auto; }
+    .guarantee { grid-template-columns: repeat(2,1fr); }
+    .footer-grid { grid-template-columns: 1fr 1fr; gap: 32px; }
+  }
+  @media (max-width: 760px) {
+    .faq { grid-template-columns: 1fr; gap: 28px; }
+    .cta-block { padding: 44px 24px; }
+  }
+  @media (max-width: 600px) {
+    .pricing-wrap, .pricing-wrap-wide { padding: 0 20px; }
+    .tier { padding: 28px 22px 24px; }
+    .tier .tier-divider { margin: 0 -22px 24px; }
+    .p-hero { padding: 104px 0 48px; }
+    .guarantee { grid-template-columns: 1fr; }
+    .footer-grid { grid-template-columns: 1fr; gap: 28px; }
+    .g-item { padding: 22px; }
+  }
+  @media (max-width: 380px) {
+    .pricing-wrap, .pricing-wrap-wide { padding: 0 14px; }
+    .tier { padding: 24px 18px 22px; }
+    .tier .tier-divider { margin: 0 -18px 22px; }
+    .tier .price-num { font-size: 42px; }
+    .billing-toggle button { padding: 9px 14px; font-size: 11px; }
+  }
+
 `
 
 // ── Sub-components ────────────────────────────────────────────────────────────
@@ -380,12 +392,16 @@ interface TierCardProps {
   ctaText: string
   ctaStyle?: 'primary' | 'ghost'
   onCta: () => void
+  /** Distintivo sobre el CTA: hoy marca un plan publicado que todavía no se cobra. */
+  badge?: string
+  /** Con destino, el CTA es un enlace real en vez del alta; el alta no puede vender. */
+  ctaHref?: string
   featLabel: string
   features: TierFeature[]
   origMonthly?: number
 }
 
-function TierCard({ name, tagline, monthlyPrice, annualPrice, isAnnual, featured, ribbon, ctaText, ctaStyle = 'ghost', onCta, featLabel, features, origMonthly }: TierCardProps) {
+function TierCard({ name, tagline, monthlyPrice, annualPrice, isAnnual, featured, ribbon, ctaText, ctaStyle = 'ghost', onCta, badge, ctaHref, featLabel, features, origMonthly }: TierCardProps) {
   const price = isAnnual ? annualPrice : monthlyPrice
   const unit = isAnnual ? 'CLP / mes · pago anual' : 'CLP / mes'
   const formatClp = (value: number) => `$${value.toLocaleString('es-CL')}`
@@ -408,9 +424,16 @@ function TierCard({ name, tagline, monthlyPrice, annualPrice, isAnnual, featured
           </>
         )}
       </div>
-      <button type="button" onClick={onCta} className={`p-btn p-btn-lg p-btn-block p-btn-${ctaStyle}`} style={{ marginBottom: '28px' }}>
-        {ctaText} {ctaStyle === 'primary' && <span>→</span>}
-      </button>
+      {badge && <div className="tier-badge">{badge}</div>}
+      {ctaHref ? (
+        <a href={ctaHref} className={`p-btn p-btn-lg p-btn-block p-btn-${ctaStyle}`} style={{ marginBottom: '28px' }}>
+          {ctaText} {ctaStyle === 'primary' && <span>→</span>}
+        </a>
+      ) : (
+        <button type="button" onClick={onCta} className={`p-btn p-btn-lg p-btn-block p-btn-${ctaStyle}`} style={{ marginBottom: '28px' }}>
+          {ctaText} {ctaStyle === 'primary' && <span>→</span>}
+        </button>
+      )}
       <div className="tier-divider" />
       <div className="feat-label">{featLabel}</div>
       <ul>
@@ -545,9 +568,11 @@ export default function PricingPage() {
               isAnnual={isAnnual}
               featured
               ribbon="Más útil"
-              ctaText={user ? 'Ir a mi panel' : 'Probar Coach Semanal'}
+              ctaText="Pedir acceso a la beta"
               ctaStyle="primary"
               onCta={handleAccess}
+              badge={BETA_BADGE}
+              ctaHref={buildBetaAccessMailto('Coach Semanal')}
               featLabel="Todo de Base, más"
               features={proFeatures}
               origMonthly={15990}
@@ -558,9 +583,11 @@ export default function PricingPage() {
               monthlyPrice={24990}
               annualPrice={19990}
               isAnnual={isAnnual}
-              ctaText={user ? 'Ir a mi panel' : 'Preparar un objetivo'}
+              ctaText="Pedir acceso a la beta"
               ctaStyle="ghost"
               onCta={handleAccess}
+              badge={BETA_BADGE}
+              ctaHref={buildBetaAccessMailto('Avanzado')}
               featLabel="Todo de Coach Semanal, más"
               features={eliteFeatures}
             />
@@ -666,7 +693,7 @@ export default function PricingPage() {
               <span className="p-label" style={{ display: 'inline-flex' }}>Dudas frecuentes</span>
               <h2>Preguntas honestas, respuestas honestas.</h2>
               <p>
-                Si algo no está aquí, <a href="mailto:hola@rallyiq.cl">escríbenos</a>. Responde una persona, no un bot.
+                Si algo no está aquí, <a href={`mailto:${PRELAUNCH_CONTACT_EMAIL}`}>escríbenos</a>. Responde una persona, no un bot.
               </p>
             </div>
             <div className="faq-list">
@@ -740,24 +767,24 @@ export default function PricingPage() {
               <ul>
                 <li><Link to={ROUTES.FEATURES}>Funcionalidades</Link></li>
                 <li><Link to={ROUTES.PRICING}>Precios</Link></li>
-                <li><a href="mailto:hola@rallyiq.cl">Demo</a></li>
-                <li><a href="mailto:hola@rallyiq.cl">Roadmap</a></li>
+                <li><a href={`mailto:${PRELAUNCH_CONTACT_EMAIL}`}>Demo</a></li>
+                <li><a href={`mailto:${PRELAUNCH_CONTACT_EMAIL}`}>Roadmap</a></li>
               </ul>
             </div>
             <div className="footer-col">
               <h4>Para atletas</h4>
               <ul>
-                <li><a href="mailto:hola@rallyiq.cl">Piloto fundador</a></li>
-                <li><a href="mailto:hola@rallyiq.cl">Clubes</a></li>
-                <li><a href="mailto:hola@rallyiq.cl">Entrenadores</a></li>
-                <li><a href="mailto:hola@rallyiq.cl">Feedback</a></li>
+                <li><a href={`mailto:${PRELAUNCH_CONTACT_EMAIL}`}>Piloto fundador</a></li>
+                <li><a href={`mailto:${PRELAUNCH_CONTACT_EMAIL}`}>Clubes</a></li>
+                <li><a href={`mailto:${PRELAUNCH_CONTACT_EMAIL}`}>Entrenadores</a></li>
+                <li><a href={`mailto:${PRELAUNCH_CONTACT_EMAIL}`}>Feedback</a></li>
               </ul>
             </div>
             <div className="footer-col">
               <h4>Empresa</h4>
               <ul>
-                <li><a href="mailto:hola@rallyiq.cl">Contacto</a></li>
-                <li><a href="mailto:hola@rallyiq.cl">Soporte</a></li>
+                <li><a href={`mailto:${PRELAUNCH_CONTACT_EMAIL}`}>Contacto</a></li>
+                <li><a href={`mailto:${PRELAUNCH_CONTACT_EMAIL}`}>Soporte</a></li>
                 <li><Link to={ROUTES.PRIVACY}>Privacidad</Link></li>
                 <li><Link to={ROUTES.TERMS}>Términos</Link></li>
                 <li><Link to={ROUTES.HEALTH_DISCLAIMER}>Descargo de salud</Link></li>
