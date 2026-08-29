@@ -51,6 +51,12 @@ export const AI_REQUEST_POLICIES: Record<AIRequestClass, AIRequestPolicy> = {
     timeoutMs: 18000,
     allowFallback: true,
   },
+  coach_assistant_message: {
+    maxTokens: 260,
+    temperature: 0.5,
+    timeoutMs: 15000,
+    allowFallback: false,
+  },
 }
 
 export function getAIRequestPolicy(requestClass: AIRequestClass): AIRequestPolicy {

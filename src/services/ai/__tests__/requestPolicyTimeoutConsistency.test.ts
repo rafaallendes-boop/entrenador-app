@@ -1,18 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import type { AIRequestClass } from '../../../types'
+import { ALL_AI_REQUEST_CLASSES } from '../aiRequestClasses'
 import { getAIRequestPolicy } from '../requestPolicy'
 
 const COACH_PATH = 'netlify/functions/coach.ts'
-const CLASSES: AIRequestClass[] = [
-  'chat_general',
-  'chat_action',
-  'weekly_summary',
-  'week_creator',
-  'plan_builder_week',
-  'plan_builder_pair',
-  'import_extract',
-]
+const CLASSES = Object.keys(ALL_AI_REQUEST_CLASSES) as AIRequestClass[]
 
 function readMaxWallclockFromCoach(): number {
   const src = readFileSync(COACH_PATH, 'utf8')

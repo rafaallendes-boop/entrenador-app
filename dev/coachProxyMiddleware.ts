@@ -10,6 +10,7 @@ type RequestClass =
   | 'plan_builder_week'
   | 'plan_builder_pair'
   | 'import_extract'
+  | 'coach_assistant_message'
 type ErrorCode = 'timeout' | 'rate_limit' | 'parse_error' | 'server_error' | 'misconfigured' | 'unknown' | 'unauthorized'
 
 interface CoachRequest {

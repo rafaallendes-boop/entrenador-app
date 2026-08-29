@@ -21,6 +21,7 @@ function getThinkingBudget(requestClass: AIRequest['requestClass']): number {
     case 'chat_general':
     case 'weekly_summary':
     case 'import_extract':
+    case 'coach_assistant_message':
       return 0
   }
 }

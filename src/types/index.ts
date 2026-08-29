@@ -12,6 +12,7 @@ export type AIRequestClass =
   | 'plan_builder_week'
   | 'plan_builder_pair'
   | 'import_extract'
+  | 'coach_assistant_message'
 
 export type CoachStage =
   | 'prompt_build'
@@ -35,6 +36,7 @@ export type AITechnicalSurface =
   | 'weekly_summary'
   | 'plan_builder'
   | 'import'
+  | 'coach_assistant'
 
 export type CoachPromptRequestType = 'chat_general' | 'adjust_session' | 'weekly_summary'
 

@@ -87,6 +87,18 @@ function isBackfillMarkedComplete(ownerAccountId: string, athleteId: string): bo
   }
 }
 
+/**
+ * Permite a lecturas sensibles a legacy evitar escaneos históricos cuando el
+ * backfill ya terminó. Las únicas filas legacy que pueden quedar tras ese paso
+ * son colisiones con una fila scoped de la misma clave natural.
+ */
+export function isAthleteScopeBackfillComplete(
+  ownerAccountId: string,
+  athleteId: string,
+): boolean {
+  return isBackfillMarkedComplete(ownerAccountId, athleteId)
+}
+
 function markBackfillComplete(ownerAccountId: string, athleteId: string): void {
   try {
     if (typeof localStorage === 'undefined') return

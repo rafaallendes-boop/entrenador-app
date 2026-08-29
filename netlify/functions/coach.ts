@@ -56,6 +56,7 @@ type RequestClass =
   | 'plan_builder_week'
   | 'plan_builder_pair'
   | 'import_extract'
+  | 'coach_assistant_message'
 type TechnicalErrorCode =
   | 'timeout' | 'rate_limit' | 'parse_error' | 'server_error' | 'misconfigured'
   | 'unknown' | 'unauthorized' | 'entitlement_required'
@@ -194,6 +195,7 @@ const REQUEST_TIMEOUTS: Record<RequestClass, number> = {
   plan_builder_week: 22000,
   plan_builder_pair: 23000,
   import_extract: 18000,
+  coach_assistant_message: 15000,
 }
 const REQUEST_MAX_TOKENS: Record<RequestClass, number> = {
   chat_general: 2400,
@@ -206,6 +208,7 @@ const REQUEST_MAX_TOKENS: Record<RequestClass, number> = {
   plan_builder_week: 3500,
   plan_builder_pair: 4200,
   import_extract: 2000,
+  coach_assistant_message: 260,
 }
 const SYSTEM_PROMPT_MAX_CHARS: Record<RequestClass, number> = {
   chat_general: 24000,
@@ -215,6 +218,7 @@ const SYSTEM_PROMPT_MAX_CHARS: Record<RequestClass, number> = {
   plan_builder_week: 42000,
   plan_builder_pair: 64000,
   import_extract: 18000,
+  coach_assistant_message: 8000,
 }
 const USER_MESSAGE_MAX_CHARS = 8000
 const CONVERSATION_MESSAGE_MAX_CHARS = 4000
@@ -383,6 +387,7 @@ function normalizeRequestClass(value: unknown): RequestClass {
     case 'plan_builder_week':
     case 'plan_builder_pair':
     case 'import_extract':
+    case 'coach_assistant_message':
       return value
     default:
       return 'chat_general'
@@ -397,6 +402,7 @@ function isKnownRequestClass(value: unknown): value is RequestClass {
     || value === 'plan_builder_week'
     || value === 'plan_builder_pair'
     || value === 'import_extract'
+    || value === 'coach_assistant_message'
 }
 
 function validateCoachRequest(input: unknown): RequestValidationResult {
@@ -604,9 +610,28 @@ export function providerEnvKey(prefix: 'AI_PROVIDER' | 'AI_FALLBACK_PROVIDER', r
   return `${prefix}_${requestClass.toUpperCase()}`
 }
 
+/**
+ * Default explícito por clase. La cascada de entorno puede sobrescribirlo,
+ * pero ninguna clase hereda un literal implícito por omisión.
+ */
+export const CLASS_DEFAULT_PROVIDER: Record<RequestClass, ProviderName> = {
+  chat_general: 'gemini',
+  chat_action: 'gemini',
+  weekly_summary: 'gemini',
+  week_creator: 'gemini',
+  plan_builder_week: 'gemini',
+  plan_builder_pair: 'gemini',
+  import_extract: 'gemini',
+  coach_assistant_message: 'gemini',
+}
+
 export function resolvePrimaryProvider(requestClass: RequestClass): ProviderName {
   const classKey = providerEnvKey('AI_PROVIDER', requestClass)
-  return parseProviderName(process.env[classKey] ?? process.env['AI_PROVIDER'] ?? 'gemini', classKey) ?? 'gemini'
+  const fallback = CLASS_DEFAULT_PROVIDER[requestClass]
+  return parseProviderName(
+    process.env[classKey] ?? process.env['AI_PROVIDER'] ?? fallback,
+    classKey,
+  ) ?? fallback
 }
 
 export function resolveFallbackProvider(requestClass: RequestClass): ProviderName | undefined {
@@ -630,6 +655,9 @@ function computeAttemptTimeoutMs(deadline: number, attemptsRemaining: number): n
 function shouldUseTechnicalRetry(requestClass: RequestClass): boolean {
   return requestClass === 'chat_general' || requestClass === 'weekly_summary' || requestClass === 'import_extract'
 }
+
+/** Exportado sólo para test: fija que la clase nueva no usa retry técnico. */
+export const shouldUseTechnicalRetryForTest = shouldUseTechnicalRetry
 
 const RETRY_BACKOFF_MS = 600
 
@@ -888,6 +916,7 @@ function getGeminiThinkingBudget(requestClass: RequestClass): number {
     case 'chat_general':
     case 'weekly_summary':
     case 'import_extract':
+    case 'coach_assistant_message':
       return 0
   }
 }

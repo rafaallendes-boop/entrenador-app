@@ -78,6 +78,8 @@ export const CoachEngine = {
       surface?: AITechnicalSurface
       conversation?: AIRequest['conversation']
       signal?: AbortSignal
+      responseMimeType?: 'application/json'
+      responseSchema?: Record<string, unknown>
     },
   ): Promise<string> {
     const requestClass = options?.requestClass ?? 'import_extract'
@@ -103,6 +105,8 @@ export const CoachEngine = {
         userMessage,
         maxTokens: options?.maxTokens ?? policy.maxTokens,
         temperature: options?.temperature ?? policy.temperature,
+        responseMimeType: options?.responseMimeType,
+        responseSchema: options?.responseSchema,
         signal: options?.signal,
       })
       useAIDebugStore.getState().completeRequest(traceId, {

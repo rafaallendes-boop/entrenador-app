@@ -112,12 +112,12 @@ describe('CoachWorkspacePage', () => {
     expect(html).not.toContain('Vas a poder crear y editar sesiones')
   })
 
-  it('Biblioteca monta el panel real y Asistente IA conserva su placeholder', () => {
+  it('Biblioteca y Asistente IA montan sus paneles reales', () => {
     const biblioteca = render('rafa@x.cl', [SELF], 'biblioteca')
     expect(biblioteca).toContain('Nueva plantilla')
     expect(biblioteca).not.toContain('Vas a poder guardar tus ejercicios')
     const asistente = render('rafa@x.cl', [SELF], 'asistente')
-    expect(asistente).toContain('tú revisas y confirmas')
+    expect(asistente).not.toContain('proponer cambios de sesión, semana o plan')
     expect(asistente).not.toContain('vos')
   })
 

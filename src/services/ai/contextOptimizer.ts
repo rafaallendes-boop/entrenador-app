@@ -273,6 +273,7 @@ function getBudget(requestClass: AIRequestClass) {
         maxWeekLogChars: 420,
       }
     case 'import_extract':
+    case 'coach_assistant_message':
       return {
         maxRecentMessages: 0,
         maxRecentMessageChars: 0,

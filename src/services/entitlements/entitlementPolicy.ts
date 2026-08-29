@@ -33,6 +33,7 @@ export const REQUEST_CLASS_MIN_TIER: Record<AIRequestClass, Tier> = {
   week_creator: 'weekly',
   plan_builder_week: 'advanced',
   plan_builder_pair: 'advanced',
+  coach_assistant_message: 'advanced',
 }
 
 export function isTier(value: unknown): value is Tier {

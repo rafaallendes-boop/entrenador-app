@@ -14,6 +14,7 @@ export type CoachRequestClass =
   | 'plan_builder_week'
   | 'plan_builder_pair'
   | 'import_extract'
+  | 'coach_assistant_message'
 
 export interface CoachRequestTelemetry {
   traceId: string

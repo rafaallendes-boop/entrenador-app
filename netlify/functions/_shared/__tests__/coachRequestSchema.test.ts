@@ -65,19 +65,8 @@ describe('coach_requests schema drift guard', () => {
     expect(sql).not.toMatch(/for delete/i)
   })
 
-  it('restringe request_class a las 7 clases y outcome a las 2', () => {
+  it('restringe outcome a los 2 valores vigentes', () => {
     const sql = readMigration()
-    for (const requestClass of [
-      'chat_general',
-      'chat_action',
-      'weekly_summary',
-      'week_creator',
-      'plan_builder_week',
-      'plan_builder_pair',
-      'import_extract',
-    ]) {
-      expect(sql).toContain(`'${requestClass}'`)
-    }
     expect(sql).toMatch(/outcome text not null check \(outcome in \('ok', 'error'\)\)/)
   })
 

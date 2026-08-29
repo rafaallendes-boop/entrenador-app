@@ -21,6 +21,7 @@ export const QUOTA_BUCKETS: readonly QuotaBucket[] = [
   { id: 'week_creator', classes: ['week_creator'], limits: { weekly: 8, advanced: 8 } },
   { id: 'plan_builder_week', classes: ['plan_builder_week'], limits: { advanced: 12 } },
   { id: 'plan_builder_pair', classes: ['plan_builder_pair'], limits: { advanced: 6 } },
+  { id: 'coach_assistant', classes: ['coach_assistant_message'], limits: { advanced: 20 } },
 ]
 
 export function bucketForClass(requestClass: AIRequestClass): QuotaBucket | null {

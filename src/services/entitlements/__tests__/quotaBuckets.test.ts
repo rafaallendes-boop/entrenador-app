@@ -1,11 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { QUOTA_BUCKETS, bucketForClass, bucketLimitForTier } from '../quotaBuckets'
 import type { AIRequestClass } from '../../../types'
+import { ALL_AI_REQUEST_CLASSES } from '../../ai/aiRequestClasses'
 
-const ALL_CLASSES: AIRequestClass[] = [
-  'chat_general', 'chat_action', 'weekly_summary', 'week_creator',
-  'plan_builder_week', 'plan_builder_pair', 'import_extract',
-]
+const ALL_CLASSES = Object.keys(ALL_AI_REQUEST_CLASSES) as AIRequestClass[]
 
 describe('cobertura de buckets', () => {
   it('toda AIRequestClass pertenece a exactamente un bucket', () => {
@@ -36,6 +34,17 @@ describe('import_extract', () => {
     expect(bucket.classes).toEqual(['import_extract'])
     expect(bucketLimitForTier(bucket, 'free')).toBe(3)
     expect(bucketLimitForTier(bucket, 'advanced')).toBe(10)
+  })
+})
+
+describe('coach_assistant_message', () => {
+  it('tiene bucket propio disponible sólo para advanced con 20/día', () => {
+    const bucket = bucketForClass('coach_assistant_message')!
+    expect(bucket.id).toBe('coach_assistant')
+    expect(bucket.classes).toEqual(['coach_assistant_message'])
+    expect(bucketLimitForTier(bucket, 'free')).toBeNull()
+    expect(bucketLimitForTier(bucket, 'weekly')).toBeNull()
+    expect(bucketLimitForTier(bucket, 'advanced')).toBe(20)
   })
 })
 

@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { Users } from 'lucide-react'
-import { useAuthStore } from '../store/useAuthStore'
+import { useAuthStore, type SyncStatus } from '../store/useAuthStore'
 import { isCoachAccount } from '../services/athlete/coachAccess'
 import { getSelfAthleteId } from '../services/athlete/activeAthlete'
+import { athleteIdForOwner } from '../services/athlete/athleteScopeMigration'
+import { resolveSelfAthleteIdForOwner } from '../services/athlete/athleteWeekScope'
 import {
   archiveManagedAthlete,
   createManagedAthlete,
@@ -12,6 +14,13 @@ import {
   listOwnedAthletes,
   restoreManagedAthlete,
 } from '../services/athlete/managedAthletes'
+import {
+  getRosterTriageData,
+} from '../services/athlete/coachScopedReads'
+import {
+  createRosterTriageLoader,
+  type RosterTriage,
+} from '../services/athlete/loadRosterTriage'
 import { switchActiveAthlete } from '../services/athlete/switchActiveAthlete'
 import {
   acquireAthleteActionLock,
@@ -31,7 +40,32 @@ import CoachSummaryPanel from '../components/coach/CoachSummaryPanel'
 import CoachRosterPanel from '../components/coach/CoachRosterPanel'
 import CoachPlanningPanel from '../components/coach/CoachPlanningPanel'
 import CoachLibraryPanel from '../components/coach/CoachLibraryPanel'
-import CoachWorkspacePlaceholderPanel from '../components/coach/CoachWorkspacePlaceholderPanel'
+import CoachAssistantPanel from '../components/coach/CoachAssistantPanel'
+import { requestAssistantDraft, type DraftResult } from '../services/coach/requestAssistantDraft'
+import { isDevToolsEnabled } from '../services/devTools'
+import { formatLastSync } from '../components/sync/syncNowFormat'
+import { todayISO } from '../utils/date'
+
+const rosterTriageLoader = createRosterTriageLoader({
+  listRoster: listOwnedAthletes,
+  resolveSelfAthleteId: resolveSelfAthleteIdForOwner,
+  getRosterTriageData,
+  currentOwnerAccountId: () => useAuthStore.getState().user?.id ?? null,
+  now: () => Date.now(),
+})
+
+function formatTriageSyncLabel(
+  syncStatus: SyncStatus | undefined,
+  lastSuccessfulSyncAt: number | null | undefined,
+): string {
+  if (syncStatus === 'syncing') return 'Sincronizando'
+  const lastSync = formatLastSync(lastSuccessfulSyncAt ?? null)
+  if (syncStatus === 'offline') return `Offline · ${lastSync}`
+  if (syncStatus === 'error' || syncStatus === 'degraded') {
+    return `Sincronización con incidencias · ${lastSync}`
+  }
+  return lastSync === 'Nunca sincronizado' ? lastSync : `Sincronizado ${lastSync}`
+}
 
 interface CoachWorkspacePageProps {
   /** Solo tests: inyecta la allowlist sin depender de import.meta.env. */
@@ -52,11 +86,23 @@ export default function CoachWorkspacePage({
 }: CoachWorkspacePageProps) {
   const user = useAuthStore((state) => state.user)
   const activeAthleteId = useAuthStore((state) => state.activeAthleteId)
+  const syncStatus = useAuthStore((state) => state.syncStatus)
+  const lastSuccessfulSyncAt = useAuthStore(
+    (state) => state.syncDetails.lastSuccessfulSyncAt,
+  )
   const [athletes, setAthletes] = useState<Athlete[]>(initialAthletes ?? [])
   const [archivedAthletes, setArchivedAthletes] = useState<Athlete[]>(initialArchivedAthletes ?? [])
   const [status, setStatus] = useState<RosterStatus>(initialAthletes ? 'ready' : 'loading')
   const [activeTab, setActiveTab] = useState<CoachWorkspaceTab>(initialTab ?? 'resumen')
   const [reloadToken, setReloadToken] = useState(0)
+  const [triageReloadToken, setTriageReloadToken] = useState(0)
+  const [triageLoading, setTriageLoading] = useState(initialTab === 'asistente')
+  const [triageError, setTriageError] = useState<string | null>(null)
+  const [triageSnapshot, setTriageSnapshot] = useState<{
+    ownerAccountId: string
+    result: RosterTriage
+  } | null>(null)
+  const completedTriageSignatureRef = useRef<string | null>(null)
   const [pendingAthleteAction, setPendingAthleteAction] = useState<PendingAthleteAction | null>(null)
   const [actionMessage, setActionMessage] = useState<string | null>(null)
   const navigate = useNavigate()
@@ -86,6 +132,40 @@ export default function CoachWorkspacePage({
       })
     return () => { cancelled = true }
   }, [isCoach, user?.id, activeAthleteId, reloadToken, rosterRevision])
+
+  useEffect(() => {
+    if (!isCoach || !user?.id || activeTab !== 'asistente') return
+    let cancelled = false
+    const ownerAccountId = user.id
+    const requestSignature = `${ownerAccountId}:${rosterRevision}:${triageReloadToken}`
+    if (completedTriageSignatureRef.current === requestSignature) return
+    setTriageLoading(true)
+    setTriageError(null)
+
+    void rosterTriageLoader.load(ownerAccountId, todayISO())
+      .then((result) => {
+        if (cancelled || result === null) return
+        completedTriageSignatureRef.current = requestSignature
+        setTriageSnapshot({ ownerAccountId, result })
+        if (result.failedAthleteCount > 0) {
+          setTriageError(
+            `No se pudo calcular ${result.failedAthleteCount === 1 ? 'un atleta' : `${result.failedAthleteCount} atletas`}. El resto del triaje sí está actualizado.`,
+          )
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setTriageError(
+            'No se pudo actualizar el triaje. El cálculo anterior puede estar desactualizado; intenta recalcular.',
+          )
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setTriageLoading(false)
+      })
+
+    return () => { cancelled = true }
+  }, [activeTab, isCoach, rosterRevision, triageReloadToken, user?.id])
 
   const handleAthleteAction = useCallback(async (
     athleteId: string,
@@ -127,7 +207,25 @@ export default function CoachWorkspacePage({
 
   if (!isCoach || !user?.id) return <Navigate to={ROUTES.HOME} replace />
 
-  const selfId = getSelfAthleteId()
+  const triage = triageSnapshot?.ownerAccountId === user.id
+    ? triageSnapshot.result
+    : null
+  const assistantSelfAthleteId = triageSnapshot?.ownerAccountId === user.id
+    ? triageSnapshot.result.selfAthleteId
+    : ''
+  const selfId = getSelfAthleteId() ?? athleteIdForOwner(user.id)
+  const athleteNames = Object.fromEntries(
+    athletes.map((athlete) => [athlete.id, athlete.displayName ?? 'Atleta']),
+  )
+  const triageSyncLabel = formatTriageSyncLabel(syncStatus, lastSuccessfulSyncAt)
+
+  const handleAssistantDraft = async (athleteId: string): Promise<DraftResult> => {
+    const athlete = triage?.athletes.find((row) => row.athleteId === athleteId)
+    if (!athlete || athlete.signals.length === 0 || athleteId === assistantSelfAthleteId) {
+      return { ok: false, reason: 'invalid-response' }
+    }
+    return requestAssistantDraft(athlete.signals)
+  }
 
   async function handleCreateAthlete(name: string) {
     if (!user?.id) throw new Error('Sesión inválida.')
@@ -280,12 +378,23 @@ export default function CoachWorkspacePage({
           <CoachLibraryPanel />
         )}
 
-        {activeTab === 'asistente' && (
-          <CoachWorkspacePlaceholderPanel
-            title="Asistente IA"
-            description="El asistente va a proponer cambios de sesión, semana o plan: tú revisas y confirmas antes de aplicarlos."
+        <div hidden={activeTab !== 'asistente'}>
+          <CoachAssistantPanel
+            key={user.id}
+            triage={triage}
+            loading={triageLoading}
+            error={triageError}
+            selfAthleteId={assistantSelfAthleteId}
+            athleteNames={athleteNames}
+            syncLabel={triageSyncLabel}
+            devToolsEnabled={isDevToolsEnabled()}
+            onRefresh={() => setTriageReloadToken((token) => token + 1)}
+            onOpenWeek={(athleteId) => {
+              void handleAthleteAction(athleteId, 'week', ROUTES.WEEK)
+            }}
+            onDraft={handleAssistantDraft}
           />
-        )}
+        </div>
       </div>
     </div>
   )

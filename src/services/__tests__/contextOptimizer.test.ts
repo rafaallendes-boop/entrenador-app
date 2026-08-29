@@ -55,6 +55,15 @@ describe('contextOptimizer budgets by request class', () => {
     expect((summary.weekDayLogs ?? []).length).toBeGreaterThanOrEqual((general.weekDayLogs ?? []).length)
   })
 
+  it('drops every athlete-context field for coach_assistant_message', () => {
+    const result = optimizeChatContext(context, 'coach_assistant_message')
+
+    expect(result.recentMessages).toEqual([])
+    expect(result.plannedSessions).toEqual([])
+    expect(result.historicalSessions).toEqual([])
+    expect(result.weekDayLogs).toEqual([])
+  })
+
   it('detects broader plan and summary intents from chat phrasing', () => {
     expect(detectChatIntent('Hazme un plan para esta semana')).toBe('plan_week')
     expect(detectChatIntent('Armame el lunes con running suave')).toBe('adjust_session')

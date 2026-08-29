@@ -53,6 +53,7 @@ export function getDefaultOpenAIReasoningEffort(
     case 'chat_general':
     case 'weekly_summary':
     case 'import_extract':
+    case 'coach_assistant_message':
       return supported.includes('none') ? 'none' : 'minimal'
   }
 }

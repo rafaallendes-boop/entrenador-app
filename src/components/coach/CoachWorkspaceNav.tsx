@@ -11,7 +11,7 @@ const TABS: { key: CoachWorkspaceTab; label: string; comingSoon: boolean }[] = [
   { key: 'alumnos', label: 'Alumnos', comingSoon: false },
   { key: 'planificacion', label: 'Planificación', comingSoon: false },
   { key: 'biblioteca', label: 'Biblioteca', comingSoon: false },
-  { key: 'asistente', label: 'Asistente IA', comingSoon: true },
+  { key: 'asistente', label: 'Asistente IA', comingSoon: false },
 ]
 
 export default function CoachWorkspaceNav({ activeTab, onSelect }: CoachWorkspaceNavProps) {

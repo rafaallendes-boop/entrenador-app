@@ -9,19 +9,12 @@ import {
   type Tier,
 } from '../entitlementPolicy'
 import type { AIRequestClass } from '../../../types'
+import { ALL_AI_REQUEST_CLASSES } from '../../ai/aiRequestClasses'
 
 const NOW = Date.parse('2026-08-15T12:00:00Z')
 const ALL_TIERS: Tier[] = ['free', 'weekly', 'advanced']
 
-const ALL_CLASSES: AIRequestClass[] = [
-  'chat_general',
-  'chat_action',
-  'weekly_summary',
-  'week_creator',
-  'plan_builder_week',
-  'plan_builder_pair',
-  'import_extract',
-]
+const ALL_CLASSES = Object.keys(ALL_AI_REQUEST_CLASSES) as AIRequestClass[]
 
 describe('resolveTier', () => {
   it('sin fila resuelve free', () => {
@@ -46,7 +39,7 @@ describe('resolveTier', () => {
   })
 })
 
-describe('isClassAllowed — matriz completa 3 tiers x 7 clases', () => {
+describe('isClassAllowed — matriz completa 3 tiers x 8 clases', () => {
   // Expectativa declarada a mano, NO derivada del mapa: si se deriva, el test
   // no puede detectar que el mapa cambió.
   const EXPECTED: Record<AIRequestClass, Record<Tier, boolean>> = {
@@ -57,6 +50,7 @@ describe('isClassAllowed — matriz completa 3 tiers x 7 clases', () => {
     week_creator:      { free: false, weekly: true, advanced: true },
     plan_builder_week: { free: false, weekly: false, advanced: true },
     plan_builder_pair: { free: false, weekly: false, advanced: true },
+    coach_assistant_message: { free: false, weekly: false, advanced: true },
   }
 
   for (const requestClass of ALL_CLASSES) {
