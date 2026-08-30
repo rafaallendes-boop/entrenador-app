@@ -10,7 +10,13 @@ import { filterRowsToActiveScope, withActiveAthleteStamp } from '../services/ath
 import { isScopedAthleteId } from '../services/athlete/effectiveAthleteKey'
 import * as syncService from '../services/syncService'
 import { ensureSessionProtocols, generateDefaultProtocols } from '../services/trainingProtocols'
-import { enhanceStrengthSessionExercises } from '../services/training/strengthSessionStructure'
+import { materializeProspectiveSession } from '../services/ai/actionPostProcessor'
+import { prepareStrengthSession } from '../services/training/strengthSafetyFinalizer'
+import { mergeStrengthConstraints } from '../services/training/strengthSafetyConstraints'
+import {
+  buildStrengthSafetyContext,
+  resolveProfileStrengthSafetyConstraints,
+} from '../services/training/strengthSafetySurface'
 import { normalizeSport } from '../utils/athlete'
 import { fromISO, getWeekStart, toISO } from '../utils/date'
 import { v4 as uuid } from '../utils/uuid'
@@ -49,6 +55,41 @@ interface CoachActionsState {
   rejectProposal: (id: string) => Promise<void>
   getPendingProposals: () => CoachProposal[]
   resetForAthleteSwitch: () => void
+}
+
+/**
+ * Repone identidad y progreso sobre la salida del verificador de seguridad.
+ *
+ * `prepareStrengthSession` devuelve propuestas sin `id` ni `completed`, así que
+ * asignarlos a ciegas convertía cualquier `update_session` sobre una sesión de
+ * fuerza —incluido un cambio de título— en un borrado del progreso que el
+ * atleta ya había registrado. Un ejercicio que sobrevive la verificación
+ * conserva su fila; sólo lo que el finalizador agregó o reemplazó estrena
+ * identidad. El emparejamiento consume cada fila previa una sola vez para que
+ * dos ejercicios homónimos no compartan `id`.
+ */
+export function preserveStrengthExerciseIdentity(
+  verified: ReadonlyArray<Record<string, unknown>>,
+  current: ReadonlyArray<{ id: string; name: string; completed: boolean }>,
+): Array<Record<string, unknown>> {
+  const available = new Map<string, Array<{ id: string; completed: boolean }>>()
+  for (const exercise of current) {
+    const key = normalizeExerciseMatchKey(exercise.name)
+    const bucket = available.get(key)
+    if (bucket) bucket.push({ id: exercise.id, completed: exercise.completed })
+    else available.set(key, [{ id: exercise.id, completed: exercise.completed }])
+  }
+  return verified.map((exercise) => {
+    const key = normalizeExerciseMatchKey(String(exercise.name ?? ''))
+    const previous = available.get(key)?.shift()
+    return previous
+      ? { ...exercise, id: previous.id, completed: previous.completed }
+      : { ...exercise, id: uuid(), completed: false }
+  })
+}
+
+function normalizeExerciseMatchKey(name: string): string {
+  return name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim()
 }
 
 export const useCoachActionsStore = create<CoachActionsState>((set, get) => ({
@@ -289,44 +330,83 @@ export const useCoachActionsStore = create<CoachActionsState>((set, get) => ({
 }))
 
 function prepareProposalActionsForDisplay(actions: CoachAction[], athleteProfile: AthleteProfile | null): CoachAction[] {
-  return actions.map((action) => {
+  const profileConstraints = resolveProfileStrengthSafetyConstraints(athleteProfile)
+  return actions.flatMap((action): CoachAction[] => {
     if ((action.type === 'add_session' || action.type === 'update_session') && action.exercises) {
       const durationMin = action.type === 'add_session' ? action.durationMin : action.newDurationMin
       const sessionType = normalizeSport((action.type === 'add_session' ? action.sessionType : action.newType) ?? '')
-      if (sessionType !== 'strength') return action
-      return {
+      if (sessionType !== 'strength' && !action.strengthSafetyFinalization) return [action]
+      const messageConstraints = action.strengthSafetyFinalization?.userMessageConstraints ?? []
+      const constraints = mergeStrengthConstraints(profileConstraints, messageConstraints)
+      const input = {
         ...action,
-        ...(action.type === 'add_session' ? { sessionType } : { newType: sessionType }),
-        exercises: enhanceStrengthSessionExercises(action.exercises, {
+        durationMin,
+      }
+      const result = prepareStrengthSession(input, {
+        constraints,
+        userMessageConstraints: messageConstraints,
+        userMessage: '',
+        selectionContext: buildStrengthSafetyContext(
+          athleteProfile,
+          durationMin,
+          action.type === 'add_session' ? action.objective : action.newObjective,
+          constraints,
+        ),
+        structureOptions: {
           durationMin,
           strengthProfile: athleteProfile?.strengthProfile,
-        }),
-      }
+        },
+        supersetMode: 'off',
+        sealLocation: 'root',
+      })
+      if (result.status === 'blocked') return []
+      return [{
+        ...action,
+        ...(action.type === 'add_session' ? { sessionType: 'strength' as const } : {}),
+        exercises: result.session.exercises,
+        strengthSafetyFinalization: (
+          result.session as typeof input & Pick<CoachAction, 'strengthSafetyFinalization'>
+        ).strengthSafetyFinalization,
+      }]
     }
 
     if (action.type === 'create_week' && action.sessions) {
-      return {
-        ...action,
-        sessions: action.sessions.map((session) => (
-          normalizeSport(session.sessionType) === 'strength'
-            ? stripSquashInternalDurations({
-                ...session,
-                sessionType: 'strength',
-                exercises: enhanceStrengthSessionExercises(session.exercises, {
-                  durationMin: session.durationMin,
-                  strengthProfile: athleteProfile?.strengthProfile,
-                }),
-              })
-            : stripSquashInternalDurations(session)
-        )),
+      const prepared: NonNullable<CoachAction['sessions']> = []
+      for (const session of action.sessions) {
+        if (normalizeSport(session.sessionType) !== 'strength') {
+          prepared.push(stripSquashInternalDurations(session))
+          continue
+        }
+        const messageConstraints = session.metadata?.strengthSafetyFinalization?.userMessageConstraints ?? []
+        const constraints = mergeStrengthConstraints(profileConstraints, messageConstraints)
+        const result = prepareStrengthSession({ ...session, sessionType: 'strength' as const }, {
+          constraints,
+          userMessageConstraints: messageConstraints,
+          userMessage: '',
+          selectionContext: buildStrengthSafetyContext(
+            athleteProfile,
+            session.durationMin,
+            session.objective,
+            constraints,
+          ),
+          structureOptions: {
+            durationMin: session.durationMin,
+            strengthProfile: athleteProfile?.strengthProfile,
+          },
+          supersetMode: 'off',
+          sealLocation: 'metadata',
+        })
+        if (result.status === 'blocked') return []
+        prepared.push(stripSquashInternalDurations(result.session))
       }
+      return [{ ...action, sessions: prepared }]
     }
 
     if ((action.type === 'add_session' || action.type === 'update_session') && action.squashDetails) {
-      return stripSquashInternalDurations(action)
+      return [stripSquashInternalDurations(action)]
     }
 
-    return action
+    return [action]
   })
 }
 
@@ -760,6 +840,38 @@ async function applyCoachAction(
         warnings.push(`Se filtro add_session de ${action.sessionType} por no estar permitido en la planificacion actual.`)
         break
       }
+      let verifiedExercises = action.exercises
+      if (action.sessionType === 'strength') {
+        const messageConstraints = action.strengthSafetyFinalization?.userMessageConstraints ?? []
+        const constraints = mergeStrengthConstraints(
+          resolveProfileStrengthSafetyConstraints(athleteProfile),
+          messageConstraints,
+        )
+        const prepared = prepareStrengthSession(action, {
+          constraints,
+          userMessageConstraints: messageConstraints,
+          userMessage: '',
+          selectionContext: buildStrengthSafetyContext(
+            athleteProfile,
+            action.durationMin,
+            action.objective,
+            constraints,
+          ),
+          structureOptions: {
+            durationMin: action.durationMin,
+            strengthProfile: athleteProfile?.strengthProfile,
+          },
+          supersetMode: 'off',
+          sealLocation: 'root',
+        })
+        if (prepared.status === 'blocked') {
+          throw new Error('No pude verificar una sesión de fuerza compatible con la restricción registrada.')
+        }
+        verifiedExercises = prepared.session.exercises
+        if (prepared.removed.length > 0 || prepared.replaced.length > 0) {
+          warnings.push('Se excluyeron o reemplazaron ejercicios por tu restricción.')
+        }
+      }
       const created = await store.addSession(ensureSessionProtocols({
         date: action.targetDate,
         timeBlock: action.timeBlock,
@@ -771,14 +883,7 @@ async function applyCoachAction(
         rpe: action.rpe ?? action.newRpe,
         objective: action.objective,
         status: 'planned',
-        exercises: (
-          action.sessionType === 'strength'
-            ? enhanceStrengthSessionExercises(action.exercises, {
-                durationMin: action.durationMin,
-                strengthProfile: athleteProfile?.strengthProfile,
-              })
-            : action.exercises
-        )?.map((exercise) => ({ ...exercise, id: uuid(), completed: false })),
+        exercises: verifiedExercises?.map((exercise) => ({ ...exercise, id: uuid(), completed: false })),
         runningDetails: action.runningType
           ? {
               runningType: action.runningType,
@@ -831,12 +936,49 @@ async function applyCoachAction(
       const id = resolveSessionId(action.sessionId, store)
       const current = store.sessions.find((session) => session.id === id)
       if (!current) throw new Error(`sessionId no encontrado: ${action.sessionId}`)
+      if (action.baseUpdatedAt != null && action.baseUpdatedAt !== current.updatedAt) {
+        throw new Error('La sesión tiene cambios más recientes. Actualiza la propuesta antes de aceptarla.')
+      }
       restoredSessions.push({ ...current })
 
       const nextType = action.newType ?? current.type
       if (!isSessionTypeAllowedForPlan(nextType, athleteProfile)) {
         warnings.push(`Se filtro update_session a ${nextType} por no estar permitido en la planificacion actual.`)
         break
+      }
+
+      let verifiedStrengthExercises: CoachAction['exercises']
+      if (nextType === 'strength') {
+        const prospective = materializeProspectiveSession(current, action)
+        const messageConstraints = action.strengthSafetyFinalization?.userMessageConstraints ?? []
+        const constraints = mergeStrengthConstraints(
+          resolveProfileStrengthSafetyConstraints(athleteProfile),
+          messageConstraints,
+        )
+        const prepared = prepareStrengthSession(prospective, {
+          constraints,
+          userMessageConstraints: messageConstraints,
+          userMessage: '',
+          selectionContext: buildStrengthSafetyContext(
+            athleteProfile,
+            prospective.durationMin,
+            prospective.objective,
+            constraints,
+          ),
+          structureOptions: {
+            durationMin: prospective.durationMin,
+            strengthProfile: athleteProfile?.strengthProfile,
+          },
+          supersetMode: 'off',
+          sealLocation: 'root',
+        })
+        if (prepared.status === 'blocked') {
+          throw new Error('No pude verificar una sesión de fuerza compatible con la restricción registrada.')
+        }
+        verifiedStrengthExercises = prepared.session.exercises
+        if (prepared.removed.length > 0 || prepared.replaced.length > 0) {
+          warnings.push('Se excluyeron o reemplazaron ejercicios por tu restricción.')
+        }
       }
 
       const patch: Record<string, unknown> = buildSessionTypePatch(nextType)
@@ -866,16 +1008,16 @@ async function applyCoachAction(
         patch.runningDetails = undefined
         patch.cyclingDetails = action.cyclingDetails ?? current.cyclingDetails
       }
-      if (Array.isArray(action.exercises)) {
-        patch.exercises = (
-          nextType === 'strength'
-            ? enhanceStrengthSessionExercises(action.exercises, {
-                durationMin: action.newDurationMin ?? current.durationMin,
-                strengthProfile: athleteProfile?.strengthProfile,
-              })
-            : action.exercises
-        )?.map((exercise) => ({ ...exercise, id: uuid(), completed: false }))
-      } else if (nextType === 'strength' || nextType === 'mobility') {
+      if (nextType === 'strength') {
+        patch.exercises = verifiedStrengthExercises
+          ? preserveStrengthExerciseIdentity(
+              verifiedStrengthExercises as unknown as ReadonlyArray<Record<string, unknown>>,
+              current.type === 'strength' ? current.exercises ?? [] : [],
+            )
+          : undefined
+      } else if (Array.isArray(action.exercises)) {
+        patch.exercises = action.exercises.map((exercise) => ({ ...exercise, id: uuid(), completed: false }))
+      } else if (nextType === 'mobility') {
         patch.exercises = current.exercises
       }
       if (nextType === 'mobility') {

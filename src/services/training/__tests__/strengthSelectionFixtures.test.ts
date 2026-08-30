@@ -30,6 +30,7 @@ function contextFor(overrides: Partial<StrengthContext>): StrengthContext {
     primarySport: 'squash',
     experienceLevel: 'intermediate',
     sessionDurationMin: 50,
+    safetyConstraints: [],
     ...overrides,
   }
 }

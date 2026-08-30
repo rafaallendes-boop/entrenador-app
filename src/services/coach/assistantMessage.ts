@@ -63,16 +63,32 @@ export function buildAssistantMessageInput(signals: TriageSignal[]): AssistantMe
  */
 export const ASSISTANT_SYSTEM_PROMPT = [
   'Eres el asistente de un entrenador. Redacta el CUERPO de un mensaje breve',
-  'que el entrenador podría enviar a su alumno. No escribas saludo ni despedida.',
+  'que el entrenador podría enviar a su alumno. El cliente antepone su propio saludo:',
+  'empieza directamente con el contenido y no escribas saludo ni despedida.',
   'Recibes sólo señales estructuradas: no conoces el nombre, el plan ni el historial.',
   'En pain.days, days cuenta fechas de check-in distintas con dolor elevado dentro',
   'de siete días; no implica duración ni días consecutivos.',
+  'La señal no-check-in significa que faltó el feedback diario del alumno;',
+  'no significa que dejó de registrar entrenamientos ni que no entrenó.',
   'No dar diagnósticos, no sugerir tratamiento y no proponer cambios de carga',
   'ni de entrenamiento. Ante una señal de dolor, formula únicamente una pregunta',
   'de seguimiento sobre cómo se siente.',
   'Usa un tono cercano, directo y en tuteo. Máximo 600 caracteres.',
   'Responde SOLAMENTE con un objeto JSON {"body": string}.',
 ].join(' ')
+
+/**
+ * El saludo visible lo compone el cliente con el nombre local del atleta.
+ * Aunque el prompt lo prohíbe, los modelos pueden anteponer uno igualmente;
+ * quitar una salutación genérica al inicio evita pagar un segundo intento o
+ * mostrar "Hola <nombre>, ¡Hola!".
+ */
+function stripLeadingGreeting(body: string): string {
+  return body.replace(
+    /^\s*(?:¡\s*)?(?:hola|buenos días|buenas tardes|buenas noches)\b\s*(?:[!.,;:…—–-]+\s*)*/iu,
+    '',
+  ).trim()
+}
 
 export function parseAssistantMessageResult(raw: string): AssistantMessageParseResult {
   let parsed: unknown
@@ -92,11 +108,11 @@ export function parseAssistantMessageResult(raw: string): AssistantMessageParseR
   const body = (parsed as { body: unknown }).body
   if (typeof body !== 'string') return { ok: false, reason: 'invalid' }
 
-  const trimmed = body.trim()
-  if (trimmed.length === 0) return { ok: false, reason: 'invalid' }
-  if (trimmed.length > ASSISTANT_MESSAGE_MAX_CHARS) {
+  const normalized = stripLeadingGreeting(body)
+  if (normalized.length === 0) return { ok: false, reason: 'invalid' }
+  if (normalized.length > ASSISTANT_MESSAGE_MAX_CHARS) {
     return { ok: false, reason: 'too-long' }
   }
 
-  return { ok: true, body: trimmed }
+  return { ok: true, body: normalized }
 }

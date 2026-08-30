@@ -420,7 +420,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
 
       const proposalReadyAt = Date.now()
-      const weekCreatorFailed = requestClass === 'week_creator' && proposalId == null
+      const safelyDeclined = requestClass === 'week_creator'
+        && response.meta?.outcome === 'safety_blocked'
+      const weekCreatorFailed = requestClass === 'week_creator' && proposalId == null && !safelyDeclined
       const terminalPatch = {
         proposalCreated: proposalId != null,
         endToEndDurationMs: proposalReadyAt - requestStartedAt,
@@ -429,6 +431,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
           ? {
               generationOutcome: weekCreatorFailed
                 ? 'failed' as const
+                : safelyDeclined
+                  ? 'safe_decline' as const
                 : response.fallbackUsed ? 'local_fallback' as const : 'model_success' as const,
               generationCompletedAt: proposalReadyAt,
             }

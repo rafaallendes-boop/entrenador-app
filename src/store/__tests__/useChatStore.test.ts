@@ -628,6 +628,50 @@ describe('useChatStore.sendMessage', () => {
     expect(useAIDebugStore.getState().requests[0]?.proposalReadyAt).toBeUndefined()
   })
 
+  it('keeps a Week Creator safety decline completed without a proposal', async () => {
+    mocks.routeKind = 'week_creator'
+    mocks.sendWeekCreate.mockImplementation(async (
+      _content: string,
+      _context: ChatContext,
+      options: { generationId: string },
+    ) => {
+      useAIDebugStore.getState().startRequest({
+        traceId: 'trace-week-safety-decline',
+        generationId: options.generationId,
+        attempt: 1,
+        requestClass: 'week_creator',
+        surface: 'chat',
+        startedAt: Date.now(),
+      })
+      return {
+        message: 'No pude verificar una sesión de fuerza compatible con la restricción registrada.',
+        actions: [],
+        provider: 'mock' as const,
+        traceId: 'trace-week-safety-decline',
+        generationId: options.generationId,
+        requestClass: 'week_creator' as const,
+        fallbackUsed: false,
+        meta: {
+          hadActionsMarkup: false,
+          actionParseFailed: false,
+          likelyTruncated: false,
+          outcome: 'safety_blocked' as const,
+        },
+      }
+    })
+
+    await useChatStore.getState().sendMessage('Créame una semana', makeContext())
+
+    expect(mocks.addProposal).not.toHaveBeenCalled()
+    expect(useChatStore.getState().error).toBeNull()
+    expect(useAIDebugStore.getState().requests[0]).toMatchObject({
+      traceId: 'trace-week-safety-decline',
+      status: 'completed',
+      proposalCreated: false,
+      generationOutcome: 'safe_decline',
+    })
+  })
+
   it('clears loading without adding a coach message when the request is cancelled', async () => {
     mocks.routeKind = 'chat_general'
     mocks.sendChat.mockImplementation((_content: string, _context: ChatContext, options: { signal: AbortSignal }) => (

@@ -1,13 +1,11 @@
-import type { ChatContext, CoachAction, CoachExerciseProposal, Session, SessionType, SquashSessionBlockKind, StrengthProfile, TimeBlock } from '../../types'
+import type { ChatContext, CoachAction, CoachExerciseProposal, CoachSessionProposal, Session, SessionType, SquashSessionBlockKind, TimeBlock } from '../../types'
+import type { StrengthConstraint } from '../../types/strengthSafety'
 import { currentWeekStartISO, todayISO } from '../../utils/date'
-import { resolveStrengthExercise } from '../training/exerciseLibrary'
-import {
-  getStrengthExerciseKey,
-  toStrengthProposalForEnhancement,
-} from '../training/strengthExerciseProposal'
-import { getTargetExerciseDensity, selectStrengthSession, type StrengthContext, type StrengthPhase, type StrengthSportProfile } from '../training/strengthSelector'
-import { enhanceStrengthSessionExercises, resolveStrengthExerciseBlock } from '../training/strengthSessionStructure'
-import { detectSupersetIntent, planSupersetGroups, shouldApplySupersetPolicy } from '../training/supersetPolicy'
+import { toStrengthProposalForEnhancement } from '../training/strengthExerciseProposal'
+import { selectStrengthSession, type StrengthContext, type StrengthPhase, type StrengthSportProfile } from '../training/strengthSelector'
+import { prepareStrengthSession, type BlockedReason, type RemovedExercise, type ReplacedExercise } from '../training/strengthSafetyFinalizer'
+import { resolveStrengthSafetyConstraints } from '../training/strengthSafetyConstraints'
+import { detectSupersetIntent, shouldApplySupersetPolicy, type SupersetPolicyMode } from '../training/supersetPolicy'
 import { findSquashDrillByName, normalizeSquashDrillKey, resolveSquashDrillKind } from '../training/drillLibrary'
 import {
   hydrateSquashSession,
@@ -28,12 +26,14 @@ const WEEKDAYS = [
 
 const NEXT_WEEK_PATTERN = /\b(proxima\s+semana|siguiente\s+semana)\b/
 const CURRENT_WEEK_PATTERN = /\b(esta\s+semana|semana\s+actual)\b/
+const FREE_DAY_TARGET_PATTERN = /\b(?:dia|dias)\b.{0,32}\b(?:libre|libres|sin\s+entrenamiento)\b|\b(?:libre|libres)\b.{0,32}\b(?:dia|dias)\b/
 const WEEKDAY_REFERENCE_PATTERN = /\b(hoy|manana|lunes|martes|miercoles|jueves|viernes|sabado|domingo)\b/
 const SESSION_TARGET_PATTERN = /\b(sesion|sesiones|entreno|entrenamiento|fuerza|pesas|gym|gimnasio|strength|running|correr|corrida|trote|squash|cycling|ciclismo|bici|bicicleta|movilidad|mobility|recovery|recuperacion)\b/
 const CREATE_SESSION_INTENT_PATTERN = /\b(crea(?:r|me)?|crear|genera(?:r|me)?|generar|haz(?:me)?|hacer|arma(?:me)?|programa(?:me)?|agenda(?:me)?|agrega(?:me)?|agregar|pon(?:me)?|poner|dame|entrega(?:me)?|realiza(?:r)?|deja|incorpora)\b/
 const ACTION_VERB_PATTERN = /\b(ajusta(?:r|me)?|cambia(?:r|me)?|modifica(?:r|me)?|mueve(?:me)?|mover|pasa(?:r|me)?|reprograma(?:r|me)?|reordena(?:r|me)?|actualiza(?:r|me)?|quit(?:a|ar|ame)|borra(?:r|me)?|elimina(?:r|me)?|saca(?:r|me)?|pon(?:er|me)?|agrega(?:r|me)?|reemplaza(?:r|me)?|reduce|baja|sube|incorpora|programa(?:me)?|agenda(?:me)?)\b/
 const MOVE_SESSION_INTENT_PATTERN = /\b(mueve(?:me)?|mover|pasa(?:r|me)?|reprograma(?:r|me)?|reordena(?:r|me)?)\b/
 const ZONE_2_PATTERN = /\b(z2|zona\s*2|zona\s+dos|aerobico|aerobica)\b/
+export const BLOCKED_STRENGTH_COPY = 'No pude verificar una sesión de fuerza compatible con la restricción registrada.'
 
 export function postProcessCoachActions(
   response: CoachNormalizedResponse,
@@ -43,12 +43,30 @@ export function postProcessCoachActions(
   if (response.requestClass !== 'chat_action') return response
 
   const normalizedMessage = normalizeText(userMessage)
+  const profile = context.athleteProfile
+  const safetyConstraints = resolveStrengthSafetyConstraints({
+    currentInjuries: profile?.recoveryProfile?.currentInjuries,
+    restrictions: profile?.recoveryProfile?.restrictions,
+    injuryNotes: profile?.planWizardConfig?.injuryNotes,
+    userMessages: [
+      ...(context.recentMessages ?? [])
+        .filter((message) => message.role === 'user')
+        .slice(-8)
+        .map((message) => message.content),
+      userMessage,
+    ],
+    trainingPriority: profile?.sportContext?.trainingPriority,
+  })
+  const userMessageConstraints = resolveStrengthSafetyConstraints({
+    userMessages: [userMessage],
+  })
   const hasMultipleTemporalTargets = hasMultipleExplicitTemporalTargets(normalizedMessage)
   const inheritsRecentActionContext = shouldInheritRecentActionContext(normalizedMessage, context)
   const actionIntentText = inheritsRecentActionContext
     ? buildRecentActionIntentText(normalizedMessage, context)
     : normalizedMessage
   const requestedWeekStart = resolveRequestedWeekStart(actionIntentText, context)
+  const requiresEntireFreeDay = FREE_DAY_TARGET_PATTERN.test(actionIntentText)
   const restOffsets = resolveRestWeekdayOffsets(actionIntentText)
   const contextualFollowUpDate = inheritsRecentActionContext
     ? resolveRecentDateForRequestedSession(normalizedMessage, context, requestedWeekStart, restOffsets)
@@ -120,14 +138,24 @@ export function postProcessCoachActions(
   if (!sourceActions?.length) return response
 
   const squashActionWarnings: SquashActionWarning[] = []
+  let hydratedMissingStrengthExercises = false
   const alignedActions = sourceActions.map((action) => {
     const dateAligned = resolvedDate ? alignActionDate(action, resolvedDate) : action
     const weekAligned = alignmentWeekStart
-      ? alignActionToRequestedWeek(dateAligned, alignmentWeekStart, restOffsets, occupiedSlots, { lockDate: Boolean(resolvedDate) })
+      ? alignActionToRequestedWeek(dateAligned, alignmentWeekStart, restOffsets, occupiedSlots, {
+          lockDate: Boolean(resolvedDate),
+          requireEntireFreeDay: requiresEntireFreeDay,
+        })
       : dateAligned
     const requestAligned = alignSingleSessionSportToRequest(weekAligned, normalizedMessage, context)
     const runningAligned = completeRunningZone2Details(requestAligned, actionIntentText)
-    const loadAligned = completeStrengthLoads(runningAligned, context, actionIntentText)
+    if (hasMissingStrengthExercises(runningAligned)) hydratedMissingStrengthExercises = true
+    const loadAligned = completeStrengthLoads(
+      runningAligned,
+      context,
+      actionIntentText,
+      safetyConstraints,
+    )
     const targetSession = loadAligned.type === 'update_session'
       ? findSessionByIdOrPrefix(loadAligned.sessionId, sessions) ?? affectedSession
       : affectedSession
@@ -163,29 +191,52 @@ export function postProcessCoachActions(
 
     return squashAligned.action
   })
-  const { actions, removedCollidingAddSessionCount } = removeCollidingAddSessionActions(alignedActions, sessions)
-  const baseMessage = repairedReplacementAction
+  const safetyResult = finalizeStrengthActions(alignedActions, {
+    context,
+    sessions,
+    actionIntentText,
+    normalizedUserMessage: normalizedMessage,
+    constraints: safetyConstraints,
+    userMessageConstraints,
+  })
+  const { actions, removedCollidingAddSessionCount } = removeCollidingAddSessionActions(
+    safetyResult.actions,
+    sessions,
+  )
+  // Un bloqueo TOTAL es una respuesta segura sin propuesta y su copy es todo el
+  // mensaje. Un bloqueo PARCIAL sí deja propuesta en pantalla: reemplazar el
+  // mensaje ahí decía "no pude verificar…" junto a una tarjeta de acción viva.
+  const fullyBlocked = safetyResult.blockedReasons.length > 0 && actions.length === 0
+  const partiallyBlocked = safetyResult.blockedReasons.length > 0 && actions.length > 0
+  const baseMessage = fullyBlocked
+    ? BLOCKED_STRENGTH_COPY
+    : repairedReplacementAction
     ? buildRunningReplacementMessage(repairedReplacementAction)
     : response.actions?.length && !repairedMissingRequestedActions
       && !repairedRequestedMoves
       ? response.message
       : buildFallbackActionMessage(actions, response.message)
-  const actionMessage = removedCollidingAddSessionCount > 0
-    ? `${baseMessage}\n\nNo agregué ${removedCollidingAddSessionCount === 1 ? 'una sesión' : `${removedCollidingAddSessionCount} sesiones`} porque el bloque ya estaba ocupado.`
+  const messageWithSafetyNotice = partiallyBlocked
+    ? `${baseMessage}\n\n${BLOCKED_STRENGTH_COPY}`
     : baseMessage
+  const actionMessage = removedCollidingAddSessionCount > 0
+    ? `${messageWithSafetyNotice}\n\nNo agregué ${removedCollidingAddSessionCount === 1 ? 'una sesión' : `${removedCollidingAddSessionCount} sesiones`} porque el bloque ya estaba ocupado.`
+    : messageWithSafetyNotice
   const userFacingSquashWarnings = [...new Set(
     squashActionWarnings.filter((warning) => warning.userFacing).map((warning) => warning.message),
   )]
-  const message = userFacingSquashWarnings.length > 0
+  const messageWithWarnings = userFacingSquashWarnings.length > 0
     ? `${actionMessage}\n\n${userFacingSquashWarnings.join('\n')}`
     : actionMessage
+  const message = alignMessageWeekdayToActionDate(messageWithWarnings, actions)
+  const correctedMessageWeekday = message !== messageWithWarnings
 
   return {
     ...response,
     actions,
     message,
-    fallbackUsed: response.fallbackUsed || !response.actions?.length || Boolean(repairedReplacementAction) || repairedMissingRequestedActions || repairedRequestedMoves || removedCollidingAddSessionCount > 0,
-    meta: response.actions?.length && !repairedReplacementAction && !repairedMissingRequestedActions && !repairedRequestedMoves && removedCollidingAddSessionCount === 0 && squashActionWarnings.length === 0
+    fallbackUsed: response.fallbackUsed || !response.actions?.length || Boolean(repairedReplacementAction) || repairedMissingRequestedActions || repairedRequestedMoves || removedCollidingAddSessionCount > 0 || hydratedMissingStrengthExercises || correctedMessageWeekday || safetyResult.blockedReasons.length > 0 || safetyResult.repaired,
+    meta: response.actions?.length && !repairedReplacementAction && !repairedMissingRequestedActions && !repairedRequestedMoves && removedCollidingAddSessionCount === 0 && squashActionWarnings.length === 0 && !hydratedMissingStrengthExercises && !correctedMessageWeekday && safetyResult.blockedReasons.length === 0 && !safetyResult.repaired
       ? response.meta
       : {
           ...response.meta,
@@ -205,6 +256,11 @@ export function postProcessCoachActions(
                     : !response.actions?.length
                       ? ['chat_action_without_actions_repaired']
                       : []),
+            ...(hydratedMissingStrengthExercises ? ['chat_action_missing_strength_exercises_hydrated'] : []),
+            ...(correctedMessageWeekday ? ['chat_action_message_weekday_aligned'] : []),
+            ...(fullyBlocked ? ['chat_action_strength_safety_blocked'] : []),
+            ...(partiallyBlocked ? ['chat_action_strength_safety_partially_blocked'] : []),
+            ...(safetyResult.repaired ? ['chat_action_strength_safety_repaired'] : []),
             ...squashActionWarnings.map((warning) => warning.code),
             ...(response.meta?.actionParseFailed || response.meta?.likelyTruncated
               ? ['chat_action_malformed_response_repaired']
@@ -663,17 +719,9 @@ function buildFallbackAddSessionAction(options: {
   }
 
   if (options.sessionType === 'strength') {
-    const selection = selectStrengthSession(buildStrengthSelectionContextForAction(options.context, durationMin, objective))
-    const exercises = selection.exercises.map(toStrengthProposalForEnhancement)
-    // The local fallback may be the only proposal available after a malformed
-    // model response. Preserve an explicit supersets request at creation time,
-    // before later enrichment and normalization run.
-    action.exercises = planSupersetGroups(exercises, shouldApplySupersetPolicy({
-      phase: mapActionStrengthPhase(options.context.athleteProfile?.macroPlan?.currentPhase),
-      sportProfile: deriveActionStrengthSportProfile(options.context.athleteProfile?.sportContext?.primarySport),
-      sessionDurationMin: durationMin,
-      intent: detectSupersetIntent(intentText),
-    })).exercises
+    // El finalizador vuelve a resolver las restricciones con autoridad antes de
+    // emitir la acción. Este productor temprano decide explícitamente `[]`.
+    action.exercises = selectStrengthProposalsForAction(options.context, durationMin, objective, [])
   }
 
   return completeRunningZone2Details(action, intentText)
@@ -820,6 +868,49 @@ function buildFallbackActionMessage(actions: CoachAction[], originalMessage: str
     return `Te prepare la sesion como accion para que puedas revisarla y aplicarla.${originalMessage ? `\n\n${originalMessage}` : ''}`
   }
   return originalMessage || 'Te propongo este cambio:'
+}
+
+/**
+ * The provider can pair a valid ISO date with the wrong weekday in prose
+ * (for example, "jueves 4 de septiembre" for 2026-09-04). The structured
+ * action is the source of truth, so keep the user-facing sentence in sync
+ * before the message is persisted in chat.
+ */
+function alignMessageWeekdayToActionDate(message: string, actions: CoachAction[]): string {
+  const datedActions = actions.filter((action) => (
+    (action.type === 'add_session' || action.type === 'move_session' || action.type === 'insert_recovery') &&
+    action.targetDate &&
+    isValidISODate(action.targetDate)
+  ))
+  if (datedActions.length !== 1) return message
+
+  const targetDate = datedActions[0].targetDate!
+  const targetWeekday = WEEKDAYS[getWeekdayOffset(targetDate)]?.labels[0]
+  if (!targetWeekday) return message
+
+  const weekdayPattern = /\b(lunes|martes|miercoles|miércoles|jueves|viernes|sabado|sábado|domingo)\b/gi
+  const matches = [...message.matchAll(weekdayPattern)]
+  if (matches.length === 0) return message
+
+  const targetDay = Number(targetDate.slice(8, 10))
+  const targetDayPattern = new RegExp(`\\b0?${targetDay}\\b`)
+  const candidates = matches.filter((match) => {
+    const index = match.index ?? 0
+    return targetDayPattern.test(message.slice(index, index + 48))
+  })
+  const matchesToReplace = candidates.length > 0
+    ? candidates
+    : matches.length === 1 ? matches : []
+  if (matchesToReplace.length === 0) return message
+
+  const replacementIndexes = new Set(matchesToReplace.map((match) => match.index ?? -1))
+  return message.replace(weekdayPattern, (weekday, _group, offset: number) => {
+    if (!replacementIndexes.has(offset)) return weekday
+    const canonical = weekday[0] === weekday[0].toUpperCase()
+      ? `${targetWeekday[0].toUpperCase()}${targetWeekday.slice(1)}`
+      : targetWeekday
+    return normalizeText(weekday) === targetWeekday ? weekday : canonical
+  })
 }
 
 interface SquashActionWarning {
@@ -1193,78 +1284,290 @@ function resolveSquashActionCompetitiveLevel(context: ChatContext) {
   return event?.competitiveLevel
 }
 
+interface FinalizeStrengthActionsOptions {
+  context: ChatContext
+  sessions: Session[]
+  actionIntentText: string
+  normalizedUserMessage: string
+  constraints: readonly StrengthConstraint[]
+  userMessageConstraints: readonly StrengthConstraint[]
+}
+
+interface FinalizeStrengthActionsResult {
+  actions: CoachAction[]
+  blockedReasons: BlockedReason[]
+  repaired: boolean
+  removed: RemovedExercise[]
+  replaced: ReplacedExercise[]
+}
+
+/**
+ * Último paso que puede modificar ejercicios de fuerza en el chat. Una acción
+ * create_week es atómica: si falla una de sus sesiones, se descarta completa.
+ */
+function finalizeStrengthActions(
+  actions: CoachAction[],
+  options: FinalizeStrengthActionsOptions,
+): FinalizeStrengthActionsResult {
+  const next: CoachAction[] = []
+  const blockedReasons: BlockedReason[] = []
+  const removed: RemovedExercise[] = []
+  const replaced: ReplacedExercise[] = []
+
+  const recordResult = (result: { removed: RemovedExercise[]; replaced: ReplacedExercise[] }) => {
+    removed.push(...result.removed)
+    replaced.push(...result.replaced)
+  }
+
+  for (const action of actions) {
+    if (action.type === 'add_session' && action.sessionType === 'strength') {
+      const selectionContext = buildStrengthSelectionContextForAction(
+        options.context,
+        action.durationMin,
+        action.objective,
+        options.constraints,
+      )
+      const result = prepareStrengthSession(action, {
+        constraints: options.constraints,
+        userMessageConstraints: options.userMessageConstraints,
+        userMessage: options.normalizedUserMessage,
+        selectionContext,
+        structureOptions: {
+          durationMin: action.durationMin,
+          strengthProfile: options.context.athleteProfile?.strengthProfile,
+        },
+        supersetMode: resolveSupersetMode(
+          options.context,
+          options.actionIntentText,
+          action.durationMin,
+        ),
+        sealLocation: 'root',
+      })
+      if (result.status === 'blocked') {
+        blockedReasons.push(result.reason)
+        continue
+      }
+      recordResult(result)
+      next.push(result.session)
+      continue
+    }
+
+    if (action.type === 'update_session') {
+      const base = findSessionByIdOrPrefix(action.sessionId, options.sessions)
+      if (!base) {
+        next.push(action)
+        continue
+      }
+      const prospective = materializeProspectiveSession(base, action)
+      if (prospective.sessionType !== 'strength') {
+        next.push(action)
+        continue
+      }
+      const selectionContext = buildStrengthSelectionContextForAction(
+        options.context,
+        prospective.durationMin,
+        prospective.objective,
+        options.constraints,
+      )
+      const result = prepareStrengthSession(prospective, {
+        constraints: options.constraints,
+        userMessageConstraints: options.userMessageConstraints,
+        userMessage: options.normalizedUserMessage,
+        selectionContext,
+        structureOptions: {
+          durationMin: prospective.durationMin,
+          strengthProfile: options.context.athleteProfile?.strengthProfile,
+        },
+        supersetMode: resolveSupersetMode(
+          options.context,
+          options.actionIntentText,
+          prospective.durationMin,
+        ),
+        sealLocation: 'root',
+      })
+      if (result.status === 'blocked') {
+        blockedReasons.push(result.reason)
+        continue
+      }
+      recordResult(result)
+      const prepared = result.session as CoachSessionProposal & Pick<CoachAction, 'strengthSafetyFinalization'>
+      next.push({
+        ...action,
+        exercises: prepared.exercises,
+        strengthSafetyFinalization: prepared.strengthSafetyFinalization,
+        baseUpdatedAt: base.updatedAt,
+      })
+      continue
+    }
+
+    if (action.type === 'create_week' && action.sessions) {
+      const preparedSessions: CoachSessionProposal[] = []
+      let blocked = false
+      for (const session of action.sessions) {
+        if (session.sessionType !== 'strength') {
+          preparedSessions.push(session)
+          continue
+        }
+        const selectionContext = buildStrengthSelectionContextForAction(
+          options.context,
+          session.durationMin,
+          session.objective,
+          options.constraints,
+        )
+        const result = prepareStrengthSession(session, {
+          constraints: options.constraints,
+          userMessageConstraints: options.userMessageConstraints,
+          userMessage: options.normalizedUserMessage,
+          selectionContext,
+          structureOptions: {
+            durationMin: session.durationMin,
+            strengthProfile: options.context.athleteProfile?.strengthProfile,
+          },
+          supersetMode: resolveSupersetMode(
+            options.context,
+            options.actionIntentText,
+            session.durationMin,
+          ),
+          sealLocation: 'metadata',
+        })
+        if (result.status === 'blocked') {
+          blockedReasons.push(result.reason)
+          blocked = true
+          break
+        }
+        recordResult(result)
+        preparedSessions.push(result.session)
+      }
+      if (!blocked) next.push({ ...action, sessions: preparedSessions })
+      continue
+    }
+
+    next.push(action)
+  }
+
+  return {
+    actions: next,
+    blockedReasons,
+    repaired: removed.length > 0 || replaced.length > 0,
+    removed,
+    replaced,
+  }
+}
+
+/** Materializa el patch de update sobre su base antes de verificar fuerza. */
+export function materializeProspectiveSession(
+  base: Session,
+  action: CoachAction,
+): CoachSessionProposal {
+  if (action.type !== 'update_session') {
+    throw new Error('materializeProspectiveSession requiere update_session')
+  }
+  const changesType = action.newType != null && action.newType !== base.type
+  const inheritedExercises = changesType
+    ? []
+    : base.exercises?.map((exercise) => {
+        const proposal = { ...exercise } as Partial<typeof exercise>
+        delete proposal.id
+        delete proposal.completed
+        return proposal as CoachExerciseProposal
+      })
+
+  return {
+    date: base.date,
+    timeBlock: base.timeBlock,
+    sessionType: action.newType ?? base.type,
+    title: action.newTitle ?? base.title,
+    durationMin: action.newDurationMin ?? base.durationMin,
+    objective: action.newObjective ?? base.objective,
+    rpe: action.newRpe ?? base.rpe,
+    subtype: action.subtype ?? base.subtype,
+    exercises: action.exercises ?? inheritedExercises,
+    mobilityDetails: action.mobilityDetails ?? base.mobilityDetails,
+    squashDetails: action.squashDetails ?? base.squashDetails,
+    warmup: action.warmup ?? base.warmup,
+    cooldown: action.cooldown ?? base.cooldown,
+    metadata: base.metadata,
+  }
+}
+
 function completeStrengthLoads(
   action: CoachAction,
   context: ChatContext,
   actionIntentText: string,
+  safetyConstraints: readonly StrengthConstraint[],
 ): CoachAction {
-  const profile = context.athleteProfile?.strengthProfile
-  if ((action.type === 'add_session' || action.type === 'update_session') && action.exercises) {
-    const shouldDensify = action.type === 'add_session'
-      ? action.sessionType === 'strength'
-      : action.newType === 'strength' || action.exercises.some((exercise) => resolveStrengthExercise(exercise)?.definition)
-    const durationMin = action.type === 'add_session' ? action.durationMin : action.newDurationMin
-    const enriched = shouldDensify
-      ? enrichStrengthExercises(action.exercises, {
-          durationMin,
-          strengthProfile: profile,
+  if (action.type === 'add_session' && action.sessionType === 'strength') {
+    const objective = action.objective ?? buildFallbackObjective('strength', actionIntentText)
+    const sourceExercises = action.exercises?.length
+      ? action.exercises
+      : selectStrengthProposalsForAction(
           context,
-          objective: action.type === 'add_session' ? action.objective : action.newObjective,
-        })
-      : action.exercises
+          action.durationMin,
+          `${objective} ${actionIntentText}`,
+          safetyConstraints,
+        )
     return {
       ...action,
-      exercises: shouldDensify
-        ? applySupersetPolicy(enriched, context, actionIntentText, durationMin)
-        : enriched,
+      objective,
+      exercises: sourceExercises,
     }
   }
+
+  // `update_session` es un patch. Se materializa y finaliza contra la sesión
+  // base completa en `finalizeStrengthActions`, incluso si no trae exercises.
+  if (action.type === 'update_session') return action
 
   if (action.type === 'create_week' && action.sessions) {
     return {
       ...action,
-      sessions: action.sessions.map((session) => (
-        session.sessionType === 'strength' && session.exercises
-          ? {
-              ...session,
-              exercises: applySupersetPolicy(
-                enrichStrengthExercises(session.exercises, {
-                  durationMin: session.durationMin,
-                  strengthProfile: profile,
-                  context,
-                  objective: session.objective,
-                }),
-                context,
-                actionIntentText,
-                session.durationMin,
-              ),
-            }
-          : session
-      )),
+      sessions: action.sessions.map((session) => {
+        if (session.sessionType !== 'strength') return session
+        const objective = session.objective ?? buildFallbackObjective('strength', actionIntentText)
+        const sourceExercises = session.exercises?.length
+          ? session.exercises
+          : selectStrengthProposalsForAction(
+              context,
+              session.durationMin,
+              `${objective} ${actionIntentText}`,
+              safetyConstraints,
+            )
+        return {
+          ...session,
+          objective,
+          exercises: sourceExercises,
+        }
+      }),
     }
   }
 
   return action
 }
 
-function applySupersetPolicy(
-  exercises: CoachExerciseProposal[] | undefined,
+function hasMissingStrengthExercises(action: CoachAction): boolean {
+  if (action.type === 'add_session') {
+    return action.sessionType === 'strength' && !action.exercises?.length
+  }
+  if (action.type === 'create_week') {
+    return action.sessions?.some((session) => (
+      session.sessionType === 'strength' && !session.exercises?.length
+    )) ?? false
+  }
+  return false
+}
+
+function resolveSupersetMode(
   context: ChatContext,
   actionIntentText: string,
   sessionDurationMin?: number,
-): CoachExerciseProposal[] | undefined {
-  if (!exercises || exercises.length === 0) return exercises
-
+): SupersetPolicyMode {
   const phase = context.athleteProfile?.macroPlan?.currentPhase
   const primarySport = context.athleteProfile?.sportContext?.primarySport
-  const mode = shouldApplySupersetPolicy({
-    phase,
-    sportProfile: primarySport ? deriveActionStrengthSportProfile(primarySport) : undefined,
+  return shouldApplySupersetPolicy({
+    phase: mapActionStrengthPhase(phase),
+    sportProfile: deriveActionStrengthSportProfile(primarySport),
     sessionDurationMin,
     intent: detectSupersetIntent(actionIntentText),
   })
-
-  return planSupersetGroups(exercises, mode).exercises
 }
 
 function alignSingleSessionSportToRequest(
@@ -1298,75 +1601,23 @@ function alignSingleSessionSportToRequest(
   }
 
   if (requestedSessionType === 'strength') {
-    const selection = selectStrengthSession(buildStrengthSelectionContextForAction(
+    next.rpe = action.rpe ?? 7
+    next.exercises = selectStrengthProposalsForAction(
       context,
       next.durationMin,
       next.objective,
-    ))
-    next.rpe = action.rpe ?? 7
-    next.exercises = selection.exercises.map(toStrengthProposalForEnhancement)
+      [],
+    )
   }
 
   return next
 }
 
-function enrichStrengthExercises(
-  exercises: CoachExerciseProposal[],
-  options: {
-    durationMin?: number
-    strengthProfile?: StrengthProfile
-    context: ChatContext
-    objective?: string
-  },
-): CoachExerciseProposal[] | undefined {
-  const enhanced = enhanceStrengthSessionExercises(exercises, {
-    durationMin: options.durationMin,
-    strengthProfile: options.strengthProfile,
-  })
-  if (!enhanced || enhanced.length === 0) return enhanced
-
-  const selectionContext = buildStrengthSelectionContextForAction(options.context, options.durationMin, options.objective)
-  const density = getTargetExerciseDensity(selectionContext)
-  if (enhanced.length >= density.target) return enhanced
-
-  const existingKeys = new Set(enhanced.map(getStrengthExerciseKey))
-  const additions: CoachExerciseProposal[] = []
-  const candidates = selectStrengthSession(selectionContext).exercises
-    .map(toStrengthProposalForEnhancement)
-    .filter((exercise) => !existingKeys.has(getStrengthExerciseKey(exercise)))
-
-  const minimumStrengthWork = getMinimumStrengthWorkCount(options.durationMin ?? 50)
-  let strengthWorkCount = enhanced.filter(isStrengthWorkExercise).length
-
-  for (const candidate of candidates) {
-    if (enhanced.length + additions.length >= density.target) break
-    if (!isStrengthWorkExercise(candidate)) continue
-    additions.push(candidate)
-    existingKeys.add(getStrengthExerciseKey(candidate))
-    strengthWorkCount++
-    if (strengthWorkCount >= minimumStrengthWork) break
-  }
-
-  for (const candidate of candidates) {
-    if (enhanced.length + additions.length >= density.target) break
-    const key = getStrengthExerciseKey(candidate)
-    if (existingKeys.has(key)) continue
-    additions.push(candidate)
-    existingKeys.add(key)
-  }
-
-  if (additions.length === 0) return enhanced
-
-  return enhanceStrengthSessionExercises([...enhanced, ...additions], {
-    durationMin: options.durationMin,
-    strengthProfile: options.strengthProfile,
-  })
-}
-
 function buildStrengthSelectionContextForAction(
   context: ChatContext,
-  durationMin?: number,
-  objective?: string,
+  durationMin: number | undefined,
+  objective: string | undefined,
+  safetyConstraints: readonly StrengthConstraint[],
 ): StrengthContext {
   const primarySport = context.athleteProfile?.sportContext?.primarySport
   return {
@@ -1378,7 +1629,19 @@ function buildStrengthSelectionContextForAction(
     primarySport,
     experienceLevel: 'intermediate',
     sessionDurationMin: durationMin ?? 60,
+    safetyConstraints,
   }
+}
+
+function selectStrengthProposalsForAction(
+  context: ChatContext,
+  durationMin: number | undefined,
+  objective: string | undefined,
+  safetyConstraints: readonly StrengthConstraint[],
+): CoachExerciseProposal[] {
+  return selectStrengthSession(
+    buildStrengthSelectionContextForAction(context, durationMin, objective, safetyConstraints),
+  ).exercises.map(toStrengthProposalForEnhancement)
 }
 
 function mapActionStrengthPhase(phase: string | undefined): StrengthPhase {
@@ -1393,17 +1656,6 @@ function deriveActionStrengthSportProfile(primarySport: string | undefined): Str
   return 'hybrid'
 }
 
-function getMinimumStrengthWorkCount(durationMin: number): number {
-  if (durationMin >= 70) return 5
-  if (durationMin >= 55) return 4
-  if (durationMin >= 45) return 3
-  return 2
-}
-
-function isStrengthWorkExercise(exercise: CoachExerciseProposal): boolean {
-  const block = resolveStrengthExerciseBlock(exercise)
-  return block !== 'core' && block !== 'cardio' && block !== 'mobility'
-}
 
 function alignActionDate(action: CoachAction, targetDate: string): CoachAction {
   if (action.type === 'add_session' || action.type === 'move_session' || action.type === 'insert_recovery') {
@@ -1448,7 +1700,7 @@ function alignActionToRequestedWeek(
   requestedWeekStart: string,
   restOffsets: Set<number>,
   occupiedSlots: Set<string>,
-  options: { lockDate?: boolean } = {},
+  options: { lockDate?: boolean; requireEntireFreeDay?: boolean } = {},
 ): CoachAction {
   if (action.type !== 'add_session' && action.type !== 'move_session' && action.type !== 'insert_recovery') {
     return action
@@ -1456,7 +1708,15 @@ function alignActionToRequestedWeek(
 
   const targetDate = action.targetDate
   const timeBlock = action.type === 'add_session' ? action.timeBlock : undefined
-  if (options.lockDate && targetDate && isDateInWeek(targetDate, requestedWeekStart)) {
+  const targetDateIsEntirelyFree = targetDate
+    ? isEntireDayFree(targetDate, occupiedSlots)
+    : false
+  if (
+    options.lockDate &&
+    targetDate &&
+    isDateInWeek(targetDate, requestedWeekStart) &&
+    (!options.requireEntireFreeDay || targetDateIsEntirelyFree)
+  ) {
     if (timeBlock && occupiedSlots.has(`${targetDate}|${timeBlock}`)) {
       const replacementBlock = findAvailableTimeBlockForDate(targetDate, timeBlock, occupiedSlots)
       if (replacementBlock) {
@@ -1473,6 +1733,7 @@ function alignActionToRequestedWeek(
     targetDate &&
     isDateInWeek(targetDate, requestedWeekStart) &&
     !restOffsets.has(getWeekdayOffset(targetDate)) &&
+    (!options.requireEntireFreeDay || targetDateIsEntirelyFree) &&
     (!timeBlock || !occupiedSlots.has(`${targetDate}|${timeBlock}`))
   ) {
     if (timeBlock) occupiedSlots.add(`${targetDate}|${timeBlock}`)
@@ -1485,6 +1746,7 @@ function alignActionToRequestedWeek(
     timeBlock,
     restOffsets,
     occupiedSlots,
+    { requireEntireFreeDay: options.requireEntireFreeDay },
   )
   if (!replacement) return action
 
@@ -1492,6 +1754,10 @@ function alignActionToRequestedWeek(
   return action.type === 'add_session' && replacement.timeBlock
     ? { ...action, targetDate: replacement.date, timeBlock: replacement.timeBlock }
     : { ...action, targetDate: replacement.date }
+}
+
+function isEntireDayFree(date: string, occupiedSlots: Set<string>): boolean {
+  return !occupiedSlots.has(`${date}|AM`) && !occupiedSlots.has(`${date}|PM`)
 }
 
 function resolveWeekdayDate(
@@ -1580,7 +1846,7 @@ function buildOccupiedSlotSet(sessions: Session[], requestedWeekStart: string | 
   const occupied = new Set<string>()
   if (!requestedWeekStart) return occupied
   for (const session of sessions) {
-    if (isDateInWeek(session.date, requestedWeekStart)) {
+    if (session.status !== 'skipped' && isDateInWeek(session.date, requestedWeekStart)) {
       occupied.add(`${session.date}|${session.timeBlock}`)
     }
   }
@@ -1624,6 +1890,7 @@ function findAvailableDateInRequestedWeek(
   preferredBlock: TimeBlock | undefined,
   restOffsets: Set<number>,
   occupiedSlots: Set<string>,
+  options: { requireEntireFreeDay?: boolean } = {},
 ): { date: string; timeBlock?: TimeBlock } | undefined {
   const originalOffset = originalDate && isValidISODate(originalDate) ? getWeekdayOffset(originalDate) : undefined
   const candidateOffsets = [
@@ -1634,6 +1901,7 @@ function findAvailableDateInRequestedWeek(
 
   for (const offset of candidateOffsets) {
     const date = addDaysToISO(requestedWeekStart, offset)
+    if (options.requireEntireFreeDay && !isEntireDayFree(date, occupiedSlots)) continue
     for (const block of blockCandidates) {
       if (!block || !occupiedSlots.has(`${date}|${block}`)) {
         return { date, timeBlock: block }

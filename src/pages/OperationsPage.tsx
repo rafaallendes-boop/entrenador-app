@@ -50,6 +50,7 @@ function WindowPanel({ title, data }: { title: string; data: OperationsWindow })
         <Metric label="Cuentas con planificación" value={String(data.activity.accountsPlanning)} />
         <Metric label="Requests de coach" value={String(data.coach.requests)} />
         <Metric label="Tasa de error" value={errorRate} />
+        <Metric label="Declinaciones seguras" value={String(data.coach.safetyBlocked)} />
       </div>
 
       <div className="grid grid-cols-2 gap-2 md:grid-cols-4">

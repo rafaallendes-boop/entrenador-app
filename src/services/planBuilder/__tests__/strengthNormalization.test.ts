@@ -23,6 +23,7 @@ const SELECTED_EXERCISES = selectStrengthSession({
   experienceLevel: 'advanced',
   sessionDurationMin: 45,
   weekIndexInBlock: 1,
+  safetyConstraints: [],
 }).exercises
 const NAMES = SELECTED_EXERCISES.map((exercise) => exercise.name)
 

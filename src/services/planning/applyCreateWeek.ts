@@ -3,7 +3,12 @@ import { db } from '../../db/db'
 import { getWeekSummary, recalculateWeekSummary, upsertWeekSummary } from '../../db/queries'
 import { filterCoachSessionsToAllowedSports } from '../planningConstraints'
 import { ensureSessionProtocols } from '../trainingProtocols'
-import { enhanceStrengthSessionExercises } from '../training/strengthSessionStructure'
+import { prepareStrengthSession } from '../training/strengthSafetyFinalizer'
+import { mergeStrengthConstraints } from '../training/strengthSafetyConstraints'
+import {
+  buildStrengthSafetyContext,
+  resolveProfileStrengthSafetyConstraints,
+} from '../training/strengthSafetySurface'
 import * as syncService from '../syncService'
 import { filterRowsToActiveScope } from '../athlete/activeScopeFilter'
 import { fromISO, getWeekStart, toISO } from '../../utils/date'
@@ -63,8 +68,47 @@ export async function applyCreateWeek({
     return { warnings, createdSessionIds, restoredSessions, restoredWeekSummaries, deletedWeekSummaryIds }
   }
 
+  // Fase 1: verificar todas las sesiones sin efectos. El reemplazo destructivo
+  // de la semana anterior sólo puede empezar después de este loop.
+  const profileConstraints = resolveProfileStrengthSafetyConstraints(athleteProfile)
+  const verifiedSessions: CreateWeekSessionInput = []
+  let repairedForSafety = false
+  for (const session of allowedSessions) {
+    if (session.sessionType !== 'strength') {
+      verifiedSessions.push(session)
+      continue
+    }
+    const messageConstraints = session.metadata?.strengthSafetyFinalization?.userMessageConstraints ?? []
+    const constraints = mergeStrengthConstraints(profileConstraints, messageConstraints)
+    const result = prepareStrengthSession(session, {
+      constraints,
+      userMessageConstraints: messageConstraints,
+      userMessage: '',
+      selectionContext: buildStrengthSafetyContext(
+        athleteProfile,
+        session.durationMin,
+        session.objective,
+        constraints,
+      ),
+      structureOptions: {
+        durationMin: session.durationMin,
+        strengthProfile: athleteProfile?.strengthProfile,
+      },
+      supersetMode: 'off',
+      sealLocation: 'metadata',
+    })
+    if (result.status === 'blocked') {
+      throw new Error('No pude verificar una sesión de fuerza compatible con la restricción registrada.')
+    }
+    repairedForSafety ||= result.removed.length > 0 || result.replaced.length > 0
+    verifiedSessions.push(result.session)
+  }
+  if (repairedForSafety) {
+    warnings.push('Se excluyeron o reemplazaron ejercicios por tu restricción.')
+  }
+
   const replacement = await replacePlannedSessionsForCreateWeek(
-    allowedSessions,
+    verifiedSessions,
     replacementCutoffAt,
     replacementRange,
     preserveManualSessions,
@@ -72,13 +116,13 @@ export async function applyCreateWeek({
   restoredSessions.push(...replacement.replacedSessions)
   warnings.push(...replacement.warnings)
 
-  const collisions = await findCreateWeekCollisions(allowedSessions, preserveManualSessions)
+  const collisions = await findCreateWeekCollisions(verifiedSessions, preserveManualSessions)
   if (collisions.length > 0) {
     warnings.push(formatCreateWeekCollisionWarning(collisions, preserveManualSessions))
   }
   const collisionSet = new Set(collisions.map((collision) => `${collision.date}|${collision.timeBlock}`))
 
-  for (const session of allowedSessions) {
+  for (const session of verifiedSessions) {
     if (collisionSet.has(`${session.date}|${session.timeBlock}`)) continue
 
     const created = await store.addSession(ensureSessionProtocols({
@@ -93,14 +137,7 @@ export async function applyCreateWeek({
       rpe: session.rpe,
       objective: session.objective,
       status: 'planned',
-      exercises: (
-        session.sessionType === 'strength'
-          ? enhanceStrengthSessionExercises(session.exercises, {
-              durationMin: session.durationMin,
-              strengthProfile: athleteProfile?.strengthProfile,
-            })
-          : session.exercises
-      )?.map((exercise) => ({ ...exercise, id: uuid(), completed: false })),
+      exercises: session.exercises?.map((exercise) => ({ ...exercise, id: uuid(), completed: false })),
       runningDetails: session.runningType
         ? {
             runningType: session.runningType,
@@ -121,13 +158,13 @@ export async function applyCreateWeek({
     createdSessionIds.push(created.id)
   }
 
-  const affectedWeekStarts = [...new Set(allowedSessions.map((session) => toISO(getWeekStart(fromISO(session.date)))))]
+  const affectedWeekStarts = [...new Set(verifiedSessions.map((session) => toISO(getWeekStart(fromISO(session.date)))))]
   for (const weekStart of affectedWeekStarts) {
     await recalculateWeekSummary(weekStart)
   }
 
   if (weekObjectives && weekObjectives.length > 0) {
-    const weekStart = toISO(getWeekStart(fromISO(allowedSessions[0].date)))
+    const weekStart = toISO(getWeekStart(fromISO(verifiedSessions[0].date)))
     const previousSummary = await getWeekSummary(weekStart)
     if (previousSummary) {
       restoredWeekSummaries.push({ ...previousSummary })

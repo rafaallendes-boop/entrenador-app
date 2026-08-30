@@ -75,6 +75,23 @@ describe('assistantMessage', () => {
       .toEqual({ ok: true, body: '¿Cómo vas?' })
   })
 
+  it('elimina un saludo inicial para no duplicar el que agrega la UI', () => {
+    expect(parseAssistantMessageResult(JSON.stringify({
+      body: '¡Hola! Llevas varios días sin hacer check-in. ¿Cómo vas?',
+    }))).toEqual({
+      ok: true,
+      body: 'Llevas varios días sin hacer check-in. ¿Cómo vas?',
+    })
+    expect(parseAssistantMessageResult(JSON.stringify({
+      body: 'Hola,\n¿cómo te has sentido?',
+    }))).toEqual({ ok: true, body: '¿cómo te has sentido?' })
+  })
+
+  it('no acepta una respuesta que queda vacía al quitar el saludo', () => {
+    expect(parseAssistantMessageResult('{"body":"¡Hola!"}'))
+      .toEqual({ ok: false, reason: 'invalid' })
+  })
+
   it('prohíbe diagnóstico, tratamiento y cambios de carga, y limita dolor a preguntar', () => {
     expect(ASSISTANT_SYSTEM_PROMPT).toMatch(/no dar diagnósticos/i)
     expect(ASSISTANT_SYSTEM_PROMPT).toMatch(/no sugerir tratamiento/i)
@@ -82,6 +99,9 @@ describe('assistantMessage', () => {
     expect(ASSISTANT_SYSTEM_PROMPT).toMatch(/dolor.*únicamente una pregunta/i)
     expect(ASSISTANT_SYSTEM_PROMPT).toMatch(/pain\.days.*fechas de check-in distintas/i)
     expect(ASSISTANT_SYSTEM_PROMPT).toMatch(/no implica duración ni días consecutivos/i)
+    expect(ASSISTANT_SYSTEM_PROMPT).toMatch(/cliente antepone.*saludo/i)
+    expect(ASSISTANT_SYSTEM_PROMPT).toMatch(/no-check-in.*feedback diario/i)
+    expect(ASSISTANT_SYSTEM_PROMPT).toMatch(/no significa.*entrenamientos/i)
     expect(ASSISTANT_SYSTEM_PROMPT.length).toBeLessThanOrEqual(8_000)
   })
 })

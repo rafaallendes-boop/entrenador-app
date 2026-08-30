@@ -1,4 +1,5 @@
 import type { ExerciseLibraryRef } from './exerciseLibraryRef'
+import type { StrengthConstraint } from './strengthSafety'
 
 // ─── AI provider ─────────────────────────────────────────────────────────────
 
@@ -90,10 +91,10 @@ export interface AITechnicalResult {
   endToEndDurationMs?: number
   proposalReadyAt?: number
   /** Terminal result for the complete logical generation, not an individual provider attempt. */
-  generationOutcome?: 'model_success' | 'local_fallback' | 'failed'
+  generationOutcome?: 'model_success' | 'local_fallback' | 'safe_decline' | 'failed'
   generationCompletedAt?: number
   status: 'started' | 'streaming' | 'completed' | 'failed'
-  outcome?: 'ok' | 'truncated_mid' | 'truncated_early' | 'parse_invalid' | 'schema_invalid' | 'quality_rejected'
+  outcome?: 'ok' | 'truncated_mid' | 'truncated_early' | 'parse_invalid' | 'schema_invalid' | 'quality_rejected' | 'safety_blocked'
   errorCode?: string
   retryUsed?: boolean
   fallbackUsed?: boolean
@@ -336,6 +337,18 @@ export interface SessionStarLiftMetadata {
   weekProgression: number
 }
 
+/**
+ * Local change detector for a strength session that passed the safety
+ * finalizer. It is deliberately not an authorization credential.
+ */
+export interface StrengthSafetyFinalizationSeal {
+  policyVersion: number
+  exerciseFingerprint: string
+  constraintFingerprint: string
+  /** Structured constraints derived from the user message, never source text. */
+  userMessageConstraints: readonly StrengthConstraint[]
+}
+
 export interface SessionMetadata {
   starLift?: SessionStarLiftMetadata
   /** Proyección de fuerza ya resuelta: evita que un segundo repair recicle slots equivalentes. */
@@ -352,6 +365,8 @@ export interface SessionMetadata {
     blockId: string
     signature: string
   }
+  /** Only local finalization may emit this seal. */
+  strengthSafetyFinalization?: StrengthSafetyFinalizationSeal
 }
 
 export interface ProtocolContext {
@@ -1144,6 +1159,10 @@ export interface CoachAction {
   squashDetails?: SquashDetails        // for squash sessions in add_session / update_session
   warmup?: GeneratedProtocol
   cooldown?: GeneratedProtocol
+  /** Seal for flat add/update actions; create-week sessions store it in metadata. */
+  strengthSafetyFinalization?: StrengthSafetyFinalizationSeal
+  /** Optimistic concurrency precondition captured when a strength patch is proposed. */
+  baseUpdatedAt?: number
 }
 
 export type CoachProposalSource = 'chat' | 'dashboard_auto_adjustment' | 'weekly_action' | 'plan_builder'

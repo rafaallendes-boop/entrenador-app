@@ -102,6 +102,10 @@ import type { ActionKind } from './prompt/core/outputContract'
 import { renderActionCatalog } from './prompt/renderers/proseSchema'
 import { formatReadinessLine } from './readinessContext'
 import { isWhoopPrefilled } from '../readiness/dayLogPrefillSave'
+import {
+  formatStrengthConstraintFeedback,
+  resolveStrengthSafetyConstraints,
+} from '../training/strengthSafetyConstraints'
 
 const ADJUST_SESSION_ACTION_KINDS: readonly ActionKind[] = [
   'add_session',
@@ -856,6 +860,19 @@ function buildSlimAthleteProfileSection(
   ].filter(Boolean)
   if (recoveryParts.length > 0) {
     lines.push(`Lesión/restricción actual: ${recoveryParts.join(' · ')}`)
+  }
+
+  const strengthSafetyFeedback = formatStrengthConstraintFeedback(
+    resolveStrengthSafetyConstraints({
+      currentInjuries: profile.recoveryProfile?.currentInjuries,
+      restrictions: profile.recoveryProfile?.restrictions,
+      injuryNotes: profile.planWizardConfig?.injuryNotes,
+      userMessages: [],
+      trainingPriority: profile.sportContext?.trainingPriority,
+    }),
+  )
+  if (strengthSafetyFeedback) {
+    lines.push(`Restricciones resueltas de fuerza: ${strengthSafetyFeedback}. No propongas ejercicios que carguen esas zonas o patrones.`)
   }
 
   const availabilityParts: string[] = []
@@ -1839,6 +1856,7 @@ function buildResponsePromptContext(
   const squashSelectorContext = squashSummary?.selectionContext
   const strengthSelection = strengthSummary?.selection
   const strengthSelectorContext = strengthSummary?.selectionContext
+  const strengthSafetyConstraints = strengthSelectorContext?.safetyConstraints ?? []
 
   const squashBaseSelection = squashSelection ?? selectSquashDrills({
     fatigueLevel: 4,
@@ -1910,6 +1928,7 @@ function buildResponsePromptContext(
     experienceLevel: 'intermediate',
     sessionDurationMin: primary === 'strength' ? 65 : 55,
     competitionSoon: false,
+    safetyConstraints: strengthSafetyConstraints,
   })
   const strengthSupportSelection = selectStrengthSession({
     fatigueLevel: Math.max(strengthSelectorContext?.fatigueLevel ?? 4, 4),
@@ -1922,6 +1941,7 @@ function buildResponsePromptContext(
     sessionDurationMin: 45,
     competitionSoon: strengthSelectorContext?.competitionSoon ?? false,
     daysToCompetition: strengthSelectorContext?.daysToCompetition,
+    safetyConstraints: strengthSafetyConstraints,
   })
   const strengthPrimarySelection = selectStrengthSession({
     fatigueLevel: strengthSelectorContext?.fatigueLevel ?? 4,
@@ -1933,6 +1953,7 @@ function buildResponsePromptContext(
     experienceLevel: strengthSelectorContext?.experienceLevel ?? 'intermediate',
     sessionDurationMin: 65,
     competitionSoon: false,
+    safetyConstraints: strengthSafetyConstraints,
   })
   const strengthPrimaryFollowUpSelection = selectStrengthSession({
     fatigueLevel: strengthSelectorContext?.fatigueLevel ?? 4,
@@ -1944,6 +1965,7 @@ function buildResponsePromptContext(
     experienceLevel: strengthSelectorContext?.experienceLevel ?? 'intermediate',
     sessionDurationMin: 60,
     competitionSoon: false,
+    safetyConstraints: strengthSafetyConstraints,
   })
   const strengthBaseSummary = formatSelectedStrengthExercises(strengthBaseSelection.exercises, 3)
   const strengthBaseExercisesJson = stringifyStrengthExercises(strengthBaseSelection.exercises, 5)

@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import {
+  derivePlanGenerationState,
   resolveConfiguredGenerationMode,
   resolveConfiguredGenerationStrategy,
   shouldUseDeterministicPrimary,
 } from '../generationState'
+import type { TrainingPlanWeek } from '../../../types/planBuilder'
 
 describe('resolveConfiguredGenerationStrategy', () => {
   const envKey = 'VITE_PLAN_BUILDER_STRATEGY'
@@ -39,6 +41,18 @@ describe('resolveConfiguredGenerationStrategy', () => {
     expect(resolveConfiguredGenerationStrategy(9, undefined)).toBe('single')
     ;(import.meta.env as Record<string, string>)[envKey] = 'bogus'
     expect(resolveConfiguredGenerationStrategy(9, undefined)).toBe('single')
+  })
+})
+
+describe('derivePlanGenerationState', () => {
+  it('keeps a sealed safety-degraded draft plan partial even when every week has sessions', () => {
+    const week = {
+      status: 'draft',
+      sessions: [{ date: '2026-01-05' }],
+      generationMeta: { attempts: 1, safetyDegraded: true },
+    } as unknown as TrainingPlanWeek
+
+    expect(derivePlanGenerationState([week])).toBe('partial')
   })
 })
 

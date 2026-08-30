@@ -13,6 +13,7 @@ function context(phase: StrengthContext['phase'], weekIndexInBlock: number, rece
     primarySport: 'squash',
     experienceLevel: 'advanced',
     sessionDurationMin: 60,
+    safetyConstraints: [],
     available1RM: ['squat', 'deadlift', 'benchPress', 'overheadPress'],
   }
 }

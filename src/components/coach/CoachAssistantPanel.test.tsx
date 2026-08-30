@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event'
 import type { RosterTriage } from '../../services/athlete/loadRosterTriage'
 import type { DraftFailure, DraftResult } from '../../services/coach/requestAssistantDraft'
 import CoachAssistantPanel from './CoachAssistantPanel'
+import { isBlockingFailure } from './draftFailurePolicy'
 
 const TRIAGE: RosterTriage = {
   computedAt: Date.UTC(2026, 7, 29, 14, 30),
@@ -59,7 +60,7 @@ describe('CoachAssistantPanel', () => {
     const insufficient = screen.getByTestId('group-sin-datos')
     const upToDate = screen.getByTestId('group-al-dia')
     expect(signals.textContent).toContain('Ana')
-    expect(signals.textContent).toContain('Yo')
+    expect(signals.textContent).toContain('Tú')
     expect(insufficient.textContent).toContain('Nuevo')
     expect(insufficient.getAttribute('data-collapsed')).toBe('false')
     expect(upToDate.textContent).toContain('Ok')
@@ -71,7 +72,7 @@ describe('CoachAssistantPanel', () => {
     renderPanel()
 
     const signalsGroup = screen.getByTestId('group-con-senales')
-    expect(signalsGroup.textContent).toContain('Yo')
+    expect(signalsGroup.textContent).toContain('Tú')
     expect(signalsGroup.textContent).toContain('Sin datos suficientes')
     expect(signalsGroup.textContent).toContain('Sin check-in')
   })
@@ -91,6 +92,15 @@ describe('CoachAssistantPanel', () => {
   it('no ofrece redactar para el self aunque tenga señales', () => {
     renderPanel()
     expect(screen.queryByTestId('draft-ath_self')).toBeNull()
+  })
+
+  it('identifica el self como Tú aunque su displayName esté ausente', () => {
+    const namesWithoutSelf: Record<string, string> = { ...NAMES }
+    delete namesWithoutSelf.ath_self
+    renderPanel({ athleteNames: namesWithoutSelf })
+
+    expect(screen.getByTestId('group-con-senales').textContent).toContain('Tú')
+    expect(screen.getByTestId('group-con-senales').textContent).not.toContain('Atleta')
   })
 
   it('abre la semana del atleta sin cambiar el contrato de redacción', async () => {
@@ -137,6 +147,89 @@ describe('CoachAssistantPanel', () => {
       .toBe(true)
   })
 
+  it('copia el mensaje completo, saludo local incluido', async () => {
+    const writeText = vi.fn(async () => {})
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    renderPanel()
+
+    await userEvent.click(screen.getByTestId('draft-ath_a'))
+    await vi.waitFor(() => { screen.getByTestId('copy-ath_a') })
+    await userEvent.click(screen.getByTestId('copy-ath_a'))
+
+    await vi.waitFor(() => {
+      expect(screen.getByTestId('copy-state-ath_a').textContent).toBe('Copiado')
+    })
+    expect(writeText).toHaveBeenCalledWith('Hola Ana,\nborrador')
+  })
+
+  it('sin portapapeles disponible lo dice en vez de fingir que copió', async () => {
+    Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true })
+    renderPanel()
+
+    await userEvent.click(screen.getByTestId('draft-ath_a'))
+    await vi.waitFor(() => { screen.getByTestId('copy-ath_a') })
+    await userEvent.click(screen.getByTestId('copy-ath_a'))
+
+    await vi.waitFor(() => {
+      expect(screen.getByTestId('copy-state-ath_a').textContent).toMatch(/no pudimos copiar/i)
+    })
+  })
+
+  it('el borrador es editable y se copia lo editado, no lo generado', async () => {
+    const writeText = vi.fn(async () => {})
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    renderPanel()
+
+    await userEvent.click(screen.getByTestId('draft-ath_a'))
+    await vi.waitFor(() => { screen.getByTestId('draft-body-ath_a') })
+
+    const textarea = screen.getByTestId('draft-body-ath_a') as HTMLTextAreaElement
+    await userEvent.clear(textarea)
+    await userEvent.type(textarea, 'Hola Ana, lo edité yo.')
+    await userEvent.click(screen.getByTestId('copy-ath_a'))
+
+    expect(textarea.value).toBe('Hola Ana, lo edité yo.')
+    expect(writeText).toHaveBeenCalledWith('Hola Ana, lo edité yo.')
+  })
+
+  it('a igual tipo de señal ordena por magnitud antes que por nombre', () => {
+    renderPanel({
+      triage: {
+        ...TRIAGE,
+        athletes: [
+          { athleteId: 'ath_leve', insufficientData: false, signals: [{ kind: 'pain', days: 2 }] },
+          { athleteId: 'ath_grave', insufficientData: false, signals: [{ kind: 'pain', days: 6 }] },
+        ],
+      },
+      athleteNames: { ath_leve: 'Ana', ath_grave: 'Zoe' },
+    })
+
+    // Alfabéticamente Ana iría primero; seis días de dolor pesan más.
+    const rendered = screen.getByTestId('group-con-senales').textContent ?? ''
+    expect(rendered.indexOf('Zoe')).toBeLessThan(rendered.indexOf('Ana'))
+  })
+
+  it('un tipo más grave gana aunque su magnitud sea menor', () => {
+    renderPanel({
+      triage: {
+        ...TRIAGE,
+        athletes: [
+          {
+            athleteId: 'ath_muchas',
+            insufficientData: false,
+            signals: [{ kind: 'overdue-sessions', count: 12, oldestDaysAgo: 14 }],
+          },
+          { athleteId: 'ath_dolor', insufficientData: false, signals: [{ kind: 'pain', days: 1 }] },
+        ],
+      },
+      athleteNames: { ath_muchas: 'Ana', ath_dolor: 'Zoe' },
+    })
+
+    // La magnitud sólo desempata dentro del mismo tipo: el dolor sigue primero.
+    const rendered = screen.getByTestId('group-con-senales').textContent ?? ''
+    expect(rendered.indexOf('Zoe')).toBeLessThan(rendered.indexOf('Ana'))
+  })
+
   it('muestra el borrador para revisar y copiar sin acción de envío', async () => {
     renderPanel()
 
@@ -163,6 +256,19 @@ describe('CoachAssistantPanel', () => {
       expect(screen.getByTestId('group-con-senales').textContent).toContain('Ana')
     },
   )
+
+  it('un fallo transitorio muestra el motivo pero deja reintentar', async () => {
+    // Contrapartida del test de arriba: `unavailable` y `timeout` son fallos
+    // que reintentar SÍ puede resolver, así que informan sin deshabilitar.
+    renderPanel({ onDraft: draftFailure('unavailable') })
+
+    await userEvent.click(screen.getByTestId('draft-ath_a'))
+
+    await vi.waitFor(() => {
+      expect(screen.getByTestId('draft-error-ath_a').textContent?.trim()).not.toBe('')
+    })
+    expect((screen.getByTestId('draft-ath_a') as HTMLButtonElement).disabled).toBe(false)
+  })
 
   it('un bloqueo de clase deshabilita la redacción para todos los atletas', async () => {
     const triage: RosterTriage = {
@@ -192,7 +298,7 @@ describe('CoachAssistantPanel', () => {
     expect(screen.getByTestId('draft-global-error').textContent?.trim()).not.toBe('')
   })
 
-  it.each(['timeout', 'network', 'rate-limit', 'unavailable', 'invalid-response', 'too-long'] as const)(
+  it.each(['timeout', 'network', 'rate-limit', 'invalid-response', 'too-long'] as const)(
     '%s muestra el motivo, preserva el triaje y deja reintentar',
     async (reason) => {
       const onDraft = draftFailure(reason)
@@ -301,6 +407,18 @@ describe('CoachAssistantPanel', () => {
     renderPanel({ devToolsEnabled: true })
     expect(screen.getByTestId('triage-metrics').textContent).toContain('42 ms')
     expect(screen.getByTestId('triage-metrics').textContent).toContain('4 atletas')
+  })
+
+  it('un fallo transitorio del gate no deshabilita el asistente de forma permanente', () => {
+    // `unavailable` cubre cualquier error no reintentable, incluido el 503 de
+    // infraestructura del gate de uso. Bloquear la superficie entera por un
+    // hipo de PostgREST es peor que el problema que se quiso resolver: el
+    // bloqueo se reserva a rechazos que reintentar NO puede cambiar.
+    expect(isBlockingFailure('quota')).toBe(true)
+    expect(isBlockingFailure('kill-switch')).toBe(true)
+    expect(isBlockingFailure('entitlement')).toBe(true)
+    expect(isBlockingFailure('unavailable')).toBe(false)
+    expect(isBlockingFailure('timeout')).toBe(false)
   })
 })
 

@@ -20,6 +20,8 @@ import type { WeekCreatorEffectiveConfig } from './WeekCreatorConfig'
 import { alignSessionsToScheduleConstraints, buildScheduleAwareConfig } from './scheduleConstraints'
 import type { WeekCreatorSkeleton, WeekCreatorSkeletonSession } from './weekCreatorSkeleton'
 import { resolveWeekCreatorEventContext } from './WeekCreatorEventContext'
+import type { StrengthConstraint } from '../../types/strengthSafety'
+import { resolveStrengthSafetyConstraints } from '../training/strengthSafetyConstraints'
 
 export type WeekCreatorHydrationStatus =
   | 'hydrated'
@@ -383,14 +385,30 @@ function normalizeFocusKey(value: string): string {
 export function hasActiveMedicalRestrictions(
   context: ChatContext,
   config: WeekCreatorEffectiveConfig,
+  userMessage = '',
 ): boolean {
-  const recovery = context.athleteProfile?.recoveryProfile
-  return Boolean(
-    config.injuryNotes?.trim()
-    || recovery?.currentInjuries?.trim()
-    || recovery?.restrictions?.trim()
-    || config.trainingPriority === 'return_to_play',
-  )
+  return resolveWeekCreatorSafetyConstraints(context, config, userMessage).length > 0
+}
+
+/**
+ * Resolve only from the original persisted fields and the request that caused
+ * this generation. `config.injuryNotes` is intentionally not read: in the
+ * Week Creator it can be a transport field for recovery restrictions.
+ */
+export function resolveWeekCreatorSafetyConstraints(
+  context: ChatContext,
+  config: WeekCreatorEffectiveConfig,
+  userMessage = '',
+): readonly StrengthConstraint[] {
+  const profile = context.athleteProfile
+  const recovery = profile?.recoveryProfile
+  return resolveStrengthSafetyConstraints({
+    currentInjuries: recovery?.currentInjuries,
+    restrictions: recovery?.restrictions,
+    injuryNotes: profile?.planWizardConfig?.injuryNotes,
+    userMessages: userMessage.trim() ? [userMessage] : [],
+    trainingPriority: config.trainingPriority,
+  })
 }
 
 interface BuildRepairContextInput {
@@ -448,7 +466,13 @@ export function buildWeekCreatorHydrationRepairContext(
     complementarySports: input.config.allowedSports.filter((sport) => sport !== primarySport),
     currentFitnessLevel: input.config.currentFitnessLevel,
     currentFatigue: input.config.currentFatigue,
-    injuryNotes: input.config.injuryNotes,
+    // Fuente persistida, NO el campo transportador: en Week Creator
+    // `config.injuryNotes` puede llevar `recoveryProfile.restrictions`, que
+    // `resolveWeekCreatorSafetyConstraints` excluye a propósito. Pasarlo acá lo
+    // reclasificaba bajo la fuente médica `injury_notes`, de modo que el mismo
+    // texto resolvía sin restricción arriba y como restricción sin resolver en
+    // la reparación, produciendo safe declines sin reintento ni fallback.
+    injuryNotes: profile.planWizardConfig?.injuryNotes,
     createdAt: new Date(now).toISOString(),
     updatedAt: new Date(now).toISOString(),
   }

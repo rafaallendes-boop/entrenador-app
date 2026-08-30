@@ -1,5 +1,7 @@
 import type { AthleteProfile, PlanWizardConfig, SupportedSport } from '../../types'
 import type { EquipmentType, Exercise1RMReference } from '../training/exerciseLibrary'
+import { resolveStrengthSafetyConstraints } from '../training/strengthSafetyConstraints'
+import type { StrengthConstraint } from '../../types/strengthSafety'
 
 export interface AthleteParameters {
   available1RM: Exercise1RMReference[]
@@ -11,6 +13,8 @@ export interface AthleteParameters {
   fitnessLevel: PlanWizardConfig['currentFitnessLevel']
   fatigueLevel: PlanWizardConfig['currentFatigue']
   ageYears: number | undefined
+  /** Canonical constraints shared by every strength selector/finalizer in this plan. */
+  safetyConstraints: readonly StrengthConstraint[]
 }
 
 export function buildAthleteParameters(
@@ -38,6 +42,13 @@ export function buildAthleteParameters(
     fitnessLevel: wizardConfig.currentFitnessLevel,
     fatigueLevel: wizardConfig.currentFatigue,
     ageYears,
+    safetyConstraints: resolveStrengthSafetyConstraints({
+      currentInjuries: profile.recoveryProfile?.currentInjuries,
+      restrictions: profile.recoveryProfile?.restrictions,
+      injuryNotes: wizardConfig.injuryNotes,
+      userMessages: [],
+      trainingPriority: profile.sportContext?.trainingPriority,
+    }),
   }
 }
 

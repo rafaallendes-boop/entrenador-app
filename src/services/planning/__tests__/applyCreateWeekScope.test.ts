@@ -111,4 +111,38 @@ describe('applyCreateWeek no borra planned sessions de otro atleta', () => {
     expect(result.warnings).toContain('Se mantuvieron sesiones manuales o con historial en: 2026-07-06 AM')
     expect(await db.sessions.get('manual-slot')).toBeDefined()
   })
+
+  it('prevalida seguridad antes de borrar la semana previa', async () => {
+    setSelfAthleteId('ath_self')
+    setActiveAthleteId(null)
+    await db.sessions.put({
+      id: 'existing-planned',
+      athleteId: 'ath_self',
+      date: '2026-07-06',
+      weekStartDate: '2026-07-06',
+      timeBlock: 'PM',
+      type: 'strength',
+      status: 'planned',
+      title: 'Fuerza previa',
+      durationMin: 60,
+      createdAt: 1,
+      updatedAt: 1,
+    })
+
+    await expect(applyCreateWeek({
+      sessions: [{
+        date: '2026-07-06', sessionType: 'strength', title: 'Fuerza nueva',
+        timeBlock: 'AM', durationMin: 60,
+      }],
+      athleteProfile: {
+        id: 'athlete', updatedAt: 1,
+        recoveryProfile: { currentInjuries: 'me operaron hace dos semanas' },
+      },
+      store: storeAdapter,
+    })).rejects.toThrow('No pude verificar una sesión de fuerza')
+
+    expect(await db.sessions.get('existing-planned')).toBeDefined()
+    expect(storeAdapter.addSession).not.toHaveBeenCalled()
+    expect(syncService.deleteSession).not.toHaveBeenCalledWith('existing-planned')
+  })
 })

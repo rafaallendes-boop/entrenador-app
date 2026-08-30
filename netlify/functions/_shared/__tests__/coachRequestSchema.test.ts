@@ -14,6 +14,14 @@ function readMigration(): string {
   )
 }
 
+function readSafetyMigration(): string {
+  const here = dirname(fileURLToPath(import.meta.url))
+  return readFileSync(
+    join(here, '..', '..', '..', '..', 'supabase', '025_coach_request_safety_blocked.sql'),
+    'utf8',
+  )
+}
+
 const TELEMETRY: CoachRequestTelemetry = {
   traceId: 't',
   userId: '11111111-1111-4111-8111-111111111111',
@@ -65,9 +73,13 @@ describe('coach_requests schema drift guard', () => {
     expect(sql).not.toMatch(/for delete/i)
   })
 
-  it('restringe outcome a los 2 valores vigentes', () => {
+  it('mantiene rows ok/error y agrega safety_blocked mediante la migración posterior', () => {
     const sql = readMigration()
     expect(sql).toMatch(/outcome text not null check \(outcome in \('ok', 'error'\)\)/)
+    const safety = readSafetyMigration()
+    expect(safety).toMatch(/check \(outcome in \('ok', 'error', 'safety_blocked'\)\)/)
+    expect(safety).toContain('create or replace function public.read_operations_metrics')
+    expect(safety).toContain("'safetyBlocked', count(*) filter (where outcome = 'safety_blocked')")
   })
 
   it('user_id es not null con FK a auth.users y cascade', () => {

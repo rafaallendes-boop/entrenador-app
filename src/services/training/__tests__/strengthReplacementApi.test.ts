@@ -22,6 +22,7 @@ function context(overrides: Partial<StrengthContext> = {}): StrengthContext {
     sessionDurationMin: 60,
     available1RM: ['squat', 'deadlift', 'benchPress', 'overheadPress'],
     weekIndexInBlock: 0,
+    safetyConstraints: [],
     ...overrides,
   }
 }

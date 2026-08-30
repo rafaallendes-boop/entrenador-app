@@ -27,6 +27,7 @@ import {
   deriveStrengthSportProfile,
   mapMacroPhaseToStrengthPhase,
 } from './training/strengthContext'
+import { resolveProfileStrengthSafetyConstraints } from './training/strengthSafetySurface'
 import {
   calculateSquashAcwr,
   calculateStrengthAcwr,
@@ -380,6 +381,7 @@ function buildStrengthContext(
     daysToCompetition: upcomingCompetition ? diffDays(todayISO(), upcomingCompetition.date) : undefined,
     historicalSessions: completedSessions,
     strengthAcwr,
+    safetyConstraints: resolveProfileStrengthSafetyConstraints(profile),
   }
 }
 

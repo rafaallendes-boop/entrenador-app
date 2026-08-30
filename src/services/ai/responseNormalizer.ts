@@ -63,7 +63,7 @@ export function normalizeSessionProposalDraft(
   if (!value || typeof value !== 'object') return { droppedReason: 'not-object' }
 
   const dateField = options.dateField ?? 'date'
-  const record = value as Record<string, unknown>
+  const record = stripProviderStrengthSafetyFields(value as Record<string, unknown>)
   const rawDate = record[dateField]
   if (!isValidDate(rawDate)) {
     return { droppedReason: typeof rawDate === 'string' ? `invalid-${dateField}` : `missing-${dateField}` }
@@ -129,7 +129,7 @@ export function normalizeSessionProposalDraft(
       .map(validateExerciseProposal)
       .filter((item): item is CoachExerciseProposal => item != null)
     session.exercises = sessionType === 'strength'
-      ? normalizeStrengthSessionExercises(exercises, { durationMin })
+      ? normalizeStrengthSessionExercises(exercises, { durationMin, safetyConstraints: [] })
       : exercises
   }
   if (isGeneratedProtocol(record.warmup)) session.warmup = record.warmup
@@ -493,7 +493,7 @@ function validateAction(obj: unknown): {
   createWeekDiagnostic?: CreateWeekNormalizationDiagnostic
 } {
   if (!obj || typeof obj !== 'object') return { action: null }
-  const record = obj as Record<string, unknown>
+  const record = stripProviderStrengthSafetyFields(obj as Record<string, unknown>)
 
   // Resolve type discriminator from "type" (canonical) or "action" (fallback for model drift)
   const type = typeof record.type === 'string' && VALID_ACTION_TYPES.has(record.type as CoachActionType)
@@ -627,7 +627,7 @@ function validateAction(obj: unknown): {
           .map(validateExerciseProposal)
           .filter((item): item is CoachExerciseProposal => item != null)
         action.exercises = action.newType === 'strength'
-          ? normalizeStrengthSessionExercises(exercises, { durationMin: action.newDurationMin })
+          ? normalizeStrengthSessionExercises(exercises, { durationMin: action.newDurationMin, safetyConstraints: [] })
           : exercises
       }
       if (isGeneratedProtocol(record.warmup)) action.warmup = record.warmup
@@ -640,6 +640,17 @@ function validateAction(obj: unknown): {
       return { action: hasAnyUpdateField(action) ? action : null }
     }
   }
+}
+
+/** Provider output never carries a local authorization seal or a concurrency token. */
+function stripProviderStrengthSafetyFields(record: Record<string, unknown>): Record<string, unknown> {
+  const sanitized = { ...record }
+  delete sanitized.strengthSafetyFinalization
+  delete sanitized.baseUpdatedAt
+  // Metadata no está en el allowlist del provider. Eliminar el contenedor
+  // completo también descarta cualquier sello anidado si el modelo lo inventa.
+  delete sanitized.metadata
+  return sanitized
 }
 
 function sessionProposalToActionFields(session: CoachSessionProposal): Partial<CoachAction> {

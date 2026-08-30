@@ -89,6 +89,65 @@ describe('chatRouting', () => {
     expect(route.kind).toBe('chat_action')
   })
 
+  it('routes single-session creation to chat_action when the week is only a temporal qualifier', () => {
+    // Regresión observada en producción: "para la próxima semana" es un
+    // calificador temporal, no un pedido de generar la semana completa. Antes
+    // de este fix estas tres frases llegaban a week_creator y devolvían una
+    // semana entera de entrenamientos.
+    expect(resolveChatRoute('Creame una sesión de pesas para la próxima semana').kind).toBe('chat_action')
+    expect(resolveChatRoute('Hazme un entrenamiento de fuerza para la próxima semana').kind).toBe('chat_action')
+    expect(resolveChatRoute('Agrégame una sesión de running para esta semana').kind).toBe('chat_action')
+  })
+
+  it('routes session creation without any day or week reference to chat_action', () => {
+    // Sin día explícito estas caían a chat_general y sólo producían prosa,
+    // aunque el pedido de crear una sesión es inequívoco.
+    expect(resolveChatRoute('Creame una sesión de pesas').kind).toBe('chat_action')
+    expect(resolveChatRoute('Armame un entrenamiento de squash').kind).toBe('chat_action')
+  })
+
+  it('routes soft-verb single-session requests when the object is indefinite', () => {
+    // "quiero"/"necesito"/"dame" son ambiguos: piden tanto crear como saber.
+    // Un objeto INDEFINIDO ("una sesión de pesas") sólo tiene lectura de
+    // creación; uno definido o posesivo ("mi sesión", "feedback") no.
+    expect(resolveChatRoute('quiero una sesión de fuerza para la próxima semana').kind).toBe('chat_action')
+    expect(resolveChatRoute('necesito una sesión de pesas').kind).toBe('chat_action')
+    expect(resolveChatRoute('dame un entrenamiento de squash').kind).toBe('chat_action')
+  })
+
+  it('no confunde pedir información con pedir una sesión', () => {
+    expect(resolveChatRoute('quiero saber cómo va mi entrenamiento').kind).toBe('chat_general')
+    expect(resolveChatRoute('dame feedback de mi sesión de ayer').kind).toBe('chat_general')
+    expect(resolveChatRoute('necesito entender mi carga de la semana').kind).toBe('chat_general')
+  })
+
+  it('keeps genuine whole-week requests in the week creator', () => {
+    // La otra dirección del riesgo: el fix no puede robarle peticiones
+    // legítimas de semana al motor especializado.
+    expect(resolveChatRoute('Creame una semana de entrenamiento').kind).toBe('week_creator')
+    expect(resolveChatRoute('Créame una semana de entrenamiento para la próxima semana').kind).toBe('week_creator')
+    expect(resolveChatRoute('Armame la próxima semana').kind).toBe('week_creator')
+    expect(resolveChatRoute('Armame el microciclo de la próxima semana').kind).toBe('week_creator')
+    expect(resolveChatRoute('Genérame una propuesta de semana').kind).toBe('week_creator')
+  })
+
+  it('leaves plural / multi-session week requests with the week creator', () => {
+    // Mi rama de sesión única miraba verbo y objeto pero no el NÚMERO, así que
+    // "las sesiones de la próxima semana" caía al motor de una sola acción y
+    // el usuario recibía una sesión en vez de una semana.
+    expect(resolveChatRoute('programa mis sesiones de fuerza para la próxima semana').kind).toBe('week_creator')
+    expect(resolveChatRoute('créame las sesiones de fuerza y squash de la próxima semana').kind).toBe('week_creator')
+    expect(resolveChatRoute('armame los entrenamientos de fuerza de la semana que viene').kind).toBe('week_creator')
+  })
+
+  it('does not turn questions about past sessions into action requests', () => {
+    // "dame"/"entrégame" quedan fuera del predicado de creación a propósito:
+    // sirven igual para pedir información, y sin día explícito no se puede
+    // distinguir crear de preguntar.
+    expect(resolveChatRoute('dame feedback de mi sesión de ayer').kind).toBe('chat_general')
+    expect(resolveChatRoute('cómo estuvo mi entrenamiento').kind).toBe('chat_general')
+  })
+
   it('redirects explicit multi-week planning requests to Plan Builder', () => {
     expect(resolveChatRoute('Hazme el plan hasta el evento').kind).toBe('plan_builder_redirect')
     expect(resolveChatRoute('Quiero todas las semanas hasta el torneo').kind).toBe('plan_builder_redirect')

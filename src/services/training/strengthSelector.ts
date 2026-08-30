@@ -1,5 +1,6 @@
 import type { ExerciseGroup, Session } from '../../types'
 import type { ExerciseLibraryRef } from '../../types/exerciseLibraryRef'
+import type { StrengthConstraint } from '../../types/strengthSafety'
 import {
   findStrengthExerciseByName,
   getExerciseGroupForDefinition,
@@ -18,6 +19,7 @@ import {
 import { getStrengthExerciseKey } from './strengthExerciseProposal'
 import { selectStrengthBlockTemplate, type StrengthBlockSlot } from './strengthBlocks'
 import type { DisciplineAcwr } from '../loadAnalytics'
+import { isExerciseAllowed } from './strengthSafetyConstraints'
 
 export type StrengthPhase = 'base' | 'build' | 'peak' | 'taper' | 'transition' | 'race'
 export type StrengthSportProfile = 'strength_primary' | 'hybrid' | 'sport_support'
@@ -41,6 +43,8 @@ export interface StrengthContext {
   available1RM?: Exercise1RMReference[]
   rpeAdjustment?: number
   requireExtraRecovery?: boolean
+  /** Hard constraints: every caller must consciously supply an empty set or resolved restrictions. */
+  safetyConstraints: readonly StrengthConstraint[]
 }
 
 export interface StrengthExerciseDensity {
@@ -566,13 +570,22 @@ function buildStrengthCandidatePool(
   return filterByFatigue(
     filterByPhase(
       filterBySafetyMetadata(
-        filterByExperience(exercises, context),
+        filterByExperience(filterBySafetyConstraints(exercises, context), context),
         context,
       ),
       context,
     ),
     context,
   )
+}
+
+function filterBySafetyConstraints(
+  exercises: ExerciseDefinition[],
+  context: StrengthContext,
+): ExerciseDefinition[] {
+  return context.safetyConstraints.length === 0
+    ? exercises
+    : exercises.filter((exercise) => isExerciseAllowed(exercise, context.safetyConstraints))
 }
 
 function filterBySafetyMetadata(
@@ -1553,6 +1566,7 @@ export function runStrengthSelectorSmokeChecks(): string[] {
     availableEquipment: ['barbell', 'dumbbell', 'cable', 'bodyweight'],
     sessionDurationMin: 70,
     competitionSoon: false,
+    safetyConstraints: [],
   })
   outputs.push(`strength_primary=${strengthPrimary.exercises.map((exercise) => `${exercise.name} ${exercise.sets}x${exercise.reps}`).join(' | ')}`)
 
@@ -1567,6 +1581,7 @@ export function runStrengthSelectorSmokeChecks(): string[] {
     availableEquipment: ['barbell', 'dumbbell', 'medball', 'bodyweight'],
     sessionDurationMin: 55,
     competitionSoon: false,
+    safetyConstraints: [],
   })
   outputs.push(`hybrid=${hybrid.exercises.map((exercise) => `${exercise.name} ${exercise.sets}x${exercise.reps}`).join(' | ')}`)
 
@@ -1582,6 +1597,7 @@ export function runStrengthSelectorSmokeChecks(): string[] {
     sessionDurationMin: 40,
     competitionSoon: true,
     daysToCompetition: 2,
+    safetyConstraints: [],
   })
   outputs.push(`sport_support=${support.exercises.map((exercise) => `${exercise.name} ${exercise.sets}x${exercise.reps}`).join(' | ')}`)
 
@@ -1596,6 +1612,7 @@ export function runStrengthSelectorSmokeChecks(): string[] {
     availableEquipment: ['bands', 'bodyweight', 'dumbbell'],
     sessionDurationMin: 35,
     competitionSoon: false,
+    safetyConstraints: [],
   })
   outputs.push(`fatigue_high=${fatigueHigh.exercises.map((exercise) => `${exercise.name} ${exercise.intensity}`).join(' | ')}`)
 
@@ -1609,6 +1626,7 @@ export function runStrengthSelectorSmokeChecks(): string[] {
     availableEquipment: ['barbell', 'dumbbell', 'bodyweight', 'cable'],
     sessionDurationMin: 65,
     competitionSoon: false,
+    safetyConstraints: [],
   })
   const buildB = selectStrengthSession({
     phase: 'build',
@@ -1620,6 +1638,7 @@ export function runStrengthSelectorSmokeChecks(): string[] {
     availableEquipment: ['barbell', 'dumbbell', 'bodyweight', 'cable'],
     sessionDurationMin: 65,
     competitionSoon: false,
+    safetyConstraints: [],
   })
   outputs.push(`variation=${buildA.exercises.map((exercise) => exercise.name).join(' / ')} <> ${buildB.exercises.map((exercise) => exercise.name).join(' / ')}`)
   outputs.push(`progression_signal=${summarizeStrengthProgression({
@@ -1633,6 +1652,7 @@ export function runStrengthSelectorSmokeChecks(): string[] {
     sessionDurationMin: 65,
     competitionSoon: false,
     historicalSessions: [],
+    safetyConstraints: [],
   })}`)
 
   return outputs

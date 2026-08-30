@@ -37,7 +37,7 @@ describe('core inyectado', () => {
     const result = normalizeStrengthSessionExercises<CoachExerciseProposal>([
       { name: 'Peso muerto con trap bar', sets: 4, reps: 6 },
       { name: 'Press sobre cabeza', sets: 4, reps: 6 },
-    ], { durationMin: 50 })!
+    ], { durationMin: 50, safetyConstraints: [] })!
 
     const expected = idFor('dead_bug')
     expect(result[0]).toMatchObject({
@@ -52,7 +52,7 @@ describe('expansión de escaleras genéricas', () => {
   it('las tres filas de footwork usan sus ids y nombres canónicos', () => {
     const result = normalizeStrengthSessionExercises<CoachExerciseProposal>([
       { name: 'Footwork escalera (cardio específico)', sets: 1, reps: '4 min', notes: 'Agilidad y coordinación' },
-    ], { durationMin: 50 })!
+    ], { durationMin: 50, safetyConstraints: [] })!
 
     const footwork = result.filter((exercise) => exercise.group === 'cardio')
     expect(footwork).toHaveLength(3)
@@ -158,8 +158,9 @@ describe('fallback local del Week Creator', () => {
     expect(coveredIds.has('air_treadmill_20_20')).toBe(true)
 
     // Firma de prescripción sin `name`/`libraryRef`: guard de regresión de la
-    // migración de productor a identidad por id. Si esto cambia, la migración
-    // alteró sets/reps/carga en vez de solo la fuente del nombre.
+    // identidad y de la densidad final. El finalizador de seguridad puede
+    // completar el target sólo con ids canónicos; cualquier cambio se revisa
+    // manualmente y nunca se acepta con una actualización masiva de snapshots.
     const signature = strengthSessions.map((session, variantIndex) => ({
       variantIndex,
       exercises: session.exercises!.map((exercise) => ({

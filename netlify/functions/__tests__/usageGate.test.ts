@@ -165,6 +165,52 @@ describe('assertUsageGate', () => {
       .rejects.toMatchObject({ statusCode: 503, errorCode: 'server_error' })
   })
 
+  it('conserva y registra el body truncado de PostgREST sólo como diagnóstico', async () => {
+    const upstreamBody = JSON.stringify({
+      code: '42702',
+      message: 'column reference "usage_date" is ambiguous',
+      details: null,
+      hint: null,
+    })
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.includes('/rpc/read_ai_usage_spend')) {
+        return jsonResponse([{ account_cost_usd: 0, global_cost_usd: 0 }])
+      }
+      if (url.includes('/rpc/increment_ai_usage_if_under_limit')) {
+        return new Response(`${upstreamBody}${'x'.repeat(2_100)}`, { status: 400 })
+      }
+      throw new Error(`fetch inesperado: ${url}`)
+    })
+    global.fetch = fetchMock as unknown as typeof fetch
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+
+    let thrown: unknown
+    try {
+      await assertUsageGate({ userId: 'u1', requestClass: 'chat_general', tier: 'weekly' })
+    } catch (error) {
+      thrown = error
+    }
+
+    expect(thrown).toMatchObject({
+      statusCode: 503,
+      errorCode: 'server_error',
+      diagnostics: {
+        upstreamStatus: 400,
+        upstreamBody: expect.stringContaining('42702'),
+      },
+    })
+    expect((thrown as { message: string }).message).not.toContain('42702')
+    expect((thrown as { diagnostics: { upstreamBody: string } }).diagnostics.upstreamBody)
+      .toHaveLength(2_000)
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[usage-gate] RPC failed',
+      expect.objectContaining({
+        functionName: 'increment_ai_usage_if_under_limit',
+        diagnostics: expect.objectContaining({ upstreamStatus: 400 }),
+      }),
+    )
+  })
+
   it('el incremento con más de una fila devuelta falla cerrado (cardinalidad estricta)', async () => {
     const fetchMock = vi.fn(async (url: string) => {
       if (url.includes('/rpc/read_ai_usage_spend')) return jsonResponse([{ account_cost_usd: 0, global_cost_usd: 0 }])

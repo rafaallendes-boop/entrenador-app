@@ -14,6 +14,7 @@ import type {
   SupportedSport,
   TimeBlock,
 } from '../../types'
+import type { StrengthConstraint } from '../../types/strengthSafety'
 import type { TrainingPlanWeek } from '../../types/planBuilder'
 import type { AIProvider, AIRawResponse, CoachNormalizedResponse } from '../ai/types'
 import { buildAIGenerationId, buildAITraceId, getAIRequestPolicy, resolveWeekCreatorMaxTokens } from '../ai/requestPolicy'
@@ -22,6 +23,7 @@ import { normalizeResponse } from '../ai/responseNormalizer'
 import { getProviderForRequestClass } from '../ai/providerResolver'
 import { useAIDebugStore } from '../../store/useAIDebugStore'
 import { createStageTracker, type CoachOutcome } from '../ai/stageLogger'
+import { persistSafetyBlockedOutcome } from '../ai/safetyOutcomeTelemetry'
 import { buildWeekCreatorPrompt, summarizeWeekCreatorAction } from './WeekCreatorPromptBuilder'
 import { validateWeekCreatorResponse } from './validateWeekCreatorResponse'
 import { resolveWeekCreatorConfig, type WeekCreatorEffectiveConfig, withRequestedSessionsPerWeek } from './WeekCreatorConfig'
@@ -30,7 +32,10 @@ import { repairGeneratedWeek, type RepairFailure, type RepairMeta } from '../pla
 import { recordRepairAction, summarizeTaxonomy } from '../planBuilder/repairTaxonomy'
 import { isLocalFallbackEligible } from '../planBuilder/fallbackEligibility'
 import { WEEK_CREATOR_RESPONSE_SCHEMA } from './weekCreatorResponseSchema'
-import { enhanceStrengthSessionExercises } from '../training/strengthSessionStructure'
+import { prepareStrengthSession, type BlockedReason } from '../training/strengthSafetyFinalizer'
+import type { StrengthContext, StrengthPhase, StrengthSportProfile } from '../training/strengthSelector'
+import { shouldApplySupersetPolicy } from '../training/supersetPolicy'
+import { hasUnrecognizedRestrictionText, resolveStrengthSafetyConstraints } from '../training/strengthSafetyConstraints'
 import { getStrengthExerciseIdentityById } from '../training/exerciseLibrary'
 import { todayISO } from '../../utils/date'
 import { applyWeekCreatorDateWindowToConfig, resolveWeekCreatorDateWindow } from './WeekCreatorDateWindow'
@@ -57,6 +62,7 @@ import type { WeekCreatorSkeleton } from './weekCreatorSkeleton'
 import { resolveWeekCreatorContractStrategy } from './weekCreatorContractStrategy'
 import {
   hasActiveMedicalRestrictions,
+  resolveWeekCreatorSafetyConstraints,
   buildWeekCreatorHydrationRepairContext,
   hydrateWeekCreatorResponse,
   hydrateWeekCreatorSkeleton,
@@ -69,6 +75,25 @@ import {
 
 const WEEK_CREATOR_RESPONSE_SCHEMA_CHAR_COUNT = JSON.stringify(WEEK_CREATOR_RESPONSE_SCHEMA).length
 const WEEK_CREATOR_SKELETON_SCHEMA_CHAR_COUNT = JSON.stringify(WEEK_CREATOR_SKELETON_RESPONSE_SCHEMA).length
+const WEEK_CREATOR_SAFETY_DECLINE_COPY = 'No pude verificar una sesión de fuerza compatible con la restricción registrada.'
+
+export class WeekCreatorSafeDecline extends Error {
+  readonly isSafeDecline = true
+  readonly reason: BlockedReason
+
+  constructor(reason: BlockedReason) {
+    super(WEEK_CREATOR_SAFETY_DECLINE_COPY)
+    this.name = 'WeekCreatorSafeDecline'
+    this.reason = reason
+  }
+}
+
+interface WeekCreatorStrengthSafetyContext {
+  constraints: readonly StrengthConstraint[]
+  userMessageConstraints: readonly StrengthConstraint[]
+  userMessage: string
+  profile?: AthleteProfile
+}
 
 /**
  * Objetivos de la semana objetivo cuando existe un plan activo que la cubre.
@@ -202,11 +227,28 @@ export const WeekCreatorEngine = {
     const provider = options.provider ?? getProviderForRequestClass('week_creator')
     const policy = getAIRequestPolicy('week_creator')
     const surface = options.surface ?? 'chat'
-    const cohort = buildWeekCreatorCohort(context, config, options.targetWeekStart, dateWindow.planningStartDate)
+    const safety = buildWeekCreatorStrengthSafetyContext(context, config, userMessage)
+    const cohort = buildWeekCreatorCohort(
+      context,
+      config,
+      options.targetWeekStart,
+      dateWindow.planningStartDate,
+      safety.constraints,
+    )
     // Free-text medical restrictions still use the detailed provider contract.
     // Local selectors cannot safely infer exercise adaptations from arbitrary diagnoses.
+    // Mirar sólo las restricciones YA PARSEADAS invertía el comentario de
+    // arriba: el texto que el parser NO entiende es justo el que no se puede
+    // delegar a los selectores locales. Se exige además que no quede texto de
+    // restricción sin reconocer; una declaración de ausencia ("Ninguna") no
+    // cuenta y conserva el contrato esqueleto, que es el barato.
     const useSkeletonContract = resolveWeekCreatorContractStrategy() === 'skeleton_v2'
-      && !hasActiveMedicalRestrictions(context, config)
+      && safety.constraints.length === 0
+      && !hasUnrecognizedRestrictionText({
+        currentInjuries: context.athleteProfile?.recoveryProfile?.currentInjuries,
+        restrictions: context.athleteProfile?.recoveryProfile?.restrictions,
+        injuryNotes: context.athleteProfile?.planWizardConfig?.injuryNotes,
+      })
     const weekCreatorContract = useSkeletonContract ? 'skeleton_v2' as const : 'detailed' as const
     // The detailed (medical) contract carries full per-sport detail and was
     // observed truncating at the skeleton-sized 2500 cap; give it headroom.
@@ -331,6 +373,9 @@ export const WeekCreatorEngine = {
           })
           providerStage.end({ ok: true })
         } catch (error) {
+          // This stage normally only wraps the provider call, but preserve a
+          // safety terminal signal should a provider adapter ever surface one.
+          if (error instanceof WeekCreatorSafeDecline) throw error
           providerStage.end({ ok: false, error: error instanceof Error ? error.message : String(error) })
           throw error
         }
@@ -384,6 +429,7 @@ export const WeekCreatorEngine = {
               config,
               options.targetWeekStart,
               dateWindow.planningStartDate,
+              safety,
             )
         const repaired = mergeWeekCreatorHydration(locallyCompleted, hydration)
         if (repaired.repairFailure) {
@@ -515,6 +561,29 @@ export const WeekCreatorEngine = {
             : repaired.meta,
         }
       } catch (error) {
+        if (error instanceof WeekCreatorSafeDecline) {
+          const completedAt = Date.now()
+          useAIDebugStore.getState().completeRequest(traceId, {
+            provider: raw?.provider ?? provider.name,
+            outcome: 'safety_blocked',
+            proposalCreated: false,
+            generationOutcome: 'safe_decline',
+            generationCompletedAt: completedAt,
+            warnings: [`safety_blocked:${error.reason}`],
+            ...buildRawTelemetry(raw),
+            stageTimings: tracker.timings(),
+          })
+          tracker.flush('safety_blocked', { generationId, attempt, reason: error.reason })
+          void persistSafetyBlockedOutcome(traceId)
+          return buildWeekCreatorSafeDeclineResponse({
+            generationId,
+            traceId,
+            provider: raw?.provider ?? provider.name,
+            model: raw?.model,
+            durationMs: raw?.durationMs,
+            retryUsed: attempt > 1,
+          })
+        }
         outcome = 'error'
         // A user/watchdog abort must short-circuit: no retry and no deterministic
         // fallback week, otherwise we silently hand back a plan nobody asked for.
@@ -632,13 +701,43 @@ export const WeekCreatorEngine = {
         config,
         targetWeekStart: options.targetWeekStart,
         planningStartDate: dateWindow.planningStartDate,
-        profile: context.athleteProfile ?? undefined,
         provider: lastFailure?.provider,
         error: failureMessage,
         traceId: fallbackTraceId,
+        safety,
       })
       fallbackStage.end({ ok: true })
     } catch (error) {
+      if (error instanceof WeekCreatorSafeDecline) {
+        fallbackStage.end({ ok: false, error: error.reason })
+        const completedAt = Date.now()
+        useAIDebugStore.getState().completeRequest(fallbackTraceId, {
+          provider: lastFailure?.provider,
+          model: lastFailure?.model,
+          durationMs: completedAt - fallbackStartedAt,
+          retryUsed: providerAttempts > 1,
+          fallbackUsed: false,
+          outcome: 'safety_blocked',
+          proposalCreated: false,
+          generationOutcome: 'safe_decline',
+          generationCompletedAt: completedAt,
+          warnings: [`safety_blocked:${error.reason}`],
+          stageTimings: fallbackTracker.timings(),
+        })
+        fallbackTracker.flush('safety_blocked', { generationId, attempt: providerAttempts + 1, reason: error.reason })
+        // `fallbackTraceId` solo identifica la fila local de debug; no hubo una
+        // request proxy con ese id. Reclasificar la fila persistida del intento
+        // que llevó al fallback mantiene `/ops` observable.
+        void persistSafetyBlockedOutcome(failureTraceId)
+        return buildWeekCreatorSafeDeclineResponse({
+          generationId,
+          traceId: fallbackTraceId,
+          provider: lastFailure?.provider ?? provider.name,
+          model: lastFailure?.model,
+          durationMs: completedAt - fallbackStartedAt,
+          retryUsed: providerAttempts > 1,
+        })
+      }
       // Causa cruda para el operador (consola + telemetría), nunca para el
       // usuario: `formatError` en useChatStore reexpone `Error.message` tal
       // cual en el chat.
@@ -710,6 +809,7 @@ function buildWeekCreatorCohort(
   config: WeekCreatorEffectiveConfig,
   targetWeekStart: string,
   planningStartDate: string,
+  safetyConstraints?: readonly StrengthConstraint[],
 ): WeekCreatorCohort {
   const capacity = resolveScheduleCapacity(config)
   return {
@@ -718,7 +818,38 @@ function buildWeekCreatorCohort(
     allowedSportCount: config.allowedSports.length,
     doubleSessionAllowed: capacity.doubleSessionDays.length > 0,
     partialWeek: planningStartDate > targetWeekStart,
-    activeRestrictionsPresent: hasActiveMedicalRestrictions(context, config),
+    activeRestrictionsPresent: (safetyConstraints?.length ?? 0) > 0
+      || (safetyConstraints == null && hasActiveMedicalRestrictions(context, config)),
+  }
+}
+
+function buildWeekCreatorSafeDeclineResponse(input: {
+  generationId: string
+  traceId: string
+  provider: CoachNormalizedResponse['provider']
+  model?: string
+  durationMs?: number
+  retryUsed: boolean
+}): CoachNormalizedResponse {
+  return {
+    message: WEEK_CREATOR_SAFETY_DECLINE_COPY,
+    actions: [],
+    filteredCreateWeek: false,
+    provider: input.provider,
+    model: input.model,
+    timestamp: Date.now(),
+    durationMs: input.durationMs,
+    traceId: input.traceId,
+    generationId: input.generationId,
+    requestClass: 'week_creator',
+    retryUsed: input.retryUsed,
+    fallbackUsed: false,
+    meta: {
+      hadActionsMarkup: false,
+      actionParseFailed: false,
+      likelyTruncated: false,
+      outcome: 'safety_blocked',
+    },
   }
 }
 
@@ -925,6 +1056,7 @@ export function repairWeekCreatorResponse(
   config: WeekCreatorEffectiveConfig,
   targetWeekStart: string,
   planningStartDate = targetWeekStart,
+  safety?: WeekCreatorStrengthSafetyContext,
 ): RepairedWeekCreatorResponse {
   const actions = response.actions ?? []
   const createWeekActions = actions.filter((action) => action.type === 'create_week')
@@ -957,6 +1089,7 @@ export function repairWeekCreatorResponse(
   }
 
   const profile = buildRepairProfile(context)
+  const safetyContext = safety ?? buildWeekCreatorStrengthSafetyContext(context, config, '')
   const aligned = alignSessionsToScheduleConstraints(action.sessions, config.scheduleConstraints)
   const repairConfig = buildScheduleAwareConfig(config)
   const repairContext = buildWeekCreatorHydrationRepairContext({
@@ -966,6 +1099,13 @@ export function repairWeekCreatorResponse(
     planningStartDate,
   })
   const repairResult = repairGeneratedWeek(aligned.sessions, repairContext)
+  const safetyBlock = repairResult.meta.strengthSafetyBlocked?.[0]
+  if (safetyBlock) {
+    // Plan Builder conserva semanas parciales mediante tombstones. Week Creator
+    // tiene un contrato distinto: no propone una semana incompleta, por lo que
+    // el mismo bloqueo termina aquí sin reintentar provider ni usar fallback.
+    throw new WeekCreatorSafeDecline(safetyBlock.reason)
+  }
   if (repairResult.failure) {
     return {
       ...response,
@@ -986,7 +1126,7 @@ export function repairWeekCreatorResponse(
   }
   const shouldFinalize = shouldFinalizeWeekCreatorSessions(repairResult.sessions, config)
   const finalizedSessions = shouldFinalize
-    ? finalizeWeekCreatorSessions(repairResult.sessions, config, targetWeekStart, planningStartDate, profile)
+    ? finalizeWeekCreatorSessions(repairResult.sessions, config, targetWeekStart, planningStartDate, safetyContext)
     : repairResult.sessions
   const finalizedChanged = shouldFinalize && !areSessionListsEquivalent(repairResult.sessions, finalizedSessions)
   // Repair relocates by date without reading `scheduleConstraints`, so re-check
@@ -1002,6 +1142,12 @@ export function repairWeekCreatorResponse(
       message: `Se ajustaron ${realigned.adjustedCount} sesión(es) a los bloques AM/PM configurados.`,
     })
   }
+  const safetyFinalizedSessions = finalizeWeekCreatorStrengthSessions(
+    realigned.sessions,
+    config,
+    safetyContext,
+  )
+  const safetyFinalizedChanged = !areSessionListsEquivalent(realigned.sessions, safetyFinalizedSessions)
   repairResult.meta.warnings.push(...actionRepairWarnings)
   if (repairResult.meta.repairedSessionCount === 0
     && repairResult.meta.movedSessionCount === 0
@@ -1009,6 +1155,7 @@ export function repairWeekCreatorResponse(
     && repairResult.meta.droppedSessionCount === 0
     && repairResult.meta.filteredSportCount === 0
     && !finalizedChanged
+    && !safetyFinalizedChanged
     && actionRepairWarnings.length === 0
   ) {
     return { ...response, repairWarnings: [], repairMeta: repairResult.meta }
@@ -1017,12 +1164,15 @@ export function repairWeekCreatorResponse(
   const repairedAction: CoachAction = {
     ...action,
     targetDate: targetWeekStart,
-    sessions: realigned.sessions,
+    sessions: safetyFinalizedSessions,
   }
   const repairWarnings = [
     ...repairResult.meta.warnings.map((warning) => warning.message),
     ...(finalizedChanged
       ? ['Se ajustó la distribución final de la semana para respetar cantidad, días y deportes de soporte.']
+      : []),
+    ...(safetyFinalizedChanged
+      ? ['Se ajustaron ejercicios de fuerza según tus restricciones registradas.']
       : []),
   ]
 
@@ -1126,7 +1276,7 @@ function finalizeWeekCreatorSessions(
   config: WeekCreatorEffectiveConfig,
   targetWeekStart: string,
   planningStartDate = targetWeekStart,
-  profile?: AthleteProfile,
+  safety?: WeekCreatorStrengthSafetyContext,
 ): CoachSessionProposal[] {
   const expected = Math.max(1, config.sessionsPerWeek)
   const targetSports = buildFallbackSportSequence(config).slice(0, expected)
@@ -1148,7 +1298,9 @@ function finalizeWeekCreatorSessions(
 
     const session = existingIndex >= 0
       ? remaining.splice(existingIndex, 1)[0]
-      : buildFallbackSession(sport, slot.date, slot.timeBlock, config.sessionDurationMins, sportIndex, config, profile)
+      : buildFallbackSession(
+          sport, slot.date, slot.timeBlock, config.sessionDurationMins, sportIndex, config, safety,
+        )
 
     return {
       ...session,
@@ -1217,14 +1369,94 @@ function addDaysIso(date: string, days: number): string {
   return start.toISOString().slice(0, 10)
 }
 
+function buildWeekCreatorStrengthSafetyContext(
+  context: ChatContext,
+  config: WeekCreatorEffectiveConfig,
+  userMessage: string,
+): WeekCreatorStrengthSafetyContext {
+  return {
+    constraints: resolveWeekCreatorSafetyConstraints(context, config, userMessage),
+    userMessageConstraints: resolveStrengthSafetyConstraints({
+      userMessages: userMessage.trim() ? [userMessage] : [],
+    }),
+    userMessage,
+    profile: context.athleteProfile ?? undefined,
+  }
+}
+
+function finalizeWeekCreatorStrengthSessions(
+  sessions: CoachSessionProposal[],
+  config: WeekCreatorEffectiveConfig,
+  safety: WeekCreatorStrengthSafetyContext,
+): CoachSessionProposal[] {
+  return sessions.map((session) => session.sessionType === 'strength'
+    ? finalizeWeekCreatorStrengthSession(session, config, safety)
+    : session)
+}
+
+function finalizeWeekCreatorStrengthSession(
+  session: CoachSessionProposal,
+  config: WeekCreatorEffectiveConfig,
+  safety: WeekCreatorStrengthSafetyContext,
+): CoachSessionProposal {
+  const phase = resolveWeekCreatorStrengthPhase(config)
+  const sportProfile = resolveWeekCreatorStrengthSportProfile(config)
+  const selectionContext: StrengthContext = {
+    fatigueLevel: resolveWeekCreatorStrengthFatigue(config.currentFatigue),
+    phase,
+    recentExercises: [],
+    goal: session.objective ?? safety.profile?.mainGoal ?? 'sesión de fuerza estructurada',
+    sportProfile,
+    primarySport: config.primarySport,
+    sessionDurationMin: session.durationMin,
+    requireExtraRecovery: config.currentFatigue === 'overloaded',
+    safetyConstraints: safety.constraints,
+  }
+  const prepared = prepareStrengthSession(session, {
+    constraints: safety.constraints,
+    userMessageConstraints: safety.userMessageConstraints,
+    userMessage: safety.userMessage,
+    selectionContext,
+    structureOptions: {
+      durationMin: session.durationMin,
+      strengthProfile: safety.profile?.strengthProfile,
+    },
+    supersetMode: shouldApplySupersetPolicy({
+      phase,
+      sportProfile,
+      sessionDurationMin: session.durationMin,
+    }),
+  })
+  if (prepared.status === 'blocked') throw new WeekCreatorSafeDecline(prepared.reason)
+  return prepared.session
+}
+
+function resolveWeekCreatorStrengthFatigue(fatigue: WeekCreatorEffectiveConfig['currentFatigue']): number {
+  switch (fatigue) {
+    case 'fresh': return 2
+    case 'loaded': return 6
+    case 'overloaded': return 8
+    default: return 4
+  }
+}
+
+function resolveWeekCreatorStrengthPhase(config: WeekCreatorEffectiveConfig): StrengthPhase {
+  return config.trainingPriority === 'return_to_play' ? 'transition' : 'base'
+}
+
+function resolveWeekCreatorStrengthSportProfile(config: WeekCreatorEffectiveConfig): StrengthSportProfile {
+  if (config.primarySport === 'strength') return 'strength_primary'
+  return config.primarySport ? 'sport_support' : 'hybrid'
+}
+
 function buildDeterministicWeekCreatorResponse(input: {
   config: WeekCreatorEffectiveConfig
   targetWeekStart: string
   planningStartDate?: string
-  profile?: AthleteProfile
   provider?: CoachNormalizedResponse['provider']
   error?: string
   traceId?: string
+  safety: WeekCreatorStrengthSafetyContext
 }): CoachNormalizedResponse {
   const action: CoachAction = {
     type: 'create_week',
@@ -1235,7 +1467,12 @@ function buildDeterministicWeekCreatorResponse(input: {
       'Priorizar el deporte principal sin perder soporte complementario.',
       'Dejar una semana ejecutable y fácil de ajustar.',
     ],
-    sessions: buildDeterministicSessions(input.config, input.targetWeekStart, input.planningStartDate ?? input.targetWeekStart, input.profile),
+    sessions: buildDeterministicSessions(
+      input.config,
+      input.targetWeekStart,
+      input.planningStartDate ?? input.targetWeekStart,
+      input.safety,
+    ),
   }
 
   return {
@@ -1259,7 +1496,7 @@ function buildDeterministicSessions(
   config: WeekCreatorEffectiveConfig,
   targetWeekStart: string,
   planningStartDate = targetWeekStart,
-  profile?: AthleteProfile,
+  safety?: WeekCreatorStrengthSafetyContext,
 ): CoachSessionProposal[] {
   const sportSequence = buildFallbackSportSequence(config)
   const plannedSlots = buildFallbackSlots(config, targetWeekStart, sportSequence.length, planningStartDate)
@@ -1270,7 +1507,9 @@ function buildDeterministicSessions(
     const sport = scheduledSports[index]
     const sportIndex = sportCounts.get(sport) ?? 0
     sportCounts.set(sport, sportIndex + 1)
-    return buildFallbackSession(sport, slot.date, slot.timeBlock, config.sessionDurationMins, sportIndex, config, profile)
+    return buildFallbackSession(
+      sport, slot.date, slot.timeBlock, config.sessionDurationMins, sportIndex, config, safety,
+    )
   })
 }
 
@@ -1431,7 +1670,7 @@ function buildFallbackSession(
   baseDurationMin: number,
   index: number,
   config: WeekCreatorEffectiveConfig,
-  profile?: AthleteProfile,
+  safety?: WeekCreatorStrengthSafetyContext,
 ): CoachSessionProposal {
   const durationMin = sport === 'mobility' ? Math.min(40, baseDurationMin) : baseDurationMin
   const base = {
@@ -1482,15 +1721,15 @@ function buildFallbackSession(
           : []),
       ],
     ]
-    return {
+    const session: CoachSessionProposal = {
       ...base,
       title: index % 2 === 0 ? 'Fuerza base tren inferior' : 'Fuerza soporte torso',
       objective: 'Construir soporte general con fatiga controlada.',
-      exercises: enhanceStrengthSessionExercises(variants[index % variants.length], {
-        durationMin,
-        strengthProfile: profile?.strengthProfile,
-      }),
+      exercises: variants[index % variants.length],
     }
+    return safety
+      ? finalizeWeekCreatorStrengthSession(session, config, safety)
+      : session
   }
 
   if (sport === 'cycling') {

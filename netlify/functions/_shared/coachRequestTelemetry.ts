@@ -24,7 +24,8 @@ export interface CoachRequestTelemetry {
   requestClass: CoachRequestClass
   /** Transporte efectivo, no el solicitado. Ver spec §4.0. */
   streamed: boolean
-  outcome: 'ok' | 'error'
+  /** `safety_blocked` is a completed post-processing decline, never an error. */
+  outcome: 'ok' | 'error' | 'safety_blocked'
   errorCode?: string
   finishReason?: string
   retryUsed?: boolean

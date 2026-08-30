@@ -232,19 +232,22 @@ export async function exportAppData(): Promise<{ filename: string; json: string 
     exportedAt: exportedAt.toISOString(),
     exportedFromAppVersion: APP_INFO.version,
     tables: {
-      sessions,
+      // A seal is local change detection, never portable authorization.
+      sessions: sessions.map(invalidateStrengthSafetyFinalizations) as Session[],
       dayLogs,
       readinessDaily,
       whoopWorkouts,
       weekSummaries,
       trainingPlans,
-      trainingPlanWeeks,
+      // `repairWeek` sella dentro de la metadata de cada sesión de fuerza de la
+      // semana; sin sanear acá el backup transportaría autorizaciones locales.
+      trainingPlanWeeks: trainingPlanWeeks.map(invalidateStrengthSafetyFinalizations) as TrainingPlanWeek[],
       chatMessages,
-      coachProposals,
+      coachProposals: coachProposals.map(invalidateStrengthSafetyFinalizations) as CoachProposal[],
       athleteProfiles,
       athletes,
       athleteCoachNotes,
-      sessionTemplates,
+      sessionTemplates: sessionTemplates.map(invalidateStrengthSafetyFinalizations) as StoredSessionTemplate[],
     },
   }
 
@@ -943,7 +946,9 @@ function parseSessionTemplatesTable(value: unknown): StoredSessionTemplate[] {
       name,
       kind,
       payloadVersion,
-      payload: valueRow.payload,
+      // Template payloads are intentionally forward compatible, but a stored
+      // local seal cannot authorize materialization after import.
+      payload: invalidateStrengthSafetyFinalizations(valueRow.payload),
       createdAt,
       updatedAt,
       ...(deletedAt == null ? {} : { deletedAt }),
@@ -951,6 +956,22 @@ function parseSessionTemplatesTable(value: unknown): StoredSessionTemplate[] {
   }
 
   return parsed
+}
+
+/**
+ * Import/export deliberately removes every local finalization seal, including
+ * seals nested in session metadata or opaque template payloads. The value is a
+ * cache/integrity hint, not authorization that can survive a transport edge.
+ */
+export function invalidateStrengthSafetyFinalizations<T>(value: T): T {
+  if (Array.isArray(value)) return value.map(invalidateStrengthSafetyFinalizations) as T
+  if (!isRecord(value)) return value
+  const output: Record<string, unknown> = {}
+  for (const [key, item] of Object.entries(value)) {
+    if (key === 'strengthSafetyFinalization') continue
+    output[key] = invalidateStrengthSafetyFinalizations(item)
+  }
+  return output as T
 }
 
 function parseSessionsTable(value: unknown): Session[] {
@@ -1050,7 +1071,7 @@ function parseAthleteCoachNotesTable(value: unknown): AthleteCoachNote[] {
 }
 
 function parseSession(value: unknown, index: number): Session {
-  const row = ensureRecord(value, `sessions[${index}]`)
+  const row = invalidateStrengthSafetyFinalizations(ensureRecord(value, `sessions[${index}]`)) as Record<string, unknown>
 
   return {
     id: requireString(row.id, `sessions[${index}].id`),
@@ -1354,7 +1375,7 @@ function parseCoachActions(value: unknown, path: string): CoachAction[] {
 }
 
 function parseCoachAction(value: unknown, path: string): CoachAction {
-  const row = ensureRecord(value, path)
+  const row = invalidateStrengthSafetyFinalizations(ensureRecord(value, path)) as Record<string, unknown>
 
   return {
     type: requireEnum(row.type, COACH_ACTION_TYPES, `${path}.type`) as CoachAction['type'],
@@ -1563,7 +1584,7 @@ function optionalCoachSessions(value: unknown, path: string): CoachAction['sessi
   const sessions = ensureArray(value, path)
 
   return sessions.map((session, index) => {
-    const row = ensureRecord(session, `${path}[${index}]`)
+    const row = invalidateStrengthSafetyFinalizations(ensureRecord(session, `${path}[${index}]`)) as Record<string, unknown>
     return {
       date: requireISODate(row.date, `${path}[${index}].date`),
       timeBlock: requireEnum(row.timeBlock, TIME_BLOCKS, `${path}[${index}].timeBlock`) as NonNullable<CoachAction['sessions']>[number]['timeBlock'],

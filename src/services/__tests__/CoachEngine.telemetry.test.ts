@@ -118,6 +118,43 @@ describe('CoachEngine telemetry persistence', () => {
     })
   })
 
+  it('keeps a safety-blocked action as a completed safe decline', async () => {
+    mockProviderCall.mockImplementation(async (request: { traceId: string; requestClass: string }) => ({
+      text: `<actions>${JSON.stringify([{
+        type: 'add_session', reason: 'Fuerza', targetDate: '2026-09-07', timeBlock: 'PM',
+        sessionType: 'strength', title: 'Fuerza', durationMin: 60,
+      }])}</actions>`,
+      provider: 'openai',
+      traceId: request.traceId,
+      requestClass: request.requestClass,
+    }))
+    mockPostProcessCoachActions.mockImplementation((result) => ({
+      ...result,
+      message: 'No pude verificar una sesión de fuerza compatible con la restricción registrada.',
+      actions: [],
+      meta: {
+        hadActionsMarkup: true,
+        actionParseFailed: false,
+        likelyTruncated: false,
+        warnings: ['chat_action_strength_safety_blocked'],
+      },
+    }))
+
+    const response = await CoachEngine.sendAction(
+      'Crea una sesión de fuerza',
+      { recentMessages: [], recentSessions: [], plannedSessions: [], historicalSessions: [] },
+    )
+
+    expect(response.actions).toEqual([])
+    expect(response.meta?.outcome).toBe('safety_blocked')
+    expect(useAIDebugStore.getState().requests[0]).toMatchObject({
+      status: 'completed',
+      outcome: 'safety_blocked',
+      proposalCreated: false,
+      generationOutcome: 'safe_decline',
+    })
+  })
+
   it('preserves terminal transport when normalization fails', async () => {
     mockProviderCall.mockImplementation(async (request: { traceId: string; requestClass: string }) => {
       const raw = {

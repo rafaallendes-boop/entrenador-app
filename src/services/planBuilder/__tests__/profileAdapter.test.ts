@@ -83,4 +83,17 @@ describe('buildAthleteParameters', () => {
     expect(params.primarySport).toBe('squash')
     expect(params.complementarySports).toEqual(['running'])
   })
+
+  it('resolves safety constraints from recovery, wizard injury notes and training priority', () => {
+    const params = buildAthleteParameters(
+      makeProfile({
+        recoveryProfile: { currentInjuries: 'dolor lumbar', restrictions: 'evitar overhead' },
+        sportContext: { primarySport: 'squash', trainingPriority: 'return_to_play' },
+      }),
+      makeWizard({ injuryNotes: 'molestia de rodilla' }),
+    )
+
+    expect(params.safetyConstraints.map((constraint) => constraint.kind)).toContain('region')
+    expect(params.safetyConstraints.map((constraint) => constraint.sources).flat()).toContain('training_priority')
+  })
 })

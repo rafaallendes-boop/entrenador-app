@@ -10,7 +10,7 @@ import { OperationsAccessError, fetchOperationsMetrics } from '../fetchOperation
 const WINDOW = {
   activity: { accountsUsingAi: 3, accountsPlanning: 1 },
   coach: {
-    requests: 10, errors: 2, topErrorCodes: [],
+    requests: 10, errors: 2, safetyBlocked: 1, topErrorCodes: [],
     latencyP50: 900, latencyP90: 2100, latencyP95: 3000, costUsd: 0.12,
     coverage: { rowsTotal: 10, rowsWithCost: 8, tokensTotal: 5000, tokensWithCost: 4200 },
   },

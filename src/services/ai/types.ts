@@ -152,7 +152,7 @@ export interface CoachNormalizedResponse {
      * - `quality_rejected`: shape was fine; a fail-closed quality postcondition
      *   rejected the candidate. Never produced by the normalizer.
      */
-    outcome?: 'ok' | 'truncated_mid' | 'truncated_early' | 'parse_invalid' | 'schema_invalid' | 'quality_rejected'
+    outcome?: 'ok' | 'truncated_mid' | 'truncated_early' | 'parse_invalid' | 'schema_invalid' | 'quality_rejected' | 'safety_blocked'
     /** Non-blocking normalization observations that should not trigger retry by themselves. */
     warnings?: string[]
     /** Server-side errorCode propagated through (e.g. timeout, rate_limit). */

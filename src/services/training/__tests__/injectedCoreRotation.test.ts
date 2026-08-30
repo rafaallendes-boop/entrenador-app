@@ -34,6 +34,7 @@ function normalizedAt(
 ): CoachExerciseProposal[] | undefined {
   return normalizeStrengthSessionExercises(sessionWithoutCore(), {
     durationMin: 60,
+    safetyConstraints: [],
     ...(weekIndexInBlock == null ? {} : { weekIndexInBlock }),
     ...(availableEquipment == null ? {} : { availableEquipment }),
   })
@@ -101,7 +102,7 @@ describe('rotación del core inyectado', () => {
 
   it('es idempotente cuando el único core ya es el seleccionado para la semana', () => {
     const first = normalizedAt(1)
-    const second = normalizeStrengthSessionExercises(first, { durationMin: 60, weekIndexInBlock: 1 })
+    const second = normalizeStrengthSessionExercises(first, { durationMin: 60, weekIndexInBlock: 1, safetyConstraints: [] })
     const ids = second
       ?.filter((exercise) => exercise.group === 'core')
       .map((exercise) => resolveStrengthExercise(exercise)?.definition?.id)
@@ -114,7 +115,7 @@ describe('rotación del core inyectado', () => {
       ...sessionWithoutCore(),
       { name: 'Plancha frontal', sets: 3, reps: '30s', group: 'core' as const },
     ]
-    const normalized = normalizeStrengthSessionExercises(input, { durationMin: 60 })
+    const normalized = normalizeStrengthSessionExercises(input, { durationMin: 60, safetyConstraints: [] })
     const ids = normalized
       ?.filter((exercise) => exercise.group === 'core')
       .map((exercise) => resolveStrengthExercise(exercise)?.definition?.id)

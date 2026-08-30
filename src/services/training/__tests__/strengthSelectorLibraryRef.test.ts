@@ -29,6 +29,7 @@ const CONTEXT = {
   goal: 'fuerza general',
   sportProfile: 'strength_primary' as const,
   availableEquipment: ['barbell'],
+  safetyConstraints: [],
 }
 
 describe('consumidores del selector con libraryRef', () => {

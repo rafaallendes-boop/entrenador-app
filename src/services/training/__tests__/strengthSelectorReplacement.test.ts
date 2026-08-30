@@ -18,6 +18,7 @@ const CONTEXT: StrengthContext = {
   sessionDurationMin: 60,
   available1RM: ['squat', 'deadlift', 'benchPress', 'overheadPress'],
   weekIndexInBlock: 1,
+  safetyConstraints: [],
 }
 
 function idOf(name: string): string | undefined {

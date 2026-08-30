@@ -6,8 +6,10 @@ import type {
   PlanWizardConfig,
   StageTiming,
   SupportedSport,
+  TimeBlock,
 } from './index'
 import type { PersistedPlanQualityReview } from '../services/planBuilder/qualityReview'
+import type { BlockedReason } from '../services/training/strengthSafetyFinalizer'
 
 export type PlanStatus = 'draft' | 'active' | 'archived' | 'superseded'
 
@@ -86,6 +88,15 @@ export interface PlanGenerationMeta {
   stageTimings?: StageTiming[]
   errorClass?: string
   generationSource?: 'ai' | 'deterministic' | 'fallback'
+  /** A final safety pass removed one or more impossible strength slots. */
+  safetyDegraded?: boolean
+  strengthSafetyBlocked?: StrengthSafetyBlockedSlot[]
+}
+
+export interface StrengthSafetyBlockedSlot {
+  date: string
+  timeBlock: TimeBlock
+  reason: BlockedReason
 }
 
 /**

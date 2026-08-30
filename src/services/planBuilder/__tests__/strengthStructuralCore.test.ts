@@ -12,9 +12,9 @@ const TEMPLATE = [
 
 describe('projectStructuralCoreSlot', () => {
   it('elige el primer foundation core del snapshot y lo rota por la allowlist de §29', () => {
-    expect(projectStructuralCoreSlot(TEMPLATE, 0)).toEqual({ slotIndex: 2, coreId: 'dead_bug' })
-    expect(projectStructuralCoreSlot(TEMPLATE, 1)).toEqual({ slotIndex: 2, coreId: 'plank' })
-    expect(projectStructuralCoreSlot(TEMPLATE, 2)).toEqual({ slotIndex: 2, coreId: 'side_plank' })
+    expect(projectStructuralCoreSlot(TEMPLATE, 0, undefined, [])).toEqual({ slotIndex: 2, coreId: 'dead_bug' })
+    expect(projectStructuralCoreSlot(TEMPLATE, 1, undefined, [])).toEqual({ slotIndex: 2, coreId: 'plank' })
+    expect(projectStructuralCoreSlot(TEMPLATE, 2, undefined, [])).toEqual({ slotIndex: 2, coreId: 'side_plank' })
   })
 
   it('devuelve un slot virtual cuando el snapshot no trae foundation core', () => {
@@ -22,18 +22,18 @@ describe('projectStructuralCoreSlot', () => {
       { name: 'Sentadilla trasera', group: 'legs' },
       { name: 'Lanzamiento rotacional con balón medicinal', group: 'core' },
     ]
-    expect(projectStructuralCoreSlot(sinCore, 1)).toEqual({ slotIndex: null, coreId: 'plank' })
+    expect(projectStructuralCoreSlot(sinCore, 1, undefined, [])).toEqual({ slotIndex: null, coreId: 'plank' })
   })
 
   it('no depende de la asignación: la misma entrada da la misma proyección', () => {
-    const a = projectStructuralCoreSlot(TEMPLATE, 3)
-    const b = projectStructuralCoreSlot(TEMPLATE, 3)
+    const a = projectStructuralCoreSlot(TEMPLATE, 3, undefined, [])
+    const b = projectStructuralCoreSlot(TEMPLATE, 3, undefined, [])
     expect(a).toEqual(b)
   })
 
   it('respeta el equipamiento: sin fitball el ciclo usa sólo los tres universales', () => {
-    expect(projectStructuralCoreSlot(TEMPLATE, 3, ['barbell']).coreId).toBe('dead_bug')
-    expect(projectStructuralCoreSlot(TEMPLATE, 3, undefined).coreId).toBe('stability_ball_front_plank')
+    expect(projectStructuralCoreSlot(TEMPLATE, 3, ['barbell'], [])?.coreId).toBe('dead_bug')
+    expect(projectStructuralCoreSlot(TEMPLATE, 3, undefined, [])?.coreId).toBe('stability_ball_front_plank')
   })
 
   it('conserva un core prescrito de estabilidad que no pertenece a la allowlist inyectada', () => {
@@ -42,7 +42,7 @@ describe('projectStructuralCoreSlot', () => {
       { name: 'Plancha Copenhagen', group: 'core' },
     ]
 
-    expect(projectStructuralCoreSlot(withCopenhagen, 2)).toEqual({
+    expect(projectStructuralCoreSlot(withCopenhagen, 2, undefined, [])).toEqual({
       slotIndex: 1,
       coreId: 'copenhagen_side_plank',
     })

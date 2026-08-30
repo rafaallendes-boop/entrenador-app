@@ -1,5 +1,5 @@
 import type { CoachAction, CoachSessionProposal, AthleteProfile, PlanWizardConfig, StageTiming } from '../../types'
-import type { StrengthAllocatorMetrics, TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
+import type { StrengthAllocatorMetrics, StrengthSafetyBlockedSlot, TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import { AIProviderError, type AIRawResponse, type AIProvider, type CreateWeekNormalizationDiagnostic } from '../ai/types'
 import { buildAITraceId, getAIRequestPolicy } from '../ai/requestPolicy'
 import { validatePlanWeek } from './validator'
@@ -79,6 +79,8 @@ export interface GenerateWeekResult {
     repairWarnings?: Array<{ code: string; message: string }>
     stageTimings?: StageTiming[]
     errorClass?: string
+    safetyDegraded?: boolean
+    strengthSafetyBlocked?: StrengthSafetyBlockedSlot[]
   }
 }
 
@@ -104,6 +106,8 @@ export interface WeekActionEvaluation extends RepairTaxonomySummary {
   squashFinisherPreservedCount?: number
   squashStandaloneMatchCount?: number
   repairWarnings?: Array<{ code: string; message: string }>
+  safetyDegraded?: boolean
+  strengthSafetyBlocked?: StrengthSafetyBlockedSlot[]
 }
 
 export function pickCreateWeekAction(actions: CoachAction[] | undefined, weekStartDate: string): CoachAction | undefined {

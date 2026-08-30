@@ -240,6 +240,7 @@ function deriveAsyncGenerationState(weeks: TrainingPlanWeek[]): TrainingPlan['ge
   if (weeks.some((week) => week.status === 'generating')) return 'generating'
   if (weeks.length === 0) return 'shell'
   const readyWeeks = countReadyWeeks(weeks)
+  if (weeks.some((week) => week.status === 'draft' && week.generationMeta.safetyDegraded === true)) return 'partial'
   if (readyWeeks === weeks.length) return 'complete'
   if (readyWeeks > 0) return 'partial'
   if (weeks.some((week) => week.status === 'error' || (week.generationMeta.attempts ?? 0) > 0)) return 'failed'
@@ -379,6 +380,8 @@ function makeResolvedWeek(
       squashFinisherPreservedCount: result.meta.squashFinisherPreservedCount,
       squashStandaloneMatchCount: result.meta.squashStandaloneMatchCount,
       repairWarnings: result.meta.repairWarnings,
+      safetyDegraded: result.meta.safetyDegraded,
+      strengthSafetyBlocked: result.meta.strengthSafetyBlocked,
       errorClass: result.meta.errorClass,
       generationSource: 'ai',
     },

@@ -13,6 +13,10 @@ import type { OnboardingDayKey } from '../utils/schedule'
 import { ONBOARDING_DAY_ORDER } from '../utils/schedule'
 import { clearOnboardingSkipped, markOnboardingSkipped } from '../utils/onboarding'
 import { buildOnboardingAthleteProfilePatch } from '../utils/onboardingProfilePatch'
+import {
+  formatStrengthConstraintFeedback,
+  resolveStrengthSafetyConstraints,
+} from '../services/training/strengthSafetyConstraints'
 
 const SPORT_OPTIONS: Array<{ value: SupportedSport; label: string; emoji: string }> = [
   { value: 'squash', label: 'Squash', emoji: '🎾' },
@@ -143,6 +147,15 @@ export default function OnboardingPage() {
     () => SPORT_OPTIONS.filter((option) => selectedSports.includes(option.value)),
     [selectedSports],
   )
+
+  const strengthSafetyFeedback = useMemo(() => formatStrengthConstraintFeedback(
+    resolveStrengthSafetyConstraints({
+      currentInjuries,
+      restrictions,
+      userMessages: [],
+      trainingPriority: priority ?? undefined,
+    }),
+  ), [currentInjuries, priority, restrictions])
 
   const summary = useMemo(() => {
     if (!primarySport || !priority) return []
@@ -574,10 +587,13 @@ export default function OnboardingPage() {
               <textarea
                 value={currentInjuries}
                 onChange={(event) => setTextField('currentInjuries', event.target.value)}
-                placeholder="Dolor, fatiga, zonas sensibles o molestias recientes."
+                placeholder="Dolor, zonas sensibles o molestias recientes."
                 className={`${TEXT_INPUT_CLASS} min-h-[92px] resize-none`}
                 style={FIELD_STYLE}
               />
+              {strengthSafetyFeedback && (
+                <p className="mt-1.5 text-xs text-ink-faint">{strengthSafetyFeedback}</p>
+              )}
             </label>
             <label className="block">
               <span className="mb-2 block text-sm font-medium text-ink-muted">Historial</span>

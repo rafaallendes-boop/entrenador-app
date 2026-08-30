@@ -15,6 +15,7 @@ import { resolveChatRoute } from '../chatRouting'
 import { createStageTracker, type CoachOutcome } from './stageLogger'
 import { postProcessCoachActions } from './actionPostProcessor'
 import { assertDailyAIRequestLimit } from './aiTelemetry'
+import { persistSafetyBlockedOutcome } from './safetyOutcomeTelemetry'
 
 export type CoachActionIntent = 'create_full_plan' | 'modify_plan' | 'none'
 type CoachSendOptions = {
@@ -213,10 +214,29 @@ async function sendTrackedCoachRequest(
           : await sendDirect(trackedProvider, request)
       providerStage.end({ ok: true })
 
-      const finalResult = requestClass === 'chat_action'
+      const postProcessedResult = requestClass === 'chat_action'
         ? postProcessCoachActions(result, context, userMessage)
         : result
-      if (requestClass === 'chat_action' && (finalResult.actions?.length ?? 0) === 0) {
+      // A safety postcondition is a successful terminal decline, not a malformed
+      // action response. The post-processor owns the detection because it sees
+      // the fully materialized exercises; preserve that outcome here so this
+      // boundary never converts it into a retryable parse error.
+      const safetyBlocked = requestClass === 'chat_action'
+        && (postProcessedResult.actions?.length ?? 0) === 0
+        && postProcessedResult.meta?.warnings?.includes('chat_action_strength_safety_blocked') === true
+      const finalResult: CoachNormalizedResponse = safetyBlocked
+        ? {
+            ...postProcessedResult,
+            meta: {
+              hadActionsMarkup: postProcessedResult.meta?.hadActionsMarkup ?? false,
+              actionParseFailed: false,
+              likelyTruncated: false,
+              ...postProcessedResult.meta,
+              outcome: 'safety_blocked',
+            },
+          }
+        : postProcessedResult
+      if (requestClass === 'chat_action' && !safetyBlocked && (finalResult.actions?.length ?? 0) === 0) {
         throw createProviderError(
           provider.name,
           'parse_error',
@@ -224,19 +244,28 @@ async function sendTrackedCoachRequest(
           true,
         )
       }
-      const normalizedOutcome = result.meta?.outcome
+      const normalizedOutcome = finalResult.meta?.outcome
       useAIDebugStore.getState().updateRequest(traceId, {
         outcome: normalizedOutcome,
         responseCharCount: finalResult.message.length,
         actionCount: finalResult.actions?.length ?? 0,
         warnings: finalResult.meta?.warnings,
+        ...(safetyBlocked
+          ? {
+              proposalCreated: false,
+              generationOutcome: 'safe_decline' as const,
+              generationCompletedAt: Date.now(),
+            }
+          : {}),
       })
+      if (safetyBlocked) void persistSafetyBlockedOutcome(traceId)
       outcome =
         normalizedOutcome === 'truncated_mid' ? 'truncated'
           : normalizedOutcome === 'truncated_early' ? 'truncated'
           : normalizedOutcome === 'parse_invalid' ? 'parse_fail'
           : normalizedOutcome === 'schema_invalid' ? 'invalid_schema'
           : normalizedOutcome === 'quality_rejected' ? 'quality_rejected'
+          : normalizedOutcome === 'safety_blocked' ? 'safety_blocked'
           : 'ok'
       return finalResult
     } catch (error) {

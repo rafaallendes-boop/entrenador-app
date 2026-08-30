@@ -9,7 +9,7 @@ describe('plancha/plank reps normalization', () => {
   it('converts numeric reps to duration string for plancha', () => {
     const result = normalizeStrengthSessionExercises(
       [{ name: 'Plancha', sets: 3, reps: 30, group: 'core' }],
-      { durationMin: 40 },
+      { durationMin: 40, safetyConstraints: [] },
     )
     expect(result![0].reps).toBe('30s')
   })
@@ -17,7 +17,7 @@ describe('plancha/plank reps normalization', () => {
   it('converts numeric reps to duration string for plank', () => {
     const result = normalizeStrengthSessionExercises(
       [{ name: 'Plank lateral', sets: 3, reps: 45, group: 'core' }],
-      { durationMin: 40 },
+      { durationMin: 40, safetyConstraints: [] },
     )
     expect(result![0].reps).toBe('45s')
   })
@@ -25,7 +25,7 @@ describe('plancha/plank reps normalization', () => {
   it('leaves string reps alone even for plancha', () => {
     const result = normalizeStrengthSessionExercises(
       [{ name: 'Plancha', sets: 3, reps: '30s', group: 'core' }],
-      { durationMin: 40 },
+      { durationMin: 40, safetyConstraints: [] },
     )
     expect(result![0].reps).toBe('30s')
   })
@@ -33,7 +33,7 @@ describe('plancha/plank reps normalization', () => {
   it('does not affect non-plank exercises with numeric reps', () => {
     const result = normalizeStrengthSessionExercises(
       [{ name: 'Sentadilla', sets: 4, reps: 6, group: 'legs' }],
-      { durationMin: 40 },
+      { durationMin: 40, safetyConstraints: [] },
     )
     expect(result![0].reps).toBe(6)
   })
@@ -57,7 +57,7 @@ describe('plancha/plank reps normalization', () => {
   it('does not infer seconds from shared core metadata on a resolved non-plank', () => {
     const result = normalizeStrengthSessionExercises(
       [{ name: 'Press Pallof', sets: 3, reps: 30, group: 'core' }],
-      { durationMin: 40 },
+      { durationMin: 40, safetyConstraints: [] },
     )
     expect(result![0].reps).toBe(30)
   })
@@ -65,7 +65,7 @@ describe('plancha/plank reps normalization', () => {
   it('keeps the name fallback when a non-plank resolves only by substring', () => {
     const result = normalizeStrengthSessionExercises(
       [{ name: 'Plancha Press Pallof', sets: 3, reps: 30, group: 'core' }],
-      { durationMin: 40 },
+      { durationMin: 40, safetyConstraints: [] },
     )
     expect(result![0].reps).toBe('30s')
   })
@@ -73,7 +73,7 @@ describe('plancha/plank reps normalization', () => {
   it('does not apply definition units to a partial substring without a plank word', () => {
     const result = normalizeStrengthSessionExercises(
       [{ name: 'Fitball', sets: 3, reps: 30, group: 'core' }],
-      { durationMin: 40 },
+      { durationMin: 40, safetyConstraints: [] },
     )
     expect(result![0].reps).toBe(30)
   })

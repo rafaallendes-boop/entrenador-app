@@ -57,6 +57,14 @@ export function classifyProxyHttpError(
     throw new KillSwitchActiveError()
   }
 
+  // El gate reporta sus fallas de infraestructura como 503 server_error.
+  // Preservar el código explícito antes del fallback histórico de gateways
+  // evita presentarlas como timeout reintentable aunque nunca se haya llamado
+  // al proveedor.
+  if (res.status === 503 && data.errorCode === 'server_error') {
+    throw createProviderError('gemini', 'server_error', message)
+  }
+
   if (res.status === 401 || res.status === 403) {
     throw createProviderError(
       'gemini',

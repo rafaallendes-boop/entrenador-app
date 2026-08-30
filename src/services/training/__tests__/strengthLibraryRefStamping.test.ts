@@ -16,6 +16,7 @@ describe('estampado de libraryRef en los productores deterministas', () => {
       experienceLevel: 'intermediate',
       availableEquipment: ['barbell', 'dumbbell', 'bodyweight'],
       primarySport: 'squash',
+      safetyConstraints: [],
     })
 
     expect(selection.exercises.length).toBeGreaterThan(0)
@@ -28,7 +29,7 @@ describe('estampado de libraryRef en los productores deterministas', () => {
   it('el core de fundación inyectado trae el ref de dead_bug', () => {
     const result = normalizeStrengthSessionExercises([
       { name: 'Press banca', sets: 3, reps: 5 } as CoachExerciseProposal,
-    ], { durationMin: 50 })!
+    ], { durationMin: 50, safetyConstraints: [] })!
 
     const core = result.find((exercise) => exercise.name === 'Dead bug — control de tronco')
     expect(core?.libraryRef).toEqual({ source: 'strength_exercise', id: 'dead_bug' })
@@ -42,7 +43,7 @@ describe('estampado de libraryRef en los productores deterministas', () => {
         reps: '4 min',
         libraryRef: { source: 'strength_exercise', id: 'ejercicio_retirado_hace_años' },
       } as CoachExerciseProposal,
-    ], { durationMin: 30 })!
+    ], { durationMin: 30, safetyConstraints: [] })!
 
     const ladders = result.filter((exercise) => exercise.name.startsWith('Escalera'))
     expect(ladders).toHaveLength(3)
@@ -61,7 +62,7 @@ describe('estampado de libraryRef en los productores deterministas', () => {
         reps: '4 min',
         libraryRef: { source: 'strength_exercise', id: 'ladder_bipodal_front_1' },
       } as CoachExerciseProposal,
-    ], { durationMin: 30 })!
+    ], { durationMin: 30, safetyConstraints: [] })!
 
     expect(result.filter((exercise) => exercise.name === 'Escalera de agilidad')).toHaveLength(1)
     expect(result.some((exercise) => exercise.name.startsWith('Escalera frontal'))).toBe(false)

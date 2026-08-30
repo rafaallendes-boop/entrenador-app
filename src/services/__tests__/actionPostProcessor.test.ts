@@ -3,6 +3,7 @@ import type { ChatContext, CoachAction, Session } from '../../types'
 import type { CoachNormalizedResponse } from '../ai/types'
 import { postProcessCoachActions } from '../ai/actionPostProcessor'
 import { findSquashDrillByName, resolveSquashDrillKind } from '../training/drillLibrary'
+import { resolveStrengthExercise } from '../training/exerciseLibrary'
 
 function makeSession(partial: Partial<Session> = {}): Session {
   return {
@@ -255,6 +256,133 @@ describe('actionPostProcessor', () => {
     )).toBe(true)
     expect(addSessionActions.some((action) => action.targetDate === '2026-05-16')).toBe(false)
     expect(new Set(addSessionActions.map((action) => `${action.targetDate}|${action.timeBlock}`)).size).toBe(3)
+  })
+
+  it('aligns the weekday copy and hydrates exercises for an injury-focused strength session on a free day next week', () => {
+    vi.setSystemTime(new Date('2026-08-30T12:00:00.000Z'))
+    const occupiedDays = [
+      ['2026-08-31', 'squash'],
+      ['2026-09-01', 'running'],
+      ['2026-09-02', 'strength'],
+      ['2026-09-03', 'squash'],
+      ['2026-09-05', 'running'],
+      ['2026-09-06', 'squash'],
+    ].map(([date, type], index) => makeSession({
+      id: `occupied-${index}`,
+      date,
+      weekStartDate: '2026-08-31',
+      type: type as Session['type'],
+      timeBlock: 'PM',
+    }))
+    const context = makeContext(occupiedDays, {
+      currentWeekSummary: {
+        id: 'week-2026-08-24',
+        weekStartDate: '2026-08-24',
+        totalSessions: 0,
+        totalMinutes: 0,
+        plannedSessions: 0,
+        completedSessions: 0,
+        plannedMinutes: 0,
+        completedMinutes: 0,
+        squashSessions: 0,
+        runningSessions: 0,
+        strengthSessions: 0,
+        updatedAt: 1,
+      },
+      athleteProfile: {
+        id: 'athlete-back-recovery',
+        updatedAt: 1,
+        sportContext: { primarySport: 'squash' },
+        recoveryProfile: {
+          currentInjuries: 'Lesión de espalda baja en recuperación',
+          restrictions: 'Sin impacto ni carga axial.',
+        },
+      },
+      recentMessages: [
+        { role: 'user', content: 'Me lesioné la espalda baja. Dame una sesión de fuerza enfocada en recuperarla.' },
+        { role: 'coach', content: 'Te propongo una sesión suave de activación y estabilidad.' },
+      ],
+    })
+
+    const response = postProcessCoachActions({
+      ...makeResponse([{
+        type: 'add_session',
+        reason: 'Dejar la sesión propuesta en un día libre de la próxima semana.',
+        targetDate: '2026-09-04',
+        timeBlock: 'PM',
+        sessionType: 'strength',
+        title: 'Fuerza - Recuperación de espalda',
+        durationMin: 40,
+        rpe: 3,
+        objective: 'Fortalecer core y estabilizadores durante la recuperación de la espalda, sin impacto ni carga axial.',
+      }]),
+      message: 'Para la próxima semana, dado que tienes el jueves 4 de septiembre libre, programaré la sesión para ese día.',
+    }, context, 'Sí, déjala para uno de los días que tenga libre la próxima semana')
+
+    const action = response.actions?.[0]
+    expect(action).toMatchObject({
+      type: 'add_session',
+      targetDate: '2026-09-04',
+      sessionType: 'strength',
+      durationMin: 40,
+      rpe: 3,
+    })
+    expect(action?.exercises?.length).toBeGreaterThan(0)
+    for (const exercise of action?.exercises ?? []) {
+      const definition = resolveStrengthExercise(exercise)?.definition
+      expect(definition, exercise.name).toBeDefined()
+      expect(definition?.safety.loadsRegions).not.toContain('lumbar')
+      expect(definition?.safety.loadPatterns).not.toContain('impact')
+      expect(definition?.safety.loadPatterns).not.toContain('axial_load')
+    }
+    expect(response.message).toContain('viernes 4 de septiembre')
+    expect(response.message).not.toContain('jueves 4 de septiembre')
+    expect(response.meta?.warnings).toEqual(expect.arrayContaining([
+      'chat_action_missing_strength_exercises_hydrated',
+      'chat_action_message_weekday_aligned',
+    ]))
+  })
+
+  it('moves a free-day request away from a day that already has a session', () => {
+    vi.setSystemTime(new Date('2026-08-30T12:00:00.000Z'))
+    const occupiedDays = [0, 1, 2, 3].map((offset) => makeSession({
+      id: `occupied-weekday-${offset}`,
+      date: `2026-${offset === 0 ? '08-31' : `09-0${offset}`}`,
+      weekStartDate: '2026-08-31',
+      timeBlock: 'PM',
+    }))
+    const context = makeContext(occupiedDays, {
+      currentWeekSummary: {
+        id: 'week-2026-08-24',
+        weekStartDate: '2026-08-24',
+        totalSessions: 0,
+        totalMinutes: 0,
+        plannedSessions: 0,
+        completedSessions: 0,
+        plannedMinutes: 0,
+        completedMinutes: 0,
+        squashSessions: 0,
+        runningSessions: 0,
+        strengthSessions: 0,
+        updatedAt: 1,
+      },
+    })
+
+    const response = postProcessCoachActions(makeResponse([{
+      type: 'add_session',
+      reason: 'Usar un día libre.',
+      targetDate: '2026-09-03',
+      timeBlock: 'AM',
+      sessionType: 'strength',
+      title: 'Fuerza suave',
+      durationMin: 40,
+    }]), context, 'Déjala para uno de los días que tenga libre la próxima semana')
+
+    expect(response.actions?.[0]).toMatchObject({
+      type: 'add_session',
+      targetDate: '2026-09-04',
+      sessionType: 'strength',
+    })
   })
 
   it('repairs a text-only multi-day next-week request into one action per requested session', () => {

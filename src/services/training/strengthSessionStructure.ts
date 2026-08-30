@@ -1,5 +1,6 @@
 import type { CoachExerciseProposal, Exercise, ExerciseGroup, StrengthProfile } from '../../types'
 import type { ExerciseLibraryRef } from '../../types/exerciseLibraryRef'
+import type { StrengthConstraint } from '../../types/strengthSafety'
 import {
   findStrengthExerciseByName,
   getExerciseById,
@@ -16,6 +17,7 @@ import {
   getStrengthReferenceKg,
 } from './strengthLoadPrescription'
 import { normalizeSupersetGroups, resolveSupersetLayout } from './supersetGroups'
+import { isExerciseAllowed } from './strengthSafetyConstraints'
 
 type StrengthExerciseLike = CoachExerciseProposal | Exercise
 
@@ -42,23 +44,31 @@ export const INJECTED_CORE_ROTATION = [
  * primero del pool, que es el comportamiento previo a la rotación.
  */
 export function resolveInjectedCoreId(
-  weekIndexInBlock?: number,
-  availableEquipment?: EquipmentType[],
-): string {
+  weekIndexInBlock: number | undefined,
+  availableEquipment: EquipmentType[] | undefined,
+  constraints: readonly StrengthConstraint[],
+): string | undefined {
+  const rotation = buildInjectedCorePool(availableEquipment)
+    .filter((id) => {
+      const definition = getExerciseById(id)
+      return definition != null && isExerciseAllowed(definition, constraints)
+    })
+  if (rotation.length === 0) return undefined
   if (
     weekIndexInBlock == null ||
     !Number.isFinite(weekIndexInBlock) ||
     weekIndexInBlock < 0
-  ) return INJECTED_CORE_ROTATION[0]
+  ) return rotation[0]
 
+  return rotation[Math.trunc(weekIndexInBlock) % rotation.length]!
+}
+
+function buildInjectedCorePool(availableEquipment?: EquipmentType[]): readonly string[] {
   // Las tres primeras opciones son de peso corporal. La cuarta exige fitball:
-  // `bodyweight` también figura en su definición para clasificar la carga, no
-  // significa que pueda ejecutarse sin balón. Cuando el atleta declaró equipo,
-  // esa dependencia se valida explícitamente.
-  const rotation = availableEquipment != null && !availableEquipment.includes('stability_ball')
+  // `bodyweight` en su metadata no significa que pueda ejecutarse sin balón.
+  return availableEquipment != null && !availableEquipment.includes('stability_ball')
     ? INJECTED_CORE_ROTATION.filter((id) => id !== 'stability_ball_front_plank')
     : INJECTED_CORE_ROTATION
-  return rotation[Math.trunc(weekIndexInBlock) % rotation.length]!
 }
 
 export interface StrengthStructureOptions {
@@ -71,6 +81,8 @@ export interface StrengthStructureOptions {
   weekIndexInBlock?: number
   /** Equipamiento declarado por el atleta; limita variantes no universales. */
   availableEquipment?: EquipmentType[]
+  /** Restricciones ya resueltas; siempre explícitas. */
+  safetyConstraints: readonly StrengthConstraint[]
   /**
    * Proyección del core estructural calculada desde el snapshot del template.
    * Si está presente, reemplaza al primer foundation core o se antepone de
@@ -86,7 +98,7 @@ export interface StrengthStructureOptions {
 
 export function normalizeStrengthSessionExercises<T extends StrengthExerciseLike>(
   exercises: T[] | undefined,
-  options: StrengthStructureOptions = {},
+  options: StrengthStructureOptions,
 ): T[] | undefined {
   if (!exercises || exercises.length === 0) return exercises
 
@@ -97,11 +109,12 @@ export function normalizeStrengthSessionExercises<T extends StrengthExerciseLike
   const withCore = durationMin >= 45
     ? options.structuralCoreId
       ? ensureProjectedCoreBlock(normalized, options.structuralCoreId, options.protectedExerciseIds)
-      : ensureCoreBlock(
-          normalized,
-          resolveInjectedCoreId(options.weekIndexInBlock, options.availableEquipment),
-          options.protectedExerciseIds,
-        )
+      : (() => {
+          const coreId = resolveInjectedCoreId(
+            options.weekIndexInBlock, options.availableEquipment, options.safetyConstraints,
+          )
+          return coreId ? ensureCoreBlock(normalized, coreId, options.protectedExerciseIds) : normalized
+        })()
     : normalized
 
   return sortStrengthSessionUnits(withCore)
@@ -150,7 +163,7 @@ function removeProtocolExercisesWhenStrengthWorkExists<T extends StrengthExercis
 
 export function enhanceStrengthSessionExercises<T extends StrengthExerciseLike>(
   exercises: T[] | undefined,
-  options: StrengthStructureOptions & { strengthProfile?: StrengthProfile } = {},
+  options: StrengthStructureOptions & { strengthProfile?: StrengthProfile },
 ): T[] | undefined {
   const normalized = normalizeStrengthSessionExercises(exercises, options)
   if (!normalized || normalized.length === 0) return normalized
@@ -160,6 +173,29 @@ export function enhanceStrengthSessionExercises<T extends StrengthExerciseLike>(
   return normalized.map((exercise, index) => completeStrengthLoadAndEffort(
     exercise,
     options.strengthProfile,
+    index === firstLoadBearingIndex,
+  ))
+}
+
+/**
+ * Completa carga y esfuerzo sobre una lista YA final, sin normalizar, agregar,
+ * quitar ni reordenar nada.
+ *
+ * Existe para el finalizador de seguridad: el enriquecimiento normal corre
+ * antes de la exclusión, y los ejercicios que la exclusión sustituye o agrega
+ * después nacen sin `targetRpe`, `targetPercent1RM`, `weight` ni `warmupSets`.
+ * Volver a correr `enhanceStrengthSessionExercises` no sirve: reintroduciría
+ * densidad y core, o sea contenido no verificado después del finalizador. Esto
+ * es un `map` puro, así que preserva la membresía que el finalizador decidió.
+ */
+export function applyStrengthLoadCompletion<T extends StrengthExerciseLike>(
+  exercises: T[],
+  profile: StrengthProfile | undefined,
+): T[] {
+  const firstLoadBearingIndex = exercises.findIndex((exercise) => isLoadBearingStrengthExercise(exercise))
+  return exercises.map((exercise, index) => completeStrengthLoadAndEffort(
+    exercise,
+    profile,
     index === firstLoadBearingIndex,
   ))
 }
@@ -356,14 +392,29 @@ function isProtectedExercise(
 
 export function isSelectedInjectedCore(
   exercise: StrengthExerciseLike,
-  options: Pick<StrengthStructureOptions, 'weekIndexInBlock' | 'availableEquipment'>,
+  options: Pick<StrengthStructureOptions, 'weekIndexInBlock' | 'availableEquipment' | 'safetyConstraints'>,
 ): boolean {
   const weekIndex = options.weekIndexInBlock
   if (weekIndex == null || !Number.isFinite(weekIndex) || weekIndex < 0) return false
-  return resolveStrengthExercise(exercise)?.definition?.id === resolveInjectedCoreId(
+  const coreId = resolveInjectedCoreId(
     weekIndex,
     options.availableEquipment,
+    options.safetyConstraints,
   )
+  return coreId != null && resolveStrengthExercise(exercise)?.definition?.id === coreId
+}
+
+/** Mínimo de trabajo de fuerza real; compartido por finalización y productores. */
+export function getMinimumStrengthWorkCount(durationMin: number): number {
+  if (durationMin >= 70) return 5
+  if (durationMin >= 55) return 4
+  if (durationMin >= 45) return 3
+  return 2
+}
+
+export function isStrengthWorkExercise(exercise: CoachExerciseProposal): boolean {
+  const block = resolveStrengthExerciseBlock(exercise)
+  return block !== 'core' && block !== 'cardio' && block !== 'mobility'
 }
 
 function completeStrengthLoadAndEffort<T extends StrengthExerciseLike>(

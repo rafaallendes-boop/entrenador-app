@@ -68,7 +68,9 @@ describe('conversión canónica a CoachExerciseProposal', () => {
       {
         file: 'src/services/ai/actionPostProcessor.ts',
         canonicalCalls: /\.map\(toStrengthProposalForEnhancement\)/g,
-        expectedCalls: 3,
+        // Todas las rutas del postprocesador pasan por
+        // `selectStrengthProposalsForAction`; la conversión vive en un solo sitio.
+        expectedCalls: 1,
       },
       {
         file: 'src/services/planBuilder/repairWeek.ts',

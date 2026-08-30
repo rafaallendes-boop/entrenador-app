@@ -17,6 +17,7 @@ function enhance(name: string) {
   return enhanceStrengthSessionExercises([proposal], {
     durationMin: 30,
     strengthProfile: PROFILE,
+    safetyConstraints: [],
   })?.[0]
 }
 

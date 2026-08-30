@@ -34,6 +34,10 @@ import {
   toggleOrderedValue,
 } from '../utils/schedule'
 import { v4 as uuid } from '../utils/uuid'
+import {
+  formatStrengthConstraintFeedback,
+  resolveStrengthSafetyConstraints,
+} from '../services/training/strengthSafetyConstraints'
 import type {
   GoalEventType,
   GoalEventObjective,
@@ -1273,6 +1277,13 @@ function Step6CurrentState({
   state: WizardState
   update: (p: Partial<WizardState>) => void
 }) {
+  const strengthSafetyFeedback = useMemo(() => formatStrengthConstraintFeedback(
+    resolveStrengthSafetyConstraints({
+      injuryNotes: state.injuryNotes,
+      userMessages: [],
+    }),
+  ), [state.injuryNotes])
+
   return (
     <div>
       <StepLabel step={6} />
@@ -1321,6 +1332,9 @@ function Step6CurrentState({
         placeholder="Ej: molestia en rodilla derecha, evitar impacto alto..."
         className="w-full rounded-xl border border-surface-border bg-surface-raised px-3 py-2.5 text-sm text-ink placeholder:text-ink-faint focus:outline-none focus:ring-2 focus:ring-brand/30"
       />
+      {strengthSafetyFeedback && (
+        <p className="mt-1.5 text-xs text-ink-faint">{strengthSafetyFeedback}</p>
+      )}
     </div>
   )
 }

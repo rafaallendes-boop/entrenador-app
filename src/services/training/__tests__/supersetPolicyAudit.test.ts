@@ -71,7 +71,7 @@ describe('auditoria de la politica de superseries', () => {
 
   it('produce un reporte legible de grupos y descartes', () => {
     const report = CORPUS.map(({ label, durationMin, phase, sportProfile, exercises }) => {
-      const input = normalizeStrengthSessionExercises(exercises, { durationMin }) ?? []
+      const input = normalizeStrengthSessionExercises(exercises, { durationMin, safetyConstraints: [] }) ?? []
       const mode = shouldApplySupersetPolicy({ phase, sportProfile, sessionDurationMin: durationMin })
       const { exercises: grouped, decisions } = planSupersetGroups(input, mode)
       const nameOf = (index: number) => input[index]?.name
@@ -97,7 +97,7 @@ describe('auditoria de la politica de superseries', () => {
   })
 
   it('explica cardio como bloqueo de elegibilidad', () => {
-    const input = normalizeStrengthSessionExercises(CORPUS[0]!.exercises, { durationMin: 60 }) ?? []
+    const input = normalizeStrengthSessionExercises(CORPUS[0]!.exercises, { durationMin: 60, safetyConstraints: [] }) ?? []
     const { decisions } = planSupersetGroups(input, 'permissive')
     const blocked = decisions.filter((decision) => decision.outcome === 'blocked_kind')
 
@@ -106,7 +106,7 @@ describe('auditoria de la politica de superseries', () => {
   })
 
   it('explica los descartes por sets incompatibles', () => {
-    const input = normalizeStrengthSessionExercises(CORPUS[2]!.exercises, { durationMin: 60 }) ?? []
+    const input = normalizeStrengthSessionExercises(CORPUS[2]!.exercises, { durationMin: 60, safetyConstraints: [] }) ?? []
     const { decisions } = planSupersetGroups(input, 'full')
 
     expect(decisions.some((decision) => decision.outcome === 'sets_mismatch')).toBe(true)

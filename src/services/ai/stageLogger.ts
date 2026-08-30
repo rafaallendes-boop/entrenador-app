@@ -19,7 +19,17 @@ export type { CoachStage, StageTiming } from '../../types'
  * rejected it. Collapsing both into one bucket makes schema regressions and
  * quality rejections indistinguishable in aggregate monitoring.
  */
-export type CoachOutcome = 'ok' | 'truncated' | 'parse_fail' | 'invalid_schema' | 'quality_rejected' | 'timeout' | 'rate_limit' | 'error'
+export type CoachOutcome =
+  | 'ok'
+  | 'truncated'
+  | 'parse_fail'
+  | 'invalid_schema'
+  | 'quality_rejected'
+  /** A completed request safely declined to emit a strength proposal. */
+  | 'safety_blocked'
+  | 'timeout'
+  | 'rate_limit'
+  | 'error'
 
 export interface StageTracker {
   readonly traceId: string

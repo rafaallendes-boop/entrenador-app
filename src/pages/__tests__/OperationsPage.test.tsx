@@ -16,7 +16,7 @@ import OperationsPage from '../OperationsPage'
 const WINDOW = {
   activity: { accountsUsingAi: 3, accountsPlanning: 2 },
   coach: {
-    requests: 12, errors: 2, topErrorCodes: [{ code: 'timeout', count: 2 }],
+    requests: 12, errors: 2, safetyBlocked: 1, topErrorCodes: [{ code: 'timeout', count: 2 }],
     latencyP50: 900, latencyP90: 2100, latencyP95: 3000, costUsd: 0.1234,
     coverage: { rowsTotal: 12, rowsWithCost: 9, tokensTotal: 1000, tokensWithCost: 600 },
   },
@@ -71,6 +71,13 @@ describe('OperationsPage', () => {
     expect(await screen.findAllByText(/cuentas con uso de IA/i)).toHaveLength(2)
     expect(screen.getAllByText(/cuentas con planificación/i)).toHaveLength(2)
     expect(screen.queryByText(/usuarios activos/i)).toBeNull()
+  })
+
+  it('muestra declinaciones seguras sin mezclarlas con la tasa de error', async () => {
+    mocks.fetchOperationsMetrics.mockResolvedValue(METRICS)
+    render(<OperationsPage />)
+    expect(await screen.findAllByText('Declinaciones seguras')).toHaveLength(2)
+    expect(screen.getAllByText('16.7%')).toHaveLength(2)
   })
 
   it('publica cobertura junto al costo', async () => {

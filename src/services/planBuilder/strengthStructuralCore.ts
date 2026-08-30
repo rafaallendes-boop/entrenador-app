@@ -7,6 +7,7 @@ import { resolveStrengthExercise } from '../training/exerciseLibrary'
 // `EquipmentType` se exporta desde exerciseLibrary, NO desde ../../types.
 import type { EquipmentType } from '../training/exerciseLibrary'
 import type { ExerciseLibraryRef } from '../../types/exerciseLibraryRef'
+import type { StrengthConstraint } from '../../types/strengthSafety'
 
 /**
  * Proyección pura del core estructural, paso 2 del orden congelado de la spec.
@@ -30,8 +31,9 @@ export { INJECTED_CORE_ROTATION } from '../training/strengthSessionStructure'
 export function projectStructuralCoreSlot(
   snapshotExercises: ReadonlyArray<{ name: string; libraryRef?: ExerciseLibraryRef; group?: string }>,
   weekIndexInBlock: number,
-  availableEquipment?: EquipmentType[],
-): StructuralCoreProjection {
+  availableEquipment: EquipmentType[] | undefined,
+  constraints: readonly StrengthConstraint[],
+): StructuralCoreProjection | undefined {
   const slotIndex = snapshotExercises.findIndex((exercise) => isFoundationCore(exercise))
   const existing = slotIndex >= 0 ? snapshotExercises[slotIndex] : undefined
   const existingId = existing ? resolveStrengthExercise(existing)?.definition?.id : undefined
@@ -44,8 +46,10 @@ export function projectStructuralCoreSlot(
     return { slotIndex, coreId: existingId }
   }
 
+  const coreId = resolveInjectedCoreId(weekIndexInBlock, availableEquipment, constraints)
+  if (!coreId) return undefined
   return {
     slotIndex: slotIndex >= 0 ? slotIndex : null,
-    coreId: resolveInjectedCoreId(weekIndexInBlock, availableEquipment),
+    coreId,
   }
 }

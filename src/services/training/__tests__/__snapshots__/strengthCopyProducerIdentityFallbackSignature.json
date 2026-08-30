@@ -23,6 +23,16 @@
         "warmupSetsCount": 0
       },
       {
+        "id": "side_plank_plate_press",
+        "sets": 3,
+        "reps": 10,
+        "group": "core",
+        "weight": null,
+        "targetPercent1RM": null,
+        "targetRpe": null,
+        "warmupSetsCount": 0
+      },
+      {
         "id": "goblet_squat",
         "sets": 3,
         "reps": 8,
@@ -91,6 +101,16 @@
         "id": "pallof_press",
         "sets": 3,
         "reps": "10/lado",
+        "group": "core",
+        "weight": null,
+        "targetPercent1RM": null,
+        "targetRpe": null,
+        "warmupSetsCount": 0
+      },
+      {
+        "id": "side_plank_plate_press",
+        "sets": 3,
+        "reps": 10,
         "group": "core",
         "weight": null,
         "targetPercent1RM": null,

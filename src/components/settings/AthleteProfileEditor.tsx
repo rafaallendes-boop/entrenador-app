@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Check, ChevronDown, ChevronUp } from 'lucide-react'
 import type {
   AthleteProfile,
@@ -21,6 +21,10 @@ import {
   getSessionCapacityFromAvailability,
   mapOnboardingDaysToTrainingDays,
 } from '../../utils/schedule'
+import {
+  formatStrengthConstraintFeedback,
+  resolveStrengthSafetyConstraints,
+} from '../../services/training/strengthSafetyConstraints'
 
 const DAYS = ['lun', 'mar', 'mie', 'jue', 'vie', 'sab', 'dom']
 const SCHEDULE_SESSION_OPTIONS = Array.from(
@@ -115,6 +119,14 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
       : undefined,
   }
   const sportSummary = getSportPrioritySummary(sportSummaryProfile)
+  const strengthSafetyFeedback = useMemo(() => formatStrengthConstraintFeedback(
+    resolveStrengthSafetyConstraints({
+      currentInjuries: recovery.currentInjuries,
+      restrictions: recovery.restrictions,
+      userMessages: [],
+      trainingPriority: trainingPriority ?? undefined,
+    }),
+  ), [recovery.currentInjuries, recovery.restrictions, trainingPriority])
 
   const toggle = (section: Section) => setOpen((prev) => (prev === section ? null : section))
 
@@ -472,6 +484,9 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
             placeholder="no fuerza pesada el dia previo a partido"
             className={inputCls}
           />
+          {strengthSafetyFeedback && (
+            <p className="mt-1.5 text-xs text-ink-faint">{strengthSafetyFeedback}</p>
+          )}
         </Field>
         <Field label="Lesiones previas relevantes">
           <input

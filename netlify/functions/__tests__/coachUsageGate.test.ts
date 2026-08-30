@@ -214,6 +214,10 @@ describe('coach.ts — usage gate', () => {
     const gateInfraError = Object.assign(new Error('RPC read_ai_usage_spend devolvió 500.'), {
       statusCode: 503,
       errorCode: 'server_error',
+      diagnostics: {
+        upstreamStatus: 400,
+        upstreamBody: '{"code":"42702","message":"column reference is ambiguous"}',
+      },
     })
     handlerMocks.assertUsageGate.mockRejectedValue(gateInfraError)
     const providerFetch = stubProviderFetch()
@@ -222,6 +226,8 @@ describe('coach.ts — usage gate', () => {
 
     expect(response.statusCode).toBe(503)
     expect(JSON.parse(response.body).errorCode).toBe('server_error')
+    expect(response.body).not.toContain('42702')
+    expect(response.body).not.toContain('ambiguous')
     expect(providerFetch).not.toHaveBeenCalled()
     // No retryable: un solo intento consulta el gate, no dos.
     expect(handlerMocks.assertUsageGate).toHaveBeenCalledTimes(1)

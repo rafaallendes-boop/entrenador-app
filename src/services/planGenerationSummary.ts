@@ -26,6 +26,7 @@ import {
   type StrengthPhase,
   type StrengthSportProfile,
 } from './training/strengthSelector'
+import { resolveProfileStrengthSafetyConstraints } from './training/strengthSafetySurface'
 import {
   deriveRunningProgressionState,
   extractRecentRunningSessions,
@@ -241,6 +242,7 @@ function buildIntentsBySport(
       competitionSoon,
       historicalSessions,
       strengthAcwr: acwr.strength,
+      safetyConstraints: resolveProfileStrengthSafetyConstraints(profile),
     })
     intents.strength = state.intent
   }

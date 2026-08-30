@@ -32,19 +32,22 @@ export type WeekCreatorFailureCode =
   | 'actions_parse_failed'
   | 'schema_invalid'
   | 'provider_error'
+  | 'safety_blocked'
   | RepairFailure['errorClass']
 
 export type WeekCreatorFailureDecision =
   | 'local_fallback'
   | 'targeted_model_repair'
   | 'provider_retry'
+  /** Terminal: neither a provider retry nor local fallback is safe. */
+  | 'safe_decline'
 
 export type WeekCreatorFailure = {
   code: WeekCreatorFailureCode
   category: WeekCreatorFailureCategory
   decision: WeekCreatorFailureDecision
   error: string
-  outcome: 'parse_invalid' | 'schema_invalid' | 'quality_rejected'
+  outcome: 'parse_invalid' | 'schema_invalid' | 'quality_rejected' | 'safety_blocked'
   warnings: string[]
 }
 

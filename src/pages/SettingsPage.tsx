@@ -1561,6 +1561,8 @@ function formatAIOutcome(outcome: NonNullable<AITechnicalResult['outcome']>): st
       return 'schema invalido'
     case 'quality_rejected':
       return 'rechazada por calidad'
+    case 'safety_blocked':
+      return 'bloqueada por restricción'
   }
 }
 
@@ -1570,6 +1572,8 @@ function formatGenerationOutcome(outcome: NonNullable<AITechnicalResult['generat
       return 'modelo valido'
     case 'local_fallback':
       return 'fallback local'
+    case 'safe_decline':
+      return 'declinada por restricción'
     case 'failed':
       return 'fallida'
   }

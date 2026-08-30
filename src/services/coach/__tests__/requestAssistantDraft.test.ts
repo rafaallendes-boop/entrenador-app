@@ -109,6 +109,7 @@ describe('requestAssistantDraft', () => {
   it.each([
     [new AIProviderError('gemini', 'timeout', 'timeout', true), 'timeout'],
     [new AIProviderError('gemini', 'server_error', 'server', true), 'network'],
+    [new AIProviderError('gemini', 'server_error', 'server', false), 'unavailable'],
     [new AIProviderError('gemini', 'rate_limit', '429 del proveedor', true), 'rate-limit'],
     [new AIProviderError('gemini', 'misconfigured', 'sin API key', false), 'unavailable'],
     [new UsageGateUnavailableError('gate caído'), 'unavailable'],

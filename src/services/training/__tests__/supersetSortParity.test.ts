@@ -16,7 +16,7 @@ describe('orden con superseries', () => {
       ex('Clean', 4, 'g1'),
       ex('Dominadas', 4, 'g1'),
       ex('Peso muerto con trap bar', 4),
-    ], { durationMin: 60 })!
+    ], { durationMin: 60, safetyConstraints: [] })!
 
     const names = result.map((e) => e.name)
     const cleanIndex = names.indexOf('Clean')
@@ -29,7 +29,7 @@ describe('orden con superseries', () => {
       ex('Peso muerto con trap bar', 4),
       ex('Clean', 4, 'g1'),
       ex('Dominadas', 4, 'g1'),
-    ], { durationMin: 60 })!
+    ], { durationMin: 60, safetyConstraints: [] })!
 
     // olympic (lider del grupo) precede a legs en BLOCK_ORDER.
     // `ensureCoreBlock` antepone un core (dead_bug) porque durationMin >= 45
@@ -43,7 +43,7 @@ describe('orden con superseries', () => {
       ex('Clean', 4, 'g1'),
       ex('Dominadas', 4, 'g1'),
       ex('Salto al cajon', 4, 'g1'),
-    ], { durationMin: 60 })!
+    ], { durationMin: 60, safetyConstraints: [] })!
 
     // Mismo motivo que el test anterior: ensureCoreBlock antepone dead_bug.
     expect(result.map((e) => e.name)).toEqual(['Dead bug — control de tronco', 'Clean', 'Dominadas', 'Salto al cajon'])
@@ -54,7 +54,7 @@ describe('orden con superseries', () => {
       ex('Press Pallof', 4, 'g1'),
       ex('Corte diagonal en polea', 4, 'g1'),
       ex('Peso muerto con trap bar', 4),
-    ], { durationMin: 60 })!
+    ], { durationMin: 60, safetyConstraints: [] })!
 
     const grouped = result.filter((exercise) => exercise.supersetGroup === 'g1')
     expect(grouped.map((exercise) => exercise.name)).toEqual([
@@ -74,7 +74,7 @@ describe('paridad sin grupos', () => {
 
   it('una sesion sin grupos produce el mismo orden que el comparador plano', () => {
     for (const session of CORPUS) {
-      const result = normalizeStrengthSessionExercises(session, { durationMin: 60 })!
+      const result = normalizeStrengthSessionExercises(session, { durationMin: 60, safetyConstraints: [] })!
 
       expect(result.every((e) => e.supersetGroup === undefined)).toBe(true)
       // Se compara contra el snapshot congelado abajo, no contra una reimplementacion.

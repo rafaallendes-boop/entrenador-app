@@ -76,6 +76,7 @@ function derivePlanStateFromWeeks(plan: TrainingPlan, weeks: TrainingPlanWeek[])
       ? 'generating'
       : plan.generationState
   }
+  if (weeks.some((week) => week.status === 'draft' && week.generationMeta.safetyDegraded === true)) return 'partial'
   if (readyWeeks === weeks.length) return 'complete'
   if (readyWeeks > 0) return 'partial'
   if (weeks.some((week) => week.status === 'error' || (week.generationMeta.attempts ?? 0) > 0)) return 'failed'

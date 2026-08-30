@@ -8,6 +8,7 @@ export function derivePlanGenerationState(weeks: TrainingPlanWeek[]): PlanGenera
   if (weeks.length === 0) return 'shell'
 
   const readyWeeks = weeks.filter((week) => week.status === 'draft' && week.sessions.length > 0).length
+  if (weeks.some((week) => week.status === 'draft' && week.generationMeta.safetyDegraded === true)) return 'partial'
   if (readyWeeks === weeks.length) return 'complete'
   if (readyWeeks > 0) return 'partial'
   if (weeks.some((week) => week.status === 'error' || (week.generationMeta.attempts ?? 0) > 0)) return 'failed'

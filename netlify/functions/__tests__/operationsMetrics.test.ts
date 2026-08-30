@@ -6,7 +6,7 @@ const ORIGINAL_ENV = { ...process.env }
 const WINDOW = {
   activity: { accountsUsingAi: 2, accountsPlanning: 1 },
   coach: {
-    requests: 4, errors: 1, topErrorCodes: [{ code: 'timeout', count: 1 }],
+    requests: 4, errors: 1, safetyBlocked: 0, topErrorCodes: [{ code: 'timeout', count: 1 }],
     latencyP50: 800, latencyP90: 1500, latencyP95: 1800, costUsd: 0.05,
     coverage: { rowsTotal: 4, rowsWithCost: 3, tokensTotal: 100, tokensWithCost: 80 },
   },

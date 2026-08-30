@@ -27,6 +27,22 @@ const CURRENT_WEEK_PATTERN = /\b(esta\s+semana|semana\s+actual)\b/
 // generate the whole week. Treat a week word as scope only when it follows the
 // planning verb directly ("créame una semana", "arma el plan").
 const EXPLICIT_WEEK_SCOPE_PATTERN = /\b(?:crea(?:r|me)?|haz(?:me)?|arma(?:me)?|genera(?:r|me)?|planifica(?:r)?|organiza(?:r)?|programa(?:r)?|propuesta|dame|entrega(?:me)?)(?:\s+\w+){0,4}\s+\b(?:semana|microciclo|plan(?:\s+de\s+entrenamiento)?)\b/
+// Verbos con lectura *inequívoca* de creación. Deliberadamente más angosto que
+// WEEK_PLANNING_VERB_PATTERN: "dame", "entrégame" y "propuesta" sirven igual
+// para pedir información ("dame feedback de mi sesión"), y sin un día explícito
+// no hay forma de distinguir crear de preguntar. Si la frase trae día, la
+// resuelve antes `isSpecificDaySessionRequest` y este patrón no participa.
+// Sustantivo de sesión en plural. Es la señal que separa "créame una sesión de
+// pesas para la próxima semana" (una acción) de "créame las sesiones de la
+// próxima semana" (una semana): el verbo y el objeto son los mismos y sólo
+// cambia el número.
+// Verbos ambiguos: piden tanto crear como saber ("dame una sesión de pesas" vs
+// "dame feedback de mi sesión"). Sólo cuentan como creación cuando el objeto es
+// INDEFINIDO, que es la lectura que no admite pregunta.
+const SOFT_CREATION_VERB_PATTERN = /\b(quiero|necesito|dame|damelo|entregame)\b/
+const INDEFINITE_SESSION_OBJECT_PATTERN = /\b(?:una|un|otra|otro)\s+(?:\w+\s+){0,2}(?:sesion|entreno|entrenamiento|running|squash|fuerza|pesas|gym|gimnasio|cycling|ciclismo|bici|movilidad|rutina)\b/
+const PLURAL_SESSION_PATTERN = /\b(sesiones|entrenamientos|entrenos|rutinas)\b/
+const SESSION_CREATION_VERB_PATTERN = /\b(crea(?:r|me)?|haz(?:me)?|arma(?:me)?|genera(?:r|me)?|programa(?:r|me)?|agenda(?:me)?|agrega(?:r|me)?|pon(?:er|me)?|incorpora(?:me)?)\b/
 // Include short object-pronoun imperatives ("créala", "hazlo") because users
 // commonly confirm the session the coach just described with a one-word reply.
 // Without this, those replies fall through to chat_general and can only produce
@@ -77,6 +93,26 @@ export function resolveChatRoute(
   // should always reach the action engine even when the verb is colloquial
   // ("ponme un running el viernes", "haceme squash mañana", "quiero una sesión de fuerza el lunes").
   if (isSpecificDaySessionRequest) {
+    return { kind: 'chat_action' }
+  }
+
+  // Una petición de crear UNA sesión que nombra la semana sólo como calificador
+  // temporal ("créame una sesión de pesas para la próxima semana") no es una
+  // planificación semanal. `EXPLICIT_WEEK_SCOPE_PATTERN` ya distingue scope de
+  // calificador, pero hasta acá sólo se consultaba dentro de
+  // `isSpecificDaySessionRequest`, que exige un día de la semana; sin día, el
+  // guard nunca corría y la petición terminaba en el motor de semana completa.
+  // Cubre también el caso sin referencia temporal alguna, que caía a
+  // chat_general y sólo podía responder en prosa.
+  const hasCreationVerb = SESSION_CREATION_VERB_PATTERN.test(normalized)
+    || (SOFT_CREATION_VERB_PATTERN.test(normalized) && INDEFINITE_SESSION_OBJECT_PATTERN.test(normalized))
+
+  if (
+    hasCreationVerb
+    && SESSION_TARGET_PATTERN.test(normalized)
+    && !PLURAL_SESSION_PATTERN.test(normalized)
+    && !EXPLICIT_WEEK_SCOPE_PATTERN.test(normalized)
+  ) {
     return { kind: 'chat_action' }
   }
 

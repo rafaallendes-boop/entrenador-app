@@ -1,8 +1,15 @@
 # RallyIQ - Project Review and Roadmap
 
-Actualizado: 2026-08-27
+Actualizado: 2026-08-30
 
 Base de contraste:
+
+- **Fuerza — restricciones estructurales de seguridad implementadas localmente
+  (2026-08-30):** ver §32. El ticket de lesión queda cubierto en Chat, Week
+  Creator, Plan Builder y aceptación; una sesión incompatible se repara con ids
+  canónicos o se declina sin propuesta. La suite completa pasa 503 archivos /
+  4056 tests, lint, typecheck y build. Está commiteado localmente pero no desplegado;
+  `025_coach_request_safety_blocked.sql` y el smoke autenticado siguen pendientes.
 
 - **Sección Pre-Lanzamiento abierta (2026-08-15):** ver §Pre-Lanzamiento, ubicada
   justo después de §Porcentaje De Avance. Consolida los 14 pendientes que separan
@@ -2127,6 +2134,51 @@ producción: se observó el estado presente con cero filas.
 `022` crea tres índices por `created_at` sin `CONCURRENTLY`, para que el script
 manual pueda ejecutarse como una unidad. En el volumen actual el bloqueo breve
 de escrituras es aceptable; aplicarla en una ventana de bajo tráfico.
+
+### 32. Fuerza — restricciones estructurales de seguridad por lesión (2026-08-30)
+
+Estado: **implementado, verificado y commiteado localmente; sin deploy**. La
+migración manual `025_coach_request_safety_blocked.sql` está escrita pero no se
+considera aplicada. El smoke autenticado con el perfil real del owner permanece
+pendiente.
+
+La lesión ya no se reduce a fatiga ni queda en una advertencia del prompt. Un
+parser único convierte perfil, wizard y mensajes del usuario en constraints
+estructurados por región corporal y patrón de carga, con fuentes y razones sin
+persistir texto médico. Los 77 ejercicios de fuerza declaran tags directos; la
+revisión deportiva específica de cervical y pelvis/sacroilíaca quedó incorporada
+fila por fila.
+
+El enforcement tiene dos capas. El selector filtra antes de experiencia, fase o
+fatiga. El finalizador resuelve identidad canónica, retira o reemplaza por el
+mismo patrón de movimiento, completa únicamente desde el pool permitido y exige
+densidad más trabajo de fuerza real. No existe bypass cuando el array de
+constraints está vacío: una sesión vacía o inventada también debe resultar
+verificable y viable. El sello ligado al contenido detecta cambios, pero no
+autentica; normalización elimina sellos del proveedor y aceptación siempre
+revalida restricciones actuales, contenido, duración y edición concurrente.
+
+El borde completo quedó cubierto: `add_session`, `update_session` sobre la sesión
+prospectiva y `create_week` atómico; Week Creator declina con
+`safety_blocked` sin retry ni fallback; Plan Builder conserva un tombstone y
+marca la semana degradada. En Plan Builder la densidad mínima se representa como
+slots del allocator global, para consumir I1 y conservar I4 entre workers; el
+finalizador terminal valida con modo `preserve` y bloquea cualquier déficit. La
+UI muestra qué región entendió y qué falta resolver. La telemetría emite solo ids
+y claves estructuradas; `/ops` cuenta las declinaciones seguras aparte de los
+errores mediante `025`.
+
+La regresión del día de semana queda solo como trazabilidad del ticket: el
+working tree ya la resolvía con `alignMessageWeekdayToActionDate`; esta entrega
+impide que el copy determinista de bloqueo reintroduzca fechas escritas por el
+proveedor.
+
+Gate de cierre local: **503 archivos / 4056 tests**, lint, `tsc -b`, build y
+`git diff --check` verdes. Pendientes operativos: aplicar `025`, desplegar y
+ejecutar el smoke autenticado descrito en el plan. Spec y plan:
+[`2026-08-30-strength-safety-constraints-design.md`](docs/superpowers/specs/2026-08-30-strength-safety-constraints-design.md)
+y
+[`2026-08-30-strength-safety-constraints.md`](docs/superpowers/plans/2026-08-30-strength-safety-constraints.md).
 
 ### Producto Publico Y Marca
 

@@ -25,6 +25,7 @@ import {
 } from '../../training/strengthSelector'
 import { getStrengthProgression } from '../../progressionInsights'
 import { toModelFacingProposal } from '../../training/strengthExerciseProposal'
+import { resolveProfileStrengthSafetyConstraints } from '../../training/strengthSafetySurface'
 import {
   deriveFatigueLevel,
   diffDays,
@@ -83,6 +84,7 @@ export function getStrengthSelectionContext(context: ChatContext): StrengthConte
     daysToCompetition,
     historicalSessions,
     strengthAcwr: context.loadAnalytics?.strengthAcwr,
+    safetyConstraints: resolveProfileStrengthSafetyConstraints(context.athleteProfile),
   }
 }
 

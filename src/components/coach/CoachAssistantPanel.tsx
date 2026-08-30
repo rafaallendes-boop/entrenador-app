@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { isBlockingFailure, type BlockingDraftFailure } from './draftFailurePolicy'
 import type {
   AthleteTriage,
   TriageSignal,
@@ -21,8 +22,15 @@ interface CoachAssistantPanelProps {
 
 type AthleteDraftState =
   | { status: 'loading' }
-  | { status: 'success'; body: string }
+  // `text` es el mensaje completo y editable: el saludo local más el cuerpo
+  // del modelo. Se guarda ya compuesto porque en cuanto el coach lo edita deja
+  // de existir una separación entre ambas partes.
+  | { status: 'success'; text: string }
   | { status: 'failure'; reason: DraftFailure }
+
+type CopyState = { athleteId: string; ok: boolean }
+
+const COPY_FEEDBACK_MS = 2_000
 
 const SIGNAL_PRIORITY: Record<TriageSignal['kind'], number> = {
   pain: 0,
@@ -38,21 +46,12 @@ const FAILURE_COPY: Record<DraftFailure, string> = {
   timeout: 'La redacción tardó demasiado. Puedes reintentar; puede consumir cupo.',
   network: 'No pudimos conectar con el servicio. Puedes reintentar; puede consumir cupo.',
   'rate-limit': 'El proveedor está temporalmente saturado. Puedes reintentar; puede consumir cupo.',
-  unavailable: 'La redacción con IA no está disponible en este momento. Puedes reintentar; puede consumir cupo.',
+  unavailable: 'La redacción con IA no está disponible en este momento. Puedes reintentar en unos minutos.',
   'invalid-response': 'No se generó un borrador válido. Puedes reintentar; puede consumir cupo.',
   'too-long': 'El borrador generado superó el límite de 600 caracteres. Puedes reintentar; puede consumir cupo.',
 }
 
-type BlockingDraftFailure = Extract<
-  DraftFailure,
-  'quota' | 'kill-switch' | 'entitlement'
->
 
-function isBlockingFailure(reason: DraftFailure): reason is BlockingDraftFailure {
-  return reason === 'quota'
-    || reason === 'kill-switch'
-    || reason === 'entitlement'
-}
 
 function signalLabel(signal: TriageSignal): string {
   switch (signal.kind) {
@@ -67,24 +66,79 @@ function signalLabel(signal: TriageSignal): string {
   }
 }
 
-function athletePriority(athlete: AthleteTriage): number {
-  return athlete.signals.reduce(
-    (priority, signal) => Math.min(priority, SIGNAL_PRIORITY[signal.kind]),
-    Number.POSITIVE_INFINITY,
+function topSignal(athlete: AthleteTriage): TriageSignal | undefined {
+  // `computeAthleteTriage` ya devuelve las señales ordenadas, pero resolver la
+  // más grave explícitamente evita que el orden de la lista sea un contrato
+  // implícito entre dos módulos.
+  return athlete.signals.reduce<TriageSignal | undefined>(
+    (best, signal) => (
+      !best || SIGNAL_PRIORITY[signal.kind] < SIGNAL_PRIORITY[best.kind] ? signal : best
+    ),
+    undefined,
   )
+}
+
+/**
+ * Magnitud dentro de un mismo tipo de señal: más alto es peor. Comparar
+ * severidades entre tipos distintos no significa nada —seis días de dolor no
+ * son "más" que seis sesiones vencidas—, por eso el tipo siempre desempata
+ * primero y esto sólo se aplica a igualdad de tipo.
+ */
+function signalSeverity(signal: TriageSignal): number {
+  switch (signal.kind) {
+    case 'pain':
+      return signal.days
+    case 'overdue-sessions':
+      return signal.count
+    case 'no-check-in':
+      return signal.days
+    case 'low-adherence':
+      return 100 - signal.adherencePct
+  }
+}
+
+function athletePriority(athlete: AthleteTriage): number {
+  const signal = topSignal(athlete)
+  return signal ? SIGNAL_PRIORITY[signal.kind] : Number.POSITIVE_INFINITY
+}
+
+function athleteSeverity(athlete: AthleteTriage): number {
+  const signal = topSignal(athlete)
+  return signal ? signalSeverity(signal) : Number.NEGATIVE_INFINITY
 }
 
 function sortByPriority(
   athletes: AthleteTriage[],
   athleteNames: Record<string, string>,
+  selfAthleteId: string,
 ): AthleteTriage[] {
   return [...athletes].sort((left, right) => (
+    // Tipo de señal más grave, luego su magnitud, luego cuántos frentes
+    // abiertos tiene el alumno. El nombre es sólo el desempate final.
     athletePriority(left) - athletePriority(right)
-    || (athleteNames[left.athleteId] ?? '').localeCompare(
-      athleteNames[right.athleteId] ?? '',
+    || athleteSeverity(right) - athleteSeverity(left)
+    || right.signals.length - left.signals.length
+    || athleteLabel(left.athleteId, selfAthleteId, athleteNames).localeCompare(
+      athleteLabel(right.athleteId, selfAthleteId, athleteNames),
       'es',
     )
   ))
+}
+
+function athleteLabel(
+  athleteId: string,
+  selfAthleteId: string,
+  athleteNames: Record<string, string>,
+): string {
+  return athleteId === selfAthleteId ? 'Tú' : (athleteNames[athleteId] ?? 'Atleta')
+}
+
+/**
+ * El saludo se compone acá, con el nombre que nunca salió del dispositivo: el
+ * modelo no recibe identidad y tiene prohibido escribir saludo.
+ */
+function composeDraftText(athleteName: string | undefined, body: string): string {
+  return `${athleteName ? `Hola ${athleteName},` : 'Hola,'}\n${body}`
 }
 
 function formatComputedAt(value: number): string {
@@ -108,6 +162,43 @@ export default function CoachAssistantPanel({
 }: CoachAssistantPanelProps) {
   const [draftByAthlete, setDraftByAthlete] = useState<Record<string, AthleteDraftState>>({})
   const [blockingFailure, setBlockingFailure] = useState<BlockingDraftFailure | null>(null)
+  const [copyState, setCopyState] = useState<CopyState | null>(null)
+  const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => () => {
+    if (copyTimeoutRef.current !== null) clearTimeout(copyTimeoutRef.current)
+  }, [])
+
+  function flashCopyState(next: CopyState) {
+    if (copyTimeoutRef.current !== null) clearTimeout(copyTimeoutRef.current)
+    setCopyState(next)
+    copyTimeoutRef.current = setTimeout(() => {
+      copyTimeoutRef.current = null
+      setCopyState(null)
+    }, COPY_FEEDBACK_MS)
+  }
+
+  async function handleCopy(athleteId: string, text: string) {
+    try {
+      // El portapapeles no existe en contexto inseguro ni con permisos
+      // denegados. El textarea deja el texto seleccionable, así que la
+      // degradación es decirlo, no bloquear.
+      const clipboard = navigator.clipboard
+      if (!clipboard?.writeText) throw new Error('clipboard unavailable')
+      await clipboard.writeText(text)
+      flashCopyState({ athleteId, ok: true })
+    } catch {
+      flashCopyState({ athleteId, ok: false })
+    }
+  }
+
+  function handleEditDraft(athleteId: string, text: string) {
+    setDraftByAthlete((states) => {
+      const current = states[athleteId]
+      if (current?.status !== 'success') return states
+      return { ...states, [athleteId]: { status: 'success', text } }
+    })
+  }
 
   async function handleDraft(athleteId: string) {
     if (triage === null || blockingFailure !== null) return
@@ -133,7 +224,7 @@ export default function CoachAssistantPanel({
       return {
         ...states,
         [athleteId]: result.ok
-          ? { status: 'success', body: result.body }
+          ? { status: 'success', text: composeDraftText(athleteNames[athleteId], result.body) }
           : { status: 'failure', reason: result.reason },
       }
     })
@@ -178,6 +269,7 @@ export default function CoachAssistantPanel({
   const withSignals = sortByPriority(
     triage.athletes.filter((athlete) => athlete.signals.length > 0),
     athleteNames,
+    selfAthleteId,
   )
   const insufficientOnly = triage.athletes.filter(
     (athlete) => athlete.signals.length === 0 && athlete.insufficientData,
@@ -203,7 +295,7 @@ export default function CoachAssistantPanel({
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h4 className="truncate text-sm font-semibold text-ink">
-              {athleteNames[athlete.athleteId] ?? 'Atleta'}
+              {athleteLabel(athlete.athleteId, selfAthleteId, athleteNames)}
             </h4>
             {athlete.insufficientData && (
               <p className="mt-1 text-xs text-amber-200">Sin datos suficientes</p>
@@ -261,18 +353,41 @@ export default function CoachAssistantPanel({
           </p>
         )}
         {draft?.status === 'success' && (
-          <div
-            data-testid={`draft-body-${athlete.athleteId}`}
-            className="mt-3 select-text rounded-xl border border-white/10 bg-black/15 p-3"
-          >
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
-              Borrador para revisar y copiar
-            </p>
-            <div className="mt-2 whitespace-pre-wrap text-sm text-ink">
-              <p>{athleteNames[athlete.athleteId]
-                ? `Hola ${athleteNames[athlete.athleteId]},`
-                : 'Hola,'}</p>
-              <p className="mt-1">{draft.body}</p>
+          <div className="mt-3 rounded-xl border border-white/10 bg-black/15 p-3">
+            <label
+              htmlFor={`draft-body-${athlete.athleteId}`}
+              className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted"
+            >
+              Borrador editable · revísalo antes de enviarlo
+            </label>
+            <textarea
+              id={`draft-body-${athlete.athleteId}`}
+              data-testid={`draft-body-${athlete.athleteId}`}
+              value={draft.text}
+              rows={4}
+              onChange={(event) => handleEditDraft(athlete.athleteId, event.target.value)}
+              className="mt-2 w-full resize-y rounded-lg border border-white/10 bg-black/20 p-2 text-sm text-ink"
+            />
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                data-testid={`copy-${athlete.athleteId}`}
+                onClick={() => { void handleCopy(athlete.athleteId, draft.text) }}
+                className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-xs font-semibold text-ink transition-colors hover:bg-white/10"
+              >
+                Copiar
+              </button>
+              {copyState?.athleteId === athlete.athleteId && (
+                <span
+                  role="status"
+                  data-testid={`copy-state-${athlete.athleteId}`}
+                  className={`text-xs ${copyState.ok ? 'text-ink-muted' : 'text-amber-200'}`}
+                >
+                  {copyState.ok
+                    ? 'Copiado'
+                    : 'No pudimos copiar. Selecciona el texto y cópialo a mano.'}
+                </span>
+              )}
             </div>
           </div>
         )}

@@ -10,6 +10,7 @@ const VALID = {
   coach: {
     requests: 10,
     errors: 2,
+    safetyBlocked: 1,
     topErrorCodes: [{ code: 'timeout', count: 2 }],
     latencyP50: 900,
     latencyP90: 2100,
@@ -75,6 +76,13 @@ describe('operationsMetricsContract', () => {
   it('rechaza valores no numericos', () => {
     const broken = { ...VALID, activity: { accountsUsingAi: '3', accountsPlanning: 1 } }
     expect(isOperationsWindow(broken)).toBe(false)
+  })
+
+  it('requiere las declinaciones seguras y las mantiene separadas de errores', () => {
+    expect(isOperationsWindow({ ...VALID, coach: { ...VALID.coach, safetyBlocked: 3 } })).toBe(true)
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- se omite el campo obligatorio a propósito
+    const { safetyBlocked: _omitted, ...coach } = VALID.coach
+    expect(isOperationsWindow({ ...VALID, coach })).toBe(false)
   })
 
   it('rechaza attempts.byOutcome como array: no es un Record', () => {

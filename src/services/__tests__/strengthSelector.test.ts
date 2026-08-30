@@ -317,6 +317,7 @@ describe('strengthSelector progression', () => {
       competitionSoon: true,
       daysToCompetition: 2,
       sessionDurationMin: 40,
+      safetyConstraints: [],
     })
 
     expect(selection.exercises.length).toBeLessThanOrEqual(3)
@@ -335,6 +336,7 @@ describe('strengthSelector progression', () => {
       availableEquipment: ['barbell', 'dumbbell', 'kettlebell', 'bands', 'bodyweight', 'medicine_ball', 'cable', 'machine', 'bike'],
       experienceLevel: 'advanced',
       sessionDurationMin: 60,
+      safetyConstraints: [],
     })
 
     const names = selection.exercises.map((exercise) => exercise.name)
@@ -354,6 +356,7 @@ describe('strengthSelector progression', () => {
       availableEquipment: ['dumbbell', 'bands', 'bodyweight', 'medball', 'trx', 'stability ball'],
       competitionSoon: false,
       sessionDurationMin: 60,
+      safetyConstraints: [],
     })
 
     const shortSupport = selectStrengthSession({
@@ -367,6 +370,7 @@ describe('strengthSelector progression', () => {
       availableEquipment: ['dumbbell', 'bands', 'bodyweight'],
       competitionSoon: false,
       sessionDurationMin: 30,
+      safetyConstraints: [],
     })
 
     expect(getTargetExerciseDensity({
@@ -377,6 +381,7 @@ describe('strengthSelector progression', () => {
       sportProfile: 'sport_support',
       primarySport: 'squash',
       sessionDurationMin: 60,
+      safetyConstraints: [],
     })).toMatchObject({ min: 6, target: 8, max: 9 })
     expect(longSupport.exercises.length).toBeGreaterThanOrEqual(8)
     expect(shortSupport.exercises.length).toBeGreaterThanOrEqual(3)
@@ -395,6 +400,7 @@ describe('strengthSelector progression', () => {
       availableEquipment: ['dumbbell', 'bands', 'bodyweight', 'trx', 'stability ball'],
       competitionSoon: false,
       sessionDurationMin: 60,
+      safetyConstraints: [],
     })
 
     expect(getTargetExerciseDensity({
@@ -404,6 +410,7 @@ describe('strengthSelector progression', () => {
       goal: 'mantener fuerza sin castigar',
       sportProfile: 'sport_support',
       sessionDurationMin: 60,
+      safetyConstraints: [],
     }).target).toBeGreaterThanOrEqual(4)
     expect(selection.exercises.length).toBeGreaterThanOrEqual(4)
   })
@@ -421,6 +428,7 @@ describe('strengthSelector progression', () => {
       competitionSoon: true,
       daysToCompetition: 2,
       sessionDurationMin: 60,
+      safetyConstraints: [],
     })
 
     expect(selection.exercises.length).toBeGreaterThanOrEqual(4)
@@ -440,6 +448,7 @@ describe('strengthSelector progression', () => {
       availableEquipment: ['barbell', 'trap bar', 'bodyweight', 'box', 'ladder', 'plate', 'bands', 'trx', 'stability ball'],
       competitionSoon: false,
       sessionDurationMin: 55,
+      safetyConstraints: [],
     })
 
     const selectedDefinitions = selection.exercises.map((exercise) => findStrengthExerciseByName(exercise.name)!)
@@ -467,6 +476,7 @@ describe('strengthSelector progression', () => {
       availableEquipment: ['barbell', 'trap bar', 'bodyweight', 'bands', 'cable', 'stability ball'],
       competitionSoon: false,
       sessionDurationMin: 50,
+      safetyConstraints: [],
     })
 
     const selectedDefinitions = selection.exercises.map((exercise) => findStrengthExerciseByName(exercise.name)!)
@@ -494,6 +504,7 @@ describe('strengthSelector progression', () => {
       availableEquipment: ['barbell', 'trap bar', 'bodyweight', 'bands', 'cable', 'assault bike', 'trotadora de aire'],
       competitionSoon: false,
       sessionDurationMin: 65,
+      safetyConstraints: [],
     })
 
     const selectedDefinitions = selection.exercises.map((exercise) => findStrengthExerciseByName(exercise.name)!)
@@ -516,6 +527,7 @@ describe('strengthSelector progression', () => {
       availableEquipment: ['barbell', 'trap bar', 'bodyweight', 'bands', 'cable', 'ladder', 'stability ball'],
       competitionSoon: false,
       sessionDurationMin: 65,
+      safetyConstraints: [],
     })
 
     const selectedDefinitions = selection.exercises.map((exercise) => findStrengthExerciseByName(exercise.name)!)
@@ -541,6 +553,7 @@ describe('strengthSelector progression', () => {
       competitionSoon: true,
       daysToCompetition: 2,
       sessionDurationMin: 40,
+      safetyConstraints: [],
     })
 
     const selectedIds = selection.exercises.map((exercise) => findStrengthExerciseByName(exercise.name)?.id)
@@ -565,6 +578,7 @@ describe('strengthSelector progression', () => {
         sportProfile: 'strength_primary',
         availableEquipment: ['dumbbell', 'bands'],
         experienceLevel: 'beginner',
+        safetyConstraints: [],
       },
       new Set<string>(),
     )
@@ -584,6 +598,7 @@ describe('strengthSelector progression', () => {
       experienceLevel: 'beginner',
       sessionDurationMin: 45,
       competitionSoon: false,
+      safetyConstraints: [],
     })
 
     expect(selection.exercises.length).toBeGreaterThan(0)

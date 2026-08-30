@@ -42,7 +42,7 @@ describe('contrato de comportamiento de fuerza', () => {
         // el propio `dead_bug` quedaría duplicado.
         const enhanced = enhanceStrengthSessionExercises(
           [proposalFor(definition.name)],
-          { durationMin: 30, strengthProfile: PROFILE },
+          { durationMin: 30, strengthProfile: PROFILE, safetyConstraints: [] },
         ) ?? []
 
         // Guard explícito: si una futura inyección vuelve a agregar ejercicios,

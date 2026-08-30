@@ -4,6 +4,7 @@ import { bucketForClass, bucketLimitForTier } from '../../../src/services/entitl
 import { evaluateSpendCaps, type SpendSnapshot } from '../../../src/services/entitlements/spendCapPolicy'
 
 const RPC_TIMEOUT_MS = 3_000
+const UPSTREAM_BODY_MAX_CHARS = 2_000
 
 export function isKillSwitchActive(env: NodeJS.ProcessEnv = process.env): boolean {
   return env['AI_KILL_SWITCH_ENABLED'] === 'true'
@@ -17,6 +18,7 @@ export interface UsageGateHttpError extends Error {
   statusCode: number
   errorCode: 'quota_exceeded' | 'spend_cap_exceeded' | 'kill_switch_active' | 'server_error'
   detail?: unknown
+  diagnostics?: { upstreamStatus?: number; upstreamBody?: string }
 }
 
 function makeGateError(
@@ -24,11 +26,13 @@ function makeGateError(
   statusCode: number,
   errorCode: UsageGateHttpError['errorCode'],
   detail?: unknown,
+  diagnostics?: UsageGateHttpError['diagnostics'],
 ): UsageGateHttpError {
   const error = new Error(message) as UsageGateHttpError
   error.statusCode = statusCode
   error.errorCode = errorCode
   if (detail !== undefined) error.detail = detail
+  if (diagnostics !== undefined) error.diagnostics = diagnostics
   return error
 }
 
@@ -58,8 +62,11 @@ export function makeQuotaExceededError(bucketId: string, limit: number, remainin
   )
 }
 
-export function makeServerError(message: string): UsageGateHttpError {
-  return makeGateError(message, 503, 'server_error')
+export function makeServerError(
+  message: string,
+  diagnostics?: UsageGateHttpError['diagnostics'],
+): UsageGateHttpError {
+  return makeGateError(message, 503, 'server_error', undefined, diagnostics)
 }
 
 function serviceRoleCredentials(): { url: string; key: string } | null {
@@ -103,7 +110,15 @@ async function callRpc<T>(functionName: string, args: Record<string, unknown>, t
     throw makeServerError(`RPC ${functionName} no se pudo completar: ${error instanceof Error ? error.message : 'error de red'}.`)
   }
   if (!response.ok) {
-    throw makeServerError(`RPC ${functionName} devolvió ${response.status}.`)
+    // PostgREST entrega code/message/details/hint en este body. Se conserva
+    // truncado para diagnóstico de servidor, pero no se incorpora al mensaje
+    // que los handlers serializan hacia el cliente.
+    const diagnostics = {
+      upstreamStatus: response.status,
+      upstreamBody: (await response.text().catch(() => '')).slice(0, UPSTREAM_BODY_MAX_CHARS),
+    }
+    console.error('[usage-gate] RPC failed', { functionName, diagnostics })
+    throw makeServerError(`RPC ${functionName} devolvió ${response.status}.`, diagnostics)
   }
   try {
     return await response.json() as T

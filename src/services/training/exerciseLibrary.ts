@@ -1,4 +1,5 @@
 import type { ExerciseGroup } from '../../types'
+import type { ExerciseSafetyProfile } from '../../types/strengthSafety'
 import type { ExerciseLibraryRef } from '../../types/exerciseLibraryRef'
 
 export type ExerciseCategory = 'lower' | 'upper' | 'core' | 'full_body'
@@ -80,6 +81,8 @@ export interface ExerciseDefinition {
   prescriptionUnit?: 'reps' | 'seconds'
   appropriateForPhases?: ExercisePhase[]
   blockRotationGroup?: ExerciseRotationGroup
+  /** Perfil declarativo de carga; obligatorio para impedir altas sin clasificar. */
+  safety: ExerciseSafetyProfile
 }
 
 export type StrengthExerciseRole = 'main_lift' | 'accessory' | 'trunk' | 'power'
@@ -87,6 +90,7 @@ export type StrengthExerciseRole = 'main_lift' | 'accessory' | 'trunk' | 'power'
 const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   {
     id: 'back_squat',
+    safety: { loadsRegions: ['lumbar', 'trunk_core', 'hip', 'knee', 'shoulder'], loadPatterns: ['axial_load', 'deep_flexion'] },
     name: 'Sentadilla trasera con barra',
     category: 'lower',
     movement: 'squat',
@@ -103,6 +107,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'front_squat',
+    safety: { loadsRegions: ['lumbar', 'trunk_core', 'hip', 'knee', 'shoulder', 'wrist'], loadPatterns: ['axial_load', 'deep_flexion'] },
     name: 'Sentadilla frontal',
     category: 'lower',
     movement: 'squat',
@@ -119,6 +124,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'goblet_squat',
+    safety: { loadsRegions: ['lumbar', 'trunk_core', 'hip', 'knee'], loadPatterns: ['axial_load', 'deep_flexion'] },
     name: 'Sentadilla goblet',
     category: 'lower',
     movement: 'squat',
@@ -132,6 +138,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'bulgarian_split_squat',
+    safety: { loadsRegions: ['lumbar', 'trunk_core', 'hip', 'knee'], loadPatterns: ['axial_load', 'deep_flexion'] },
     name: 'Sentadilla búlgara',
     category: 'lower',
     movement: 'squat',
@@ -149,6 +156,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'walking_lunge',
+    safety: { loadsRegions: ['lumbar', 'trunk_core', 'hip', 'knee'], loadPatterns: ['axial_load', 'deep_flexion'] },
     name: 'Zancadas caminando',
     category: 'lower',
     movement: 'locomotion',
@@ -166,6 +174,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'romanian_deadlift',
+    safety: { loadsRegions: ['lumbar', 'trunk_core', 'hip', 'hamstring'], loadPatterns: ['loaded_hinge', 'axial_load', 'grip_demand'] },
     name: 'Peso muerto rumano',
     category: 'lower',
     movement: 'hinge',
@@ -182,6 +191,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'deadlift',
+    safety: { loadsRegions: ['lumbar', 'trunk_core', 'hip', 'hamstring', 'knee'], loadPatterns: ['loaded_hinge', 'axial_load', 'grip_demand'] },
     name: 'Peso muerto',
     category: 'lower',
     movement: 'hinge',
@@ -195,6 +205,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'sumo_deadlift',
+    safety: { loadsRegions: ['lumbar', 'trunk_core', 'pelvis_sacroiliac', 'hip', 'hamstring', 'groin', 'knee'], loadPatterns: ['loaded_hinge', 'axial_load', 'grip_demand'] },
     name: 'Peso muerto sumo',
     category: 'lower',
     movement: 'hinge',
@@ -211,6 +222,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'trap_bar_deadlift',
+    safety: { loadsRegions: ['lumbar', 'trunk_core', 'hip', 'hamstring', 'knee'], loadPatterns: ['loaded_hinge', 'axial_load', 'grip_demand'] },
     name: 'Peso muerto con trap bar',
     category: 'lower',
     movement: 'hinge',
@@ -227,6 +239,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'hip_thrust',
+    safety: { loadsRegions: ['lumbar', 'pelvis_sacroiliac', 'hip', 'hamstring'], loadPatterns: ['loaded_hinge'] },
     name: 'Empuje de cadera',
     category: 'lower',
     movement: 'hinge',
@@ -243,6 +256,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'step_up',
+    safety: { loadsRegions: ['hip', 'knee', 'ankle'], loadPatterns: ['axial_load'] },
     name: 'Subida al cajón',
     category: 'lower',
     movement: 'locomotion',
@@ -260,6 +274,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'bench_press',
+    safety: { loadsRegions: ['shoulder', 'elbow', 'wrist', 'chest_ribs'], loadPatterns: [] },
     name: 'Press banca',
     category: 'upper',
     movement: 'push',
@@ -276,6 +291,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'incline_bench_press',
+    safety: { loadsRegions: ['shoulder', 'elbow', 'wrist', 'chest_ribs'], loadPatterns: [] },
     name: 'Press inclinado con barra',
     category: 'upper',
     movement: 'push',
@@ -292,6 +308,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'close_grip_bench_press',
+    safety: { loadsRegions: ['shoulder', 'elbow', 'wrist', 'chest_ribs'], loadPatterns: [] },
     name: 'Press banca agarre cerrado',
     category: 'upper',
     movement: 'push',
@@ -308,6 +325,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'incline_dumbbell_press',
+    safety: { loadsRegions: ['shoulder', 'elbow', 'wrist', 'chest_ribs'], loadPatterns: [] },
     name: 'Press inclinado con mancuernas',
     category: 'upper',
     movement: 'push',
@@ -321,6 +339,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'overhead_press',
+    safety: { loadsRegions: ['shoulder', 'elbow', 'wrist', 'cervical', 'lumbar', 'trunk_core'], loadPatterns: ['overhead', 'axial_load'] },
     name: 'Press vertical',
     category: 'upper',
     movement: 'push',
@@ -337,6 +356,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'push_press',
+    safety: { loadsRegions: ['shoulder', 'elbow', 'wrist', 'cervical', 'lumbar', 'trunk_core', 'knee'], loadPatterns: ['overhead', 'axial_load'] },
     name: 'Push press',
     category: 'upper',
     movement: 'push',
@@ -350,6 +370,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'landmine_press',
+    safety: { loadsRegions: ['shoulder', 'elbow', 'wrist', 'trunk_core'], loadPatterns: [] },
     name: 'Press con barra en landmine',
     category: 'upper',
     movement: 'push',
@@ -366,6 +387,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'pull_up',
+    safety: { loadsRegions: ['shoulder', 'elbow', 'wrist'], loadPatterns: ['grip_demand'] },
     name: 'Dominada',
     category: 'upper',
     movement: 'pull',
@@ -382,6 +404,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'assisted_pull_up',
+    safety: { loadsRegions: ['shoulder', 'elbow', 'wrist'], loadPatterns: ['grip_demand'] },
     name: 'Dominada asistida',
     category: 'upper',
     movement: 'pull',
@@ -395,6 +418,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'bent_over_row',
+    safety: { loadsRegions: ['lumbar', 'thoracic', 'trunk_core', 'shoulder', 'elbow', 'hamstring'], loadPatterns: ['loaded_hinge', 'grip_demand'] },
     name: 'Remo inclinado',
     category: 'upper',
     movement: 'pull',
@@ -408,6 +432,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'chest_supported_row',
+    safety: { loadsRegions: ['thoracic', 'shoulder', 'elbow'], loadPatterns: ['grip_demand'] },
     name: 'Remo con pecho apoyado',
     category: 'upper',
     movement: 'pull',
@@ -421,6 +446,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'lat_pulldown',
+    safety: { loadsRegions: ['shoulder', 'elbow', 'wrist'], loadPatterns: ['grip_demand'] },
     name: 'Jalón al pecho',
     category: 'upper',
     movement: 'pull',
@@ -434,6 +460,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'pallof_press',
+    safety: { loadsRegions: ['lumbar', 'trunk_core', 'shoulder'], loadPatterns: ['rotation'] },
     name: 'Press Pallof',
     category: 'core',
     movement: 'rotation',
@@ -450,6 +477,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'dead_bug',
+    safety: { loadsRegions: ['lumbar', 'trunk_core'], loadPatterns: [] },
     name: 'Dead bug — control de tronco',
     category: 'core',
     movement: 'rotation',
@@ -466,6 +494,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'plank',
+    safety: { loadsRegions: ['lumbar', 'trunk_core', 'shoulder'], loadPatterns: [] },
     name: 'Plancha frontal',
     category: 'core',
     movement: 'carry',
@@ -479,6 +508,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'side_plank',
+    safety: { loadsRegions: ['lumbar', 'trunk_core', 'shoulder', 'hip'], loadPatterns: [] },
     name: 'Plancha lateral',
     category: 'core',
     movement: 'carry',
@@ -495,6 +525,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'med_ball_rotational_throw',
+    safety: { loadsRegions: ['lumbar', 'trunk_core', 'thoracic', 'shoulder'], loadPatterns: ['rotation'] },
     name: 'Lanzamiento rotacional con balón medicinal contra pared',
     category: 'core',
     movement: 'rotation',
@@ -508,6 +539,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'cable_chop',
+    safety: { loadsRegions: ['lumbar', 'trunk_core', 'thoracic', 'shoulder'], loadPatterns: ['rotation'] },
     name: 'Corte diagonal en polea',
     category: 'core',
     movement: 'rotation',
@@ -521,6 +553,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'farmer_carry',
+    safety: { loadsRegions: ['lumbar', 'trunk_core', 'thoracic', 'cervical', 'pelvis_sacroiliac', 'shoulder', 'wrist'], loadPatterns: ['axial_load', 'grip_demand'] },
     name: 'Caminata del granjero',
     category: 'core',
     movement: 'carry',
@@ -534,6 +567,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'box_jump',
+    safety: { loadsRegions: ['knee', 'ankle', 'calf', 'achilles', 'foot', 'hip'], loadPatterns: ['impact'] },
     name: 'Salto al cajón',
     category: 'full_body',
     movement: 'locomotion',
@@ -550,6 +584,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'jump_squat',
+    safety: { loadsRegions: ['lumbar', 'knee', 'ankle', 'calf', 'achilles', 'foot', 'hip'], loadPatterns: ['impact', 'deep_flexion'] },
     name: 'Sentadilla con salto',
     category: 'full_body',
     movement: 'squat',
@@ -563,6 +598,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'med_ball_slam',
+    safety: { loadsRegions: ['lumbar', 'trunk_core', 'thoracic', 'shoulder'], loadPatterns: ['overhead', 'rotation'] },
     name: 'Golpe al suelo con balón medicinal',
     category: 'full_body',
     movement: 'rotation',
@@ -576,6 +612,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'rotational_med_ball_throw',
+    safety: { loadsRegions: ['lumbar', 'trunk_core', 'thoracic', 'shoulder'], loadPatterns: ['rotation'] },
     name: 'Lanzamiento rotacional con balón medicinal',
     category: 'full_body',
     movement: 'rotation',
@@ -589,6 +626,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'kettlebell_swing',
+    safety: { loadsRegions: ['lumbar', 'trunk_core', 'hip', 'hamstring', 'shoulder'], loadPatterns: ['loaded_hinge', 'grip_demand'] },
     name: 'Swing con kettlebell',
     category: 'full_body',
     movement: 'hinge',
@@ -602,6 +640,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'clean',
+    safety: { loadsRegions: ['lumbar', 'trunk_core', 'hip', 'hamstring', 'knee', 'shoulder', 'elbow', 'wrist'], loadPatterns: ['loaded_hinge', 'axial_load', 'grip_demand', 'impact'] },
     name: 'Cargada',
     category: 'full_body',
     movement: 'hinge',
@@ -618,6 +657,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'clean_high_pull',
+    safety: { loadsRegions: ['lumbar', 'trunk_core', 'hip', 'hamstring', 'knee', 'shoulder'], loadPatterns: ['loaded_hinge', 'axial_load', 'grip_demand'] },
     name: 'Tirón alto de cargada',
     category: 'full_body',
     movement: 'hinge',
@@ -634,6 +674,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'split_jerk',
+    safety: { loadsRegions: ['shoulder', 'elbow', 'wrist', 'cervical', 'lumbar', 'trunk_core', 'knee', 'ankle'], loadPatterns: ['overhead', 'axial_load', 'impact'] },
     name: 'Envión en tijera',
     category: 'full_body',
     movement: 'push',
@@ -650,6 +691,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'barbell_jump_squat',
+    safety: { loadsRegions: ['lumbar', 'trunk_core', 'hip', 'knee', 'ankle', 'calf', 'achilles'], loadPatterns: ['impact', 'axial_load', 'deep_flexion'] },
     name: 'Sentadilla con salto y barra',
     category: 'full_body',
     movement: 'squat',
@@ -666,6 +708,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'bb_reverse_lunge',
+    safety: { loadsRegions: ['lumbar', 'trunk_core', 'hip', 'knee'], loadPatterns: ['axial_load', 'deep_flexion'] },
     name: 'Zancada inversa con barra',
     category: 'lower',
     movement: 'locomotion',
@@ -683,6 +726,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'bb_side_lunge',
+    safety: { loadsRegions: ['lumbar', 'trunk_core', 'pelvis_sacroiliac', 'hip', 'knee', 'groin'], loadPatterns: ['axial_load', 'deep_flexion'] },
     name: 'Zancada lateral con barra',
     category: 'lower',
     movement: 'locomotion',
@@ -700,6 +744,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'single_leg_hip_thrust',
+    safety: { loadsRegions: ['lumbar', 'pelvis_sacroiliac', 'hip', 'hamstring'], loadPatterns: ['loaded_hinge'] },
     name: 'Empuje de cadera a una pierna',
     category: 'lower',
     movement: 'hinge',
@@ -717,6 +762,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'z_press',
+    safety: { loadsRegions: ['shoulder', 'elbow', 'wrist', 'lumbar', 'trunk_core', 'hamstring'], loadPatterns: ['overhead', 'axial_load'] },
     name: 'Press Z',
     category: 'upper',
     movement: 'push',
@@ -733,6 +779,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'mixed_grip_pull_up',
+    safety: { loadsRegions: ['shoulder', 'elbow', 'wrist'], loadPatterns: ['grip_demand'] },
     name: 'Dominada con agarre mixto',
     category: 'upper',
     movement: 'pull',
@@ -749,6 +796,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'weighted_pull_up',
+    safety: { loadsRegions: ['shoulder', 'elbow', 'wrist'], loadPatterns: ['grip_demand'] },
     name: 'Dominada lastrada',
     category: 'upper',
     movement: 'pull',
@@ -765,6 +813,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'trx_inverted_row',
+    safety: { loadsRegions: ['shoulder', 'elbow', 'wrist', 'trunk_core', 'lumbar'], loadPatterns: ['grip_demand'] },
     name: 'Remo invertido en TRX',
     category: 'upper',
     movement: 'pull',
@@ -781,6 +830,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'half_kneeling_row',
+    safety: { loadsRegions: ['shoulder', 'elbow', 'trunk_core', 'hip'], loadPatterns: ['grip_demand'] },
     name: 'Remo en media rodilla',
     category: 'upper',
     movement: 'pull',
@@ -797,6 +847,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'barbell_single_leg_inverted_row',
+    safety: { loadsRegions: ['shoulder', 'elbow', 'wrist', 'trunk_core', 'lumbar', 'hamstring'], loadPatterns: ['grip_demand'] },
     name: 'Remo invertido con barra a una pierna',
     category: 'upper',
     movement: 'pull',
@@ -814,6 +865,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'broad_jump',
+    safety: { loadsRegions: ['knee', 'ankle', 'calf', 'achilles', 'foot', 'hip', 'hamstring'], loadPatterns: ['impact'] },
     name: 'Salto horizontal',
     category: 'full_body',
     movement: 'locomotion',
@@ -830,6 +882,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'single_leg_broad_jump',
+    safety: { loadsRegions: ['knee', 'ankle', 'calf', 'achilles', 'foot', 'hip', 'hamstring'], loadPatterns: ['impact'] },
     name: 'Salto horizontal a una pierna',
     category: 'full_body',
     movement: 'locomotion',
@@ -847,6 +900,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'drop_jump',
+    safety: { loadsRegions: ['knee', 'ankle', 'calf', 'achilles', 'foot'], loadPatterns: ['impact'] },
     name: 'Salto reactivo desde cajón',
     category: 'full_body',
     movement: 'locomotion',
@@ -863,6 +917,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'depth_jump',
+    safety: { loadsRegions: ['knee', 'ankle', 'calf', 'achilles', 'foot'], loadPatterns: ['impact'] },
     name: 'Salto profundo',
     category: 'full_body',
     movement: 'locomotion',
@@ -879,6 +934,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'half_kneeling_lateral_jump',
+    safety: { loadsRegions: ['knee', 'ankle', 'calf', 'hip', 'groin'], loadPatterns: ['impact'] },
     name: 'Salto lateral desde media rodilla',
     category: 'full_body',
     movement: 'locomotion',
@@ -896,6 +952,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'lateral_skater_jumps',
+    safety: { loadsRegions: ['knee', 'ankle', 'calf', 'achilles', 'hip', 'groin'], loadPatterns: ['impact'] },
     name: 'Saltos laterales de patinador',
     category: 'full_body',
     movement: 'locomotion',
@@ -913,6 +970,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'alternating_step_up_jump',
+    safety: { loadsRegions: ['knee', 'ankle', 'calf', 'achilles', 'hip'], loadPatterns: ['impact'] },
     name: 'Subida al cajón con salto alternado',
     category: 'full_body',
     movement: 'locomotion',
@@ -930,6 +988,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'pogo_jumps',
+    safety: { loadsRegions: ['ankle', 'calf', 'achilles', 'foot', 'knee'], loadPatterns: ['impact'] },
     name: 'Saltos pogo',
     category: 'full_body',
     movement: 'locomotion',
@@ -946,6 +1005,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'ladder_bipodal_front_1',
+    safety: { loadsRegions: ['ankle', 'calf', 'achilles', 'foot', 'knee'], loadPatterns: ['impact'] },
     name: 'Escalera frontal – dos pies por cuadro',
     category: 'full_body',
     movement: 'locomotion',
@@ -962,6 +1022,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'ladder_bipodal_front_2',
+    safety: { loadsRegions: ['ankle', 'calf', 'achilles', 'foot', 'knee'], loadPatterns: ['impact'] },
     name: 'Escalera frontal – dentro-dentro-fuera-fuera',
     category: 'full_body',
     movement: 'locomotion',
@@ -978,6 +1039,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'ladder_bipodal_front_3',
+    safety: { loadsRegions: ['ankle', 'calf', 'achilles', 'foot', 'knee'], loadPatterns: ['impact'] },
     name: 'Escalera frontal – salto bipodal por cuadro',
     category: 'full_body',
     movement: 'locomotion',
@@ -994,6 +1056,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'ladder_coordinativo_front_2',
+    safety: { loadsRegions: ['ankle', 'calf', 'achilles', 'foot', 'knee'], loadPatterns: ['impact'] },
     name: 'Escalera frontal – un pie por cuadro',
     category: 'full_body',
     movement: 'locomotion',
@@ -1010,6 +1073,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'ladder_coordinativo_front_4',
+    safety: { loadsRegions: ['ankle', 'calf', 'achilles', 'foot', 'knee'], loadPatterns: ['impact'] },
     name: 'Escalera frontal – Icky shuffle',
     category: 'full_body',
     movement: 'locomotion',
@@ -1026,6 +1090,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'ladder_bipodal_lateral_1',
+    safety: { loadsRegions: ['ankle', 'calf', 'achilles', 'foot', 'knee'], loadPatterns: ['impact'] },
     name: 'Escalera lateral – dos pies por cuadro',
     category: 'full_body',
     movement: 'locomotion',
@@ -1042,6 +1107,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'ladder_bipodal_lateral_3',
+    safety: { loadsRegions: ['ankle', 'calf', 'achilles', 'foot', 'knee'], loadPatterns: ['impact'] },
     name: 'Escalera lateral – dentro-dentro-fuera',
     category: 'full_body',
     movement: 'locomotion',
@@ -1058,6 +1124,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'assault_bike_30_30',
+    safety: { loadsRegions: ['knee', 'hip', 'shoulder', 'elbow'], loadPatterns: [] },
     name: 'Bici de asalto 30/30',
     category: 'full_body',
     movement: 'locomotion',
@@ -1074,6 +1141,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'air_treadmill_20_20',
+    safety: { loadsRegions: ['knee', 'ankle', 'calf', 'achilles', 'foot', 'hip'], loadPatterns: ['impact'] },
     name: 'Trotadora curva 20/20',
     category: 'full_body',
     movement: 'locomotion',
@@ -1090,6 +1158,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'copenhagen_side_plank',
+    safety: { loadsRegions: ['lumbar', 'trunk_core', 'groin', 'hip', 'shoulder'], loadPatterns: [] },
     name: 'Plancha Copenhagen',
     category: 'core',
     movement: 'carry',
@@ -1107,6 +1176,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'side_plank_plate_press',
+    safety: { loadsRegions: ['lumbar', 'trunk_core', 'shoulder', 'hip'], loadPatterns: [] },
     name: 'Plancha lateral con press de disco',
     category: 'core',
     movement: 'carry',
@@ -1124,6 +1194,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'stability_ball_front_plank',
+    safety: { loadsRegions: ['lumbar', 'trunk_core', 'shoulder'], loadPatterns: [] },
     name: 'Plancha frontal en fitball',
     category: 'core',
     movement: 'carry',
@@ -1140,6 +1211,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'lateral_band_walk',
+    safety: { loadsRegions: ['hip', 'knee'], loadPatterns: [] },
     name: 'Caminata lateral con banda',
     category: 'lower',
     movement: 'locomotion',
@@ -1156,6 +1228,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'bird_dog_renegade_row',
+    safety: { loadsRegions: ['lumbar', 'trunk_core', 'shoulder', 'elbow', 'wrist'], loadPatterns: ['rotation'] },
     name: 'Remo renegado bird dog',
     category: 'core',
     movement: 'pull',
@@ -1173,6 +1246,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'half_kneeling_diagonal_plate_chop',
+    safety: { loadsRegions: ['lumbar', 'trunk_core', 'thoracic', 'shoulder'], loadPatterns: ['rotation'] },
     name: 'Corte diagonal con disco en media rodilla',
     category: 'core',
     movement: 'rotation',
@@ -1189,6 +1263,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'bodyweight_squat',
+    safety: { loadsRegions: ['hip', 'knee', 'trunk_core'], loadPatterns: ['deep_flexion'] },
     name: 'Sentadilla con peso corporal',
     category: 'lower',
     movement: 'squat',
@@ -1202,6 +1277,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'push_up',
+    safety: { loadsRegions: ['shoulder', 'elbow', 'wrist', 'chest_ribs', 'trunk_core', 'lumbar'], loadPatterns: [] },
     name: 'Flexión de brazos',
     category: 'upper',
     movement: 'push',
@@ -1215,6 +1291,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'glute_bridge',
+    safety: { loadsRegions: ['lumbar', 'hip', 'hamstring'], loadPatterns: [] },
     name: 'Puente de glúteo',
     category: 'lower',
     movement: 'hinge',
@@ -1228,6 +1305,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'band_row',
+    safety: { loadsRegions: ['shoulder', 'elbow'], loadPatterns: ['grip_demand'] },
     name: 'Remo con banda',
     category: 'upper',
     movement: 'pull',
@@ -1241,6 +1319,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'split_squat',
+    safety: { loadsRegions: ['hip', 'knee', 'trunk_core'], loadPatterns: ['deep_flexion'] },
     name: 'Zancada estática',
     category: 'lower',
     movement: 'squat',
@@ -1255,6 +1334,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
   },
   {
     id: 'inverted_row',
+    safety: { loadsRegions: ['shoulder', 'elbow', 'wrist', 'trunk_core', 'lumbar'], loadPatterns: ['grip_demand'] },
     name: 'Remo invertido',
     category: 'upper',
     movement: 'pull',

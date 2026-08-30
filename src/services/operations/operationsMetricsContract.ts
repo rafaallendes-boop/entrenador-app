@@ -39,6 +39,8 @@ export interface ErrorCodeCount {
 export interface CoachBlock {
   requests: number
   errors: number
+  /** Safe terminal declines; intentionally excluded from `errors`. */
+  safetyBlocked: number
   topErrorCodes: ErrorCodeCount[]
   latencyP50: number | null
   latencyP90: number | null
@@ -132,6 +134,7 @@ export function isOperationsWindow(value: unknown): value is OperationsWindow {
   if (!isRecord(coach)
     || !isFiniteNumber(coach['requests'])
     || !isFiniteNumber(coach['errors'])
+    || !isFiniteNumber(coach['safetyBlocked'])
     || !Array.isArray(coach['topErrorCodes'])
     || !coach['topErrorCodes'].every((entry) => isRecord(entry)
       && typeof entry['code'] === 'string'

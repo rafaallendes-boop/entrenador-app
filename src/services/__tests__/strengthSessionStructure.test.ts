@@ -18,7 +18,7 @@ describe('normalizeStrengthSessionExercises', () => {
       { name: 'Press Pallof', sets: 3, reps: 10 },
     ]
 
-    const result = normalizeStrengthSessionExercises(input, { durationMin: 60 })!
+    const result = normalizeStrengthSessionExercises(input, { durationMin: 60, safetyConstraints: [] })!
 
     expect(result.map((exercise) => exercise.group)).toEqual([
       'core',
@@ -36,7 +36,7 @@ describe('normalizeStrengthSessionExercises', () => {
     const result = normalizeStrengthSessionExercises([
       { name: 'Peso muerto con trap bar', sets: 4, reps: 6 },
       { name: 'Press sobre cabeza', sets: 4, reps: 6 },
-    ], { durationMin: 50 })!
+    ], { durationMin: 50, safetyConstraints: [] })!
 
     expect(result[0]).toMatchObject({
       name: 'Dead bug — control de tronco',
@@ -51,7 +51,7 @@ describe('normalizeStrengthSessionExercises', () => {
       { name: 'Trotadora de aire 20/20', sets: 1, reps: '4 min: 20s/20s' },
       { name: 'Peso muerto con trap bar', sets: 4, reps: 6 },
     ]
-    const result = normalizeStrengthSessionExercises(input, { durationMin: 65 })!
+    const result = normalizeStrengthSessionExercises(input, { durationMin: 65, safetyConstraints: [] })!
 
     expect(result.map((exercise) => exercise.group)).toEqual(['core', 'core', 'legs', 'cardio', 'cardio'])
     expect(result.at(-2)?.name).toBe('Bici de asalto 30/30')
@@ -64,7 +64,7 @@ describe('normalizeStrengthSessionExercises', () => {
       { name: 'Footwork escalera (cardio específico)', sets: 1, reps: '4 min', notes: 'Agilidad y coordinación' },
     ]
 
-    const result = normalizeStrengthSessionExercises(input, { durationMin: 60 })!
+    const result = normalizeStrengthSessionExercises(input, { durationMin: 60, safetyConstraints: [] })!
     const footwork = result.filter((exercise) => /Escalera/.test(exercise.name))
 
     expect(footwork).toHaveLength(3)
@@ -88,6 +88,7 @@ describe('normalizeStrengthSessionExercises', () => {
     ]
     const result = enhanceStrengthSessionExercises(input, {
       durationMin: 60,
+      safetyConstraints: [],
       strengthProfile: {
         deadlift1RM: 150,
         overheadPress1RM: 60,
@@ -115,6 +116,7 @@ describe('normalizeStrengthSessionExercises', () => {
     ]
     const result = enhanceStrengthSessionExercises(input, {
       durationMin: 60,
+      safetyConstraints: [],
       strengthProfile: {
         squat1RM: 120,
         overheadPress1RM: 65,
@@ -135,7 +137,7 @@ describe('normalizeStrengthSessionExercises', () => {
     const result = normalizeStrengthSessionExercises([
       { name: 'Sentadilla', sets: 4, reps: 5 },
       { name: 'Activación experimental de hombros', sets: 2, reps: 8 },
-    ], { durationMin: 30 })!
+    ], { durationMin: 30, safetyConstraints: [] })!
 
     expect(result.map((exercise) => exercise.name)).toEqual(['Sentadilla'])
   })
@@ -146,6 +148,7 @@ describe('normalizeStrengthSessionExercises', () => {
       { name: 'Estiramiento de sentadilla profunda', sets: 1, reps: 30 },
     ], {
       durationMin: 50,
+      safetyConstraints: [],
       strengthProfile: { benchPress1RM: 100, squat1RM: 100 },
     })!
 
@@ -163,7 +166,7 @@ describe('normalizeStrengthSessionExercises', () => {
   ] as const)('keeps percent and warmup hidden for substring implement variant %s', (name, strengthProfile) => {
     const result = enhanceStrengthSessionExercises([
       { name, sets: 3, reps: 8 },
-    ], { durationMin: 30, strengthProfile })!
+    ], { durationMin: 30, strengthProfile, safetyConstraints: [] })!
 
     expect(result[0]?.targetPercent1RM).toBeUndefined()
     expect(result[0]?.warmupSets).toBeUndefined()
@@ -175,6 +178,7 @@ describe('normalizeStrengthSessionExercises', () => {
     ], {
       durationMin: 30,
       strengthProfile: { overheadPress1RM: 90 },
+      safetyConstraints: [],
     })!
 
     expect(result[0]?.weight).toBe(50)
@@ -186,6 +190,7 @@ describe('normalizeStrengthSessionExercises', () => {
     ], {
       durationMin: 30,
       strengthProfile: { squat1RM: 100 },
+      safetyConstraints: [],
     })!
 
     expect(result[0]).toMatchObject({ targetPercent1RM: 60, weight: 60 })
@@ -206,6 +211,7 @@ describe('normalizeStrengthSessionExercises', () => {
     ], {
       durationMin: 30,
       strengthProfile: { squat1RM: 140, deadlift1RM: 180, benchPress1RM: 110, overheadPress1RM: 80 },
+      safetyConstraints: [],
     })!
 
     expect(result[0]?.group).toBe(group)
@@ -218,7 +224,7 @@ describe('normalizeStrengthSessionExercises', () => {
     // Basta un candidato que no exponga para no arriesgar un %1RM inventado.
     const result = enhanceStrengthSessionExercises([
       { name: 'Dominada asistida con banda', sets: 3, reps: 5 },
-    ], { durationMin: 30, strengthProfile: { benchPress1RM: 110 } })!
+    ], { durationMin: 30, strengthProfile: { benchPress1RM: 110 }, safetyConstraints: [] })!
 
     expect(result[0]?.targetPercent1RM).toBeUndefined()
   })
@@ -234,7 +240,7 @@ describe('normalizeStrengthSessionExercises', () => {
   ] as const)('caps an explicit weight on the ambiguous name %s', (name, expected) => {
     const result = enhanceStrengthSessionExercises([
       { name, sets: 3, reps: 8, weight: 200 },
-    ], { durationMin: 30, strengthProfile: { squat1RM: 140 } })!
+    ], { durationMin: 30, strengthProfile: { squat1RM: 140 }, safetyConstraints: [] })!
 
     expect(result[0]?.weight).toBe(expected)
   })
@@ -243,7 +249,7 @@ describe('normalizeStrengthSessionExercises', () => {
     // `deadlift` y `romanian_deadlift` son ambos de barra: ninguno acota.
     const result = enhanceStrengthSessionExercises([
       { name: 'Peso muerto rumano con mancuernas', sets: 3, reps: 8, weight: 200 },
-    ], { durationMin: 30, strengthProfile: { deadlift1RM: 180 } })!
+    ], { durationMin: 30, strengthProfile: { deadlift1RM: 180 }, safetyConstraints: [] })!
 
     expect(result[0]?.weight).toBe(200)
   })
@@ -251,7 +257,7 @@ describe('normalizeStrengthSessionExercises', () => {
   it('still refuses to derive load from an ambiguous fragment', () => {
     const result = enhanceStrengthSessionExercises([
       { name: 'Sentadilla bulgara con mancuernas', sets: 3, reps: 8 },
-    ], { durationMin: 30, strengthProfile: { squat1RM: 140 } })!
+    ], { durationMin: 30, strengthProfile: { squat1RM: 140 }, safetyConstraints: [] })!
 
     expect(result[0]?.weight).toBeUndefined()
     expect(result[0]?.group).toBe('legs')
@@ -269,7 +275,7 @@ describe('libraryRef como resolución autoritativa', () => {
         reps: 8,
         libraryRef: refTo('bulgarian_split_squat'),
       },
-    ], { durationMin: 30, strengthProfile: { squat1RM: 100 } })!
+    ], { durationMin: 30, strengthProfile: { squat1RM: 100 }, safetyConstraints: [] })!
 
     expect(result[0]?.weight).toBe(25)
     expect(result[0]?.targetPercent1RM).toBeUndefined()
@@ -278,7 +284,7 @@ describe('libraryRef como resolución autoritativa', () => {
   it('un ref a una plancha usa prescriptionUnit y no el regex del nombre', () => {
     const result = enhanceStrengthSessionExercises([
       { name: 'Isométrico de tronco', sets: 3, reps: 45, libraryRef: refTo('plank') },
-    ], { durationMin: 30 })!
+    ], { durationMin: 30, safetyConstraints: [] })!
 
     expect(result[0]?.reps).toBe('45s')
     expect(result[0]?.group).toBe('core')
@@ -288,7 +294,7 @@ describe('libraryRef como resolución autoritativa', () => {
     const result = enhanceStrengthSessionExercises([
       { name: 'Press banca', sets: 3, reps: 5 },
       { name: 'Estiramiento de sentadilla', sets: 4, reps: 5, libraryRef: refTo('back_squat') },
-    ], { durationMin: 30, strengthProfile: { benchPress1RM: 100, squat1RM: 100 } })!
+    ], { durationMin: 30, strengthProfile: { benchPress1RM: 100, squat1RM: 100 }, safetyConstraints: [] })!
 
     expect(result.map((exercise) => exercise.name)).toContain('Estiramiento de sentadilla')
   })
@@ -297,7 +303,7 @@ describe('libraryRef como resolución autoritativa', () => {
     const result = enhanceStrengthSessionExercises([
       { name: 'Press banca', sets: 3, reps: 5 },
       { name: 'Estiramiento de isquiotibiales', sets: 1, reps: 30 },
-    ], { durationMin: 30, strengthProfile: { benchPress1RM: 100 } })!
+    ], { durationMin: 30, strengthProfile: { benchPress1RM: 100 }, safetyConstraints: [] })!
 
     expect(result.map((exercise) => exercise.name)).toEqual(['Press banca'])
   })
@@ -305,7 +311,7 @@ describe('libraryRef como resolución autoritativa', () => {
   it('un ref a un ejercicio de potencia usa intensityType, no el regex del nombre', () => {
     const result = enhanceStrengthSessionExercises([
       { name: 'Trabajo reactivo de tren inferior', sets: 3, reps: 3, libraryRef: refTo('box_jump') },
-    ], { durationMin: 30, strengthProfile: { squat1RM: 100 } })!
+    ], { durationMin: 30, strengthProfile: { squat1RM: 100 }, safetyConstraints: [] })!
 
     expect(result[0]?.targetPercent1RM).toBeUndefined()
     expect(result[0]?.weight).toBeUndefined()

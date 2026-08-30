@@ -6,6 +6,7 @@ import { getExpectedSessionsForPlanWeek } from '../dateRange'
 import { isWithinPlanEventWindow } from '../eventWindowRules'
 import { repairGeneratedWeek } from '../repairWeek'
 import { validatePlanWeek } from '../validator'
+import { getMinimumStrengthWorkCount, isStrengthWorkExercise } from '../../training/strengthSessionStructure'
 import { buildRepairContextForTest, buildSkeletonSessionForTest } from './helpers/repairTestFixtures'
 
 /**
@@ -208,6 +209,8 @@ describe('repair — sólo reemplaza carga dentro de la ventana', () => {
     const monday = result.sessions.find((session) => session.date === '2026-08-03')
 
     expect(monday?.sessionType).toBe('strength')
+    expect(monday?.exercises?.filter(isStrengthWorkExercise).length)
+      .toBeGreaterThanOrEqual(getMinimumStrengthWorkCount(monday?.durationMin ?? 0))
     expect(result.meta.warnings.map((warning) => warning.code))
       .not.toContain('event_window_incompatible_load_replaced')
   })

@@ -1,5 +1,5 @@
 import type { AthleteProfile, CoachAction, CoachSessionProposal, PlanWizardConfig, StageTiming } from '../../types'
-import type { StrengthAllocatorMetrics, TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
+import type { StrengthAllocatorMetrics, StrengthSafetyBlockedSlot, TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import type { AIRawResponse, AIRequest, CreateWeekNormalizationDiagnostic } from '../ai/types'
 import { normalizeResponse } from '../ai/responseNormalizer'
 import { buildWeekStructuredSystemPromptMinimal, buildWeekUserPrompt } from '../week/prompts/weekPrompt'
@@ -64,6 +64,8 @@ export interface GenerateWeekResult {
     repairWarnings?: Array<{ code: string; message: string }>
     stageTimings?: StageTiming[]
     errorClass?: string
+    safetyDegraded?: boolean
+    strengthSafetyBlocked?: StrengthSafetyBlockedSlot[]
   }
 }
 
@@ -89,6 +91,8 @@ export interface WeekActionEvaluation extends RepairTaxonomySummary {
   squashFinisherPreservedCount?: number
   squashStandaloneMatchCount?: number
   repairWarnings?: Array<{ code: string; message: string }>
+  safetyDegraded?: boolean
+  strengthSafetyBlocked?: StrengthSafetyBlockedSlot[]
 }
 
 export type WeekLLMCaller = (req: AIRequest) => Promise<AIRawResponse>
@@ -266,6 +270,32 @@ export function validateGeneratedWeekAction(
   })
   if (retryableIssues.length > 0) {
     const hasCountMismatch = retryableIssues.some((issue) => issue.code === 'week.sessions.count_mismatch')
+    const countMismatchOnlyFromSafetyTombstones = repairResult.meta.safetyDegraded === true
+      && retryableIssues.every((issue) => issue.code === 'week.sessions.count_mismatch')
+      && (repairResult.meta.strengthSafetyBlocked?.length ?? 0) > 0
+      && repairResult.sessions.length + (repairResult.meta.strengthSafetyBlocked?.length ?? 0)
+        === getExpectedSessionsForPlanWeek(plan, week)
+    if (countMismatchOnlyFromSafetyTombstones) {
+      return {
+        sessions: repairResult.sessions,
+        ...taxonomySummary,
+        repairTaxonomyVersion: 2,
+        rawSessionCount,
+        validSessionCount: normalizedSessionCount,
+        droppedSessionCount: droppedSessionCount + repairResult.meta.droppedSessionCount,
+        repairedSessionCount: repairResult.meta.repairedSessionCount,
+        movedSessionCount: repairResult.meta.movedSessionCount,
+        addedFallbackCount: repairResult.meta.addedFallbackCount,
+        filteredSportCount: repairResult.meta.filteredSportCount,
+        strengthAccessoryRotationActionCount: repairResult.meta.strengthAccessoryRotationActionCount,
+        strengthAccessoryRotationSessionsAffected: repairResult.meta.strengthAccessoryRotationSessionsAffected,
+        strengthAllocator: repairResult.meta.strengthAllocator,
+        repairWarnings: repairResult.meta.warnings,
+        safetyDegraded: true,
+        strengthSafetyBlocked: repairResult.meta.strengthSafetyBlocked,
+        errorClass: 'quality.strength.safety_blocked',
+      }
+    }
     return {
       sessions: [],
       ...taxonomySummary,
@@ -290,6 +320,8 @@ export function validateGeneratedWeekAction(
       squashFinisherPreservedCount: repairResult.meta.squashFinisherPreservedCount,
       squashStandaloneMatchCount: repairResult.meta.squashStandaloneMatchCount,
       repairWarnings: repairResult.meta.warnings,
+      safetyDegraded: repairResult.meta.safetyDegraded,
+      strengthSafetyBlocked: repairResult.meta.strengthSafetyBlocked,
     }
   }
 
@@ -314,6 +346,8 @@ export function validateGeneratedWeekAction(
     squashFinisherPreservedCount: repairResult.meta.squashFinisherPreservedCount,
     squashStandaloneMatchCount: repairResult.meta.squashStandaloneMatchCount,
     repairWarnings: repairResult.meta.warnings,
+    safetyDegraded: repairResult.meta.safetyDegraded,
+    strengthSafetyBlocked: repairResult.meta.strengthSafetyBlocked,
   }
 }
 
@@ -411,6 +445,8 @@ export async function generateWeekCore(input: GenerateWeekCoreInput): Promise<Ge
       squashFinisherPreservedCount: evaluation.squashFinisherPreservedCount,
       squashStandaloneMatchCount: evaluation.squashStandaloneMatchCount,
       repairWarnings: evaluation.repairWarnings,
+      safetyDegraded: evaluation.safetyDegraded,
+      strengthSafetyBlocked: evaluation.strengthSafetyBlocked,
       errorClass: evaluation.errorClass
         ?? (evaluation.error
           ? (wasTruncated ? 'truncated' : 'validation')

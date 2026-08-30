@@ -86,4 +86,17 @@ describe('classifyProxyHttpError — usage gate', () => {
     expect(thrown).not.toBeInstanceOf(KillSwitchActiveError)
     expect(thrown).toMatchObject({ code: 'timeout', retryable: true })
   })
+
+  it('503 server_error conserva la falla de infraestructura y no la vuelve timeout', () => {
+    let thrown: unknown
+    try {
+      classifyProxyHttpError(res(503), {
+        error: 'RPC increment_ai_usage_if_under_limit devolvió 400.',
+        errorCode: 'server_error',
+      })
+    } catch (error) {
+      thrown = error
+    }
+    expect(thrown).toMatchObject({ code: 'server_error', retryable: false })
+  })
 })

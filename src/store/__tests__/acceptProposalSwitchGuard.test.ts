@@ -13,7 +13,9 @@ vi.mock('../../services/syncService', () => ({
 import { db } from '../../db/db'
 import { bumpSwitchEpoch, setActiveAthleteId, setSelfAthleteId } from '../../services/athlete/activeAthlete'
 import * as syncService from '../../services/syncService'
+import { resolveStrengthExercise } from '../../services/training/exerciseLibrary'
 import { useCoachActionsStore } from '../useCoachActionsStore'
+import { useCoachMemoryStore } from '../useCoachMemoryStore'
 import { useTrainingStore } from '../useTrainingStore'
 
 describe('acceptProposal - switch guard', () => {
@@ -24,6 +26,7 @@ describe('acceptProposal - switch guard', () => {
     setSelfAthleteId('ath_user-1')
     setActiveAthleteId('ath_user-1')
     useCoachActionsStore.setState({ proposals: [] })
+    useCoachMemoryStore.getState().resetForAthleteSwitch()
     useTrainingStore.getState().resetForAthleteSwitch()
   })
 
@@ -32,6 +35,7 @@ describe('acceptProposal - switch guard', () => {
     setActiveAthleteId(null)
     setSelfAthleteId(null)
     useCoachActionsStore.setState({ proposals: [] })
+    useCoachMemoryStore.getState().resetForAthleteSwitch()
     useTrainingStore.getState().resetForAthleteSwitch()
   })
 
@@ -198,5 +202,106 @@ describe('acceptProposal - switch guard', () => {
     ]))
     expect(await db.sessions.toArray()).toHaveLength(1)
     expect((await db.coachProposals.get('occupied-slot'))?.status).toBe('rejected')
+  })
+
+  it('rechaza update_session si la base cambió después de generar la propuesta', async () => {
+    await db.sessions.put({
+      id: 'concurrent-strength',
+      athleteId: 'ath_user-1',
+      date: '2026-08-07',
+      weekStartDate: '2026-08-03',
+      timeBlock: 'PM',
+      type: 'strength',
+      status: 'planned',
+      title: 'Fuerza editada',
+      durationMin: 60,
+      exercises: [],
+      createdAt: 1,
+      updatedAt: 2,
+    })
+    await db.coachProposals.put({
+      id: 'concurrent-update',
+      athleteId: 'ath_user-1',
+      createdAt: Date.now(),
+      status: 'pending',
+      message: 'Alargar fuerza',
+      actions: [{
+        type: 'update_session',
+        sessionId: 'concurrent-strength',
+        reason: 'Más trabajo',
+        newDurationMin: 75,
+        baseUpdatedAt: 1,
+      }],
+    })
+    useTrainingStore.setState({ sessions: [], loadedWeekStart: '2026-08-03' })
+    await useCoachActionsStore.getState().loadProposals()
+
+    const result = await useCoachActionsStore.getState().acceptProposal('concurrent-update')
+
+    expect(result.errors.join(' ')).toContain('cambios más recientes')
+    expect((await db.sessions.get('concurrent-strength'))?.durationMin).toBe(60)
+    expect((await db.coachProposals.get('concurrent-update'))?.status).toBe('rejected')
+  })
+
+  it('bloquea la escritura si aparece una restricción médica después de generar', async () => {
+    await db.coachProposals.put({
+      id: 'late-restriction', athleteId: 'ath_user-1', createdAt: Date.now(),
+      status: 'pending', message: 'Fuerza',
+      actions: [{
+        type: 'add_session', reason: 'Fuerza', targetDate: '2026-08-10', timeBlock: 'PM',
+        sessionType: 'strength', title: 'Fuerza', durationMin: 60,
+        exercises: [
+          { name: 'Press de banca', sets: 3, reps: 8 },
+          { name: 'Jalón al pecho', sets: 3, reps: 10 },
+        ],
+      }],
+    })
+    await useCoachActionsStore.getState().loadProposals()
+    useCoachMemoryStore.setState({
+      athleteProfile: {
+        id: 'profile', updatedAt: 2,
+        recoveryProfile: { currentInjuries: 'me operaron hace dos semanas' },
+      },
+    })
+
+    const result = await useCoachActionsStore.getState().acceptProposal('late-restriction')
+
+    expect(result.errors.join(' ')).toContain('No pude verificar')
+    expect(await db.sessions.toArray()).toEqual([])
+  })
+
+  it('conserva userMessageConstraints hasta la aceptación aunque el perfil esté limpio', async () => {
+    await db.coachProposals.put({
+      id: 'message-constraint', athleteId: 'ath_user-1', createdAt: Date.now(),
+      status: 'pending', message: 'Fuerza sin carga axial',
+      actions: [{
+        type: 'add_session', reason: 'Fuerza', targetDate: '2026-08-10', timeBlock: 'PM',
+        sessionType: 'strength', title: 'Fuerza', durationMin: 60,
+        exercises: [
+          { name: 'Sentadilla trasera', sets: 3, reps: 6 },
+          { name: 'Press de banca', sets: 3, reps: 8 },
+          { name: 'Jalón al pecho', sets: 3, reps: 10 },
+        ],
+        strengthSafetyFinalization: {
+          policyVersion: 1,
+          exerciseFingerprint: 'entrada-no-confiable',
+          constraintFingerprint: 'entrada-no-confiable',
+          userMessageConstraints: [{
+            kind: 'load_pattern', pattern: 'axial_load', sources: ['user_message'],
+          }],
+        },
+      }],
+    })
+    await useCoachActionsStore.getState().loadProposals()
+
+    const result = await useCoachActionsStore.getState().acceptProposal('message-constraint')
+    const persisted = await db.sessions.toArray()
+
+    expect(result.errors).toEqual([])
+    expect(persisted).toHaveLength(1)
+    for (const exercise of persisted[0].exercises ?? []) {
+      expect(resolveStrengthExercise(exercise)?.definition?.safety.loadPatterns)
+        .not.toContain('axial_load')
+    }
   })
 })

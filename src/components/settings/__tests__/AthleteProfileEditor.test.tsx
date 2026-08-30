@@ -6,12 +6,16 @@ import userEvent from '@testing-library/user-event'
 import AthleteProfileEditor from '../AthleteProfileEditor'
 import type { AthleteProfile } from '../../../types'
 
-function makeProfile(scheduleProfile: AthleteProfile['scheduleProfile']): AthleteProfile {
+function makeProfile(
+  scheduleProfile: AthleteProfile['scheduleProfile'],
+  recoveryProfile?: AthleteProfile['recoveryProfile'],
+): AthleteProfile {
   return {
     id: 'athlete-1',
     updatedAt: 0,
     name: 'Rafa',
     scheduleProfile,
+    recoveryProfile,
   }
 }
 
@@ -93,5 +97,19 @@ describe('AthleteProfileEditor weekly session target', () => {
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
       scheduleProfile: expect.objectContaining({ sessionsPerWeek: 2 }),
     }))
+  })
+
+  it('shows the read-only constraint feedback below the recovery fields', async () => {
+    render(
+      <AthleteProfileEditor
+        profile={makeProfile(undefined, { currentInjuries: 'dolor lumbar' })}
+        isSaving={false}
+        onSave={vi.fn().mockResolvedValue(undefined)}
+      />,
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: /Lesiones y restricciones/ }))
+
+    expect(screen.getByText('Entendí: zona lumbar')).toBeTruthy()
   })
 })
