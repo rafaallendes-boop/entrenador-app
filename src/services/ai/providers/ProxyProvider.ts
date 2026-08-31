@@ -218,16 +218,27 @@ export class ProxyProvider implements AIProvider {
 
     while (true) {
       const { done, value } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
+      buffer += done
+        ? decoder.decode()
+        : decoder.decode(value, { stream: true })
       const lines = buffer.split('\n')
-      buffer = lines.pop() ?? ''
+      // Al cerrar el stream también se procesa la cola aunque el proxy haya
+      // quitado el salto final. Mientras siga abierto, la última fracción se
+      // conserva hasta recibir el resto de la línea.
+      buffer = done ? '' : (lines.pop() ?? '')
 
       for (const line of lines) {
         const trimmed = line.trim()
         if (!trimmed) continue
+        // Netlify emite NDJSON hoy, pero el contrato del Content-Type acepta
+        // también SSE. Tolerar `data:` evita convertir un stream válido en una
+        // falsa respuesta vacía si un proxy conserva ese framing.
+        const payload = trimmed.startsWith('data:')
+          ? trimmed.slice('data:'.length).trim()
+          : trimmed
+        if (!payload || payload === '[DONE]') continue
         try {
-          const event = JSON.parse(trimmed) as {
+          const event = JSON.parse(payload) as {
             type?: 'chunk' | 'done' | 'error'
             chunk?: string
             text?: string
@@ -302,7 +313,7 @@ export class ProxyProvider implements AIProvider {
           if (error instanceof AIProviderError) throw error
         }
       }
-      if (truncated) break
+      if (truncated || done) break
     }
 
     if (!fullText) {

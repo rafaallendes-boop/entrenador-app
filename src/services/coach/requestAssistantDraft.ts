@@ -93,6 +93,7 @@ export async function requestAssistantDraft(signals: TriageSignal[]): Promise<Dr
   const input = buildAssistantMessageInput(signals)
 
   try {
+    let parsedResult: ReturnType<typeof parseAssistantMessageResult> | undefined
     const raw = await CoachEngine.extractRaw(
       ASSISTANT_SYSTEM_PROMPT,
       JSON.stringify(input),
@@ -101,9 +102,20 @@ export async function requestAssistantDraft(signals: TriageSignal[]): Promise<Dr
         surface: 'coach_assistant',
         responseMimeType: 'application/json',
         responseSchema: ASSISTANT_MESSAGE_SCHEMA,
+        classifyResponse: (text) => {
+          parsedResult = parseAssistantMessageResult(text)
+          if (parsedResult.ok) return { outcome: 'ok' }
+          if (parsedResult.reason === 'invalid-json') {
+            return { outcome: 'parse_invalid', errorCode: 'assistant_invalid_json' }
+          }
+          return {
+            outcome: 'schema_invalid',
+            errorCode: `assistant_${parsedResult.reason.replaceAll('-', '_')}`,
+          }
+        },
       },
     )
-    const parsed = parseAssistantMessageResult(raw)
+    const parsed = parsedResult ?? parseAssistantMessageResult(raw)
     if (parsed.ok) return { ok: true, body: parsed.body }
     return {
       ok: false,

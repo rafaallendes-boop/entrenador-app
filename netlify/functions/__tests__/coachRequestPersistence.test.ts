@@ -55,7 +55,7 @@ function stubAuthFetch(): void {
   })))
 }
 
-/** Deja correr la escritura disparada sin await. */
+/** Deja correr efectos best-effort posteriores del test. */
 async function flushMicrotasks(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0))
 }
@@ -97,6 +97,29 @@ describe('persistencia de telemetría del coach', () => {
         global: { headers: { Authorization: 'Bearer tok' } },
       }),
     )
+  })
+
+  it('espera la persistencia acotada antes de cerrar la respuesta', async () => {
+    stubAuthFetch()
+    let releaseInsert: ((status: 'ok') => void) | undefined
+    mocks.insertRow.mockImplementationOnce(() => new Promise((resolve) => {
+      releaseInsert = resolve
+    }))
+
+    let handlerSettled = false
+    const responsePromise = callHandler(
+      { systemPrompt: 's', userMessage: BYPASS_MESSAGE, requestClass: 'chat_action', stream: false },
+      { authorization: 'Bearer tok' },
+    ).then((response) => {
+      handlerSettled = true
+      return response
+    })
+
+    await vi.waitFor(() => expect(mocks.insertRow).toHaveBeenCalledOnce())
+    expect(handlerSettled).toBe(false)
+
+    releaseInsert?.('ok')
+    await expect(responsePromise).resolves.toMatchObject({ statusCode: 200 })
   })
 
   it('el bypass con stream:true persiste streamed=true', async () => {

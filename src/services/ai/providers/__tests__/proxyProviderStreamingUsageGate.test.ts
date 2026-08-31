@@ -27,6 +27,20 @@ function ndjsonResponse(lines: string[]): Response {
   })
 }
 
+function rawStreamResponse(body: string, contentType: string): Response {
+  const encoder = new TextEncoder()
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(encoder.encode(body))
+      controller.close()
+    },
+  })
+  return new Response(stream, {
+    status: 200,
+    headers: { 'Content-Type': contentType },
+  })
+}
+
 function request(): AIRequest {
   return {
     systemPrompt: 'Sistema',
@@ -135,6 +149,31 @@ describe('ProxyProvider — streaming reconoce los códigos del usage gate', () 
     const provider = new ProxyProvider()
     const result = await provider.call(request())
     expect(result.text).toBe('Hola mundo')
+    expect(result.streamed).toBe(true)
+  })
+
+  it('procesa la cola NDJSON aunque no termine en salto de línea', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(rawStreamResponse(
+      JSON.stringify({ type: 'done', text: '¿Cómo estás?', provider: 'gemini' }),
+      'application/x-ndjson',
+    )))
+
+    const result = await new ProxyProvider().call(request())
+
+    expect(result.text).toBe('¿Cómo estás?')
+    expect(result.streamed).toBe(true)
+  })
+
+  it('acepta framing SSE cuando la respuesta declara text/event-stream', async () => {
+    const event = JSON.stringify({ type: 'done', text: 'Algún día', provider: 'gemini' })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(rawStreamResponse(
+      `data: ${event}\n\ndata: [DONE]`,
+      'text/event-stream',
+    )))
+
+    const result = await new ProxyProvider().call(request())
+
+    expect(result.text).toBe('Algún día')
     expect(result.streamed).toBe(true)
   })
 })

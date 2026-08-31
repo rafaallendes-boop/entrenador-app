@@ -299,10 +299,12 @@ describe('Athlete Profile Sync - Hardening Fixes', () => {
     expect(newQueue[0].retryCount).toBe(1)
   })
 
-  it('7. autoRepairInProgress is false in applySyncFailure when a duplicate-key error is enqueued for later repair', async () => {
+  it('7. treats the legacy user_id unique 409 as schema drift without enqueuing a doomed repair', async () => {
     // No existing remote rows → goes to the upsert path
     athleteProfileRows = []
-    // The DB upsert throws a duplicate key constraint error (race condition after migration)
+    // This is the exact production contract drift fixed by migration 026: the
+    // server still allows only one profile per account while the client writes
+    // one canonical profile per athlete.
     upsertResults.set('athlete_profiles', {
       data: null,
       error: { code: '23505', message: 'duplicate key value violates unique constraint "athlete_profiles_user_id_unique"' },
@@ -311,16 +313,16 @@ describe('Athlete Profile Sync - Hardening Fixes', () => {
     const syncService = await import('../syncService')
     await syncService.pushAthleteProfile({ id: 'default', name: 'Rafa', updatedAt: 200 })
 
-    // The op is enqueued and applySyncFailure is called.
-    // applySyncFailure must NOT set autoRepairInProgress: true just because the error
-    // is autoRepairable — no actual repair is running at this point.
+    // Schema drift is not repairable client-side. Keeping this operation in the
+    // retry queue only makes it expire; the local profile remains the recovery
+    // source and is re-pushed by full sync after 026 is applied.
     const allCalls = syncDetailsMock.mock.calls.map((c: unknown[]) => c[0] as Record<string, unknown>)
     const callWithAutoRepair = allCalls.find((c) => 'autoRepairInProgress' in c)
     expect(callWithAutoRepair).toBeDefined()
     expect(callWithAutoRepair!.autoRepairInProgress).toBe(false)
-    // The error category should be the duplicate, not some network error
+    expect(JSON.parse(localStorage.getItem('entrenador_sync_queue_v1') ?? '[]')).toEqual([])
     const callWithCategory = allCalls.find((c) => 'lastErrorCategory' in c)
-    expect(callWithCategory?.lastErrorCategory).toBe('duplicate_remote_profile')
+    expect(callWithCategory?.lastErrorCategory).toBe('schema_mismatch')
   })
 
   it('8. When a queued op is processed with remote duplicates, the op payload data is written to the canonical row', async () => {

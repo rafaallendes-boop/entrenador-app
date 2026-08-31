@@ -149,6 +149,25 @@ export function classifySyncError(error: unknown, table?: SupabaseTable): SyncEr
     }
   }
 
+  // The legacy singleton-per-account index is not a duplicate that the client
+  // can repair: it rejects the second managed athlete before any duplicate
+  // athlete profile exists. Treat it as schema drift so we do not burn retries
+  // until the operation expires. Migration 026 removes this index and the next
+  // full sync re-pushes the recoverable local profile.
+  if (
+    table === 'athlete_profiles'
+    && normalized.includes('athlete_profiles_user_id_unique')
+  ) {
+    return {
+      category: 'schema_mismatch',
+      retriable: false,
+      autoRepairable: false,
+      userMessage: 'La sincronización de perfiles necesita una actualización del servidor.',
+      technicalMessage: `Legacy athlete_profiles user_id unique contract: ${message}`,
+      originalError: error,
+    }
+  }
+
   // Duplicate key / conflict
   if (isDuplicateErrorMessage(normalized)) {
     return {

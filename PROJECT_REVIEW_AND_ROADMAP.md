@@ -2,14 +2,222 @@
 
 Actualizado: 2026-08-30
 
+## Corte Ejecutivo Vigente — 2026-08-30
+
+Esta sección es la **fuente de verdad para decisiones de beta**. Las secciones
+posteriores conservan el historial técnico de las entregas, pero sus porcentajes,
+órdenes de ejecución y frases de estado quedan superados cuando contradicen este
+corte.
+
+### Línea base verificable
+
+- `main` y `origin/main` apuntan a `1ec2add` (`feat: harden strength safety and
+  coach workflows`). El working tree contiene ahora la corrección de sync `026`,
+  el hardening de transporte/parseo/telemetría del Asistente y esta actualización
+  documental, todavía sin commit.
+- Gate local del árbol final: **505 archivos / 4070 tests**, lint, `tsc -b`,
+  build y `git diff --check` verdes.
+- El owner confirmó que `1ec2add` ya fue desplegado y que aplicó
+  `025_coach_request_safety_blocked.sql`. El
+  [smoke de restricciones por lesión](docs/superpowers/smokes/2026-08-30-strength-safety-prod-smoke.md)
+  terminó **APROBADO PARCIAL**: núcleo de exclusión, routing, actualización,
+  Week Creator y `/ops` verificados; `safety_blocked` no pudo forzarse.
+- Producción confirmó `023_coach_assistant_request_class.sql` bajo tráfico real
+  y `024_fix_increment_ai_usage_ambiguity.sql` mediante un probe transaccional.
+  `025` está aplicada por confirmación del owner. La corrección `026` del 409 de
+  perfiles está preparada y requiere aplicación + smoke de recuperación.
+- El smoke del 2026-08-30 confirmó `ENTITLEMENTS_ENABLED=true` y
+  `AI_USAGE_LIMITS_ENABLED=true` en servidor para la cuenta `advanced` del
+  owner. `VITE_ENTITLEMENTS` seguía apagada en el bundle y
+  `AI_KILL_SWITCH_ENABLED=false`.
+
+### Matriz de migraciones que afecta el siguiente rollout
+
+| Migración | Estado comprobado | Decisión |
+|---|---|---|
+| `013a/b/c` membresías/RLS v2 | Sin confirmación de rollout | No asumir SP1/two-sided productivo; no bloquea el piloto coach-operated |
+| `014` attempts, `015` templates, `016` jobs, `017` consentimientos, `018` coach requests | Aplicadas y observadas por sus smokes | Mantener; no reejecutar sin revisar el estado remoto |
+| `019` zonas FC Whoop | Pendiente | Mantener `WHOOP_ZONES_ENABLED=false`; requiere legal y rollout propio |
+| `020` entitlements | Aplicada; owner `advanced` | Falta smoke con cuenta `free` y activar UI proactiva al final |
+| `021` uso/gasto IA | Aplicada | Gate servidor activo; falta prueba durable y Plan Builder |
+| `022` métricas operacionales | Aplicada y smokeada | Operativa |
+| `023` clase del Asistente Coach | Aplicada y observada bajo tráfico | Operativa |
+| `024` corrección RPC de cuota | Aplicada y probada con rollback | Operativa; agregar prueba futura contra Postgres real |
+| `025` desenlace `safety_blocked` | Aplicada; `/ops` renderiza la métrica | Operativa; falta observar una declinación real distinta de cero |
+| `026` contrato sync de `athlete_profiles` | Implementada en working tree; no aplicada | Aplicar, refrescar cliente y ejecutar recuperación hasta cola cero |
+
+### Estado real por frente
+
+| Frente | Código / `main` | Producción verificada | Estado para beta | Próxima evidencia necesaria |
+|---|---|---|---|---|
+| Sync y datos multi-atleta | Causa aislada: el unique legado por `user_id` contradice el modelo por `athlete_id`; `026` y diagnóstico específico implementados | **Rojo hasta rollout:** el último smoke todavía mostró 409 y operaciones expiradas | **P0 bloqueante, corrección lista para aplicar** | Aplicar `026`, refrescar, sincronizar hasta cola cero y probar self + gestionado sin pérdida ni resurrección |
+| Restricciones de fuerza por lesión | Completo en `1ec2add`; Chat, Week Creator, Plan Builder y aceptación fail-closed | **APROBADO PARCIAL:** lumbar/rodilla, negaciones, routing, progreso, Week Creator y `/ops` pasan | **Apto para piloto acompañado con revisión humana** | Forzar A5 `safety_blocked`; Plan Builder quedó fuera por presupuesto |
+| Asistente IA del Coach | Triaje y borradores desplegados; working tree agrega transporte JSON ASCII-safe, cola SSE/NDJSON robusta, rechazo de corrupción conocida y diagnóstico local `parse_invalid`/`schema_invalid` | Smoke **APROBADO PARCIAL**; el fix nuevo aún no está desplegado y la revalidación quedó bloqueada por cuota (19 requests) | **P1; ocultar o revisar manualmente hasta cerrar contenido** | Desplegar, esperar/reponer la ventana QA y sostener una muestra sin corrupción ni `invalid-response` |
+| Entitlements | Tres tiers y gates en las tres Functions | `020` aplicada; servidor activo para owner `advanced`; cliente proactivo off | **No bloquea piloto coach-operated; gate de beta por tiers** | Owner temporalmente `free`: 403 en chat/enqueue/background y upsell correcto; restaurar `advanced` |
+| Cuotas y gasto IA | Gate durable, caps y kill switch implementados | `021` + `024` aplicadas; chat funciona; aislamiento del bucket assistant observado | **No bloquea piloto acotado; cerrar antes de ampliar IA** | Probar 429 server-side desde otro contexto, Plan Builder, acumulación de costo y kill switch controlado |
+| Observabilidad | `/ops`, jobs, attempts y coach requests desplegados; working tree espera el insert remoto con plazo corto en vez de dejarlo fire-and-forget | `022`, `023` y `025` aplicadas; panel visible, pero el smoke observó sólo 3 filas para ~8 envíos | Operable con brecha de cobertura pendiente de redeploy | Confirmar una fila por transporte y observar una declinación real sin aumentar errores |
+| OAuth Google | Web y Capacitor implementados | Estado externo sin nueva evidencia | **Postergado por decisión del owner hasta preparar la app pública** | No bloquea el piloto coach-operated; sí bloquea cuentas externas/self-service e iOS público |
+| Legal y consentimiento | Gate versionado activo y smokeado | `017` aplicada; abogado contactado el 2026-08-29 | **P0 en manos del owner/abogado** | Enviar las cuatro URLs y el objetivo de los Términos; recibir, integrar y publicar la revisión |
+| Seguridad | RLS, cifrado Whoop, auth y headers están implementados | Sin auditoría transversal con segundo usuario | **P0 antes de 10–20 cuentas** | Intento real de acceso cruzado, revisión de secretos/headers/Functions y cero hallazgos altos |
+| Pricing y captación | Tres tiers, precios y CTA por correo | Bundle verificado muestra “Beta cerrada · sin cobro todavía” | **Cerrado para prelanzamiento** | Mantener cobro manual; no integrar gateway aún |
+| Whoop core | Readiness y auto-complete operativos | `011`/`012` verificadas | No bloquea beta web | Mantener zonas de FC apagadas hasta aplicar `019` y cerrar revisión legal específica |
+
+### Veredicto de readiness
+
+- **Uso interno del owner:** operativo, pero el incidente de sync exige atención
+  inmediata porque ya hay operaciones expiradas.
+- **Piloto acompañado de 1–3 personas, operado por el coach:** cercano, pero
+  **no debe empezar aún**. Requiere aplicar/smokear `026` y enviar el paquete
+  legal al abogado. El núcleo de lesiones ya tiene evidencia suficiente para
+  piloto con revisión humana. No requiere OAuth externo si
+  los atletas siguen como perfiles gestionados dentro de la cuenta del coach.
+- **Beta coach-operated de 10–20 atletas:** no lista. Además de lo anterior
+  exige gates server-side comprobados en modo `free`, dos semanas sin incidentes
+  P0, soporte y criterios de parada. Puede seguir usando perfiles gestionados.
+- **Beta multi-cuenta/self-service:** postergada con OAuth. Antes de abrirla exige
+  una auditoría de aislamiento con un segundo usuario real.
+- **Self-serve pagado:** fuera del siguiente hito. Pagos, SP1b, Android, analytics
+  sofisticado y cola global no deben competir con el cierre de la beta.
+
+### Gates para abrir la beta
+
+Sync y legal son los dos P0 todavía abiertos para el piloto coach-operated de
+1–3 personas. La evidencia de lesiones permite avanzar con revisión humana; los
+gates de tier/seguridad preceden la expansión, OAuth queda para la publicación
+de la app y el Asistente es condicional.
+
+1. **P0 — Restaurar sync y proteger datos.** Aplicar `026`, refrescar el cliente,
+   reconciliar la cola sin borrar datos locales y demostrar convergencia self +
+   gestionado. Incluir create/update/delete, offline→online y el cascade de
+   borrado de atleta. El Done exige cero 409, cero ops pendientes/expiradas nuevas
+   y perfil local/remoto idéntico.
+2. **P1 — Completar la evidencia de `1ec2add`.** El smoke ya verificó exclusión
+   lumbar/rodilla, routing, progreso, Week Creator y `/ops`. Falta provocar A5
+   para observar `safety_blocked`; Plan Builder queda en un smoke separado para
+   no gastar presupuesto sin una decisión explícita.
+3. **Antes de ampliar tiers — Cerrar gates de plan y costo.** Probar `free` vs `advanced` en
+   `coach.ts`, `enqueue-plan-generation` y `generate-plan-background`; comprobar
+   cuota durable tras borrar el estado local/usar otro contexto, costo acumulado
+   y kill switch en una ventana controlada. Sólo después encender
+   `VITE_ENTITLEMENTS`.
+   Para la primera pasada se acepta cambiar temporalmente el entitlement del
+   owner de `advanced` a `free` por SQL y restaurarlo después; esto valida gates,
+   pero no reemplaza una prueba de aislamiento con otra cuenta.
+4. **P0 — Cierre legal mínimo.** El abogado ya fue contactado. Enviarle
+   `https://app.rallyiq.cl/terms`, `https://app.rallyiq.cl/privacy`,
+   `https://app.rallyiq.cl/health-disclaimer` y
+   `https://app.rallyiq.cl/whoop-disclaimer`. Objetivo: dejar lista una beta
+   cerrada y acompañada en Chile para planificación/seguimiento deportivo con IA,
+   datos de salud/Whoop, cobro inicialmente manual y exclusión expresa de consejo
+   médico. Pedirle que cierre responsabilidad, uso aceptable, privacidad,
+   retención, cancelación/reembolso y reaceptación por cambio de versión.
+5. **P0 antes de 10–20 cuentas externas — Auditoría de seguridad.** Segundo usuario intentando
+   leer/escribir datos ajenos, inventario de variables, secretos ausentes de
+   `dist/`, headers reales del deploy y revisión de endpoints con service role.
+6. **Pre-app pública — OAuth externo.** Sacar Google OAuth de Testing y completar
+   login con una cuenta nunca listada como tester; luego validar el build iOS.
+   Por decisión del owner no condiciona el piloto operado desde la cuenta coach.
+7. **P1 condicional — Calidad del Asistente IA.** Si se ofrece en el piloto,
+   desplegar el hardening local de transporte/parseo y repetir una muestra de
+   borradores hasta cerrar la corrupción y `invalid-response`. Si no se cierra,
+   mantenerlo fuera del recorrido del alumno y usar mensajes revisados
+   manualmente por el coach.
+
+### Plan recomendado de avance
+
+#### Tanda 1 — estabilización, antes de nuevas features
+
+1. **Incidente de sync:** aplicar `026`, observar la cola hasta cero y hacer un
+   smoke de recuperación en el dispositivo actual; luego repetir self + gestionado.
+2. **Completar el deploy actual:** el smoke principal ya quedó documentado como
+   aprobado parcial; preparar un caso A5 determinista sin consumir más IA de la
+   necesaria.
+3. **Cerrar el Asistente o sacarlo del camino crítico:** desplegar el transporte
+   ASCII-safe, el fail-closed de corrupción y la telemetría de parseo ya
+   implementados; revalidar en la siguiente ventana de cuota sin reintentos
+   ciegos. El diagnóstico conserva forma/longitud/trace, no el contenido.
+
+#### Tanda 2 — habilitar personas externas
+
+4. Cambiar temporalmente el owner a `free` por SQL, refrescar/hidratar el
+   entitlement y cerrar el 403 directo de las tres Functions; restaurar
+   `advanced` al terminar.
+5. Antes de pasar a cuentas externas, crear un segundo usuario y cerrar
+   aislamiento RLS. OAuth externo queda para el hito de publicación de la app.
+6. Probar kill switch, volverlo a `false`, confirmar `/ops` y registrar un runbook
+   breve de incidente/cambio de flags — recordar que Netlify exige redeploy.
+7. Enviar en paralelo al abogado las cuatro URLs y el objetivo de los Términos;
+   no necesita esperar a la Tanda 1.
+
+#### Tanda 3 — piloto acompañado
+
+8. Invitar primero **1–3 personas**, no 20. Onboarding 1:1, una semana inicial,
+   revisión manual del plan y soporte por un único canal.
+9. Registrar semanalmente: activación, semana creada, sesiones completadas,
+   errores, requests bloqueadas, costo y feedback. Criterio de parada inmediato:
+   pérdida/no convergencia de datos, acceso cruzado, gasto sin control o copy
+   médico inseguro.
+10. Expandir a 10–20 sólo tras dos semanas sin incidentes P0 y con el proceso de
+    soporte sostenible.
+
+### Smoke reversible del owner como `free`
+
+No hace falta borrar la fila de entitlement ni crear una cuenta nueva para la
+primera prueba funcional. En SQL Editor, identificar primero el UUID correcto y
+conservar la salida:
+
+```sql
+select u.id, u.email, e.tier, e.expires_at, e.source, e.note
+from auth.users u
+left join public.user_entitlements e on e.user_id = u.id
+order by u.created_at;
+```
+
+Con el UUID del owner, cambiar **sólo** el tier, ejecutar el smoke con una sesión
+nueva/refresh y restaurarlo inmediatamente:
+
+```sql
+update public.user_entitlements
+set tier = 'free'
+where user_id = '<OWNER_UUID>' and tier = 'advanced'
+returning user_id, tier, expires_at, source, updated_at;
+
+-- Después del smoke:
+update public.user_entitlements
+set tier = 'advanced'
+where user_id = '<OWNER_UUID>' and tier = 'free'
+returning user_id, tier, expires_at, source, updated_at;
+```
+
+El guard `and tier = ...` evita pisar un estado inesperado. El servidor resuelve
+el tier en cada request; para la UI local hay que recargar o rehidratar el
+entitlement. Esta prueba cubre oferta, 403 y precedencia entitlement→cuota, pero
+no cubre RLS ni aislamiento entre cuentas.
+
+### Trabajo que no bloquea esta beta
+
+- Gateway de pago: cobrar por transferencia y conciliar manualmente el piloto.
+- SP1b/two-sided completo: el piloto puede ser operado desde la cuenta coach.
+- Android, cola global, analytics de terceros y load test de 100 usuarios.
+- Optimización adicional del Plan Builder: primero observar estabilidad y costo
+  con usuarios reales.
+- Zonas de FC Whoop (`019`): incremento separado, legalmente sensible.
+
+## Registro Acumulado De Entregas (histórico)
+
+Lo siguiente conserva evidencia y decisiones por fecha. No usar sus pendientes
+o porcentajes como estado vigente sin contrastarlos con el corte ejecutivo.
+
 Base de contraste:
 
-- **Fuerza — restricciones estructurales de seguridad implementadas localmente
+- **Fuerza — restricciones estructurales de seguridad integradas en `main`
   (2026-08-30):** ver §32. El ticket de lesión queda cubierto en Chat, Week
   Creator, Plan Builder y aceptación; una sesión incompatible se repara con ids
   canónicos o se declina sin propuesta. La suite completa pasa 503 archivos /
-  4056 tests, lint, typecheck y build. Está commiteado localmente pero no desplegado;
-  `025_coach_request_safety_blocked.sql` y el smoke autenticado siguen pendientes.
+  4056 tests, lint, typecheck y build. El commit `1ec2add` está pusheado y
+  desplegado; `025_coach_request_safety_blocked.sql` está aplicada. El smoke
+  autenticado terminó aprobado parcial, con el núcleo de seguridad verificado y
+  A5 sin ejercitar por existir siempre un pool viable.
 
 - **Sección Pre-Lanzamiento abierta (2026-08-15):** ver §Pre-Lanzamiento, ubicada
   justo después de §Porcentaje De Avance. Consolida los 14 pendientes que separan
@@ -97,7 +305,7 @@ Base de contraste:
 - **SP1a dos-lados implementado en codigo (2026-07-09/10):** spec endurecido con D1-D6 y plan `docs/superpowers/plans/2026-07-09-sp1a-two-sided-foundation.md` ejecutado en el cliente (Dexie v17 con `athleteMemberships`/`athleteCoachNotes`, `membershipCache`, `claimGate`, ruteo `session_completion` via RPC `mark_session_done`) y `013a/b/c` escritas en `supabase/`. **Rollout remoto de `013a/b/c` sin confirmar** — el plan se conserva por su guia de aplicacion. SP1b (invites + UI) sigue sin implementar.
 - **Whoop Workout Auto-Complete implementado (2026-07-10):** `012_whoop_workouts.sql`, Dexie v16, scope `read:workout`, reconciliacion autoritativa server/client, matcher self-only serializado con idempotencia durable, badge y lifecycle completo. SP1a queda reservado para `013+`/Dexie v17+. `012`, deploy, reconexión y smoke operativo ya están cerrados.
 
-## Resumen Ejecutivo
+## Resumen Ejecutivo Histórico (superado por el corte vigente)
 
 RallyIQ esta en una etapa donde el core ya no es el cuello de botella principal. El motor de planificacion, Plan Builder async, calidad deportiva base, athlete scope foundation, claves naturales locales por atleta, write path remoto seguro para day/week, Athlete-Aware Core, Coach F2-lite Parte 2b, Whoop v1 + Workout Auto-Complete (ambas migraciones aplicadas), Coach Workspace con roster/Planificacion/Biblioteca, y Fase 0 de coaches landing (rutas legales publicas + landing `/coaches` de prelanzamiento) ya estan construidos. La Fase 0 de medicion del Plan Builder tambien esta cerrada: `quality_version = 2` es productiva, el bundle esta desplegado y una corrida real quedo verificada en `plan_generation_jobs` el 2026-07-26. La rotacion coordinada de fuerza y squash ya tiene su smoke `high` pagado y aceptado, y encima de ella viajan los roles de partido de squash; ambas tandas quedaron desplegadas el 2026-08-03 y resta su verificación post-deploy. Biblioteca y Planificacion tienen `015`, deploy y smoke autenticado de un dispositivo aprobados; queda la convergencia multi-dispositivo. El 2026-08-05 se sumaron las superseries de fuerza (§23), y el 2026-08-07 el dato de workouts Whoop dejó de servir solo para auto-completar: ya tiene detalle visible por sesión, residual por día y contexto objetivo de siete días para el coach (§24). El 2026-08-10 la experiencia semanal quedó endurecida en `main`: estados honestos sin macroplan, semana visible aislada durante cargas, sync inicial priorizado y ventana competitiva alineada con días entrenables (§26). Entre el 10 y el 11 de agosto, la modalidad de squash pasó a ser un contrato estructural único en todas las fronteras y A2.5 cerró la exposición semanal de partido sin degradar modalidad (§27). Estas entregas quedan a la espera de su verificación manual o rollout donde corresponda.
 
@@ -113,11 +321,11 @@ Carriles de producto que siguen abiertos pero ya no bloquean la oferta comercial
 
 Mi lectura como lider tecnico: el cambio principal entre hoy y hace dos dias es que las rutas legales publicas ya existen como rutas reales, no como ideas. Eso permite cobrar sin zona gris innecesaria si se cierra la revision juridica rapido. El cuello actual es revision juridica formal + primer cliente real para validar flujo comercial/operacional.
 
-## Estado Actual En Una Frase
+## Estado Histórico En Una Frase
 
 RallyIQ ya opera multi-atleta en produccion, con Whoop readiness y Workout Auto-Complete operativos (`011`/`012` aplicados), Coach Workspace base (`/coach`) y rutas legales publicas + landing `/coaches` en vivo. El consentimiento in-app también está **activo**: `017` aplicada, ambas flags encendidas y smoke de persistencia/hidratación cerrado. `015` y Biblioteca/Planificacion ya estan desplegadas, `quality_version = 2` quedo verificada en `plan_generation_jobs`, la rotacion coordinada del Plan Builder ya paso su control `high` pagado, y las sesiones de fuerza soportan superseries reales de punta a punta. En `main`, la semana ya distingue ausencia de macroplan, bloquea datos visuales de otra semana durante cargas y prioriza el rango visible al sincronizar; la modalidad de squash y su exposición competitiva semanal ya son estructurales; y Whoop agrega detalle y zonas de FC. Faltan deploy/smoke de estas capas y la validación real multi-dispositivo antes de describirlas como productivas para beta.
 
-## Porcentaje De Avance
+## Porcentajes Históricos (no usar para decidir la beta)
 
 Estimacion actual:
 
@@ -129,7 +337,7 @@ Estimacion actual:
 
 Traduccion practica: el producto ya tiene sustancia y superficie legal/comercial minima. Lo pendiente es reducir riesgo juridico formal (revision de abogado) y riesgo operacional (primer cliente real).
 
-## Pre-Lanzamiento
+## Pre-Lanzamiento Histórico (auditoría del 2026-08-15)
 
 Abierta el 2026-08-15. Es la lista de lo que separa el estado actual de **invitar
 a una beta controlada de 10–20 personas que no sean el owner**. Todo lo de abajo
@@ -2137,10 +2345,11 @@ de escrituras es aceptable; aplicarla en una ventana de bajo tráfico.
 
 ### 32. Fuerza — restricciones estructurales de seguridad por lesión (2026-08-30)
 
-Estado: **implementado, verificado y commiteado localmente; sin deploy**. La
-migración manual `025_coach_request_safety_blocked.sql` está escrita pero no se
-considera aplicada. El smoke autenticado con el perfil real del owner permanece
-pendiente.
+Estado: **implementado, verificado, commiteado, pusheado y desplegado**. La
+migración manual `025_coach_request_safety_blocked.sql` está aplicada y `/ops`
+expone `Declinaciones seguras`. El smoke autenticado terminó **APROBADO PARCIAL**;
+ver
+[`2026-08-30-strength-safety-prod-smoke.md`](docs/superpowers/smokes/2026-08-30-strength-safety-prod-smoke.md).
 
 La lesión ya no se reduce a fatiga ni queda en una advertencia del prompt. Un
 parser único convierte perfil, wizard y mensajes del usuario en constraints
@@ -2173,12 +2382,90 @@ working tree ya la resolvía con `alignMessageWeekdayToActionDate`; esta entrega
 impide que el copy determinista de bloqueo reintroduzca fechas escritas por el
 proveedor.
 
-Gate de cierre local: **503 archivos / 4056 tests**, lint, `tsc -b`, build y
-`git diff --check` verdes. Pendientes operativos: aplicar `025`, desplegar y
-ejecutar el smoke autenticado descrito en el plan. Spec y plan:
+Gate de cierre local previo al deploy: **503 archivos / 4056 tests**, lint,
+`tsc -b`, build y `git diff --check` verdes. Producción verificó A1–A4, B1–B5,
+preservación de progreso en `update_session`, Week Creator y `/ops`. A5 no se
+ejercitó porque siempre existió un pool viable; Plan Builder fue excluido por
+presupuesto. Spec y plan:
 [`2026-08-30-strength-safety-constraints-design.md`](docs/superpowers/specs/2026-08-30-strength-safety-constraints-design.md)
 y
 [`2026-08-30-strength-safety-constraints.md`](docs/superpowers/plans/2026-08-30-strength-safety-constraints.md).
+
+### 33. Asistente IA del Coach, gates de IA y hallazgos de producción (2026-08-29/30)
+
+Estado: **triaje y borradores desplegados; smoke aprobado parcialmente**. El
+reporte completo está en
+[`2026-08-29-coach-assistant-prod-smoke.md`](docs/superpowers/smokes/2026-08-29-coach-assistant-prod-smoke.md).
+
+El camino principal quedó demostrado end-to-end con self + un atleta gestionado:
+agrupación por señales, contraste de adherencia/sesiones/check-in contra la
+realidad, cambio de scope al abrir la semana, persistencia del borrador al navegar
+y recalcular, telemetría `coach_assistant_message`, cuota separada y aislamiento
+respecto del chat. `023` está aplicada y se observó una fila real con
+`finish_reason = STOP`; no hay evidencia de truncamiento por `maxTokens`.
+
+El rollout de límites encontró y cerró un P0 real: con
+`AI_USAGE_LIMITS_ENABLED=true`, `increment_ai_usage_if_under_limit` devolvía 400
+por ambigüedad entre la columna `usage_date` y el parámetro OUT de PL/pgSQL.
+`024` agrega `#variable_conflict use_column`; fue aplicada y verificada en
+producción con insert, upsert, límite y rollback. El hallazgo demuestra que los
+mocks de `fetch` no sustituyen una prueba de RPC contra Postgres real.
+
+`1ec2add` agrega hardening posterior al smoke: borrador editable y copiable,
+saludo local no duplicable, definición correcta de `no-check-in`, label `Tú`,
+orden por severidad, política separada para fallos bloqueantes y diagnóstico
+truncado del body de PostgREST sin exponerlo al cliente. Ya fue desplegado; la
+revalidación del Asistente quedó bloqueada por cuota agotada (19 requests),
+mientras las rutas de chat/fuerza sí fueron ejercitadas.
+
+Dos defectos de contenido permanecen **abiertos** y no deben darse por resueltos
+por esos cambios: caracteres corrompidos en varios borradores y una tasa alta de
+`invalid-response` que consume cuota. La hipótesis original de UTF-8 troceado no
+está demostrada y la fila observada fue no-streaming; el siguiente paso es
+capturar de forma segura la frontera proveedor/proxy/parser y localizar dónde
+cambia el texto. Hasta entonces el Asistente requiere revisión humana y no es un
+argumento para ampliar la beta.
+
+El mismo smoke reveló el incidente técnico hoy prioritario: el sync produce 409
+al upsert de `athlete_profiles`, muestra “Nunca sincronizado” y ya dejó operaciones
+expiradas. La causa quedó aislada el 2026-08-30: el índice unique legado por
+`user_id` sigue limitando la tabla a un perfil por cuenta, mientras el cliente y
+PostgREST operan con un perfil canónico por `athlete_id`. La corrección `026`
+elimina ese contrato legado sin borrar filas, valida deuda/nulls/huérfanos y
+recarga el schema de PostgREST. Falta aplicarla y ejecutar el smoke de recuperación.
+
+### 34. Sync — contrato canónico de perfiles y recuperación del 409 (2026-08-30)
+
+Estado: **causa cerrada e implementación local verificada; rollout pendiente**.
+
+`supabase/026_fix_athlete_profiles_sync_contract.sql` es transaccional e
+idempotente. Antes de tocar índices recupera únicamente perfiles self legacy que
+pueden asociarse sin ambigüedad, y aborta si quedan `athlete_id` nulos, huérfanos
+o duplicados. Después exige `athlete_id not null`, crea el unique exacto que usa
+`on_conflict=athlete_id`, elimina cualquier unique monocolumna sobre `user_id`,
+verifica el estado final y notifica a PostgREST para recargar el schema.
+El helper no numerado `supabase/athlete_profiles_sync_fix.sql`, que recreaba el
+unique defectuoso por `user_id`, quedó deprecado y ahora aborta con una indicación
+explícita de aplicar `026`.
+
+El cliente ahora reconoce el error exacto
+`athlete_profiles_user_id_unique` como `schema_mismatch`, no como un duplicado
+auto-reparable. Así deja de gastar reintentos hasta expirar una operación que el
+cliente nunca podría reparar. La fuente local no se borra: el full sync ya tiene
+una regresión que conserva y vuelve a empujar un perfil gestionado ausente en
+remoto después de que su operación expira. Regresiones focalizadas: **151/151**.
+
+Done de producción: aplicar `026`, refrescar la app, ejecutar “Sincronizar ahora”
+y comprobar cola cero, ausencia de nuevos 409/`queue:op_expired`, perfil self y
+gestionado presentes en `athlete_profiles`, y create/update/delete convergentes.
+Runbook:
+[`2026-08-30-athlete-profile-sync-recovery.md`](docs/superpowers/smokes/2026-08-30-athlete-profile-sync-recovery.md).
+
+## Archivo Histórico De Producto, Riesgos Y Backlog
+
+Las secciones siguientes conservan el razonamiento anterior y el detalle de
+features. Sus listas de pendientes están archivadas; para ejecutar trabajo usar
+el corte ejecutivo y sus gates.
 
 ### Producto Publico Y Marca
 
@@ -2271,7 +2558,7 @@ Cierres tecnicos recientes:
 - Commits posteriores agregaron tests focalizados para Esfuerzo, sync on-demand y weekly coach note.
 - Biblioteca/plantillas: pruebas dirigidas de serializer, Dexie, CRUD, sync, backup y UI OK; `npm run lint` + `npm run build` OK.
 
-## Riesgos Que Siguen Vivos
+## Riesgos Históricos (reclasificados en el corte vigente)
 
 ### 1. WHOOP ya agrega dato sensible: enforcement activo, cierre jurídico pendiente
 
@@ -2314,7 +2601,7 @@ Faltan soporte, cancelacion/reembolso, precio fundador, mensaje de invitacion, p
 
 Whoop Workout Auto-Complete usa `012_whoop_workouts.sql` + Dexie v16. SP1a queda reservado para `013a/b/c` + Dexie v17; los specs y reglas del proyecto reflejan ese orden.
 
-## Decisiones Abiertas Para Desarrollo
+## Decisiones Históricas Para Desarrollo
 
 ### Opcion A - Cierre operativo de WHOOP readiness — CERRADA
 
@@ -2355,7 +2642,7 @@ Estado: especificado y planificado (plan completo: `docs/superpowers/plans/2026-
 
 Ejecutar **Opcion C (Piloto manual) + cierre jurídico**. El consentimiento técnico y la Opcion B (Workout Auto-Complete) ya están operativos; no requieren otra entrega. Opcion D (SP1a dos-lados) espera hasta post-piloto cuando se entienda mejor si el siguiente cliente sera alguien que quiera compartir con su coach o sera el owner/coach usando mas atletas propios.
 
-## Checklist Actualizado Para Mostrar Y Monetizar
+## Checklist Histórico Para Mostrar Y Monetizar
 
 ### A. Gate Inmediato: Athlete-Aware Core
 
@@ -2635,7 +2922,7 @@ No entra todavía:
 - semanas plantilla y edicion rica de drills/bloques dentro de Biblioteca.
 - lock de concurrencia compartido con `CoachContextBar` (gap de UX, no de integridad).
 
-## Sprint Recomendado - Proximos 2-3 Dias Para Cerrar Riesgo Legal Y Lanzar Piloto
+## Sprint Histórico — Propuesta Anterior De 2–3 Días
 
 ### Dia 1 - Revision Juridica Formal
 
@@ -2669,7 +2956,7 @@ No entra todavía:
 - Bundle desplegado en prod sin otros cambios grandes.
 - Crear issue de seguimiento para feedback de piloto.
 
-## Camino A Monetizacion
+## Camino Histórico A Monetización
 
 ### Nivel 1 - Demo Acompanada
 
@@ -2725,7 +3012,7 @@ Pendiente minimo:
 - Mejor separacion usuario/coach/atleta si se vende a entrenadores.
 - SP1a dos-lados (atletas con login propio + invites coach) o equivalente.
 
-## Backlog De Mejoras De Producto (abierto 2026-07-26)
+## Backlog Histórico De Mejoras De Producto (abierto 2026-07-26)
 
 Surgido de una conversacion de brainstorming con el owner. Son **proyectos
 independientes**, cada uno con su propio ciclo spec → plan → implementacion; no
@@ -2860,7 +3147,7 @@ PR agentico (#10, mergeado el 2026-07-24) y nadie los tildo; el codigo y sus
 tests existen (`closePlanCycle.ts`, `deletePlanCycle.ts`, `CycleHistory.tsx`,
 `CycleHistory.test.tsx`). Se puede construir encima. Plan retirado.
 
-## Que Hacer Primero
+## Orden Histórico De Ejecución (superado)
 
 Orden recomendado (Athlete-Aware Core + Coach F2-lite Parte 2b + Whoop v1/Workout Auto-Complete + Coach Workspace v0 + Fase 0 coaches landing ya en prod):
 
@@ -2939,7 +3226,7 @@ producto Whoop, el mejor uso del tiempo continúa siendo la validación
 multi-dispositivo de Biblioteca/Planificacion y la política de
 cancelación/reembolso + one-liner de oferta en `/coaches`.
 
-## Que No Hacer Ahora
+## Restricciones Históricas De Alcance
 
 - No abrir beta publica.
 - No activar pagos automaticos todavia.
@@ -2951,9 +3238,11 @@ cancelación/reembolso + one-liner de oferta en `/coaches`.
 - No vender "IA ilimitada" como valor central.
 - No invitar 10+ personas antes del primer piloto acompanado.
 - No exponer datos biometricos sin consentimiento y borrado completo.
-- No construir todavía el Asistente IA ni semanas plantilla/edición rica de drills; Planificacion y Biblioteca ya tienen alcance v1 definido y deben validarse primero con el piloto.
+- No ampliar todavía el Asistente IA con semanas plantilla ni edición rica de
+  drills. Su v1 ya existe; antes de extenderla deben estabilizarse sus respuestas
+  inválidas/corruptas y validarse Planificación y Biblioteca con el piloto.
 
-## Veredicto
+## Veredicto Histórico (superado por el corte vigente)
 
 RallyIQ ya tiene producto suficiente para operar entrenamiento real y varios atletas gestionados desde la cuenta del owner. Whoop v1 y Workout Auto-Complete ya no son ideas pendientes: estan aplicados en produccion y operativos de punta a punta. Coach Workspace v0 suma un roster mejorado y navegacion honesta hacia lo que falta construir. Fase 0 de coaches landing (rutas legales + landing `/coaches` + deep links nativos) ya esta en vivo, reduciendo la zona gris tecnica.
 

@@ -60,14 +60,10 @@ describe('streaming coach telemetry', () => {
   it('emits request completion telemetry and timing fields in the done event', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ id: 'user-1' }), { status: 200 }))
-      .mockResolvedValueOnce(new Response([
-        'data: {"choices":[{"delta":{"content":"Respuesta final"}}]}',
-        '',
-        'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"service_tier":"priority","usage":{"prompt_tokens":120,"completion_tokens":30,"completion_tokens_details":{"reasoning_tokens":10}}}',
-        '',
-        'data: [DONE]',
-        '',
-      ].join('\n'), { status: 200, headers: { 'Content-Type': 'text/event-stream' } }))
+      .mockResolvedValueOnce(new Response(
+        'data: {"choices":[{"delta":{"content":"Respuesta final · algún día"},"finish_reason":"stop"}],"service_tier":"priority","usage":{"prompt_tokens":120,"completion_tokens":30,"completion_tokens_details":{"reasoning_tokens":10}}}',
+        { status: 200, headers: { 'Content-Type': 'text/event-stream' } },
+      ))
     vi.stubGlobal('fetch', fetchMock)
     const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => undefined)
 
@@ -91,6 +87,7 @@ describe('streaming coach telemetry', () => {
       }),
     })
     const body = await new Response(response.body).text()
+    expect([...body].every((character) => character.charCodeAt(0) < 128)).toBe(true)
     const events = body.trim().split('\n').map((line) => JSON.parse(line) as Record<string, unknown>)
     const done = events.find((event) => event.type === 'done')
     const completedLogs = infoSpy.mock.calls
@@ -102,6 +99,7 @@ describe('streaming coach telemetry', () => {
 
     expect(done).toMatchObject({
       type: 'done',
+      text: 'Respuesta final · algún día',
       traceId: 'trace-stream-1',
       generationId: 'generation-stream-1',
       provider: 'openai',
@@ -125,7 +123,7 @@ describe('streaming coach telemetry', () => {
       model: 'gpt-5-mini',
       serviceTier: 'priority',
       reasoningEffort: 'minimal',
-      responseCharCount: 'Respuesta final'.length,
+      responseCharCount: 'Respuesta final · algún día'.length,
     })
     expect(attemptLogs).toHaveLength(1)
     expect(attemptLogs[0]).toMatchObject({

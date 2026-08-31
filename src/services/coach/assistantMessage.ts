@@ -1,10 +1,47 @@
 import type { TriageSignal } from '../athlete/coachRosterTriage'
 
 export const ASSISTANT_MESSAGE_MAX_CHARS = 600
+/**
+ * Las únicas palabras españolas de una sola letra son `a`, `e`, `o`, `u` e `y`.
+ *
+ * La corrupción observada reemplaza un carácter multibyte por un hueco, así que
+ * parte la palabra y deja un fragmento suelto: `días`→`d ias`, `algún`→`alg n`,
+ * `más`→`m s`, `sesión`→`sesi n`, `cómo`→`C mo`. Fijar los dos literales que el
+ * smoke alcanzó a ver dejaba pasar el resto de una familia abierta, y todos son
+ * más frecuentes en un mensaje real que `algún`.
+ *
+ * Alcance honesto: no detecta el caso en que el fragmento suelto resulta ser
+ * una palabra válida de una letra (`energía` → `energ a`). Es defensa en
+ * profundidad detrás del transporte ASCII-safe, no un sustituto de él.
+ */
+const SPANISH_SINGLE_LETTER_WORDS = new Set(['a', 'e', 'o', 'u', 'y'])
+/** Toda palabra española tiene vocal; estas abreviaturas de unidad no. */
+const VOWELLESS_ABBREVIATIONS = new Set(['km', 'kg', 'hr', 'cm', 'mm', 'ml', 'pm', 'am'])
+
+function isCorruptFragment(token: string): boolean {
+  // Un token con dígitos es notación, no prosa: `3x8`, `5k`, `Z2`. Reducirlo a
+  // sus letras produciría un falso positivo sobre contenido legítimo.
+  if (/\p{N}/u.test(token)) return false
+  const letters = token.replace(/[^\p{L}]/gu, '')
+  if (letters.length === 0) return false
+  const normalized = letters.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+
+  // Fragmento de una letra que no es palabra: `días`→`d ias`, `más`→`m s`.
+  if (normalized.length === 1) return !SPANISH_SINGLE_LETTER_WORDS.has(normalized)
+
+  // Fragmento sin vocal: `próxima`→`pr xima`. Las unidades quedan exentas.
+  if (VOWELLESS_ABBREVIATIONS.has(normalized)) return false
+  return !/[aeiouy]/.test(normalized)
+}
+
+function hasEncodingArtifact(body: string): boolean {
+  if (body.includes('\uFFFD')) return true
+  return body.split(/\s+/).some(isCorruptFragment)
+}
 
 export type AssistantMessageParseResult =
   | { ok: true; body: string }
-  | { ok: false; reason: 'invalid' | 'too-long' }
+  | { ok: false; reason: 'invalid-json' | 'invalid-shape' | 'invalid-encoding' | 'too-long' }
 
 export const ASSISTANT_MESSAGE_SCHEMA = {
   type: 'object',
@@ -95,23 +132,32 @@ export function parseAssistantMessageResult(raw: string): AssistantMessageParseR
   try {
     parsed = JSON.parse(raw)
   } catch {
-    return { ok: false, reason: 'invalid' }
+    return { ok: false, reason: 'invalid-json' }
   }
 
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    return { ok: false, reason: 'invalid' }
+    return { ok: false, reason: 'invalid-shape' }
   }
 
   const keys = Object.keys(parsed)
-  if (keys.length !== 1 || keys[0] !== 'body') return { ok: false, reason: 'invalid' }
+  if (keys.length !== 1 || keys[0] !== 'body') return { ok: false, reason: 'invalid-shape' }
 
   const body = (parsed as { body: unknown }).body
-  if (typeof body !== 'string') return { ok: false, reason: 'invalid' }
-
-  const normalized = stripLeadingGreeting(body)
-  if (normalized.length === 0) return { ok: false, reason: 'invalid' }
+  if (typeof body !== 'string') return { ok: false, reason: 'invalid-shape' }
+  // U+FFFD prueba que algún borde de transporte ya reemplazó bytes inválidos.
+  // Los otros dos patrones son las corrupciones literales observadas en el
+  // smoke (`d ias`/`d ías`, `alg n`). Fallar cerrado evita ofrecerle al coach
+  // texto dañado si una capa vieja o un intermediario elude el fix de transporte.
+  const normalized = stripLeadingGreeting(body.normalize('NFC'))
+  if (normalized.length === 0) return { ok: false, reason: 'invalid-shape' }
+  // El tope va antes que la detección de corrupción para conservar el motivo
+  // más específico: un body desbordado se reporta como `too-long` aunque su
+  // relleno sintético no parezca español.
   if (normalized.length > ASSISTANT_MESSAGE_MAX_CHARS) {
     return { ok: false, reason: 'too-long' }
+  }
+  if (hasEncodingArtifact(normalized)) {
+    return { ok: false, reason: 'invalid-encoding' }
   }
 
   return { ok: true, body: normalized }

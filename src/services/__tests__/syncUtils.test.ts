@@ -31,6 +31,21 @@ describe('syncUtils', () => {
     expect(classifyAthleteProfileSyncError(new Error('duplicate key value violates unique constraint'))).toContain('Duplicate/conflict')
   })
 
+  it('classifies the legacy one-profile-per-user index as schema drift, not an auto-repairable duplicate', () => {
+    const result = classifySyncError({
+      code: '23505',
+      message: 'duplicate key value violates unique constraint "athlete_profiles_user_id_unique"',
+      status: 409,
+    }, 'athlete_profiles')
+
+    expect(result).toMatchObject({
+      category: 'schema_mismatch',
+      retriable: false,
+      autoRepairable: false,
+    })
+    expect(result.technicalMessage).toContain('Legacy athlete_profiles user_id unique contract')
+  })
+
   it('classifies missing managed athletes as non-retriable validation errors', () => {
     const result = classifySyncError(
       new Error('managed athlete ath_ghost not found locally; deferring child push'),

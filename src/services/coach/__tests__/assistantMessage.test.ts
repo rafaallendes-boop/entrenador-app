@@ -44,21 +44,21 @@ describe('assistantMessage', () => {
   })
 
   it('descarta JSON inválido sin lanzar', () => {
-    expect(parseAssistantMessageResult('no es json')).toEqual({ ok: false, reason: 'invalid' })
+    expect(parseAssistantMessageResult('no es json')).toEqual({ ok: false, reason: 'invalid-json' })
   })
 
   it('descarta una respuesta sin body', () => {
-    expect(parseAssistantMessageResult('{"text":"hola"}')).toEqual({ ok: false, reason: 'invalid' })
+    expect(parseAssistantMessageResult('{"text":"hola"}')).toEqual({ ok: false, reason: 'invalid-shape' })
   })
 
   it('descarta una respuesta con propiedades extra', () => {
     expect(parseAssistantMessageResult('{"body":"hola","advice":"baja la carga"}'))
-      .toEqual({ ok: false, reason: 'invalid' })
+      .toEqual({ ok: false, reason: 'invalid-shape' })
   })
 
   it('descarta un body no textual, vacío y sobre el tope', () => {
-    expect(parseAssistantMessageResult('{"body":42}')).toEqual({ ok: false, reason: 'invalid' })
-    expect(parseAssistantMessageResult('{"body":"   "}')).toEqual({ ok: false, reason: 'invalid' })
+    expect(parseAssistantMessageResult('{"body":42}')).toEqual({ ok: false, reason: 'invalid-shape' })
+    expect(parseAssistantMessageResult('{"body":"   "}')).toEqual({ ok: false, reason: 'invalid-shape' })
     expect(parseAssistantMessageResult(JSON.stringify({
       body: 'x'.repeat(ASSISTANT_MESSAGE_MAX_CHARS + 1),
     }))).toEqual({ ok: false, reason: 'too-long' })
@@ -75,6 +75,17 @@ describe('assistantMessage', () => {
       .toEqual({ ok: true, body: '¿Cómo vas?' })
   })
 
+  it('normaliza Unicode y rechaza el carácter de reemplazo de una decodificación rota', () => {
+    expect(parseAssistantMessageResult(JSON.stringify({ body: 'algu\u0301n día' })))
+      .toEqual({ ok: true, body: 'algún día' })
+    expect(parseAssistantMessageResult(JSON.stringify({ body: 'alg\uFFFDn día' })))
+      .toEqual({ ok: false, reason: 'invalid-encoding' })
+    expect(parseAssistantMessageResult(JSON.stringify({ body: 'Llevas 17 d ias sin check-in.' })))
+      .toEqual({ ok: false, reason: 'invalid-encoding' })
+    expect(parseAssistantMessageResult(JSON.stringify({ body: '¿Hay alg n problema?' })))
+      .toEqual({ ok: false, reason: 'invalid-encoding' })
+  })
+
   it('elimina un saludo inicial para no duplicar el que agrega la UI', () => {
     expect(parseAssistantMessageResult(JSON.stringify({
       body: '¡Hola! Llevas varios días sin hacer check-in. ¿Cómo vas?',
@@ -89,7 +100,7 @@ describe('assistantMessage', () => {
 
   it('no acepta una respuesta que queda vacía al quitar el saludo', () => {
     expect(parseAssistantMessageResult('{"body":"¡Hola!"}'))
-      .toEqual({ ok: false, reason: 'invalid' })
+      .toEqual({ ok: false, reason: 'invalid-shape' })
   })
 
   it('prohíbe diagnóstico, tratamiento y cambios de carga, y limita dolor a preguntar', () => {

@@ -41,6 +41,7 @@ describe('requestAssistantDraft', () => {
         surface: 'coach_assistant',
         responseMimeType: 'application/json',
         responseSchema: ASSISTANT_MESSAGE_SCHEMA,
+        classifyResponse: expect.any(Function),
       },
     )
   })

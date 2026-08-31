@@ -81,6 +81,10 @@ export const CoachEngine = {
       signal?: AbortSignal
       responseMimeType?: 'application/json'
       responseSchema?: Record<string, unknown>
+      classifyResponse?: (text: string) => {
+        outcome: 'ok' | 'parse_invalid' | 'schema_invalid'
+        errorCode?: string
+      }
     },
   ): Promise<string> {
     const requestClass = options?.requestClass ?? 'import_extract'
@@ -110,7 +114,8 @@ export const CoachEngine = {
         responseSchema: options?.responseSchema,
         signal: options?.signal,
       })
-      useAIDebugStore.getState().completeRequest(traceId, {
+      const classification = options?.classifyResponse?.(raw.text)
+      const telemetryPatch = {
         provider: raw.provider,
         model: raw.model,
         streamed: raw.streamed,
@@ -128,7 +133,14 @@ export const CoachEngine = {
         reasoningEffort: raw.reasoningEffort,
         serverDurationMs: raw.serverDurationMs,
         authDurationMs: raw.authDurationMs,
-      })
+        ...(classification ? { outcome: classification.outcome } : {}),
+        ...(classification?.errorCode ? { errorCode: classification.errorCode } : {}),
+      }
+      if (classification && classification.outcome !== 'ok') {
+        useAIDebugStore.getState().failRequest(traceId, telemetryPatch)
+      } else {
+        useAIDebugStore.getState().completeRequest(traceId, telemetryPatch)
+      }
       return raw.text
     } catch (error) {
       useAIDebugStore.getState().failRequest(traceId, {

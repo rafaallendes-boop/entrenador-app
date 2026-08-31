@@ -130,12 +130,13 @@ export interface CoachRequestInsertClient {
 export async function insertCoachRequestRow(
   client: CoachRequestInsertClient,
   telemetry: CoachRequestTelemetry,
+  timeoutMs = COACH_REQUEST_INSERT_TIMEOUT_MS,
 ): Promise<'ok' | 'failed'> {
   try {
     const { error } = await client
       .from('coach_requests')
       .insert(coachRequestToRow(telemetry))
-      .abortSignal(AbortSignal.timeout(COACH_REQUEST_INSERT_TIMEOUT_MS))
+      .abortSignal(AbortSignal.timeout(timeoutMs))
     return error ? 'failed' : 'ok'
   } catch {
     return 'failed'

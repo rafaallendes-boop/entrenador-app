@@ -132,6 +132,21 @@ describe('insertCoachRequestRow', () => {
     }
   })
 
+  it('permite acotar el timeout al presupuesto restante de la Function', async () => {
+    const controller = new AbortController()
+    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(controller.signal)
+    try {
+      const { client, abortSignal } = makeClient({ error: null })
+
+      await insertCoachRequestRow(client, makeTelemetry(), 750)
+
+      expect(timeoutSpy).toHaveBeenCalledWith(750)
+      expect(abortSignal).toHaveBeenCalledWith(controller.signal)
+    } finally {
+      timeoutSpy.mockRestore()
+    }
+  })
+
   it('adjunta un AbortSignal real cuando no se espía el built-in', async () => {
     const { client, abortSignal } = makeClient({ error: null })
 
