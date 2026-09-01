@@ -44,11 +44,22 @@ plan de implementación.** No bloquea la arquitectura ni los gates: bloquea la
 congelación de cuotas, caps y cualquier cifra visible al usuario.
 
 Consiste en agregar `coach_requests` sobre una ventana real de uso —una semana
-alcanza— reportando cobertura en **dos** dimensiones: porcentaje de filas y
-porcentaje de tokens, excluyendo los `estimated_cost_usd = null`. Sin eso, todos
-los números de §7 son aritmética sobre un tamaño de prompt supuesto.
+alcanza—. La salida tiene que reportar, **por clase de request**:
 
-Las cuotas de §7.4 y los caps de §9 son **provisionales por construcción** hasta
+- p50, p90 y máximo de tokens de entrada;
+- p50, p90 y máximo de tokens de salida;
+- p50, p90 y máximo de costo estimado;
+- tasa de retry y tasa de fallback, que son lo que convierte un mensaje lógico
+  en 1, 2 o 3 unidades de cuota (§7);
+- cobertura en **dos** dimensiones —porcentaje de filas y porcentaje de
+  tokens—, excluyendo los `estimated_cost_usd = null`.
+
+**Si la muestra resulta insuficiente para esos percentiles, las cuotas siguen
+provisionales.** Una ventana corta no autoriza a congelar números; autoriza a
+esperar otra semana. Sin esta medición, todos los números de §7 son aritmética
+sobre un tamaño de prompt supuesto.
+
+Las cuotas de §7.2 y los caps de §9 son **provisionales por construcción** hasta
 que esa medición exista.
 
 ## 3. Estado verificado del código
@@ -86,8 +97,9 @@ entre clases: `PROMPT_TARGET_TOKENS` fija `chat_general: 3500` y
 que **el tier no modifica el prompt de una misma clase**. Un Free y un Advanced
 que mandan un `chat_general` reciben exactamente el mismo contexto.
 
-Este diseño cierra la primera y la última promesa; las otras cuatro se resuelven
-bajando el copy a la verdad (§11).
+De las seis, **la primera se cierra mediante enforcement** —`chat_action` sube a
+`weekly` (§5.2)—; **las cinco restantes se cierran bajando el copy** a la verdad
+(§11), porque la decisión de producto es no gatear datos del usuario.
 
 ## 4. El eje de diferenciación
 
@@ -267,21 +279,34 @@ Tres consecuencias, todas materiales:
 **(a) El máximo de semanas por día no es el límite de `plan_builder_week`.**
 Son dos buckets independientes: `plan_builder_week` a 12 y `plan_builder_pair`
 a 6, y cada `pair` produce dos semanas (`{ actions: [create_week, create_week] }`).
-El techo combinado es **24 semanas/día**, no 12 — y por lo tanto **720/mes**, no
-360. La proyección de costo de §8 se duplica respecto de lo que decía la versión
-anterior.
+El techo combinado es **32 semanas/día** con los límites de §7.2 —no 12— y por lo tanto
+**960/mes**. La proyección de costo de §8 casi se triplica respecto de lo que
+decía la versión anterior de este documento.
 
-**(b) Un plan de 12 semanas no tiene margen para ni un solo retry.** Con límite
-12 en `plan_builder_week`, la semana 13 —que puede ser el segundo intento de la
-semana 4— se rechaza por cuota y el plan queda incompleto. El peor caso son 24
-intentos para 12 semanas.
+**(b) Los límites tienen que llevar holgura de retry, o un fallo técnico rompe
+la capacidad central de Advanced.** Con un límite igual al largo del plan, la
+semana 13 —que puede ser el segundo intento de la semana 4— se rechaza por cuota
+y el plan queda incompleto. El peor caso teórico son 24 intentos para 12 semanas.
 
-*Mitigación de este proyecto:* ninguna en código. El Plan Builder es reanudable
-por semana —un plan parcial conserva sus semanas listas y el `outcome` distingue
-`partial`—, así que el usuario completa al día siguiente. Es aceptable para un
-piloto acompañado y **no lo es para self-serve**. Subir el límite a 24 para
-garantizar la generación duplicaría el techo de costo de Advanced sin resolver
-la causa, que es contar intentos en vez de producto.
+*Mitigación de este proyecto:* **holgura provisional**. `plan_builder_week` va a
+16 y `plan_builder_pair` a 8 (§7.2), lo que tolera cuatro retries en estrategia
+individual o dos en pares sobre un plan de 12 semanas.
+
+La holgura se dimensiona contra evidencia, no contra el peor caso teórico:
+
+- Las dos corridas del control de ruido del 2026-08-09 —12 planes y 42 semanas
+  cada una— reportan **cero reintentos y cero fallbacks** en ambas.
+- El smoke de producción del 2026-07-26 registró **4 semanas pedidas / 4
+  exitosas / 0 fallidas**.
+
+No garantiza completar siempre: 16 no cubre el peor caso de 24. Pero evita que
+**un solo** retry técnico rompa un plan de 12 semanas, que es el escenario
+realista. La reanudación al día siguiente queda como **recuperación residual**,
+no como la mitigación normal.
+
+Subir hasta 24 para garantizar la generación no se hace: no resuelve la causa
+—contar intentos en vez de producto— y empuja el techo de costo de Advanced sin
+comprar nada que la evidencia justifique.
 
 **(c) "40 mensajes al día" es una afirmación falsa.** Son 40 intentos del
 proveedor, que en el peor caso son ~14 mensajes lógicos. Por eso §11 no publica
@@ -327,8 +352,8 @@ producto.
 | `import` (`import_extract`) | 3 | 10 | 10 |
 | `weekly_summary` | — | **5** | 10 |
 | `week_creator` | — | **3** | 8 |
-| `plan_builder_week` | — | — | 12 |
-| `plan_builder_pair` | — | — | 6 |
+| `plan_builder_week` | — | — | **16** |
+| `plan_builder_pair` | — | — | **8** |
 | `coach_assistant` | — | — | 20 |
 
 `—` significa **clase no permitida por entitlement**, nunca cuota cero. Un `null`
@@ -343,13 +368,15 @@ No es un "peor caso": es el costo de agotar todas las cuotas todos los días, co
 |---|---|---|---|
 | Base | US$0 | 15×0,004 + 3×0,004 ≈ US$0,07/día → ~US$2,2/mes | — |
 | Coach Semanal | ~US$13,7 | 40×0,004 + 5×0,004 + 3×0,009 + 10×0,004 ≈ US$0,25/día → ~US$7,4/mes | ~54% |
-| Avanzado | ~US$26,3 | 120×0,004 + 10×0,004 + 10×0,004 + 8×0,009 + 12×0,029 + 6×0,058 + 20×0,002 ≈ US$1,37/día → ~US$41/mes | **>150%** |
+| Avanzado | ~US$26,3 | 120×0,004 + 10×0,004 + 10×0,004 + 8×0,009 + 16×0,029 + 8×0,058 + 20×0,002 ≈ US$1,60/día → ~US$48/mes | **>180%** |
 
 Conversión ~950 CLP/USD, aproximada.
 
-**Avanzado queda deficitario en cuota completa, y se acepta a propósito.** Dos
-causas de tamaño parecido: el chat aporta ~US$14,4/mes y Plan Builder
-—`week` + `pair`— aporta ~US$20,9/mes. Ninguna se materializa en uso realista.
+**Avanzado queda deficitario en cuota completa, y se acepta a propósito.** Plan
+Builder —`week` + `pair`— aporta ~US$27,8/mes y el chat ~US$14,4/mes. La holgura
+de retry de §7 (b) agrega ~US$7/mes a este escenario: es el precio de que un
+fallo técnico no rompa un plan, y solo se paga si alguien agota la holgura todos
+los días, cosa que la evidencia de cero retries hace improbable.
 
 ## 8. Límite conocido: cuotas diarias que cuentan intentos
 
@@ -358,9 +385,10 @@ las cuotas son diarias y todas cuentan intentos del proveedor.** Para Plan
 Builder ambas cosas son el modelo equivocado.
 
 Plan Builder es una acción **ráfaga**: alguien genera un bloque de 12 semanas una
-vez y no lo vuelve a tocar en tres meses. El techo diario combinado de 24 semanas
-permite consumir **720 semanas al mes** —~US$21— mientras el uso realista consume
-12 una sola vez, ~US$0,35.
+vez y no lo vuelve a tocar en tres meses. El techo diario combinado de 32 semanas
+permite consumir **960 semanas al mes** —~US$27,8— mientras el uso realista
+consume 12 una sola vez, ~US$0,35. Son casi dos órdenes de magnitud entre el
+techo y el uso.
 
 **No se implementa acá.** Agregar una dimensión mensual y una ponderación por
 producto toca el esquema de `ai_usage_daily` y las tres RPC. El piloto es de 1–3
@@ -383,7 +411,7 @@ Pasa a resolverse por tier, conservando la firma pura y sin I/O del módulo:
 |---|---|---|
 | `free` | US$0,30 | ~4× |
 | `weekly` | US$0,80 | ~3× |
-| `advanced` | US$3,00 (sin cambio) | ~2× |
+| `advanced` | US$3,00 (sin cambio) | ~1,9× |
 
 ### 9.1 Qué NO es el spend cap
 
@@ -518,9 +546,11 @@ El aviso "Beta cerrada · sin cobro todavía" se conserva.
    **Mitigación:** revisar el padrón de `user_entitlements` antes del deploy.
 3. **Weekly baja de 120 a 40 intentos/día.** Nadie está en `weekly` hoy, así que
    no hay regresión real. **Mitigación:** es un literal en `quotaBuckets.ts`.
-4. **Un plan de 12 semanas puede quedar incompleto por cuota** (§7 (b)).
-   Aceptado para el piloto porque el Plan Builder es reanudable; bloqueante
-   antes de self-serve.
+4. **La holgura de retry de 16/8 no cubre el peor caso teórico de 24 intentos**
+   (§7 (b)). Cubre el escenario realista y está dimensionada contra dos corridas
+   con cero reintentos. Si aparece un plan incompleto por cuota, la señal es que
+   la tasa de retry real no es cero y hay que medirla, no subir el número a
+   ciegas. **Mitigación residual:** el Plan Builder es reanudable por semana.
 5. **La cuota completa de Advanced es deficitaria** mientras las cuotas cuenten
    intentos y sean diarias (§8), y el spend cap no lo compensa (§9.1).
 
