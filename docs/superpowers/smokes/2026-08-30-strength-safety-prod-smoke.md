@@ -1243,9 +1243,15 @@ Al cargar la app inmediatamente después de cambiar el scope a `Juan perez` se
 capturó:
 
 ```
-POST https://agbolytglbljifohyrsv.supabase.co/rest/v1/week_summaries → 400
+POST https://<SUPABASE_PROJECT>.supabase.co/rest/v1/week_summaries → 400
 [ERROR] [sync] sync:failure
 ```
+
+> El host del proyecto va redactado a propósito. El escaneo de secretos de
+> Netlify trata el valor de `SUPABASE_URL` como secreto y **falla el build**
+> si lo encuentra en un archivo del repo, aunque el mismo valor viaje público
+> en el bundle vía `VITE_SUPABASE_URL`. Al pegar trazas de red en un smoke,
+> conservar la ruta y el status; nunca el host.
 
 Un `Sincronizar entrenamientos` manual posterior terminó bien y la cabecera
 volvió a `Al día · Última: recién`, y no se reprodujo en un segundo intento. **No
