@@ -56,9 +56,11 @@ function selectCanonicalArchivedPlans(plans: TrainingPlan[]): TrainingPlan[] {
     || comparePlanCanonicalRecency(a, b))
 }
 
-export function CycleHistory({ weekSummaries, onChanged }: {
+export function CycleHistory({ weekSummaries, onChanged, readOnly = false }: {
   weekSummaries: WeekSummary[]
   onChanged?: () => void
+  /** El historial se puede consultar sin habilitar su eliminación. */
+  readOnly?: boolean
 }) {
   const lastSuccessfulSyncAt = useAuthStore((state) => state.syncDetails.lastSuccessfulSyncAt)
   const syncAttemptInFlight = useAuthStore((state) => state.syncDetails.syncAttemptInFlight)
@@ -104,6 +106,7 @@ export function CycleHistory({ weekSummaries, onChanged }: {
   }
 
   async function confirmDelete(planId: string) {
+    if (readOnly) return
     setPendingDeleteId(null)
     const result = await deletePlanCycle(planId)
     if (result === 'deleted') {
@@ -179,7 +182,7 @@ export function CycleHistory({ weekSummaries, onChanged }: {
                     display: 'flex',
                     alignItems: 'center',
                     gap: 10,
-                    padding: '12px 10px 12px 12px',
+                    padding: readOnly ? '12px' : '12px 10px 12px 12px',
                     color: T.ink,
                     background: 'transparent',
                     border: 0,
@@ -231,24 +234,26 @@ export function CycleHistory({ weekSummaries, onChanged }: {
                   </span>
                 </button>
 
-                <button
-                  type="button"
-                  aria-label={`Eliminar ciclo ${plan.title}`}
-                  onClick={() => {
-                    setNotice(null)
-                    setPendingDeleteId(plan.id)
-                  }}
-                  style={{
-                    width: 44,
-                    border: 0,
-                    borderLeft: `1px solid ${T.border}`,
-                    background: 'transparent',
-                    color: '#fb7185',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <Trash2 size={15} />
-                </button>
+                {!readOnly && (
+                  <button
+                    type="button"
+                    aria-label={`Eliminar ciclo ${plan.title}`}
+                    onClick={() => {
+                      setNotice(null)
+                      setPendingDeleteId(plan.id)
+                    }}
+                    style={{
+                      width: 44,
+                      border: 0,
+                      borderLeft: `1px solid ${T.border}`,
+                      background: 'transparent',
+                      color: '#fb7185',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                )}
               </div>
 
               {expanded && (
@@ -300,19 +305,21 @@ export function CycleHistory({ weekSummaries, onChanged }: {
         })}
       </div>
 
-      <ConfirmDialog
-        open={pendingPlan != null}
-        title="Eliminar ciclo"
-        message={pendingPlan
-          ? `Se eliminará el plan ${pendingPlan.title}. Las semanas generadas se conservarán.`
-          : ''}
-        confirmLabel="Eliminar"
-        destructive
-        onConfirm={() => {
-          if (pendingDeleteId) void confirmDelete(pendingDeleteId)
-        }}
-        onCancel={() => setPendingDeleteId(null)}
-      />
+      {!readOnly && (
+        <ConfirmDialog
+          open={pendingPlan != null}
+          title="Eliminar ciclo"
+          message={pendingPlan
+            ? `Se eliminará el plan ${pendingPlan.title}. Las semanas generadas se conservarán.`
+            : ''}
+          confirmLabel="Eliminar"
+          destructive
+          onConfirm={() => {
+            if (pendingDeleteId) void confirmDelete(pendingDeleteId)
+          }}
+          onCancel={() => setPendingDeleteId(null)}
+        />
+      )}
     </section>
   )
 }

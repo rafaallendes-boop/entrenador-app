@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight, Target, Sparkles, SkipForward, Trash2 } from
 import { ROUTES } from '../constants/routes'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
 import { CycleHistory } from '../components/planBuilder/CycleHistory'
+import { useEntitlement } from '../hooks/useEntitlement'
 import { db } from '../db/db'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
 import { usePlanBuilderStore } from '../store/usePlanBuilderStore'
@@ -42,6 +43,7 @@ import type {
   GoalEventType,
   GoalEventObjective,
   GoalEventLevel,
+  MacroPlanPhase,
   DayOfWeek,
   WizardFitnessLevel,
   WizardFatigueLevel,
@@ -348,12 +350,138 @@ function dayChipCls(active: boolean) {
   }`
 }
 
+/**
+ * El ciclo que el Plan Builder construye, en el orden en que se entrena.
+ * Es la sustancia de la oferta: en vez de tres promesas genéricas, mostramos
+ * el macrociclo real y su vocabulario, que es el mismo del dashboard.
+ */
+const UPGRADE_PHASE_LADDER: { phase: MacroPlanPhase; focus: string }[] = [
+  { phase: 'base', focus: 'Construyes volumen y resistencia.' },
+  { phase: 'build', focus: 'Subes carga y trabajo específico.' },
+  { phase: 'peak', focus: 'Afinas la intensidad.' },
+  { phase: 'taper', focus: 'Bajas volumen para llegar fresco.' },
+  { phase: 'race', focus: 'La semana que estabas preparando.' },
+]
+
+/** Contenedor común: el CTA, la espera y el wizard ocupan el mismo ancho. */
+function CompetitionPlanGateLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mx-auto max-w-lg px-4 pb-6 pt-10 md:px-6">
+      {children}
+    </div>
+  )
+}
+
+/**
+ * Free puede consultar un plan que ya recibió, pero no iniciar ni modificar
+ * planificación. Cuando no existe un plan materializado, no mostramos el
+ * wizard: evita pedir siete datos para descubrir el requisito al final.
+ */
+function CompetitionPlanUpgradeGate({ onViewPlans, onGoHome }: {
+  onViewPlans: () => void
+  onGoHome: () => void
+}) {
+  return (
+    <CompetitionPlanGateLayout>
+      <section className="hud-border overflow-hidden rounded-3xl border border-brand/25 bg-[radial-gradient(circle_at_top_right,rgba(255,77,0,0.18),transparent_46%),linear-gradient(155deg,rgba(28,18,13,0.98),rgba(13,13,13,0.98))] p-6 shadow-[0_24px_70px_-38px_rgba(255,77,0,0.65)] [--hud-accent-end:rgba(255,77,0,0.12)] [--hud-accent-start:rgba(255,122,51,0.34)]">
+        <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.28em] text-brand-light">
+          Plan Avanzado
+        </p>
+        <h1 className="text-balance mt-2.5 font-display text-[1.75rem] font-extrabold leading-[1.08] tracking-tight text-ink">
+          Planifica tu próximo objetivo
+        </h1>
+        <p className="mt-3 text-sm leading-relaxed text-ink-muted">
+          Un plan de competencia ordena las semanas que te separan de tu evento y
+          genera cada una lista para entrenar.
+        </p>
+
+        <p className="mt-7 font-mono text-[9.5px] font-semibold uppercase tracking-[0.24em] text-ink-muted">
+          Cómo se ordena el ciclo
+        </p>
+        <div className="relative mt-4">
+          {/* Hairline que enhebra las cuentas de centro a centro y se enciende
+              hacia el evento: el ciclo tiene dirección, no es una lista. */}
+          <span
+            aria-hidden
+            className="absolute bottom-[14px] left-[14px] top-[14px] w-px bg-[linear-gradient(180deg,rgba(110,110,115,0.45),rgba(255,122,51,0.5)_58%,#ff4d00)]"
+          />
+          <ol className="relative space-y-3.5">
+            {UPGRADE_PHASE_LADDER.map(({ phase, focus }, index) => {
+              const isEvent = phase === 'race'
+              return (
+                <li key={phase} className="flex items-start gap-3.5">
+                  <span
+                    aria-hidden
+                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full font-mono text-[10px] font-bold ${
+                      isEvent
+                        ? 'bg-brand text-[#1a0800] shadow-[0_0_18px_-4px_rgba(255,77,0,0.95)]'
+                        : 'border border-white/10 bg-[#0b0a09] text-ink-muted'
+                    }`}
+                  >
+                    {isEvent ? <Target size={13} strokeWidth={2.4} /> : index + 1}
+                  </span>
+                  <span className="min-w-0 pt-[3px]">
+                    <span className={`block font-display text-sm font-bold leading-tight ${isEvent ? 'text-brand-light' : 'text-ink'}`}>
+                      {getPhaseLabel(phase)}
+                    </span>
+                    <span className="mt-1 block text-[13px] leading-snug text-ink-muted">
+                      {focus}
+                    </span>
+                  </span>
+                </li>
+              )
+            })}
+          </ol>
+        </div>
+
+        <button
+          type="button"
+          onClick={onViewPlans}
+          className="mt-7 flex w-full items-center justify-center gap-2 rounded-2xl bg-brand px-4 py-3.5 font-display text-sm font-bold text-[#1a0800] shadow-[0_12px_28px_-14px_rgba(255,77,0,0.9)] transition-colors hover:bg-brand-light focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-light"
+        >
+          Ver planes
+          <ChevronRight size={16} aria-hidden />
+        </button>
+        <button
+          type="button"
+          onClick={onGoHome}
+          className="mt-1.5 w-full rounded-xl px-4 py-2.5 text-sm font-medium text-ink-muted transition-colors hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-light"
+        >
+          Volver al inicio
+        </button>
+        <p className="mt-4 text-center text-xs leading-relaxed text-ink-muted">
+          Mientras tanto sigues hablando con RallyIQ y registrando tus entrenamientos.
+        </p>
+      </section>
+    </CompetitionPlanGateLayout>
+  )
+}
+
+function CompetitionPlanAccessLoading() {
+  return (
+    <CompetitionPlanGateLayout>
+      <div
+        role="status"
+        className="rounded-3xl border border-surface-border bg-surface-card/70 p-6"
+      >
+        <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.28em] text-ink-muted">
+          Plan de competencia
+        </p>
+        <p className="mt-2.5 text-sm text-ink-muted">
+          Revisando tu plan…
+        </p>
+      </div>
+    </CompetitionPlanGateLayout>
+  )
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function CompetitionPlanPage() {
   const navigate = useNavigate()
   const { athleteProfile, saveAthleteProfile } = useCoachMemoryStore()
   const { allWeekSummaries, loadAllSummaries } = useTrainingStore()
+  const { canUse, pending: entitlementPending } = useEntitlement()
   const now = useMemo(() => new Date(), [])
   const enabledSports = getEnabledSports(athleteProfile)
   const existingEvent = getPrimaryGoalEvent(athleteProfile)
@@ -366,6 +494,7 @@ export default function CompetitionPlanPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [showDeletePlanConfirm, setShowDeletePlanConfirm] = useState(false)
   const [hasActiveGeneratedPlan, setHasActiveGeneratedPlan] = useState(false)
+  const [hasResolvedActiveGeneratedPlan, setHasResolvedActiveGeneratedPlan] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [state, setState] = useState<WizardState>(() =>
     initWizardState(athleteProfile, existingEvent, existingConfig)
@@ -373,13 +502,20 @@ export default function CompetitionPlanPage() {
 
   useEffect(() => {
     let cancelled = false
-    void db.trainingPlans.toArray().then((all) => {
-      const active = filterRowsToActiveScope(all)
-        .filter((plan) => plan.status === 'active')
-      if (!cancelled) {
-        setHasActiveGeneratedPlan(active.length > 0)
-      }
-    })
+    void db.trainingPlans.toArray()
+      .then((all) => {
+        const active = filterRowsToActiveScope(all)
+          .filter((plan) => plan.status === 'active')
+        if (!cancelled) setHasActiveGeneratedPlan(active.length > 0)
+      })
+      // Si el almacenamiento local falla, Free sigue viendo la oferta. Nunca
+      // dejamos la ruta bloqueada en una espera infinita.
+      .catch(() => {
+        if (!cancelled) setHasActiveGeneratedPlan(false)
+      })
+      .finally(() => {
+        if (!cancelled) setHasResolvedActiveGeneratedPlan(true)
+      })
     return () => {
       cancelled = true
     }
@@ -398,6 +534,7 @@ export default function CompetitionPlanPage() {
   const macroPlan = useMemo(() => computeMacroPlan(athleteProfile), [athleteProfile])
   const macroPlanPhaseLabel = macroPlan ? getPhaseLabel(macroPlan.currentPhase) : undefined
   const hasSavedPlan = Boolean(existingEvent || existingConfig || hasActiveGeneratedPlan)
+  const canManageCompetitionPlan = canUse('plan_builder_week')
 
   // Derive primary sport from event type
   const primarySportForEvent = useMemo<SupportedSport | null>(() => {
@@ -447,6 +584,7 @@ export default function CompetitionPlanPage() {
   }
 
   function openEditPlan() {
+    if (!canManageCompetitionPlan) return
     setState(initWizardState(athleteProfile, existingEvent, existingConfig))
     setStep(1)
     setDeleteError(null)
@@ -456,6 +594,7 @@ export default function CompetitionPlanPage() {
   }
 
   function openNewCycle(goalEventId: string) {
+    if (!canManageCompetitionPlan) return
     usePlanBuilderStore.getState().resetBuilderState()
     setState(initWizardStateForNewCycle(athleteProfile, existingEvent, existingConfig))
     setStep(1)
@@ -519,7 +658,7 @@ export default function CompetitionPlanPage() {
   }
 
   async function handleGenerate() {
-    if (isSaving || !goalEventWindowIsValid || !planWindow.isFuture || planWindow.exceedsMax) return
+    if (!canManageCompetitionPlan || isSaving || !goalEventWindowIsValid || !planWindow.isFuture || planWindow.exceedsMax) return
     const athleteIdAtStart = getActiveAthleteId()
     const switchEpochAtStart = getSwitchEpoch()
     if (!athleteIdAtStart) return
@@ -586,6 +725,24 @@ export default function CompetitionPlanPage() {
     } catch {
       setIsSaving(false)
     }
+  }
+
+  // Resolver entitlement y la presencia del plan antes de decidir entre
+  // dashboard de solo lectura y CTA. Así no hay un frame editable para Free.
+  if (entitlementPending || (!canManageCompetitionPlan && !hasResolvedActiveGeneratedPlan)) {
+    return <CompetitionPlanAccessLoading />
+  }
+
+  if (!canManageCompetitionPlan) {
+    if (hasActiveGeneratedPlan) {
+      return <PlanDashboard onEdit={openEditPlan} onNewCycle={openNewCycle} readOnly />
+    }
+    return (
+      <CompetitionPlanUpgradeGate
+        onViewPlans={() => navigate(ROUTES.PRICING)}
+        onGoHome={() => navigate(ROUTES.HOME)}
+      />
+    )
   }
 
   if (hasSavedPlan && wizardMode == null) {

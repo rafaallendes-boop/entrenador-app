@@ -21,6 +21,8 @@ const mocks = vi.hoisted(() => ({
   loadAllSummaries: vi.fn(),
   allWeekSummaries: [],
   order: [] as string[],
+  tier: 'advanced' as 'free' | 'weekly' | 'advanced',
+  entitlementPending: false,
 }))
 
 vi.mock('react-router-dom', () => ({ useNavigate: () => mocks.navigate }))
@@ -36,6 +38,15 @@ vi.mock('../../store/useTrainingStore', () => ({
     loadAllSummaries: mocks.loadAllSummaries,
   }),
 }))
+vi.mock('../../hooks/useEntitlement', () => ({
+  useEntitlement: () => ({
+    tier: mocks.tier,
+    loading: mocks.entitlementPending,
+    pending: mocks.entitlementPending,
+    source: 'remote',
+    canUse: (requestClass: string) => requestClass !== 'plan_builder_week' || mocks.tier === 'advanced',
+  }),
+}))
 vi.mock('../../services/planBuilder/closePlanCycle', () => ({
   closePlanCycle: mocks.closePlanCycle,
 }))
@@ -46,15 +57,22 @@ vi.mock('../../components/planBuilder/CycleHistory', () => ({
   CycleHistory: () => <section aria-label="Ciclos anteriores">Historial de ciclos</section>,
 }))
 vi.mock('../PlanDashboard', () => ({
-  default: ({ onEdit, onNewCycle }: {
+  default: ({ onEdit, onNewCycle, readOnly = false }: {
     onEdit: () => void
     onNewCycle: (goalEventId: string) => void
+    readOnly?: boolean
   }) => (
     <>
-      <button type="button" onClick={onEdit}>Editar</button>
-      <button type="button" onClick={() => onNewCycle('event-prev')}>
-        Planificar próximo evento
-      </button>
+      {readOnly ? (
+        <p>Plan en solo lectura</p>
+      ) : (
+        <>
+          <button type="button" onClick={onEdit}>Editar</button>
+          <button type="button" onClick={() => onNewCycle('event-prev')}>
+            Planificar próximo evento
+          </button>
+        </>
+      )}
     </>
   ),
 }))
@@ -171,6 +189,8 @@ describe('CompetitionPlanPage new_cycle', () => {
     setActiveAthleteId('ath-self')
     mocks.profile = profileWith()
     mocks.order = []
+    mocks.tier = 'advanced'
+    mocks.entitlementPending = false
     mocks.saveAthleteProfile.mockReset().mockImplementation(async (
       patch: Partial<Omit<AthleteProfile, 'id' | 'updatedAt'>>,
     ) => {
@@ -195,6 +215,30 @@ describe('CompetitionPlanPage new_cycle', () => {
     setActiveAthleteId(null)
     setSelfAthleteId(null)
     db.close()
+  })
+
+  it('en Free sin plan generado reemplaza el wizard por el CTA de Avanzado', async () => {
+    mocks.tier = 'free'
+
+    render(<CompetitionPlanPage />)
+
+    expect(await screen.findByRole('heading', { name: /Planifica tu próximo objetivo/i })).toBeTruthy()
+    expect(screen.getByText('Taper')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /Ver planes/i }))
+    expect(mocks.navigate).toHaveBeenCalledWith('/pricing')
+    expect(screen.queryByText('Paso 1 de 7')).toBeNull()
+    expect(screen.queryByRole('button', { name: /Continuar/i })).toBeNull()
+  })
+
+  it('en Free conserva un plan generado sólo para consulta', async () => {
+    mocks.tier = 'free'
+    await db.trainingPlans.put(previousCompletePlan)
+
+    render(<CompetitionPlanPage />)
+
+    expect(await screen.findByText('Plan en solo lectura')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Editar' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Planificar próximo evento/i })).toBeNull()
   })
 
   it('precarga hábitos anteriores pero vuelve a pedir evento, objetivo y estado actual', async () => {

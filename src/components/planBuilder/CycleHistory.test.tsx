@@ -161,6 +161,17 @@ describe('CycleHistory', () => {
     await waitFor(() => expect(mocks.deletePlanCycle).toHaveBeenCalledWith('p1'))
   })
 
+  it('en solo lectura conserva la consulta y oculta la eliminación', async () => {
+    await db.trainingPlans.put(plan({ id: 'p1' }))
+    const user = userEvent.setup()
+    render(<CycleHistory weekSummaries={[]} readOnly />)
+
+    expect(await screen.findByText('Nacional de Squash')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /eliminar ciclo/i })).toBeNull()
+    await user.click(screen.getByRole('button', { name: /expandir ciclo/i }))
+    expect(screen.getByRole('button', { name: /contraer ciclo/i })).toBeTruthy()
+  })
+
   it('con pending_sync avisa que se completará al sincronizar y mantiene la fila', async () => {
     await db.trainingPlans.put(plan({ id: 'p1' }))
     mocks.deletePlanCycle.mockResolvedValue('pending_sync')

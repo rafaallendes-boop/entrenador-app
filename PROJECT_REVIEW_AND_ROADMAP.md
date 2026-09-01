@@ -155,7 +155,8 @@ y el Asistente es condicional.
 1. **Preparar un único release:** incluir `post_generation_failed`, el allocator
    por ordinal de sesión, las restricciones activas del perfil en el prompt,
    el routing de asesoría Free, el gate preventivo de Plan Builder/semana
-   completa y la copia unificada de bloqueo. La migración `027` ya está
+   completa, el Competition Plan de solo lectura para planes ya entregados y
+   la copia unificada de bloqueo. La migración `027` ya está
    aplicada en producción, así que el writer puede emitir el outcome nuevo en
    cuanto se despliegue; no queda paso de SQL para esta tanda.
 2. **Smoke posdeploy de bajo costo:** con una cuenta o entorno `advanced` de

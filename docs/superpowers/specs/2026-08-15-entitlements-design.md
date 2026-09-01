@@ -123,6 +123,16 @@ de la unión no tiene mínimo definido y `isClassAllowed` devuelve `false` sin
 consultar el orden de tiers. El default nunca es permitir, y tampoco es
 "permitir al que más paga".
 
+### 3.3.1 Competition Plan: consulta conservada, planificación restringida
+
+Un atleta que baja a Free conserva la consulta de un plan ya materializado:
+`/competition-plan` muestra el dashboard y sus accesos a las semanas y al
+coach en modo **solo lectura**. No puede editar el evento, iniciar un ciclo
+nuevo ni eliminar ciclos archivados. Si no existe un plan activo materializado,
+la ruta no muestra el wizard: presenta un CTA de Avanzado antes de pedir datos.
+La condición utiliza el mismo requisito de `plan_builder_week`, por lo que el
+recorrido no deriva entre Free y Coach Semanal.
+
 ### 3.4 Invariante load-bearing: `create_week` fuera de `chat_action`
 
 `responseNormalizer.ts:214` ya filtra `create_week` de las respuestas

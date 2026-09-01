@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { db } from '../../db/db'
 import { setActiveAthleteId, setSelfAthleteId } from '../../services/athlete/activeAthlete'
@@ -136,6 +136,7 @@ async function renderDashboard(input: {
   plan?: TrainingPlan | null
   weekSummaries?: WeekSummary[]
   onNewCycle?: (goalEventId: string) => void
+  readOnly?: boolean
 }) {
   mocks.profile = profile(input.eventDate, 'event-1', input.eventEndDate)
   mocks.summaries = input.weekSummaries ?? []
@@ -150,6 +151,7 @@ async function renderDashboard(input: {
     <PlanDashboard
       onEdit={vi.fn()}
       onNewCycle={input.onNewCycle ?? vi.fn()}
+      readOnly={input.readOnly}
     />,
   )
 }
@@ -335,6 +337,23 @@ describe('PlanDashboard: cierre de ciclo', () => {
   it('mantiene el botón Editar post-evento', async () => {
     await renderDashboard({ eventDate: PAST })
     expect(await screen.findByRole('button', { name: /editar/i })).toBeTruthy()
+  })
+
+  it('en solo lectura conserva las semanas generadas y oculta las acciones de planificación', async () => {
+    await renderDashboard({ eventDate: PAST, plan: generatedPlan(), readOnly: true })
+
+    expect(await screen.findByLabelText('Vista de solo lectura')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Editar/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Planificar próximo evento/i })).toBeNull()
+    expect(await screen.findByRole('button', { name: /Ver semanas generadas/i })).toBeTruthy()
+  })
+
+  it('en solo lectura explica la acción ausente y ofrece Avanzado donde estaba', async () => {
+    await renderDashboard({ eventDate: PAST, plan: generatedPlan(), readOnly: true })
+
+    expect(await screen.findByText(/Planificar un ciclo nuevo está en Avanzado/i)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /Ver planes/i }))
+    expect(mocks.navigate).toHaveBeenCalledWith('/pricing')
   })
 
   it('monta el historial con los summaries cargados', async () => {

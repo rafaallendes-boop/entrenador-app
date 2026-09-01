@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Edit2, Flag, ChevronRight, BarChart2, Zap, CircleCheck } from 'lucide-react'
+import { Edit2, Flag, ChevronRight, BarChart2, Zap, CircleCheck, LockKeyhole } from 'lucide-react'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
 import { useTrainingStore } from '../store/useTrainingStore'
 import { db } from '../db/db'
@@ -497,13 +497,59 @@ function SectionTitle({ children, right }: { children: React.ReactNode; right?: 
   )
 }
 
+/**
+ * En solo lectura desaparece "Planificar próximo evento". La ausencia se
+ * explica en el mismo lugar donde estaba la acción: un ciclo cerrado sin
+ * salida visible deja al atleta sin siguiente paso.
+ */
+function ReadOnlyPlanningOffer({ onViewPlans }: { onViewPlans: () => void }) {
+  return (
+    <div
+      style={{
+        borderRadius: 14,
+        padding: '15px 16px',
+        background: 'linear-gradient(150deg, rgba(255,77,0,0.09), rgba(255,255,255,0.02))',
+        border: '1px solid rgba(255,77,0,0.22)',
+      }}
+    >
+      <div style={{
+        fontFamily: T.fontDisp, fontSize: 13.5, fontWeight: 700, color: T.ink,
+      }}>
+        Planificar un ciclo nuevo está en Avanzado
+      </div>
+      <p style={{
+        margin: '5px 0 0', fontSize: 13, lineHeight: 1.5, color: T.muted,
+      }}>
+        Este plan queda disponible para consultarlo cuando quieras. Para preparar
+        tu próximo evento, sube de plan.
+      </p>
+      <button
+        type="button"
+        onClick={onViewPlans}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 6,
+          marginTop: 12, padding: '10px 14px', borderRadius: 11,
+          background: T.brand, border: 'none', cursor: 'pointer',
+          fontFamily: T.fontDisp, fontSize: 13, fontWeight: 700,
+          color: '#1a0800',
+        }}
+      >
+        Ver planes
+        <ChevronRight size={14} />
+      </button>
+    </div>
+  )
+}
+
 // ═══════════════════════════════════════════════════════════════
 // Main PlanDashboard component
 // ═══════════════════════════════════════════════════════════════
 
-export default function PlanDashboard({ onEdit, onNewCycle }: {
+export default function PlanDashboard({ onEdit, onNewCycle, readOnly = false }: {
   onEdit: () => void
   onNewCycle: (goalEventId: string) => void
+  /** Un plan ya generado puede consultarse en Free, pero no modificarse. */
+  readOnly?: boolean
 }) {
   const navigate = useNavigate()
   const { athleteProfile, loadMemory } = useCoachMemoryStore()
@@ -678,21 +724,38 @@ export default function PlanDashboard({ onEdit, onNewCycle }: {
             Tu plan
           </h1>
         </div>
-        <button
-          onClick={onEdit}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 7,
-            padding: '9px 14px', borderRadius: 10,
-            background: 'rgba(255,255,255,0.05)',
-            border: `1px solid ${T.border}`,
-            fontFamily: T.fontDisp, fontSize: 13, fontWeight: 600,
-            color: T.muted, cursor: 'pointer',
-            transition: 'all .15s',
-          }}
-        >
-          <Edit2 size={13} />
-          Editar
-        </button>
+        {readOnly ? (
+          <div
+            aria-label="Vista de solo lectura"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 7,
+              padding: '9px 12px', borderRadius: 10,
+              background: 'rgba(255,255,255,0.04)',
+              border: `1px solid ${T.border}`,
+              fontFamily: T.fontMono, fontSize: 10, fontWeight: 700,
+              letterSpacing: '0.16em', textTransform: 'uppercase', color: T.muted,
+            }}
+          >
+            <LockKeyhole size={12} aria-hidden />
+            Solo lectura
+          </div>
+        ) : (
+          <button
+            onClick={onEdit}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 7,
+              padding: '9px 14px', borderRadius: 10,
+              background: 'rgba(255,255,255,0.05)',
+              border: `1px solid ${T.border}`,
+              fontFamily: T.fontDisp, fontSize: 13, fontWeight: 600,
+              color: T.muted, cursor: 'pointer',
+              transition: 'all .15s',
+            }}
+          >
+            <Edit2 size={13} />
+            Editar
+          </button>
+        )}
       </div>
 
       {/* Content */}
@@ -792,24 +855,28 @@ export default function PlanDashboard({ onEdit, onNewCycle }: {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {cycleState === 'post_event' ? (
             <>
-              <button
-                type="button"
-                onClick={() => onNewCycle(primaryEvent.id)}
-                style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                  width: '100%', padding: '15px 20px', borderRadius: 14,
-                  background: T.brand,
-                  border: 'none', cursor: 'pointer',
-                  fontFamily: T.fontDisp, fontSize: 14, fontWeight: 700,
-                  color: '#1a0800',
-                  boxShadow: `0 8px 28px -10px ${T.brand}70`,
-                  transition: 'all .18s',
-                }}
-              >
-                <Zap size={15} />
-                Planificar próximo evento
-                <ChevronRight size={14} />
-              </button>
+              {readOnly ? (
+                <ReadOnlyPlanningOffer onViewPlans={() => navigate(ROUTES.PRICING)} />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => onNewCycle(primaryEvent.id)}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                    width: '100%', padding: '15px 20px', borderRadius: 14,
+                    background: T.brand,
+                    border: 'none', cursor: 'pointer',
+                    fontFamily: T.fontDisp, fontSize: 14, fontWeight: 700,
+                    color: '#1a0800',
+                    boxShadow: `0 8px 28px -10px ${T.brand}70`,
+                    transition: 'all .18s',
+                  }}
+                >
+                  <Zap size={15} />
+                  Planificar próximo evento
+                  <ChevronRight size={14} />
+                </button>
+              )}
               {activeGeneratedPlan && (
                 <button
                   type="button"
@@ -869,7 +936,7 @@ export default function PlanDashboard({ onEdit, onNewCycle }: {
           </button>
         </div>
 
-        <CycleHistory weekSummaries={allWeekSummaries} />
+        <CycleHistory weekSummaries={allWeekSummaries} readOnly={readOnly} />
 
       </div>
     </div>
