@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { AthleteProfile, ChatContext } from '../../../types'
+import { EntitlementRequiredError, buildEntitlementDetail } from '../../entitlements/entitlementError'
+import {
+  KillSwitchActiveError,
+  QuotaExceededError,
+  SpendCapExceededError,
+} from '../../entitlements/usageGateError'
 import { WeekCreatorEngine } from '../WeekCreatorEngine'
 import { useAIDebugStore } from '../../../store/useAIDebugStore'
 import { db } from '../../../db/db'
@@ -84,5 +90,34 @@ describe('Week Creator fallback message attribution', () => {
     expect(response.message).not.toContain('no pude conectar con la IA')
     expect(response.message).not.toContain('la IA no devolvió una semana válida')
     expect(response.message).toContain('no pasó las validaciones')
+  })
+
+  it('propaga el entitlement en vez de fabricar una semana local', async () => {
+    const denial = new EntitlementRequiredError(
+      buildEntitlementDetail('week_creator', 'advanced', 'free'),
+    )
+    mockProviderCall.mockRejectedValue(denial)
+
+    await expect(runWeekCreator()).rejects.toBe(denial)
+    expect(mockProviderCall).toHaveBeenCalledTimes(1)
+    expect(useAIDebugStore.getState().requests.some((request) => request.fallbackUsed)).toBe(false)
+  })
+
+  // El entitlement no es el único gate de servidor. Cuota, techo de gasto y
+  // kill switch también rechazan ANTES del proveedor, y tratarlos como caída
+  // técnica hacía que el cliente entregara la semana determinista que el
+  // servidor acababa de negar — además de gastar un segundo intento contra un
+  // 429 que iba a repetirse.
+  it.each([
+    ['cuota diaria', () => new QuotaExceededError({ bucketId: 'week_creator', limit: 8, remaining: 0 })],
+    ['techo de gasto', () => new SpendCapExceededError({ scope: 'account' as const, capUsd: 3 })],
+    ['kill switch', () => new KillSwitchActiveError()],
+  ])('propaga el rechazo por %s en vez de fabricar una semana local', async (_label, build) => {
+    const rejection = build()
+    mockProviderCall.mockRejectedValue(rejection)
+
+    await expect(runWeekCreator()).rejects.toBe(rejection)
+    expect(mockProviderCall).toHaveBeenCalledTimes(1)
+    expect(useAIDebugStore.getState().requests.some((request) => request.fallbackUsed)).toBe(false)
   })
 })

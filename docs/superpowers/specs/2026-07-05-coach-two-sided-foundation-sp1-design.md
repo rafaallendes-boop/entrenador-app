@@ -154,7 +154,7 @@ athlete_memberships(
 - `unique(athlete_id) where role='self'` — cada atleta tiene exactamente un dueño-self.
 - índice `(account_id, role)` — para resolución rápida de "mis atletas" y "mi self".
 
-**Regla de negocio:** "tenés acceso a un `athlete_id` si existe una membresía tuya en él". El rol determina qué podés escribir (§4).
+**Regla de negocio:** "tenés acceso a un `athlete_id` si existe una membresía tuya en él". El rol determina qué Puedes escribir (§4).
 
 ### 3.2 `athlete_invites` (server-only)
 

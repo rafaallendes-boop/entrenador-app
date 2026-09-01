@@ -12,7 +12,7 @@ import { getActiveProvider, getProviderForRequestClass, isRealProviderConfigured
 import { useAIDebugStore } from '../../store/useAIDebugStore'
 import { sendGeneralWithRecovery, sendWithRecovery } from './coachRecovery'
 import { resolveChatRoute } from '../chatRouting'
-import { createStageTracker, type CoachOutcome } from './stageLogger'
+import { createStageTracker, trackStage, type CoachOutcome } from './stageLogger'
 import { postProcessCoachActions } from './actionPostProcessor'
 import { assertDailyAIRequestLimit } from './aiTelemetry'
 import { persistSafetyBlockedOutcome } from './safetyOutcomeTelemetry'
@@ -218,13 +218,19 @@ async function sendTrackedCoachRequest(
         },
       }
 
-      const providerStage = tracker.stage('provider_call')
-      const result = requestClass === 'chat_action'
-        ? await sendWithRecovery(trackedProvider, request)
-        : requestClass === 'chat_general'
-          ? await sendGeneralWithRecovery(trackedProvider, request)
-          : await sendDirect(trackedProvider, request)
-      providerStage.end({ ok: true })
+      // `trackStage` cierra la etapa TAMBIÉN cuando la llamada lanza. Con el
+      // cierre manual anterior, `end()` sólo se alcanzaba en el camino de
+      // éxito: un fallo del proveedor no dejaba ninguna etapa `provider_call`,
+      // y la traza de producción quedaba con `prompt_build` como única entrada.
+      // Eso fue exactamente lo que impidió atribuir el fallo intermitente del
+      // chat a uno de los tres orígenes posibles de `parse_error`.
+      const result = await trackStage(tracker, 'provider_call', () => (
+        requestClass === 'chat_action'
+          ? sendWithRecovery(trackedProvider, request)
+          : requestClass === 'chat_general'
+            ? sendGeneralWithRecovery(trackedProvider, request)
+            : sendDirect(trackedProvider, request)
+      ))
 
       const postProcessedResult = requestClass === 'chat_action'
         ? postProcessCoachActions(result, context, userMessage)

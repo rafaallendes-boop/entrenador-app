@@ -18,7 +18,7 @@ export const QUOTA_BUCKETS: readonly QuotaBucket[] = [
   { id: 'chat', classes: ['chat_general', 'chat_action'], limits: { free: 15, weekly: 120, advanced: 120 } },
   { id: 'import', classes: ['import_extract'], limits: { free: 3, weekly: 10, advanced: 10 } },
   { id: 'weekly_summary', classes: ['weekly_summary'], limits: { weekly: 10, advanced: 10 } },
-  { id: 'week_creator', classes: ['week_creator'], limits: { weekly: 8, advanced: 8 } },
+  { id: 'week_creator', classes: ['week_creator'], limits: { advanced: 8 } },
   { id: 'plan_builder_week', classes: ['plan_builder_week'], limits: { advanced: 12 } },
   { id: 'plan_builder_pair', classes: ['plan_builder_pair'], limits: { advanced: 6 } },
   { id: 'coach_assistant', classes: ['coach_assistant_message'], limits: { advanced: 20 } },

@@ -29,7 +29,6 @@ import type { PlanCommitImpact } from '../services/planBuilder/commitImpact'
 import type { TrainingPlanWeek } from '../types/planBuilder'
 import { UpsellCard } from '../components/entitlements/UpsellCard'
 import { useEntitlement } from '../hooks/useEntitlement'
-import { isProactiveEntitlementUiEnabled } from '../services/entitlements/entitlementFlag'
 
 type PlanBuilderLocationState = {
   fromWizard?: boolean
@@ -534,10 +533,13 @@ export default function PlanBuilderV2Page() {
     entitlementOffer,
     createDraft, runGeneration, retryFullGeneration, regenerateWeek, regenerateWeeks, retryFailedWeeks, retryIncompleteWeeks, cancelGeneration, acceptPlan, discard, loadDraft,
   } = usePlanBuilderStore()
-  const { canUse, loading: entitlementLoading } = useEntitlement()
-  const planBuilderBlocked = isProactiveEntitlementUiEnabled()
-    && !entitlementLoading
-    && !canUse('plan_builder_week')
+  const { canUse, pending: entitlementPending } = useEntitlement()
+  // Nunca crear el shell antes de conocer el tier. De otro modo Free alcanzaba
+  // a completar el wizard y recién veía el rechazo al intentar generar.
+  // `pending` termina siempre: una hidratación fallida resuelve a `free`, igual
+  // que el servidor. Anclar esto a `source === 'default'` dejaba la página
+  // colgada en "Verificando" para siempre en el primer arranque sin red.
+  const planBuilderBlocked = !entitlementPending && !canUse('plan_builder_week')
   const displayedEntitlementOffer = entitlementOffer ?? (planBuilderBlocked
     ? { requestClass: 'plan_builder_week', requiredTier: 'advanced' as const }
     : null)
@@ -602,6 +604,7 @@ export default function PlanBuilderV2Page() {
   }, [hasLoaded, loadMemory])
 
   useEffect(() => {
+    if (entitlementPending || planBuilderBlocked) return
     if (!effectiveAthleteProfile || !effectiveAthleteProfile.planWizardConfig || !goalEvent) return
     if (supabase && authIsLoading) return
     const wizardConfig = effectiveAthleteProfile.planWizardConfig
@@ -685,7 +688,7 @@ export default function PlanBuilderV2Page() {
       // to athleteProfile) can retry the Dexie query instead of early-returning.
       inflightSignatureRef.current = null
     }
-  }, [authIsLoading, authUser, createDraft, currentDraftSignature, effectiveAthleteProfile, expectedDraftSignature, goalEvent, hasGenerationProgress, loadDraft, plan, status])
+  }, [authIsLoading, authUser, createDraft, currentDraftSignature, effectiveAthleteProfile, entitlementPending, expectedDraftSignature, goalEvent, hasGenerationProgress, loadDraft, plan, planBuilderBlocked, status])
 
   const effectiveSelectedWeekIndex = (() => {
     // Respect an explicit selection always; only auto-surface the first failed week
@@ -784,6 +787,21 @@ export default function PlanBuilderV2Page() {
     )
   }
 
+  // Sólo se retiene la entrada al wizard mientras el tier no es una respuesta.
+  // Un plan que ya existe localmente se sigue mostrando: esconderlo detrás de
+  // una lectura remota rompería el modelo local-first y dejaría al atleta sin
+  // su plan por una red mala.
+  if (entitlementPending && !plan) {
+    return (
+      <div className="px-4 pt-12 pb-8 max-w-md mx-auto">
+        <Card className="p-4 space-y-3">
+          <h1 className="text-lg font-bold text-ink">{PLAN_BUILDER_CLIENT_LABEL}</h1>
+          <p className="text-sm text-ink-muted">Verificando el acceso a tu plan.</p>
+        </Card>
+      </div>
+    )
+  }
+
   if (!effectiveAthleteProfile?.planWizardConfig || !goalEvent) {
     return (
       <div className="px-4 pt-12 pb-8 max-w-md mx-auto">
@@ -819,7 +837,7 @@ export default function PlanBuilderV2Page() {
     : 'Hay una estructura lista para usar. Conviene preparar el plan desde una base estable y consistente.'
 
   async function handleInitializeProtocol() {
-    if (planBuilderBlocked || !effectiveAthleteProfile || !plan || isGenerating || status === 'committing') return
+    if (planBuilderBlocked || entitlementPending || !effectiveAthleteProfile || !plan || isGenerating || status === 'committing') return
     if (initializeLockRef.current === plan.id) return
     initializeLockRef.current = plan.id
     setInitializedPlanId(plan.id)
@@ -831,27 +849,27 @@ export default function PlanBuilderV2Page() {
   }
 
   async function handleRetryFailedWeeks() {
-    if (planBuilderBlocked || !effectiveAthleteProfile || isGenerating || status === 'committing' || failedWeekIndexes.length === 0) return
+    if (planBuilderBlocked || entitlementPending || !effectiveAthleteProfile || isGenerating || status === 'committing' || failedWeekIndexes.length === 0) return
     await retryFailedWeeks(effectiveAthleteProfile)
   }
 
   async function handleRetryFullGeneration() {
-    if (planBuilderBlocked || !effectiveAthleteProfile || isGenerating || status === 'committing') return
+    if (planBuilderBlocked || entitlementPending || !effectiveAthleteProfile || isGenerating || status === 'committing') return
     await retryFullGeneration(effectiveAthleteProfile)
   }
 
   async function handleRetryIncompleteWeeks() {
-    if (planBuilderBlocked || !effectiveAthleteProfile || isGenerating || status === 'committing') return
+    if (planBuilderBlocked || entitlementPending || !effectiveAthleteProfile || isGenerating || status === 'committing') return
     await retryIncompleteWeeks(effectiveAthleteProfile)
   }
 
   async function handleRegenerateSelectedWeek() {
-    if (planBuilderBlocked || !effectiveAthleteProfile || !selectedWeek || isGenerating || status === 'committing') return
+    if (planBuilderBlocked || entitlementPending || !effectiveAthleteProfile || !selectedWeek || isGenerating || status === 'committing') return
     await regenerateWeek(selectedWeek.weekIndex, effectiveAthleteProfile, selectedWeekRepairInstruction)
   }
 
   async function handleRepairQualityIssues() {
-    if (planBuilderBlocked || !effectiveAthleteProfile || isGenerating || status === 'committing') return
+    if (planBuilderBlocked || entitlementPending || !effectiveAthleteProfile || isGenerating || status === 'committing') return
     const weekIndexes = Object.keys(qualityRepairInstructions)
       .map((key) => Number(key))
       .filter((value) => Number.isInteger(value))
@@ -860,7 +878,7 @@ export default function PlanBuilderV2Page() {
   }
 
   async function handleConsumerPlanRecovery() {
-    if (planBuilderBlocked || !effectiveAthleteProfile || isGenerating || status === 'committing') return
+    if (planBuilderBlocked || entitlementPending || !effectiveAthleteProfile || isGenerating || status === 'committing') return
     if (plan?.generationState === 'complete' && qualityBlocksAccept) {
       const weekIndexes = Object.keys(qualityRepairInstructions)
         .map((key) => Number(key))
@@ -1056,7 +1074,7 @@ export default function PlanBuilderV2Page() {
               </div>
             </div>
           </div>
-        ) : shouldShowLaunchDeck && !planBuilderBlocked ? (
+        ) : shouldShowLaunchDeck && !planBuilderBlocked && !entitlementPending ? (
           <PlanBuilderLaunchDeck
             title={PLAN_BUILDER_COMPETITIVE_LABEL}
             subtitle="Revisa el objetivo y crea un plan por semanas con control de carga, taper y sesiones clave."

@@ -33,7 +33,7 @@ function messageForSyncResult(result: WhoopSyncResponse): string {
   if (result.ok) return 'Whoop sincronizado.'
   if (result.code === 'consent_required') return CONSENT_REQUIRED_MESSAGE
   if (result.reason === 'cooldown') {
-    return `Whoop ya está al día. Podés volver a sincronizar en ${formatRetryDelay(result.retryAfterMs)}.`
+    return `Whoop ya está al día. Puedes volver a sincronizar en ${formatRetryDelay(result.retryAfterMs)}.`
   }
   if (result.reason === 'no_self_athlete') {
     return 'Tu perfil de atleta todavia no esta listo. Reabre la app y reintenta.'

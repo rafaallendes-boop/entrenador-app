@@ -339,11 +339,11 @@ describe('useWhoopSync', () => {
   })
 
   it.each([
-    [300_000, 'Whoop ya está al día. Podés volver a sincronizar en 5 min.'],
-    [287_000, 'Whoop ya está al día. Podés volver a sincronizar en 5 min.'],
-    [60_000, 'Whoop ya está al día. Podés volver a sincronizar en 1 min.'],
-    [59_000, 'Whoop ya está al día. Podés volver a sincronizar en 59s.'],
-    [1_000, 'Whoop ya está al día. Podés volver a sincronizar en 1s.'],
+    [300_000, 'Whoop ya está al día. Puedes volver a sincronizar en 5 min.'],
+    [287_000, 'Whoop ya está al día. Puedes volver a sincronizar en 5 min.'],
+    [60_000, 'Whoop ya está al día. Puedes volver a sincronizar en 1 min.'],
+    [59_000, 'Whoop ya está al día. Puedes volver a sincronizar en 59s.'],
+    [1_000, 'Whoop ya está al día. Puedes volver a sincronizar en 1s.'],
   ])('formatea el cooldown de %ims redondeando hacia arriba', async (retryAfterMs, expected) => {
     mocks.syncWhoopNow.mockResolvedValue({ ok: false, reason: 'cooldown', retryAfterMs })
     const { result } = renderHook(() => useWhoopSync())

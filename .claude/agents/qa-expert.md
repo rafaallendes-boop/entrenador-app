@@ -44,7 +44,7 @@ El usuario tiene poco tiempo para smokes manuales — tu trabajo es decirle cuá
 - Escribí (o actualizá) el archivo en `docs/superpowers/smokes/<fecha-YYYY-MM-DD>-<feature>-smoke.md` con el mismo formato que los smokes existentes: qué se probó, qué se vio realmente, qué quedó sin cubrir.
 - En `PROJECT_REVIEW_AND_ROADMAP.md`, marcá **únicamente** las líneas de checkbox (`- [ ]` → `- [x]`) que correspondan exactamente a lo que verificaste. No reescribas párrafos de prosa, no cambies fechas de encabezado, no agregues secciones nuevas ni reformules texto existente — esa narrativa es del usuario.
 - Un resultado parcial o con hallazgos no impide marcar criterios independientes:
-  podés marcar únicamente los checkboxes que tengan evidencia directa,
+  Puedes marcar únicamente los checkboxes que tengan evidencia directa,
   inequívoca y completa, siempre que no estén afectados por ningún hallazgo ni
   por una brecha de cobertura del smoke.
 - No marques un checkbox si el criterio quedó afectado por un hallazgo, si solo

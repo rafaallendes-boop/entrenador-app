@@ -113,7 +113,7 @@ compilación si se agrega una clase sin entrada.
 | `chat_action` | `free` | Ajustes puntuales sobre lo que ya existe |
 | `import_extract` | `free` | On-ramp barato; no crea planificación nueva |
 | `weekly_summary` | `weekly` | `/pricing` lo lista en Coach Semanal; es generación recurrente |
-| `week_creator` | `weekly` | Es "entrenamientos semanales sugeridos y ajustables" |
+| `week_creator` | `advanced` | Genera una semana completa; no debe degradarse a sesiones locales para tiers inferiores |
 | `plan_builder_week` | `advanced` | |
 | `plan_builder_pair` | `advanced` | |
 
@@ -348,7 +348,7 @@ bucket agrupa clases que comparten un contador.
 | `chat` | `chat_general`, `chat_action` | **15 compartidos** | 120 | 120 |
 | `import` | `import_extract` | 3 | 10 | 10 |
 | `weekly_summary` | `weekly_summary` | — | 10 | 10 |
-| `week_creator` | `week_creator` | — | 8 | 8 |
+| `week_creator` | `week_creator` | — | — | 8 |
 | `plan_builder_week` | `plan_builder_week` | — | — | 12 |
 | `plan_builder_pair` | `plan_builder_pair` | — | — | 6 |
 
@@ -425,10 +425,10 @@ pregunta. Así que la responsabilidad se parte en dos:
   **siempre**, para todo tier — es un hecho sobre la respuesta, no sobre el
   usuario.
 - **La capa de presentación** lo traduce a la tarjeta de oferta **solo si el tier
-  resuelto está por debajo de `weekly`**. Para un usuario pago el diagnóstico se
+  resuelto está por debajo de `advanced`**. Para un usuario pago elegible el diagnóstico se
   ignora y la experiencia es idéntica a la de hoy.
 
-El test correspondiente verifica que **un usuario `weekly` no ve la tarjeta** —
+El test correspondiente verifica que **un usuario `advanced` no ve la tarjeta** —
 no que el normalizador deje de emitir el diagnóstico. Testear lo segundo
 congelaría la violación de capas que este diseño evita.
 
@@ -508,7 +508,7 @@ No negociables:
 - Hidratación en curso sin espejo → estado neutro, no oferta (§5.1.2).
 - Cuota account-scoped: dos usuarios en el mismo navegador no comparten
   contador, y las filas legacy sin `userId` no cuentan para nadie (§5.4).
-- Un usuario `weekly` **no ve la tarjeta** ante un `filtered_create_week`,
+- Un usuario `advanced` **no ve la tarjeta** ante un `filtered_create_week`,
   mientras el normalizador sí sigue emitiendo el diagnóstico (§6.1).
 
 ## 9. Fuera de alcance

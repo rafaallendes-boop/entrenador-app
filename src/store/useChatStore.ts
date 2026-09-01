@@ -27,7 +27,7 @@ import {
   toChatEntitlementOffer,
   type EntitlementRequiredDetail,
 } from '../services/entitlements/entitlementError'
-import { isClassAllowed } from '../services/entitlements/entitlementPolicy'
+import { isClassAllowed, minTierForClass } from '../services/entitlements/entitlementPolicy'
 import { getEntitlementTier } from './useEntitlementStore'
 
 let activeChatAbortController: AbortController | null = null
@@ -60,6 +60,8 @@ interface ChatState {
   loadConversations: () => Promise<void>
   openConversation: (sessionId: string) => Promise<void>
   sendMessage: (content: string, context?: ChatContext) => Promise<{ route: ChatRouteKind }>
+  /** Muestra una oferta sin crear una burbuja, una propuesta ni una llamada a IA. */
+  showEntitlementOffer: (requestClass: AIRequestClass) => void
   newSession: () => Promise<void>
   deleteConversation: (sessionId: string) => Promise<void>
   deleteCurrentSession: () => Promise<void>
@@ -78,6 +80,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
   conversationsDirty: true,
   rotationSuspended: false,
   entitlementOffer: null,
+
+  showEntitlementOffer: (requestClass) => {
+    const currentTier = getEntitlementTier()
+    const requiredTier = minTierForClass(requestClass)
+    if (!requiredTier || isClassAllowed(currentTier, requestClass)) return
+    set({
+      entitlementOffer: buildEntitlementDetail(requestClass, requiredTier, currentTier),
+      error: null,
+    })
+  },
 
   loadHistory: async () => {
     const requestId = ++latestHistoryLoadRequestId
@@ -383,9 +395,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
         return { route: route.kind }
       }
       const currentTier = getEntitlementTier()
+      const weekCreatorRequiredTier = minTierForClass('week_creator') ?? 'advanced'
       const entitlementOffer = response.filteredCreateWeek
         && !isClassAllowed(currentTier, 'week_creator')
-        ? buildEntitlementDetail('week_creator', 'weekly', currentTier)
+        ? buildEntitlementDetail('week_creator', weekCreatorRequiredTier, currentTier)
         : null
 
       const coachMsg = buildCoachMessage(response, sessionId)

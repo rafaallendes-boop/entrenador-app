@@ -18,6 +18,7 @@ import {
   formatCreateWeekCollisionWarning,
   formatCreateWeekPreservedCountWarning,
 } from './createWeekCollisionCopy'
+import { BLOCKED_STRENGTH_COPY } from '../training/strengthSafetyCopy'
 
 type CreateWeekSessionInput = NonNullable<CoachAction['sessions']>
 
@@ -98,7 +99,7 @@ export async function applyCreateWeek({
       sealLocation: 'metadata',
     })
     if (result.status === 'blocked') {
-      throw new Error('No pude verificar una sesión de fuerza compatible con la restricción registrada.')
+      throw new Error(BLOCKED_STRENGTH_COPY)
     }
     repairedForSafety ||= result.removed.length > 0 || result.replaced.length > 0
     verifiedSessions.push(result.session)

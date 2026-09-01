@@ -1,8 +1,8 @@
 # RallyIQ - Project Review and Roadmap
 
-Actualizado: 2026-08-30
+Actualizado: 2026-08-31
 
-## Corte Ejecutivo Vigente — 2026-08-30
+## Corte Ejecutivo Vigente — 2026-08-31
 
 Esta sección es la **fuente de verdad para decisiones de beta**. Las secciones
 posteriores conservan el historial técnico de las entregas, pero sus porcentajes,
@@ -11,21 +11,29 @@ corte.
 
 ### Línea base verificable
 
-- `main` y `origin/main` apuntan a `1ec2add` (`feat: harden strength safety and
-  coach workflows`). El working tree contiene ahora la corrección de sync `026`,
-  el hardening de transporte/parseo/telemetría del Asistente y esta actualización
-  documental, todavía sin commit.
-- Gate local del árbol final: **505 archivos / 4070 tests**, lint, `tsc -b`,
+- `main` y `origin/main` apuntan a `87fc2d4` (`Mejoras Sync service y QA`), que
+  ya incorpora `026`, el transporte JSON ASCII-safe, los lectores SSE/NDJSON
+  robustos, el detector generalizado de corrupción y la telemetría con espera
+  acotada. Desplegado. El working tree agrega, todavía sin commit ni deploy, el
+  cierre `post_generation_failed`, la diversidad del allocator por ordinal de
+  sesión, el transporte de restricciones activas del perfil al prompt semanal,
+  el routing de preguntas de asesoría Free hacia `chat_general` y el gate
+  preventivo Free de Plan Builder/semana completa.
+- Gate local del árbol final: **510 archivos / 4088 tests**, lint, `tsc -b`,
   build y `git diff --check` verdes.
 - El owner confirmó que `1ec2add` ya fue desplegado y que aplicó
   `025_coach_request_safety_blocked.sql`. El
   [smoke de restricciones por lesión](docs/superpowers/smokes/2026-08-30-strength-safety-prod-smoke.md)
   terminó **APROBADO PARCIAL**: núcleo de exclusión, routing, actualización,
-  Week Creator y `/ops` verificados; `safety_blocked` no pudo forzarse.
+  Week Creator y `/ops` verificados. Su **segunda corrida** (2026-08-31, sobre
+  `87fc2d4`) cerró `safety_blocked`: con cuatro regiones solapadas el chat
+  devolvió el copy determinista carácter por carácter, sin propuesta y con
+  telemetría `outcome: "safety_blocked"`.
 - Producción confirmó `023_coach_assistant_request_class.sql` bajo tráfico real
   y `024_fix_increment_ai_usage_ambiguity.sql` mediante un probe transaccional.
-  `025` está aplicada por confirmación del owner. La corrección `026` del 409 de
-  perfiles está preparada y requiere aplicación + smoke de recuperación.
+  `025` está aplicada por confirmación del owner. **`026` fue aplicada el
+  2026-08-31** con verificación limpia (`null_profiles = 0`,
+  `total_profiles = distinct_athletes = 4`) y su smoke de recuperación pasó.
 - El smoke del 2026-08-30 confirmó `ENTITLEMENTS_ENABLED=true` y
   `AI_USAGE_LIMITS_ENABLED=true` en servidor para la cuenta `advanced` del
   owner. `VITE_ENTITLEMENTS` seguía apagada en el bundle y
@@ -44,18 +52,19 @@ corte.
 | `023` clase del Asistente Coach | Aplicada y observada bajo tráfico | Operativa |
 | `024` corrección RPC de cuota | Aplicada y probada con rollback | Operativa; agregar prueba futura contra Postgres real |
 | `025` desenlace `safety_blocked` | Aplicada; `/ops` renderiza la métrica | Operativa; falta observar una declinación real distinta de cero |
-| `026` contrato sync de `athlete_profiles` | Implementada en working tree; no aplicada | Aplicar, refrescar cliente y ejecutar recuperación hasta cola cero |
+| `026` contrato sync de `athlete_profiles` | **Aplicada y verificada en producción** (`null_profiles = 0`, `total_profiles = distinct_athletes = 4`); smoke de recuperación con 21 requests REST 200/204 y cero 409 | Operativa. `athlete_profiles_sync_fix.sql` queda deprecado y falla si se ejecuta |
+| `027` outcome post-materialización de intents de plan | **Aplicada en producción** (confirmada por el owner el 2026-08-31) | El CHECK ya acepta `post_generation_failed`; falta desplegar el writer que lo emite y observar una falla real |
 
 ### Estado real por frente
 
 | Frente | Código / `main` | Producción verificada | Estado para beta | Próxima evidencia necesaria |
 |---|---|---|---|---|
-| Sync y datos multi-atleta | Causa aislada: el unique legado por `user_id` contradice el modelo por `athlete_id`; `026` y diagnóstico específico implementados | **Rojo hasta rollout:** el último smoke todavía mostró 409 y operaciones expiradas | **P0 bloqueante, corrección lista para aplicar** | Aplicar `026`, refrescar, sincronizar hasta cola cero y probar self + gestionado sin pérdida ni resurrección |
-| Restricciones de fuerza por lesión | Completo en `1ec2add`; Chat, Week Creator, Plan Builder y aceptación fail-closed | **APROBADO PARCIAL:** lumbar/rodilla, negaciones, routing, progreso, Week Creator y `/ops` pasan | **Apto para piloto acompañado con revisión humana** | Forzar A5 `safety_blocked`; Plan Builder quedó fuera por presupuesto |
-| Asistente IA del Coach | Triaje y borradores desplegados; working tree agrega transporte JSON ASCII-safe, cola SSE/NDJSON robusta, rechazo de corrupción conocida y diagnóstico local `parse_invalid`/`schema_invalid` | Smoke **APROBADO PARCIAL**; el fix nuevo aún no está desplegado y la revalidación quedó bloqueada por cuota (19 requests) | **P1; ocultar o revisar manualmente hasta cerrar contenido** | Desplegar, esperar/reponer la ventana QA y sostener una muestra sin corrupción ni `invalid-response` |
-| Entitlements | Tres tiers y gates en las tres Functions | `020` aplicada; servidor activo para owner `advanced`; cliente proactivo off | **No bloquea piloto coach-operated; gate de beta por tiers** | Owner temporalmente `free`: 403 en chat/enqueue/background y upsell correcto; restaurar `advanced` |
-| Cuotas y gasto IA | Gate durable, caps y kill switch implementados | `021` + `024` aplicadas; chat funciona; aislamiento del bucket assistant observado | **No bloquea piloto acotado; cerrar antes de ampliar IA** | Probar 429 server-side desde otro contexto, Plan Builder, acumulación de costo y kill switch controlado |
-| Observabilidad | `/ops`, jobs, attempts y coach requests desplegados; working tree espera el insert remoto con plazo corto en vez de dejarlo fire-and-forget | `022`, `023` y `025` aplicadas; panel visible, pero el smoke observó sólo 3 filas para ~8 envíos | Operable con brecha de cobertura pendiente de redeploy | Confirmar una fila por transporte y observar una declinación real sin aumentar errores |
+| Sync y datos multi-atleta | Causa cerrada: el unique legado por `user_id` contradecía el modelo por `athlete_id`; `026` repara el contrato y el cliente reconoce ese 409 como drift de esquema | **Verde:** sync manual con **21 requests REST 200/204, cero 409**, cero `queue:op_failed`/`op_expired`, cabecera `Al día · Última: recién`; self y gestionado escribieron en la misma corrida y el gestionado sobrevivió recarga | **Desbloqueado.** Convergencia de edición y borrado ya verificada en dos dispositivos reales | Rama de **insert** (`?on_conflict=athlete_id`) no re-ejercitada —ambas filas ya existen—: sigue cubierta sólo por tests. Falta convergencia multi-dispositivo del triaje |
+| Restricciones y diversidad de fuerza | Seguridad fail-closed completa; el working tree mide I1 por ordinal de sesión, conserva I2 semanal y entrega las restricciones activas del perfil al prompt semanal | SQL de Plan Builder: M1 y N1 pasan; ningún ejercicio de fuerza cargó hombro. M2 encontró un clon 9/9 y M3 lo detectó correctamente en `generation_summary.qualityReview` | **Apto para piloto acompañado con revisión humana, tras release de la corrección de diversidad y copy** | Desplegar el allocator y repetir M2/M3 sobre una generación nueva; confirmar además que título/objetivo/notas no recomienden press u overhead con hombro restringido. El plan ya persistido no se reescribe |
+| Asistente IA del Coach | Desplegado en `87fc2d4`: transporte JSON ASCII-safe, cola SSE/NDJSON robusta, detector de corrupción **generalizado** (letra suelta no española y fragmento sin vocal, con exención de notación numérica) y diagnóstico `parse_invalid`/`schema_invalid` | **Sin auditar en dos corridas consecutivas.** La cuota local `coach_assistant_message` estaba en 20/20 antes de empezar, con cero llamadas de red. Evidencia parcial desde el chat: 3 textos con tildes correctas y sin artefactos | **P1; ocultar o revisar manualmente hasta cerrar contenido** | Ventana de cuota nueva: 4 borradores para cerrar corrupción, tasa de `invalid-response`, saludo duplicado, editable y copiar |
+| Entitlements | Tres tiers y gates en las tres Functions; el working tree corrige la clasificación de preguntas de asesoría y reserva Plan Builder/semana completa para `advanced` | `020` aplicada; cuenta del owner ahora en **free**. Plan Builder fue bloqueado por backend y mostró upsell de Avanzado; el borrador transitorio se descartó | **Gate Free server-side verificado; UX preventiva pendiente de release** | Tras deploy, comprobar que Free no crea borrador ni llama a IA al entrar a Plan Builder y que las viñetas/solicitudes de semana muestran la oferta de Avanzado |
+| Cuotas y gasto IA | Gate durable, caps y kill switch implementados | `021` + `024` aplicadas; Plan Builder bloqueado antes de proveedor. El smoke consumió 1 cuota `chat_action` por un misrouting ya corregido localmente | **No bloquea piloto acotado; cerrar antes de ampliar IA** | Probar 429 server-side desde otro contexto, acumulación de costo y kill switch controlado |
+| Observabilidad | `/ops`, jobs, attempts y coach requests desplegados; el working tree retrasa `succeeded` hasta superar los checkpoints de semana y plan | O2 mostró 10 intents `succeeded`, incluida la semana no materializada: confirma el defecto de fidelidad | **Corregido en código; `027` aplicada, pendiente de release** | Desplegar el writer; en la próxima falla post-materialización verificar `post_generation_failed` y `error_class` consistente |
 | OAuth Google | Web y Capacitor implementados | Estado externo sin nueva evidencia | **Postergado por decisión del owner hasta preparar la app pública** | No bloquea el piloto coach-operated; sí bloquea cuentas externas/self-service e iOS público |
 | Legal y consentimiento | Gate versionado activo y smokeado | `017` aplicada; abogado contactado el 2026-08-29 | **P0 en manos del owner/abogado** | Enviar las cuatro URLs y el objetivo de los Términos; recibir, integrar y publicar la revisión |
 | Seguridad | RLS, cifrado Whoop, auth y headers están implementados | Sin auditoría transversal con segundo usuario | **P0 antes de 10–20 cuentas** | Intento real de acceso cruzado, revisión de secretos/headers/Functions y cero hallazgos altos |
@@ -64,13 +73,15 @@ corte.
 
 ### Veredicto de readiness
 
-- **Uso interno del owner:** operativo, pero el incidente de sync exige atención
-  inmediata porque ya hay operaciones expiradas.
-- **Piloto acompañado de 1–3 personas, operado por el coach:** cercano, pero
-  **no debe empezar aún**. Requiere aplicar/smokear `026` y enviar el paquete
-  legal al abogado. El núcleo de lesiones ya tiene evidencia suficiente para
-  piloto con revisión humana. No requiere OAuth externo si
-  los atletas siguen como perfiles gestionados dentro de la cuenta del coach.
+- **Uso interno del owner:** operativo. El incidente de sync quedó cerrado el
+  2026-08-31: `026` aplicada, cero 409 y cero operaciones expiradas nuevas.
+- **Piloto acompañado de 1–3 personas, operado por el coach:** **el único P0
+  restante es legal.** Sync quedó cerrado con evidencia directa y el núcleo de
+  lesiones está aprobado, incluida la declinación segura. Falta enviar el paquete
+  al abogado y recibir su revisión. El Asistente IA sigue condicional: debe
+  ocultarse o revisarse a mano hasta auditar su contenido. No requiere OAuth
+  externo si los atletas siguen como perfiles gestionados dentro de la cuenta
+  del coach.
 - **Beta coach-operated de 10–20 atletas:** no lista. Además de lo anterior
   exige gates server-side comprobados en modo `free`, dos semanas sin incidentes
   P0, soporte y criterios de parada. Puede seguir usando perfiles gestionados.
@@ -81,28 +92,42 @@ corte.
 
 ### Gates para abrir la beta
 
-Sync y legal son los dos P0 todavía abiertos para el piloto coach-operated de
-1–3 personas. La evidencia de lesiones permite avanzar con revisión humana; los
-gates de tier/seguridad preceden la expansión, OAuth queda para la publicación
-de la app y el Asistente es condicional.
+**Legal es el único P0 abierto** para el piloto coach-operated de 1–3 personas.
+La evidencia de lesiones permite avanzar con revisión humana; los gates de
+tier/seguridad preceden la expansión, OAuth queda para la publicación de la app
+y el Asistente es condicional.
 
-1. **P0 — Restaurar sync y proteger datos.** Aplicar `026`, refrescar el cliente,
-   reconciliar la cola sin borrar datos locales y demostrar convergencia self +
-   gestionado. Incluir create/update/delete, offline→online y el cascade de
-   borrado de atleta. El Done exige cero 409, cero ops pendientes/expiradas nuevas
-   y perfil local/remoto idéntico.
-2. **P1 — Completar la evidencia de `1ec2add`.** El smoke ya verificó exclusión
-   lumbar/rodilla, routing, progreso, Week Creator y `/ops`. Falta provocar A5
-   para observar `safety_blocked`; Plan Builder queda en un smoke separado para
-   no gastar presupuesto sin una decisión explícita.
-3. **Antes de ampliar tiers — Cerrar gates de plan y costo.** Probar `free` vs `advanced` en
-   `coach.ts`, `enqueue-plan-generation` y `generate-plan-background`; comprobar
-   cuota durable tras borrar el estado local/usar otro contexto, costo acumulado
-   y kill switch en una ventana controlada. Sólo después encender
-   `VITE_ENTITLEMENTS`.
-   Para la primera pasada se acepta cambiar temporalmente el entitlement del
-   owner de `advanced` a `free` por SQL y restaurarlo después; esto valida gates,
-   pero no reemplaza una prueba de aislamiento con otra cuenta.
+1. ✅ **P0 cerrado — Sync restaurado (2026-08-31).** `026` aplicada con
+   verificación limpia; sync manual con 21 requests REST 200/204, cero 409, cero
+   ops expiradas, y self + gestionado escribiendo en la misma corrida. La
+   convergencia de edición concurrente (LWW por timestamp) y de borrado vs
+   edición (LWW con lápida local + reparación remota) ya estaba verificada en dos
+   dispositivos reales. **Quedan fuera:** la rama de insert
+   `?on_conflict=athlete_id`, no re-ejercitada porque ambas filas ya existen, y
+   el cascade de borrado de atleta.
+2. **P1 — Cerrar rollout de fuerza y observabilidad de generación.** La exclusión
+   lumbar/rodilla, routing en ambas direcciones, progreso preservado, Week
+   Creator y `/ops` están verificados; **A5 se cerró** solapando cuatro regiones
+   (`lumbar, rodilla, hombro, cadera`), lo que agotó el pool y produjo el copy
+   determinista verbatim, sin propuesta y con `outcome: safety_blocked`. El
+   primer SQL de Plan Builder confirmó M1/N1 y encontró M2: una sesión clonada
+   9/9. La corrección del allocator por ordinal, la entrega de restricciones del
+   perfil al prompt y la telemetría `post_generation_failed` ya están locales.
+   `027` ya está aplicada. Falta liberar el código y repetir M2/M3/O2 en una generación
+   nueva.
+2bis. **P1 — Auditar el contenido del Asistente IA.** Es lo que ocupa el lugar
+   que dejó A5. Dos corridas consecutivas no pudieron tocarlo: la cuota local
+   `coach_assistant_message` estaba agotada (20/20) antes de empezar, sin llamadas
+   de red. Requiere una ventana de cuota nueva y cuatro borradores para cerrar
+   corrupción de caracteres, tasa de `invalid-response`, saludo duplicado,
+   edición y copiado.
+3. **Antes de ampliar tiers — Cerrar gates de plan y costo.** El smoke Free ya
+   acreditó que Plan Builder se bloquea en backend y ofrece Avanzado; la cuenta
+   queda Free por decisión del owner. Tras el release, comprobar los endpoints
+   `enqueue-plan-generation`/background, el routing de la pregunta de asesoría
+   hacia `chat_general`, cuota durable desde otro contexto, costo acumulado y
+   kill switch. Sólo después encender `VITE_ENTITLEMENTS`. Esto no reemplaza una
+   prueba de aislamiento con otra cuenta.
 4. **P0 — Cierre legal mínimo.** El abogado ya fue contactado. Enviarle
    `https://app.rallyiq.cl/terms`, `https://app.rallyiq.cl/privacy`,
    `https://app.rallyiq.cl/health-disclaimer` y
@@ -125,23 +150,30 @@ de la app y el Asistente es condicional.
 
 ### Plan recomendado de avance
 
-#### Tanda 1 — estabilización, antes de nuevas features
+#### Tanda 1 — release de correcciones y verificación mínima
 
-1. **Incidente de sync:** aplicar `026`, observar la cola hasta cero y hacer un
-   smoke de recuperación en el dispositivo actual; luego repetir self + gestionado.
-2. **Completar el deploy actual:** el smoke principal ya quedó documentado como
-   aprobado parcial; preparar un caso A5 determinista sin consumir más IA de la
-   necesaria.
-3. **Cerrar el Asistente o sacarlo del camino crítico:** desplegar el transporte
-   ASCII-safe, el fail-closed de corrupción y la telemetría de parseo ya
-   implementados; revalidar en la siguiente ventana de cuota sin reintentos
-   ciegos. El diagnóstico conserva forma/longitud/trace, no el contenido.
+1. **Preparar un único release:** incluir `post_generation_failed`, el allocator
+   por ordinal de sesión, las restricciones activas del perfil en el prompt,
+   el routing de asesoría Free, el gate preventivo de Plan Builder/semana
+   completa y la copia unificada de bloqueo. La migración `027` ya está
+   aplicada en producción, así que el writer puede emitir el outcome nuevo en
+   cuanto se despliegue; no queda paso de SQL para esta tanda.
+2. **Smoke posdeploy de bajo costo:** con una cuenta o entorno `advanced` de
+   prueba —sin cambiar silenciosamente al owner que quedó `free`— generar un
+   solo plan del caso con hombro y revisar M1/M2/M3/O2 y el copy visible. Pasa
+   si no hay clon ≥80% por ordinal, título/objetivo/notas no recomiendan press u
+   overhead, los warnings M3 se consultan desde `generation_summary`, y
+   cualquier fallo tardío queda como `post_generation_failed`, nunca como
+   `succeeded`.
+3. **Cerrar el Asistente o sacarlo del camino crítico:** revalidar en la próxima
+   ventana de cuota sin reintentos ciegos. El diagnóstico conserva
+   forma/longitud/trace, no contenido.
 
 #### Tanda 2 — habilitar personas externas
 
-4. Cambiar temporalmente el owner a `free` por SQL, refrescar/hidratar el
-   entitlement y cerrar el 403 directo de las tres Functions; restaurar
-   `advanced` al terminar.
+4. Mantener el owner en `free`, refrescar/hidratar el entitlement y cerrar los
+   endpoints pendientes de Plan Builder; verificar que las preguntas de
+   asesoría cuenten sólo contra `chat_general` tras el deploy.
 5. Antes de pasar a cuentas externas, crear un segundo usuario y cerrar
    aislamiento RLS. OAuth externo queda para el hito de publicación de la app.
 6. Probar kill switch, volverlo a `false`, confirmar `/ops` y registrar un runbook
@@ -2426,17 +2458,46 @@ capturar de forma segura la frontera proveedor/proxy/parser y localizar dónde
 cambia el texto. Hasta entonces el Asistente requiere revisión humana y no es un
 argumento para ampliar la beta.
 
-El mismo smoke reveló el incidente técnico hoy prioritario: el sync produce 409
-al upsert de `athlete_profiles`, muestra “Nunca sincronizado” y ya dejó operaciones
-expiradas. La causa quedó aislada el 2026-08-30: el índice unique legado por
-`user_id` sigue limitando la tabla a un perfil por cuenta, mientras el cliente y
-PostgREST operan con un perfil canónico por `athlete_id`. La corrección `026`
-elimina ese contrato legado sin borrar filas, valida deuda/nulls/huérfanos y
-recarga el schema de PostgREST. Falta aplicarla y ejecutar el smoke de recuperación.
+El mismo smoke reveló el incidente técnico que dominó el 2026-08-30: el sync
+producía 409 al upsert de `athlete_profiles`, mostraba “Nunca sincronizado” y ya
+había dejado operaciones expiradas. La causa era el índice unique legado por
+`user_id`, que limitaba la tabla a un perfil por cuenta mientras el cliente y
+PostgREST operan con un perfil canónico por `athlete_id`. **Cerrado el
+2026-08-31 — ver §34.**
 
-### 34. Sync — contrato canónico de perfiles y recuperación del 409 (2026-08-30)
+**Actualización del 2026-08-31 (segunda corrida del smoke, sobre `87fc2d4`).**
+Dos de los tres frentes abiertos arriba se movieron:
 
-Estado: **causa cerrada e implementación local verificada; rollout pendiente**.
+- **`safety_blocked` observado.** Solapar cuatro regiones agotó el pool y produjo
+  el copy determinista verbatim, sin propuesta, con telemetría correcta y
+  `/ops` marcando `Declinaciones seguras` 0→1.
+- **El contenido del Asistente sigue sin auditar**, por segunda corrida
+  consecutiva y por la misma razón: cuota local agotada antes de empezar, con
+  cero llamadas de red. La evidencia parcial disponible viene del chat, no del
+  Asistente: tres textos con tildes correctas y sin artefactos. **No alcanza**
+  para cerrar los dos defectos de contenido.
+- **La hipótesis de UTF-8 troceado quedó parcialmente descartada.** El fallo
+  intermitente se reprodujo con `200` y `outcome: parse_fail`, y los tres
+  orígenes de `parse_error` en `ProxyProvider` corresponden a respuesta **vacía**,
+  no corrupta: es un modo de fallo distinto del que ataca el transporte
+  ASCII-safe. No se pudo atribuir cuál disparó porque la traza no registraba la
+  etapa del proveedor — corregido, ver abajo.
+
+### 34. Sync — contrato canónico de perfiles y recuperación del 409 (2026-08-30/31)
+
+Estado: **cerrado en producción el 2026-08-31**. `026` aplicada con verificación
+limpia (`null_profiles = 0`, `total_profiles = distinct_athletes = 4`); el smoke
+de recuperación emitió **21 requests REST 200/204, cero 409**, cero
+`queue:op_failed`/`op_expired` y cero `repair:start`, con cabecera `Al día ·
+Última: recién`. Self y gestionado escribieron en la misma corrida
+(`PATCH …athlete_profiles?id=eq.profile:… → 204` y `…:ath_m_… → 204`), y el
+perfil del gestionado sobrevivió una recarga completa.
+
+**Límite declarado:** la rama que originalmente fallaba
+(`?on_conflict=athlete_id`) **no se re-ejercitó**, porque `persistAthleteProfileRow`
+sólo hace upsert cuando no existe fila remota para el grupo y ahora ambas
+existen. Que ambas existan es en sí la prueba de que `026` funcionó, pero la
+rama de insert sigue cubierta sólo por tests.
 
 `supabase/026_fix_athlete_profiles_sync_contract.sql` es transaccional e
 idempotente. Antes de tocar índices recupera únicamente perfiles self legacy que
@@ -3241,6 +3302,41 @@ cancelación/reembolso + one-liner de oferta en `/coaches`.
 - No ampliar todavía el Asistente IA con semanas plantilla ni edición rica de
   drills. Su v1 ya existe; antes de extenderla deben estabilizarse sus respuestas
   inválidas/corruptas y validarse Planificación y Biblioteca con el piloto.
+
+### 35. Traza de etapas — el fallo del proveedor era invisible (2026-08-31)
+
+Estado: **implementado y verificado localmente; pendiente de deploy**. Sin
+migraciones.
+
+El fallo intermitente del chat (~1 de cada 5 envíos) llegaba con `200`,
+`outcome: parse_fail`, ~12 s y **una sola etapa**:
+
+```json
+"stages":[{"stage":"prompt_build","durationMs":21,"ok":true}]
+```
+
+La ausencia de `provider_call` no significaba que el proveedor no se hubiera
+llamado. `StageTracker.stage()` no registra nada al crearse: la fila se agrega al
+array **sólo cuando se llama `end()`**, y en `CoachEngine.ts` el cierre estaba
+después del `await`, así que una llamada que lanza no dejaba rastro de su etapa.
+
+`trackStage` ya existía en el mismo módulo, con la semántica correcta
+—*"Wrap an async stage so the tracker is closed even if it throws"*— y **cero
+call sites**: estaba escrito para esto y nunca se cableó. Ahora `provider_call`
+pasa por él.
+
+**Alcance honesto: esto no arregla el fallo, lo hace diagnosticable.** La próxima
+ocurrencia traerá `provider_call` con `ok: false` y su mensaje, que es
+exactamente lo que discrimina entre los tres orígenes de `parse_error` en
+`ProxyProvider` (`respuesta vacía` de JSON, `stream vacío`, `respuesta vacía` de
+streaming). Un test reproduce la traza de producción con la misma forma antes del
+fix.
+
+**Hipótesis sin confirmar** sobre la causa del fallo en sí: `chat_action` tiene
+`allowFallback: true` y `parse_error` es elegible para fallback
+(`ProxyProvider.ts:355`), así que los ~12 s equivalen a dos intentos de ~6 s
+—streaming vacío, luego JSON también vacío—, consistente con que el reintento
+exitoso durara la mitad. No se afirma sin la traza.
 
 ## Veredicto Histórico (superado por el corte vigente)
 

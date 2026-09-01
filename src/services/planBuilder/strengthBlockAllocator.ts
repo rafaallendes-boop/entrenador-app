@@ -10,6 +10,7 @@
 const DEFAULT_MAX_NODES = 20_000
 /** Presupuesto de I1: dos ids compartidos por par es tolerable; tres dispara el check. */
 const PAIR_OVERLAP_BUDGET = 2
+const DEFAULT_OVERLAP_GROUP = '__all__'
 
 export type AllocationDegradationReason =
   | 'infeasible_intra_week'
@@ -21,6 +22,20 @@ export interface AllocatorSlot {
   slotKey: string
   canonicalId: string
   candidateIds: ReadonlyArray<string>
+  /**
+   * I1 se evalúa por sesión homóloga, no contra la unión de una semana con
+   * varias sesiones de fuerza. Es opcional para conservar los consumidores
+   * que no modelan sesiones.
+   */
+  overlapGroup?: string
+}
+
+export interface AllocatorFixedGroup {
+  groupKey: string
+  /** Todos los ids fijos de esa sesión: lado `all(P_i)` de I1. */
+  all: ReadonlyArray<string>
+  /** Sólo los ids fijos contables de esa sesión: lado `countables(P_j)`. */
+  countable: ReadonlyArray<string>
 }
 
 export interface AllocatorFixedWeek {
@@ -28,6 +43,11 @@ export interface AllocatorFixedWeek {
   all: ReadonlyArray<string>
   /** Sólo los fijos contables: entran en `countables(P_j)`. Excluye el main lift. */
   countable: ReadonlyArray<string>
+  /**
+   * Proyección I1 por ordinal de sesión. `all`/`countable` siguen siendo la
+   * unión semanal que usa I2 y el fallback sin grupos.
+   */
+  groups?: ReadonlyArray<AllocatorFixedGroup>
 }
 
 export interface AllocatorInput {
@@ -137,6 +157,7 @@ interface Cell {
   slotIndex: number
   week: number
   preference: ReadonlyArray<string>
+  overlapGroup: string
 }
 
 interface Solution {
@@ -178,26 +199,60 @@ export function allocateStrengthBlock(input: AllocatorInput): AllocatorResult {
   const weekCount = Math.max(0, input.weekCount)
   const maxNodes = input.maxNodes ?? DEFAULT_MAX_NODES
 
-  // Proyección por semana. `allCounts` alimenta el lado `all(P_i)` de I1 y el
-  // cupo de I2; `countableCounts` alimenta el lado `countables(P_j)`.
+  // I2 mira toda la semana; I1 mira solamente sesiones del mismo ordinal.
+  // Separar ambas proyecciones evita que las sustituciones se concentren en
+  // una sesión y dejen una hermana como clon completo.
   const allCounts: CountMap[] = []
-  const countableCounts: CountMap[] = []
-  const fixedCountableUnique: string[][] = []
+  const overlapAllCounts: Array<Map<string, CountMap>> = []
+  const overlapCountableCounts: Array<Map<string, CountMap>> = []
+  const fixedGroupsByWeek: AllocatorFixedGroup[][] = []
+
+  const getGroupCounts = (
+    countsByWeek: Array<Map<string, CountMap>>,
+    week: number,
+    groupKey: string,
+  ): CountMap => {
+    const groups = countsByWeek[week]!
+    const current = groups.get(groupKey)
+    if (current) return current
+    const created: CountMap = new Map()
+    groups.set(groupKey, created)
+    return created
+  }
+
   for (let week = 0; week < weekCount; week++) {
     const fixed = input.fixedIdsByWeek[week] ?? { all: [], countable: [] }
     const all: CountMap = new Map()
-    const countable: CountMap = new Map()
     for (const id of fixed.all) increment(all, id)
-    for (const id of fixed.countable) increment(countable, id)
     allCounts.push(all)
-    countableCounts.push(countable)
-    fixedCountableUnique.push([...new Set(fixed.countable)].sort((left, right) => left.localeCompare(right)))
+    overlapAllCounts.push(new Map())
+    overlapCountableCounts.push(new Map())
+    const groups = fixed.groups ?? [{
+      groupKey: DEFAULT_OVERLAP_GROUP,
+      all: fixed.all,
+      countable: fixed.countable,
+    }]
+    fixedGroupsByWeek.push([...groups])
+    for (const group of groups) {
+      const groupAll = getGroupCounts(overlapAllCounts, week, group.groupKey)
+      const groupCountable = getGroupCounts(overlapCountableCounts, week, group.groupKey)
+      for (const id of group.all) increment(groupAll, id)
+      for (const id of group.countable) increment(groupCountable, id)
+    }
   }
 
-  // `pairOverlap[i][j]` con i < j: |countables(P_j) ∩ all(P_i)|.
-  const pairOverlap: number[][] = Array.from({ length: weekCount }, () =>
-    Array.from({ length: weekCount }, () => 0),
+  // `pairOverlap[i][j][group]` con i < j:
+  // |countables(P_j, group) ∩ all(P_i, group)|.
+  const pairOverlap: Array<Array<Map<string, number>>> = Array.from({ length: weekCount }, () =>
+    Array.from({ length: weekCount }, () => new Map()),
   )
+  const overlapAt = (earlier: number, later: number, groupKey: string): number =>
+    pairOverlap[earlier]![later]!.get(groupKey) ?? 0
+  const adjustOverlap = (earlier: number, later: number, groupKey: string, delta: number): void => {
+    const next = overlapAt(earlier, later, groupKey) + delta
+    if (next === 0) pairOverlap[earlier]![later]!.delete(groupKey)
+    else pairOverlap[earlier]![later]!.set(groupKey, next)
+  }
 
   // Línea base fijo-contra-fijo. Omitirla haría que el presupuesto mienta justo
   // donde más importa: el core estructural de §29 es un id FIJO y CONTABLE que
@@ -206,43 +261,61 @@ export function allocateStrengthBlock(input: AllocatorInput): AllocatorResult {
   // `Map`, para no apoyarse en su orden de iteración (I4).
   for (let earlier = 0; earlier < weekCount; earlier++) {
     for (let later = earlier + 1; later < weekCount; later++) {
-      let overlap = 0
-      for (const value of fixedCountableUnique[later]!) {
-        if (has(allCounts[earlier]!, value)) overlap += 1
-      }
-      pairOverlap[earlier]![later] = overlap
-    }
-  }
-
-  function addValue(week: number, value: string): void {
-    if (increment(countableCounts[week]!, value)) {
-      for (let earlier = 0; earlier < week; earlier++) {
-        if (has(allCounts[earlier]!, value)) pairOverlap[earlier]![week]! += 1
-      }
-    }
-    if (increment(allCounts[week]!, value)) {
-      for (let later = week + 1; later < weekCount; later++) {
-        if (has(countableCounts[later]!, value)) pairOverlap[week]![later]! += 1
+      for (const group of fixedGroupsByWeek[later]!) {
+        const laterCountable = getGroupCounts(overlapCountableCounts, later, group.groupKey)
+        const earlierAll = getGroupCounts(overlapAllCounts, earlier, group.groupKey)
+        let overlap = 0
+        for (const value of laterCountable.keys()) {
+          if (has(earlierAll, value)) overlap += 1
+        }
+        if (overlap > 0) pairOverlap[earlier]![later]!.set(group.groupKey, overlap)
       }
     }
   }
 
-  function removeValue(week: number, value: string): void {
-    if (decrement(countableCounts[week]!, value)) {
+  function addValue(week: number, groupKey: string, value: string): void {
+    const countable = getGroupCounts(overlapCountableCounts, week, groupKey)
+    const all = getGroupCounts(overlapAllCounts, week, groupKey)
+    if (increment(countable, value)) {
       for (let earlier = 0; earlier < week; earlier++) {
-        if (has(allCounts[earlier]!, value)) pairOverlap[earlier]![week]! -= 1
+        if (has(getGroupCounts(overlapAllCounts, earlier, groupKey), value)) {
+          adjustOverlap(earlier, week, groupKey, 1)
+        }
       }
     }
-    if (decrement(allCounts[week]!, value)) {
+    if (increment(all, value)) {
       for (let later = week + 1; later < weekCount; later++) {
-        if (has(countableCounts[later]!, value)) pairOverlap[week]![later]! -= 1
+        if (has(getGroupCounts(overlapCountableCounts, later, groupKey), value)) {
+          adjustOverlap(week, later, groupKey, 1)
+        }
       }
     }
+    increment(allCounts[week]!, value)
+  }
+
+  function removeValue(week: number, groupKey: string, value: string): void {
+    const countable = getGroupCounts(overlapCountableCounts, week, groupKey)
+    const all = getGroupCounts(overlapAllCounts, week, groupKey)
+    if (decrement(countable, value)) {
+      for (let earlier = 0; earlier < week; earlier++) {
+        if (has(getGroupCounts(overlapAllCounts, earlier, groupKey), value)) {
+          adjustOverlap(earlier, week, groupKey, -1)
+        }
+      }
+    }
+    if (decrement(all, value)) {
+      for (let later = week + 1; later < weekCount; later++) {
+        if (has(getGroupCounts(overlapCountableCounts, later, groupKey), value)) {
+          adjustOverlap(week, later, groupKey, -1)
+        }
+      }
+    }
+    decrement(allCounts[week]!, value)
   }
 
   // La columna 0 no se decide: se declara y las demás se restringen contra ella.
   for (const slot of slots) {
-    if (weekCount > 0) addValue(0, slot.canonicalId)
+    if (weekCount > 0) addValue(0, slot.overlapGroup ?? DEFAULT_OVERLAP_GROUP, slot.canonicalId)
   }
 
   const preferences = slots.map((slot) => preferenceOrder(slot, blockId))
@@ -258,7 +331,12 @@ export function allocateStrengthBlock(input: AllocatorInput): AllocatorResult {
   for (let week = 1; week < weekCount; week++) {
     for (const { slotIndex } of slotOrder) {
       const cellIndex = cells.length
-      cells.push({ slotIndex, week, preference: preferences[slotIndex]! })
+      cells.push({
+        slotIndex,
+        week,
+        preference: preferences[slotIndex]!,
+        overlapGroup: slots[slotIndex]!.overlapGroup ?? DEFAULT_OVERLAP_GROUP,
+      })
       cellIndexByWeekAndSlot.set(`${week}:${slotIndex}`, cellIndex)
     }
   }
@@ -282,7 +360,12 @@ export function allocateStrengthBlock(input: AllocatorInput): AllocatorResult {
     let excess = 0
     for (let earlier = 0; earlier < weekCount; earlier++) {
       for (let later = earlier + 1; later < weekCount; later++) {
-        if (pairOverlap[earlier]![later]! > PAIR_OVERLAP_BUDGET) excess += 1
+        for (const overlap of pairOverlap[earlier]![later]!.values()) {
+          // No basta contar un par que ya falló: un 100% de clonación es peor
+          // que tres coincidencias y debe orientar el backtracking a repartir
+          // las alternativas entre las sesiones homólogas.
+          excess += Math.max(0, overlap - PAIR_OVERLAP_BUDGET)
+        }
       }
     }
     return excess
@@ -382,12 +465,15 @@ export function allocateStrengthBlock(input: AllocatorInput): AllocatorResult {
     if (isUnresolvedCanonicalId(slot.canonicalId)) return false
     if (candidateId === slot.canonicalId) return false // I3
     if (has(allCounts[cell.week]!, candidateId)) return false // I2, fijos incluidos
-    // I1 direccional: el candidato entra en `countables` de SU semana y se
-    // compara contra `all` de cada semana anterior, nunca al revés.
-    const alreadyCountable = has(countableCounts[cell.week]!, candidateId)
+    // I1 direccional: el candidato entra en `countables` de SU sesión y se
+    // compara contra la sesión homóloga de cada semana anterior, nunca al
+    // revés. I2 ya mantuvo la exclusividad para toda la semana arriba.
+    const currentCountable = getGroupCounts(overlapCountableCounts, cell.week, cell.overlapGroup)
+    const alreadyCountable = has(currentCountable, candidateId)
     for (let earlier = 0; earlier < cell.week; earlier++) {
-      const delta = !alreadyCountable && has(allCounts[earlier]!, candidateId) ? 1 : 0
-      if (pairOverlap[earlier]![cell.week]! + delta > PAIR_OVERLAP_BUDGET) return false
+      const earlierAll = getGroupCounts(overlapAllCounts, earlier, cell.overlapGroup)
+      const delta = !alreadyCountable && has(earlierAll, candidateId) ? 1 : 0
+      if (overlapAt(earlier, cell.week, cell.overlapGroup) + delta > PAIR_OVERLAP_BUDGET) return false
     }
     return true
   }
@@ -405,13 +491,13 @@ export function allocateStrengthBlock(input: AllocatorInput): AllocatorResult {
       values[index] = canonicalId
       degraded[index] = true
       degradedReasons[index] = resolveKnownDegradationReason(slots[cell.slotIndex]!) ?? 'search_exhausted'
-      addValue(cell.week, canonicalId)
+      addValue(cell.week, cell.overlapGroup, canonicalId)
       trail.push(index)
     }
     recordSolution()
     for (let position = trail.length - 1; position >= 0; position--) {
       const index = trail[position]!
-      removeValue(cells[index]!.week, values[index]!)
+      removeValue(cells[index]!.week, cells[index]!.overlapGroup, values[index]!)
       degraded[index] = false
       degradedReasons[index] = undefined
       values[index] = ''
@@ -438,12 +524,12 @@ export function allocateStrengthBlock(input: AllocatorInput): AllocatorResult {
       values[index] = candidateId
       degraded[index] = false
       degradedReasons[index] = undefined
-      addValue(cell.week, candidateId)
+      addValue(cell.week, cell.overlapGroup, candidateId)
       // El backtracking cruza fronteras de semana: al deshacer esta celda se
       // puede deshacer una de una semana anterior, que es lo que el
       // contraejemplo de Hall necesita y una resolución por columna no da.
       search(index + 1)
-      removeValue(cell.week, candidateId)
+      removeValue(cell.week, cell.overlapGroup, candidateId)
       values[index] = ''
       if (searchExhausted || optimalFound) return
     }
@@ -461,13 +547,13 @@ export function allocateStrengthBlock(input: AllocatorInput): AllocatorResult {
     values[index] = canonicalId
     degraded[index] = true
     degradedReasons[index] = resolveKnownDegradationReason(slots[cell.slotIndex]!) ?? 'infeasible_intra_week'
-    addValue(cell.week, canonicalId)
+    addValue(cell.week, cell.overlapGroup, canonicalId)
     // La cota se evalúa DESPUÉS de proyectar el original: así la rama sólo
     // consume nodos si todavía puede mejorar la mejor solución conocida.
     if (canStillImproveBest()) {
       search(index + 1)
     }
-    removeValue(cell.week, canonicalId)
+    removeValue(cell.week, cell.overlapGroup, canonicalId)
     degraded[index] = false
     degradedReasons[index] = undefined
     values[index] = ''

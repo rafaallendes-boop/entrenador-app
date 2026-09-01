@@ -22,7 +22,7 @@ describe('isEntitlementRequiredDetail', () => {
   it('acepta una forma válida', () => {
     expect(isEntitlementRequiredDetail({
       requestClass: 'week_creator',
-      requiredTier: 'weekly',
+      requiredTier: 'advanced',
       currentTier: 'free',
     })).toBe(true)
   })

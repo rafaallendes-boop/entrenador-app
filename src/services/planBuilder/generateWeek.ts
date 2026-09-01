@@ -5,7 +5,7 @@ import { buildAITraceId, getAIRequestPolicy } from '../ai/requestPolicy'
 import { validatePlanWeek } from './validator'
 import { useAIDebugStore } from '../../store/useAIDebugStore'
 import { repairGeneratedWeek, type RepairContext } from './repairWeek'
-import { createStageTracker, type CoachOutcome } from '../ai/stageLogger'
+import { createStageTracker, trackStage, type CoachOutcome } from '../ai/stageLogger'
 import { assertDailyAIRequestLimit } from '../ai/aiTelemetry'
 import { getExpectedSessionsForPlanWeek, getPlanWeekDateRange } from './dateRange'
 import { generateWeekCore } from './generateWeekCore'
@@ -312,8 +312,12 @@ export async function generateWeek(input: GenerateWeekInput): Promise<GenerateWe
     })
     requestStarted = true
 
-    const providerStage = tracker.stage('provider_call')
-    const result = await generateWeekCore({
+    // `trackStage` cierra la etapa también cuando la generación lanza. Con el
+    // cierre manual, un fallo del proveedor dejaba la traza sin `provider_call`
+    // —el mismo hueco de diagnóstico que se observó en el chat (§35)—, así que
+    // una corrida fallida de Plan Builder no permitía saber si el proveedor
+    // llegó a responder.
+    const result = await trackStage(tracker, 'provider_call', () => generateWeekCore({
       plan,
       week,
       previousWeek,
@@ -338,8 +342,7 @@ export async function generateWeek(input: GenerateWeekInput): Promise<GenerateWe
         debugRaw = raw
         return raw
       },
-    })
-    providerStage.end({ ok: true })
+    }))
 
     const normalizeStage = tracker.stage('normalize')
     normalizeStage.end({ ok: !result.meta.errorClass })

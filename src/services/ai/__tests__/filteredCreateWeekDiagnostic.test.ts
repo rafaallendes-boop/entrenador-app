@@ -56,10 +56,13 @@ describe('BARRERA DE NEGOCIO: create_week nunca sale de chat_action', () => {
 })
 
 describe('la traduccion a oferta depende del tier, no del diagnostico', () => {
-  it('weekly NO ve la tarjeta aunque el diagnostico se emita', () => {
+  // `week_creator` pasó de `weekly` a `advanced`: generar una semana completa
+  // es planificación, y Coach Semanal ya no la incluye. El diagnostico sigue
+  // siendo el mismo para todos; lo que cambia es a quien se le ofrece.
+  it('weekly SI ve la tarjeta: la semana completa quedo en Avanzado', () => {
     const result = normalizeResponse(raw(CREATE_WEEK_TEXT, 'chat_action'))
     expect(result.filteredCreateWeek).toBe(true)
-    expect(isClassAllowed('weekly', 'week_creator')).toBe(true)
+    expect(isClassAllowed('weekly', 'week_creator')).toBe(false)
   })
 
   it('advanced NO ve la tarjeta aunque el diagnostico se emita', () => {

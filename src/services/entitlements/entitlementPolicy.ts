@@ -30,7 +30,9 @@ export const REQUEST_CLASS_MIN_TIER: Record<AIRequestClass, Tier> = {
   chat_action: 'free',
   import_extract: 'free',
   weekly_summary: 'weekly',
-  week_creator: 'weekly',
+  // Generar una semana completa tiene el mismo carácter de planificación que
+  // Plan Builder; no se ofrece como fallback local en el plan semanal.
+  week_creator: 'advanced',
   plan_builder_week: 'advanced',
   plan_builder_pair: 'advanced',
   coach_assistant_message: 'advanced',

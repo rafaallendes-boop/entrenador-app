@@ -159,15 +159,15 @@ describe('ChatCoach conversation wiring', () => {
   it('muestra la oferta efimera debajo del hilo', async () => {
     h.entitlementOffer = {
       requestClass: 'week_creator',
-      requiredTier: 'weekly',
+      requiredTier: 'advanced',
       currentTier: 'free',
     }
     const { default: ChatCoach } = await import('../ChatCoach')
 
     render(<ChatCoach />)
 
-    expect(screen.getByText(/semana generada por el coach/i)).toBeTruthy()
-    expect(screen.getByText(/Coach Semanal/i)).toBeTruthy()
+    expect(screen.getByText(/crear una semana completa de entrenamiento/i)).toBeTruthy()
+    expect(screen.getAllByText(/Avanzado/i).length).toBeGreaterThan(0)
     expect(screen.getByRole('link', { name: /ver planes/i }).getAttribute('href')).toBe('/pricing')
   })
 

@@ -97,7 +97,7 @@ describe('gate anónimo de entitlement en coach', () => {
   })
 
   it.each([
-    ['week_creator', 'weekly'],
+    ['week_creator', 'advanced'],
     ['weekly_summary', 'weekly'],
   ])('deniega %s como Free anónimo sin tocar proveedor', async (requestClass, requiredTier) => {
     const fetchMock = stubSuccessfulProvider()

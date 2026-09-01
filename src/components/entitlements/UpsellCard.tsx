@@ -11,7 +11,7 @@ const TIER_LABEL: Record<Tier, string> = {
 const FEATURE_LABEL: Record<string, string> = {
   plan_builder_week: 'Plan Builder',
   plan_builder_pair: 'Plan Builder',
-  week_creator: 'La semana generada por el coach',
+  week_creator: 'Crear una semana completa de entrenamiento',
   weekly_summary: 'Los resúmenes semanales',
 }
 
@@ -33,8 +33,9 @@ export function UpsellCard({
         {feature} está en el plan {TIER_LABEL[requiredTier]}
       </p>
       <p className="mt-1 text-sm leading-relaxed text-ink-muted">
-        Podés seguir usando el coach y registrando tus entrenamientos. Cuando
-        quieras que arme y ajuste tu planificación, subí de plan.
+        {requestClass === 'week_creator'
+          ? 'Si quieres generar una semana completa de entrenamiento, está disponible para usuarios del plan Avanzado.'
+          : 'Puedes seguir usando el coach y registrando tus entrenamientos. Cuando quieras que arme y ajuste tu planificación, sube de plan.'}
       </p>
       <Link
         to="/pricing"

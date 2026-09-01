@@ -5,6 +5,7 @@ import { toStrengthProposalForEnhancement } from '../training/strengthExercisePr
 import { selectStrengthSession, type StrengthContext, type StrengthPhase, type StrengthSportProfile } from '../training/strengthSelector'
 import { prepareStrengthSession, type BlockedReason, type RemovedExercise, type ReplacedExercise } from '../training/strengthSafetyFinalizer'
 import { resolveStrengthSafetyConstraints } from '../training/strengthSafetyConstraints'
+import { BLOCKED_STRENGTH_COPY } from '../training/strengthSafetyCopy'
 import { detectSupersetIntent, shouldApplySupersetPolicy, type SupersetPolicyMode } from '../training/supersetPolicy'
 import { findSquashDrillByName, normalizeSquashDrillKey, resolveSquashDrillKind } from '../training/drillLibrary'
 import {
@@ -33,7 +34,8 @@ const CREATE_SESSION_INTENT_PATTERN = /\b(crea(?:r|me)?|crear|genera(?:r|me)?|ge
 const ACTION_VERB_PATTERN = /\b(ajusta(?:r|me)?|cambia(?:r|me)?|modifica(?:r|me)?|mueve(?:me)?|mover|pasa(?:r|me)?|reprograma(?:r|me)?|reordena(?:r|me)?|actualiza(?:r|me)?|quit(?:a|ar|ame)|borra(?:r|me)?|elimina(?:r|me)?|saca(?:r|me)?|pon(?:er|me)?|agrega(?:r|me)?|reemplaza(?:r|me)?|reduce|baja|sube|incorpora|programa(?:me)?|agenda(?:me)?)\b/
 const MOVE_SESSION_INTENT_PATTERN = /\b(mueve(?:me)?|mover|pasa(?:r|me)?|reprograma(?:r|me)?|reordena(?:r|me)?)\b/
 const ZONE_2_PATTERN = /\b(z2|zona\s*2|zona\s+dos|aerobico|aerobica)\b/
-export const BLOCKED_STRENGTH_COPY = 'No pude verificar una sesión de fuerza compatible con la restricción registrada.'
+// Reexportado para no romper los consumidores que ya lo importaban desde acá.
+export { BLOCKED_STRENGTH_COPY }
 
 export function postProcessCoachActions(
   response: CoachNormalizedResponse,

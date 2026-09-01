@@ -8,6 +8,7 @@ import {
   runAsyncPlanGeneration,
   type AsyncPlanGenerationWriter,
 } from '../asyncGenerationLoop'
+import { QuotaExceededError } from '../../entitlements/usageGateError'
 
 describe('buildAttemptQualityReviewCacheKey', () => {
   const taxonomy = {
@@ -358,6 +359,105 @@ describe('runAsyncPlanGeneration', () => {
 
     expect(result.weeks[0].status).toBe('draft')
     expect(putAttempt).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'truncated' }))
+  })
+
+  it('no marca un intento como exitoso si falla al materializar su semana', async () => {
+    const plan = makePlan()
+    const writer = makeWriter(plan)
+    const putAttempt = vi.fn(async () => undefined)
+    let rejectResolvedCheckpoint = true
+    writer.putAttempt = putAttempt
+    writer.putWeek = async (week) => {
+      if (week.status === 'draft' && rejectResolvedCheckpoint) {
+        rejectResolvedCheckpoint = false
+        throw new Error('week checkpoint unavailable')
+      }
+    }
+
+    const result = await runAsyncPlanGeneration({
+      plan,
+      weeks: [makeWeek(0, '2026-06-01')],
+      profile: makeProfile(),
+      wizardConfig: makeWizardConfig(),
+      jobId: 'job-post-generation-failure',
+      writer,
+      callLLM: async () => makeRaw('2026-06-01'),
+    })
+
+    expect(result.weeks[0]?.status).toBe('error')
+    expect(result.weeks[0]?.generationMeta.errorClass).toBe('post_generation_failed')
+    expect(putAttempt).toHaveBeenCalledTimes(1)
+    expect(putAttempt).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: 'post_generation_failed',
+      errorClass: 'post_generation_failed',
+    }))
+  })
+
+  // Diferir la escritura de los intentos hasta el checkpoint hizo que el
+  // rechazo del gate de uso —el único camino terminal que retorna antes de
+  // ese punto— descartara en silencio los intentos que el proveedor sí
+  // respondió. Es justo la corrida que interesa auditar cuando un job cierra
+  // `quota_exhausted`.
+  it('conserva la telemetría de intentos ya completados cuando el gate de uso corta el job', async () => {
+    const plan = makePlan()
+    const writer = makeWriter(plan)
+    const putAttempt = vi.fn(async () => undefined)
+    writer.putAttempt = putAttempt
+    let call = 0
+    const callLLM = vi.fn(async () => {
+      call += 1
+      // Attempt 1 responde pero no valida, así que habilita el attempt 2;
+      // attempt 2 choca con la cuota y termina el job entero.
+      if (call === 1) return makeRaw('2026-06-01', { text: 'respuesta no parseable' })
+      throw new QuotaExceededError({ bucketId: 'plan_builder_week', limit: 12, remaining: 0 })
+    })
+
+    const result = await runAsyncPlanGeneration({
+      plan,
+      weeks: [makeWeek(0, '2026-06-01')],
+      profile: makeProfile(),
+      wizardConfig: makeWizardConfig(),
+      jobId: 'job-usage-gate-attempt-telemetry',
+      writer,
+      callLLM,
+    })
+
+    expect(callLLM).toHaveBeenCalledTimes(2)
+    expect(result.weeks[0]?.generationMeta.errorClass).toBe('quota_exceeded')
+    expect(putAttempt).toHaveBeenCalledTimes(1)
+    expect(putAttempt).toHaveBeenCalledWith(expect.objectContaining({ attempt: 1 }))
+    expect(putAttempt).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: 'succeeded' }))
+  })
+
+  // La escritura diferida sólo mejora la fidelidad si sobrevive al fallo que
+  // pretende registrar. Con el flush después de las escrituras terminales, un
+  // writer roto —exactamente la causa del `post_generation_failed`— hacía que
+  // la excepción escapara y no quedara ninguna fila de intento.
+  it('conserva la telemetría aunque el writer del camino terminal también falle', async () => {
+    const plan = makePlan()
+    const writer = makeWriter(plan)
+    const putAttempt = vi.fn(async () => undefined)
+    writer.putAttempt = putAttempt
+    // El checkpoint 'generating' sí pasa; fallan las dos escrituras terminales
+    // (la semana resuelta y la semana en error del catch).
+    writer.putWeek = async (week) => {
+      if (week.status !== 'generating') throw new Error('week checkpoint unavailable')
+    }
+
+    await expect(runAsyncPlanGeneration({
+      plan,
+      weeks: [makeWeek(0, '2026-06-01')],
+      profile: makeProfile(),
+      wizardConfig: makeWizardConfig(),
+      jobId: 'job-writer-always-fails',
+      writer,
+      callLLM: async () => makeRaw('2026-06-01'),
+    })).rejects.toThrow()
+
+    expect(putAttempt).toHaveBeenCalledTimes(1)
+    expect(putAttempt).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: 'post_generation_failed',
+    }))
   })
 
   it('generates weeks concurrently without exceeding the configured limit', async () => {

@@ -236,7 +236,7 @@ Actual (`useWhoopSync.ts:19-22`):
 
 Nuevo:
 
-> Whoop ya está al día. Podés volver a sincronizar en 5 min.
+> Whoop ya está al día. Puedes volver a sincronizar en 5 min.
 
 **"Ya está al día" es exacto, no una cortesía.** El cooldown se apoya en
 `last_manual_sync_at`, y en el camino de error `runWhoopSync` escribe `lastSyncAt`

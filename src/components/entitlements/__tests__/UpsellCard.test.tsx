@@ -20,15 +20,15 @@ describe('UpsellCard', () => {
     renderCard('plan_builder_week', 'advanced')
 
     expect(screen.getByText(/Plan Builder/i)).toBeTruthy()
-    expect(screen.getByText(/Avanzado/i)).toBeTruthy()
+    expect(screen.getAllByText(/Avanzado/i).length).toBeGreaterThan(0)
     expect(screen.getByRole('link', { name: /ver planes/i }).getAttribute('href')).toBe('/pricing')
   })
 
-  it('usa el nombre comercial del tier, no el identificador tecnico', () => {
-    renderCard('week_creator', 'weekly')
+  it('explica la semana completa como capacidad de Avanzado', () => {
+    renderCard('week_creator', 'advanced')
 
-    expect(screen.getByText(/Coach Semanal/i)).toBeTruthy()
-    expect(screen.queryByText(/\bweekly\b/)).toBeNull()
+    expect(screen.getAllByText(/Avanzado/i).length).toBeGreaterThan(0)
+    expect(screen.getByText(/generar una semana completa de entrenamiento/i)).toBeTruthy()
   })
 
   it('presenta una oferta sin lenguaje de error', () => {

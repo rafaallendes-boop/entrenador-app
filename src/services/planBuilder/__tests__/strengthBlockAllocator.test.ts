@@ -231,6 +231,55 @@ describe('allocateStrengthBlock', () => {
     expect(excessPairs).toBe(0)
   })
 
+  it('reparte alternativas entre sesiones homólogas en lugar de clonar una', () => {
+    // Dos sesiones comparten sólo cuatro alternativas reales. Si I1 se mide
+    // sobre la unión semanal, la búsqueda llena primero una sesión y deja la
+    // otra con los cuatro originales. Por ordinal ambas pueden conservar dos
+    // coincidencias (el presupuesto) sin producir una plantilla repetida.
+    const slots = ['0', '1', '2', '3'].flatMap((index) => [
+      {
+        slotKey: `a${index}`,
+        canonicalId: `a${index}`,
+        candidateIds: ['x0', 'x1', 'x2', 'x3'],
+        overlapGroup: 'session:0',
+      },
+      {
+        slotKey: `b${index}`,
+        canonicalId: `b${index}`,
+        candidateIds: ['x0', 'x1', 'x2', 'x3'],
+        overlapGroup: 'session:1',
+      },
+    ])
+    const result = allocateStrengthBlock({
+      blockId: BLOCK,
+      weekCount: 2,
+      slots,
+      fixedIdsByWeek: Array.from({ length: 2 }, () => ({
+        all: [],
+        countable: [],
+        groups: [
+          { groupKey: 'session:0', all: [], countable: [] },
+          { groupKey: 'session:1', all: [], countable: [] },
+        ],
+      })),
+    })
+
+    for (const groupPrefix of ['a', 'b']) {
+      const slotKeys = slots
+        .filter((slot) => slot.slotKey.startsWith(groupPrefix))
+        .map((slot) => slot.slotKey)
+      const earlier = new Set(slotKeys.map((slotKey) => result.matrix[0]!.get(slotKey)!))
+      const later = new Set(slotKeys.map((slotKey) => result.matrix[1]!.get(slotKey)!))
+      expect([...later].filter((id) => earlier.has(id))).toHaveLength(2)
+    }
+
+    // I2 sigue siendo semanal: las cuatro alternativas no aparecen dos veces
+    // en la misma columna, aunque I1 se haya separado por sesión.
+    const weekOne = [...result.matrix[1]!.values()]
+    expect(weekOne.filter((id) => id.startsWith('x'))).toHaveLength(4)
+    expect(new Set(weekOne.filter((id) => id.startsWith('x'))).size).toBe(4)
+  })
+
   it('es determinista: el mismo input da la misma matriz', () => {
     const input = {
       blockId: BLOCK, weekCount: 4,

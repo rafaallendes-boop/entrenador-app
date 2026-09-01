@@ -172,7 +172,7 @@ Esta es la pregunta más importante de tu lista y la más fácil de responder ma
 | **Prompt insuficiente / contexto pobre** | respuesta genérica, ignora perfil | NO se detecta automáticamente | requiere feedback humano (👎 + comentario) |
 | **Lógica determinística incorrecta** (selectors mal) | sesión sale armada raro pero válida | NO se detecta | requiere review semanal de propuestas aceptadas con 👎 |
 
-**Conclusión operativa**: con la instrumentación que ya existe + persistir el outcome + un botón 👎 podés separar las 4 primeras causas. La 5 y 6 requieren leer feedback humano. **No hay forma de saltearse esa lectura semanal en una beta** — son ~30 min/semana mientras tengas <10 usuarios.
+**Conclusión operativa**: con la instrumentación que ya existe + persistir el outcome + un botón 👎 Puedes separar las 4 primeras causas. La 5 y 6 requieren leer feedback humano. **No hay forma de saltearse esa lectura semanal en una beta** — son ~30 min/semana mientras tengas <10 usuarios.
 
 ### 3.2 ¿Hay demasiado IA, poco determinismo?
 
@@ -184,7 +184,7 @@ Esta es la pregunta más importante de tu lista y la más fácil de responder ma
 - `preValidateActions` rechaza acciones inválidas antes de aplicar.
 - Los selectors (`runningSelector`, `squashWeekPlanner`, etc) podrían generar sesiones sin IA si quisieras.
 
-**Donde podés reforzar determinismo barato**:
+**Donde Puedes reforzar determinismo barato**:
 
 1. **`add_session` simple** ("agregame fuerza el lunes PM"): hoy va a IA. Podría resolverse 100% determinístico con `strengthSelector` + `getDayName`. Ahorro real de tokens.
 2. **`weekly_summary`** podría ser 80% template + 20% IA (solo el "qué destaco"). Hoy es 100% IA.

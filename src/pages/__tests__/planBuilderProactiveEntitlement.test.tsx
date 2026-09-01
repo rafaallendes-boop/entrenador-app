@@ -36,7 +36,6 @@ const h = vi.hoisted(() => {
   return {
     loadMemory: vi.fn(),
     noOp: vi.fn(),
-    flagEnabled: false,
     tier: 'free' as 'free' | 'weekly' | 'advanced',
     entitlementLoading: false,
     showDevTools: false,
@@ -152,13 +151,10 @@ vi.mock('../../hooks/useEntitlement', () => ({
     tier: h.tier,
     loading: h.entitlementLoading,
     source: 'remote',
+    pending: h.entitlementLoading,
     canUse: (requestClass: string) => requestClass !== 'plan_builder_week'
       || h.tier === 'advanced',
   }),
-}))
-
-vi.mock('../../services/entitlements/entitlementFlag', () => ({
-  isProactiveEntitlementUiEnabled: () => h.flagEnabled,
 }))
 
 vi.mock('../../services/auth', () => ({ supabase: null }))
@@ -186,7 +182,6 @@ function renderPage() {
 }
 
 beforeEach(() => {
-  h.flagEnabled = false
   h.tier = 'free'
   h.entitlementLoading = false
   h.showDevTools = false
@@ -201,41 +196,48 @@ afterEach(() => {
 })
 
 describe('Plan Builder proactive entitlement UI', () => {
-  it('con la flag apagada deja Crear plan visible para Free', () => {
+  it('sin plan local, espera resolver el tier sin crear un borrador', () => {
     h.entitlementLoading = true
+    h.store = makeStore({ plan: null, weeks: [], status: 'idle' })
 
     renderPage()
 
-    expect(screen.getByRole('button', { name: 'Crear plan' })).toBeTruthy()
+    expect(screen.getByText(/Verificando el acceso a tu plan/i)).toBeTruthy()
+    expect(h.noOp).not.toHaveBeenCalled()
     expect(screen.queryByText(/Plan Builder está en el plan Avanzado/i)).toBeNull()
   })
 
-  it('con la flag encendida no bloquea mientras hidrata', () => {
-    h.flagEnabled = true
+  // Esperar el tier no puede costarle a nadie el acceso a un plan que ya está
+  // en Dexie: sin esto, una lectura remota lenta o caída escondía el plan.
+  it('con un plan local, la espera no oculta el plan ni ofrece nada todavía', () => {
     h.entitlementLoading = true
+    h.tier = 'free'
 
     renderPage()
 
-    expect(screen.getByRole('button', { name: 'Crear plan' })).toBeTruthy()
+    expect(screen.getByText('Mi plan existente')).toBeTruthy()
+    expect(screen.queryByText(/Verificando el acceso a tu plan/i)).toBeNull()
     expect(screen.queryByText(/Plan Builder está en el plan Avanzado/i)).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Crear plan' })).toBeNull()
+    expect(h.noOp).not.toHaveBeenCalled()
   })
 
   it.each(['free', 'weekly'] as const)(
-    'con la flag encendida bloquea las affordances para %s sin ocultar el plan',
+    'bloquea Plan Builder desde la entrada para %s sin crear borrador',
     (tier) => {
-      h.flagEnabled = true
       h.tier = tier
 
       renderPage()
 
       expect(screen.queryByRole('button', { name: 'Crear plan' })).toBeNull()
       expect(screen.getByText(/Plan Builder está en el plan Avanzado/i)).toBeTruthy()
+      // Bloquear la generación no es esconder el plan que el atleta ya tiene.
       expect(screen.getByText('Mi plan existente')).toBeTruthy()
+      expect(h.noOp).not.toHaveBeenCalled()
     },
   )
 
   it('con advanced mantiene Crear plan visible', () => {
-    h.flagEnabled = true
     h.tier = 'advanced'
 
     renderPage()
@@ -244,8 +246,8 @@ describe('Plan Builder proactive entitlement UI', () => {
     expect(screen.queryByText(/Plan Builder está en el plan Avanzado/i)).toBeNull()
   })
 
-  it('oculta reparacion y regeneracion, pero conserva aceptar y descartar', () => {
-    h.flagEnabled = true
+  it('con advanced mantiene reparación, aceptación y descarte disponibles', () => {
+    h.tier = 'advanced'
     h.showDevTools = true
     h.qualityReview = {
       grade: 'poor',
@@ -261,16 +263,15 @@ describe('Plan Builder proactive entitlement UI', () => {
 
     renderPage()
 
-    expect(screen.queryByRole('button', { name: 'Ajustar semana' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Ajustar semanas marcadas' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Crear plan de nuevo' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Ajustar semana' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Ajustar semanas marcadas' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Aceptar plan' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Descartar' })).toBeTruthy()
     expect(screen.getByText('Mi plan existente')).toBeTruthy()
   })
 
-  it('oculta los reintentos tecnicos y el recovery de consumo', () => {
-    h.flagEnabled = true
+  it('con advanced conserva los controles de recuperación', () => {
+    h.tier = 'advanced'
     h.store = makeStore({
       plan: makePlan('partial'),
       weeks: [makeWeek('error')],
@@ -279,18 +280,17 @@ describe('Plan Builder proactive entitlement UI', () => {
 
     const view = renderPage()
 
-    expect(screen.queryByRole('button', { name: 'Intentar de nuevo' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Intentar de nuevo' })).toBeTruthy()
     view.unmount()
 
     h.showDevTools = true
     renderPage()
-    expect(screen.queryByRole('button', { name: 'Mejorar semanas pendientes' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Reintentar completo' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Mejorar semanas pendientes' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Reintentar completo' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Descartar' })).toBeTruthy()
   })
 
   it('muestra una sola tarjeta si ya existe una oferta reactiva', () => {
-    h.flagEnabled = true
     h.store = {
       ...shellStore(),
       entitlementOffer: {
@@ -306,7 +306,7 @@ describe('Plan Builder proactive entitlement UI', () => {
     expect(screen.getAllByRole('link', { name: /ver planes/i })).toHaveLength(1)
   })
 
-  it('la oferta reactiva sigue apareciendo aunque la flag este apagada', () => {
+  it('la oferta reactiva usa el mismo bloqueo preventivo sin ocultar el plan', () => {
     h.store = {
       ...shellStore(),
       entitlementOffer: {
@@ -319,6 +319,7 @@ describe('Plan Builder proactive entitlement UI', () => {
     renderPage()
 
     expect(screen.getByText(/Plan Builder está en el plan Avanzado/i)).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Crear plan' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Crear plan' })).toBeNull()
+    expect(screen.getByText('Mi plan existente')).toBeTruthy()
   })
 })

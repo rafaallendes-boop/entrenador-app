@@ -401,6 +401,21 @@ export default function SettingsPage() {
     }
   }
 
+  // El editor se remonta por `key` cuando cambia `updatedAt` del perfil. Sin
+  // congelar la clave, un pull de sync en segundo plano descartaba en silencio
+  // todo lo que el atleta estuviera escribiendo — precisamente el caso que el
+  // aviso de "Cambios sin guardar" promete cubrir. Mientras haya cambios
+  // pendientes la clave no se mueve; al guardar, el remonte vuelve a permitirse.
+  const [athleteProfileDirty, setAthleteProfileDirty] = useState(false)
+  const nextAthleteProfileEditorKey = athleteProfile?.updatedAt ?? 'athlete-profile-empty'
+  const [athleteProfileEditorKey, setAthleteProfileEditorKey] = useState<string | number>(
+    nextAthleteProfileEditorKey,
+  )
+  useEffect(() => {
+    if (athleteProfileDirty) return
+    setAthleteProfileEditorKey(nextAthleteProfileEditorKey)
+  }, [athleteProfileDirty, nextAthleteProfileEditorKey])
+
   const handleSaveAthleteProfile = async (patch: Partial<Omit<AthleteProfile, 'id' | 'updatedAt'>>) => {
     await saveAthleteProfile(patch)
     setProfileSaved(true)
@@ -960,10 +975,11 @@ export default function SettingsPage() {
               </p>
             )}
             <AthleteProfileEditor
-              key={athleteProfile?.updatedAt ?? 'athlete-profile-empty'}
+              key={athleteProfileEditorKey}
               profile={athleteProfile}
               isSaving={isSaving}
               onSave={handleSaveAthleteProfile}
+              onDirtyChange={setAthleteProfileDirty}
             />
             <div className="mt-4 rounded-xl border border-surface-border bg-surface-raised px-3 py-3">
               <div className="flex flex-wrap items-start gap-x-3 gap-y-3">

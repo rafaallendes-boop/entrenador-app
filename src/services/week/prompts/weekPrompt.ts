@@ -7,6 +7,11 @@ import { renderActionAsProse } from '../../ai/prompt/renderers/proseSchema'
 import { getExpectedSessionsForPlanWeek, getPlanWeekDateRange } from '../../planBuilder/dateRange'
 import { resolvePlanEventWindow } from '../../planBuilder/eventWindowRules'
 import { renderPlanBuilderRecentContext, type PlanBuilderRecentContext } from '../../planBuilder/recentContextRender'
+import {
+  describeSafetyConstraints,
+  hasDeclaredRestrictionSignal,
+  resolveStrengthSafetyConstraints,
+} from '../../training/strengthSafetyConstraints'
 
 export interface WeekPromptInput {
   plan: TrainingPlan
@@ -110,6 +115,55 @@ function briefAthlete(profile: AthleteProfile): string {
   if (profile.sportContext?.primarySport) parts.push(`Deporte principal: ${profile.sportContext.primarySport}`)
   if (profile.mainGoal) parts.push(`Objetivo: ${profile.mainGoal}`)
   return parts.join(' · ') || 'Perfil mínimo'
+}
+
+/**
+ * Restricciones activas para el prompt.
+ *
+ * El enforcement determinista resuelve desde `recoveryProfile.currentInjuries`,
+ * `recoveryProfile.restrictions` y `wizardConfig.injuryNotes`
+ * (`profileAdapter.ts`), pero el prompt leía sólo el último. Con la lesión
+ * declarada en el perfil —el caso normal— el modelo quedaba ciego y podía
+ * describir movimientos que el filtro después excluía, dejando la prosa en
+ * contradicción con los ejercicios reales.
+ *
+ * Se envían las DOS cosas: el texto declarado, porque su matiz ("molestia
+ * leve" contra "rotura") es lo que permite adaptar cargas, y entre paréntesis
+ * la zona que el parser identificó, que es la que el filtro determinista va a
+ * aplicar de verdad.
+ */
+function activeRestrictionsLine(
+  profile: AthleteProfile,
+  wizardConfig: PlanWizardConfig,
+): string | undefined {
+  const declared = [
+    profile.recoveryProfile?.currentInjuries,
+    profile.recoveryProfile?.restrictions,
+    wizardConfig.injuryNotes,
+  ].map((value) => value?.trim()).filter((value): value is string => Boolean(value))
+
+  const parserInput = {
+    currentInjuries: profile.recoveryProfile?.currentInjuries,
+    restrictions: profile.recoveryProfile?.restrictions,
+    injuryNotes: wizardConfig.injuryNotes,
+    userMessages: [],
+    trainingPriority: profile.sportContext?.trainingPriority,
+  }
+  const zones = describeSafetyConstraints(resolveStrengthSafetyConstraints(parserInput))
+
+  const uniqueDeclared = [...new Set(declared)].join('; ')
+  // El texto declarado se envía aunque el parser no estructure nada: "vengo con
+  // sobrecarga general" es neutro para el filtro determinista pero sigue siendo
+  // información que el modelo debe considerar, y antes de esta entrega llegaba
+  // al prompt. Una ausencia explícita ("Ninguna.") no cuenta como declaración.
+  if (!zones) return hasDeclaredRestrictionSignal(parserInput) ? uniqueDeclared : undefined
+  // `describeSafetyConstraints` devuelve una frase en primera persona cuando no
+  // pudo identificar la zona. Esa copia es de UI y contradice el rótulo "zona
+  // identificada"; acá se traduce a la única afirmación que es cierta.
+  const zoneNote = zones.startsWith('Entendí: ')
+    ? `zona identificada: ${zones.slice('Entendí: '.length)}`
+    : 'zona no identificada: trata la restricción como general y pide precisión en notes'
+  return uniqueDeclared ? `${uniqueDeclared} (${zoneNote})` : zoneNote
 }
 
 function allowedSportsList(plan: TrainingPlan, wizardConfig: PlanWizardConfig): SupportedSport[] {
@@ -258,6 +312,7 @@ export function buildWeekUserPrompt(input: WeekPromptInput): string {
     .join(', ')
   const days = wizardConfig.trainingDays.join(', ')
   const eventWindow = resolvePlanEventWindow(plan)
+  const activeRestrictions = activeRestrictionsLine(profile, wizardConfig)
 
   const allowsStrength = allowed.includes('strength')
   const strengthLoadSection = allowsStrength
@@ -275,8 +330,8 @@ export function buildWeekUserPrompt(input: WeekPromptInput): string {
     'PERFIL DEL ATLETA',
     briefAthlete(profile),
     `Nivel de condición al iniciar el plan: ${wizardConfig.currentFitnessLevel} · Fatiga declarada al iniciar el plan: ${wizardConfig.currentFatigue}`,
-    wizardConfig.injuryNotes
-      ? `Lesiones/restricciones activas: ${wizardConfig.injuryNotes} — adapta cargas, evita movimientos de riesgo para la zona afectada y deja el ajuste explícito en objective o notes.`
+    activeRestrictions
+      ? `Lesiones/restricciones activas: ${activeRestrictions} — adapta cargas, evita movimientos de riesgo para la zona afectada y deja el ajuste explícito en objective o notes.`
       : '',
     '',
     ...buildWeekObjectivesSection(week),
@@ -465,6 +520,7 @@ export function buildWeekBatchUserPrompt(input: WeekBatchPromptInput): string {
   const days = wizardConfig.trainingDays.join(', ')
   const primarySport = getPrimarySport(plan)
   const eventWindow = resolvePlanEventWindow(plan)
+  const activeRestrictions = activeRestrictionsLine(profile, wizardConfig)
   const anyStrength = allowed.includes('strength')
     && weeks.some((w) => (w.targetLoadBySport.strength ?? 0) > 0)
   const weeksText = weeks.map((week) => {
@@ -512,7 +568,7 @@ export function buildWeekBatchUserPrompt(input: WeekBatchPromptInput): string {
     `- Nivel actual: ${wizardConfig.currentFitnessLevel} · Fatiga: ${wizardConfig.currentFatigue}`,
     `- Deportes permitidos: ${allowed.join(', ')}`,
     primarySport ? `- Deporte principal transversal: ${primarySport}` : '',
-    wizardConfig.injuryNotes ? `- Lesiones/restricciones: ${wizardConfig.injuryNotes}` : '',
+    activeRestrictions ? `- Lesiones/restricciones: ${activeRestrictions}` : '',
     '',
     briefPreviousWeek(previousWeek),
     '',

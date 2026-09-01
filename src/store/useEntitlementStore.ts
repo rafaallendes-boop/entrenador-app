@@ -15,6 +15,14 @@ interface EntitlementState {
   tier: Tier
   loading: boolean
   source: EntitlementSource
+  /**
+   * `true` en cuanto una hidratación TERMINA, con o sin éxito. `source` no
+   * sirve para eso: un fallo de lectura sin espejo deja `default` para siempre,
+   * y una UI que espere "evidencia" quedaría colgada sin salida en el primer
+   * arranque sin red. Terminada la hidratación, la ausencia de evidencia ya es
+   * una respuesta: `free`, igual que resuelve el servidor.
+   */
+  hydrated: boolean
   userId: string | null
   hydrate: (userId: string) => Promise<void>
   reset: () => void
@@ -30,6 +38,7 @@ export const useEntitlementStore = create<EntitlementState>((set, get) => ({
   tier: 'free',
   loading: false,
   source: ENTITLEMENT_SOURCE.DEFAULT,
+  hydrated: false,
   userId: null,
 
   hydrate: async (userId: string) => {
@@ -42,6 +51,7 @@ export const useEntitlementStore = create<EntitlementState>((set, get) => ({
         userId,
         tier: 'free',
         source: ENTITLEMENT_SOURCE.DEFAULT,
+        hydrated: false,
         loading: true,
       })
     } else {
@@ -61,6 +71,7 @@ export const useEntitlementStore = create<EntitlementState>((set, get) => ({
         source: remote.ok
           ? ENTITLEMENT_SOURCE.REMOTE
           : (mirrored ? ENTITLEMENT_SOURCE.MIRROR : ENTITLEMENT_SOURCE.DEFAULT),
+        hydrated: true,
         loading: false,
       })
     })().finally(() => {
@@ -78,10 +89,19 @@ export const useEntitlementStore = create<EntitlementState>((set, get) => ({
       tier: 'free',
       loading: false,
       source: ENTITLEMENT_SOURCE.DEFAULT,
+      hydrated: false,
       userId: null,
     })
   },
 }))
+
+/**
+ * Verdadero mientras el tier todavía no es una respuesta: nadie hidrató aún o
+ * hay una hidratación en vuelo. Siempre termina.
+ */
+export function isEntitlementPending(state: Pick<EntitlementState, 'loading' | 'hydrated'>): boolean {
+  return state.loading || !state.hydrated
+}
 
 /** Lectura sincrónica para consumidores fuera de React (cuotas, chat store). */
 export function getEntitlementTier(): Tier {

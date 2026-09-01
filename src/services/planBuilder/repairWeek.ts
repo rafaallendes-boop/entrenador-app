@@ -2318,6 +2318,7 @@ export function resolveStrengthBlockAllocation(
   // proyectado. Si apareciera como reemplazo de otro core, una segunda pasada
   // vería dos foundations y perdería la identidad de la proyección.
   const structuralCoreIds = new Set<string>(INJECTED_CORE_ROTATION)
+  const strengthOverlapGroup = (sessionOrdinal: number): string => `session:${sessionOrdinal}`
 
   const allocatorSlots = snapshot.slots
     .filter((slot) => isCountableRole(slot.role) && !isStructuralCoreSlot(slot))
@@ -2327,6 +2328,7 @@ export function resolveStrengthBlockAllocation(
       return {
         slotKey: slot.slotKey,
         canonicalId: canonicalSnapshotSlotId(slot),
+        overlapGroup: strengthOverlapGroup(slot.sessionOrdinal),
         candidateIds: getStrengthReplacementPool(
           { name: slot.name, libraryRef: slot.libraryRef },
           selectionContext,
@@ -2339,6 +2341,7 @@ export function resolveStrengthBlockAllocation(
     slotKey: string
     canonicalId: string
     candidateIds: string[]
+    overlapGroup: string
   }> = []
   const reservedDensityCanonicalIds = new Set(
     snapshot.slots
@@ -2384,22 +2387,33 @@ export function resolveStrengthBlockAllocation(
         slotKey,
         canonicalId,
         candidateIds: densityCandidates,
+        overlapGroup: strengthOverlapGroup(sessionOrdinal),
       })
       reservedDensityCanonicalIds.add(canonicalId)
     }
   }
 
-  const mainLiftIds = snapshot.slots
-    .filter((slot) => !isCountableRole(slot.role))
-    .map(canonicalSnapshotSlotId)
-
   const fixedIdsByWeek = structuralCoreByWeek.map((projections) => {
-    const coreIds = [...projections.values()].map((projection) => projection.coreId)
+    const groups = strengthSessions.map((session, sessionOrdinal) => {
+      const mainLiftIds = snapshot.slots
+        .filter((slot) => slot.sessionOrdinal === sessionOrdinal && !isCountableRole(slot.role))
+        .map(canonicalSnapshotSlotId)
+      const coreId = projections.get(sessionKeyOf(session))?.coreId
+      const coreIds = coreId ? [coreId] : []
+      return {
+        groupKey: strengthOverlapGroup(sessionOrdinal),
+        // I1 es direccional: el main lift sólo vive en `all`, mientras que el
+        // core estructural es contable y debe entrar en ambas proyecciones.
+        all: [...mainLiftIds, ...coreIds],
+        countable: coreIds,
+      }
+    })
     return {
-      // I1 es direccional: el main lift sólo vive en `all`, mientras que el
-      // core estructural es contable y debe entrar en ambas proyecciones.
-      all: [...mainLiftIds, ...coreIds],
-      countable: coreIds,
+      // I2 sigue viendo la unión semanal completa, aun cuando I1 se mida por
+      // ordinal de sesión.
+      all: groups.flatMap((group) => group.all),
+      countable: groups.flatMap((group) => group.countable),
+      groups,
     }
   })
 

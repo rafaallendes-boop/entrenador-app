@@ -7,7 +7,7 @@ import {
 
 describe('traductor de oferta de entitlement para chat', () => {
   it('traduce el error tipado a metadata de oferta', () => {
-    const detail = buildEntitlementDetail('week_creator', 'weekly', 'free')
+    const detail = buildEntitlementDetail('week_creator', 'advanced', 'free')
 
     expect(toChatEntitlementOffer(new EntitlementRequiredError(detail))).toEqual(detail)
   })

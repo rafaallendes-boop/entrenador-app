@@ -47,7 +47,7 @@ describe('isClassAllowed — matriz completa 3 tiers x 8 clases', () => {
     chat_action:       { free: true,  weekly: true, advanced: true },
     import_extract:    { free: true,  weekly: true, advanced: true },
     weekly_summary:    { free: false, weekly: true, advanced: true },
-    week_creator:      { free: false, weekly: true, advanced: true },
+    week_creator:      { free: false, weekly: false, advanced: true },
     plan_builder_week: { free: false, weekly: false, advanced: true },
     plan_builder_pair: { free: false, weekly: false, advanced: true },
     coach_assistant_message: { free: false, weekly: false, advanced: true },

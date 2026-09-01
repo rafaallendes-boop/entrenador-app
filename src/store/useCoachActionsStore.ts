@@ -22,6 +22,7 @@ import { fromISO, getWeekStart, toISO } from '../utils/date'
 import { v4 as uuid } from '../utils/uuid'
 import { useCoachMemoryStore } from './useCoachMemoryStore'
 import { useTrainingStore } from './useTrainingStore'
+import { BLOCKED_STRENGTH_COPY } from '../services/training/strengthSafetyCopy'
 
 // Promise cache: repeated accept calls for the same proposal share the same work.
 const activeAcceptProposalPromises = new Map<string, Promise<AcceptProposalResult>>()
@@ -865,7 +866,7 @@ async function applyCoachAction(
           sealLocation: 'root',
         })
         if (prepared.status === 'blocked') {
-          throw new Error('No pude verificar una sesión de fuerza compatible con la restricción registrada.')
+          throw new Error(BLOCKED_STRENGTH_COPY)
         }
         verifiedExercises = prepared.session.exercises
         if (prepared.removed.length > 0 || prepared.replaced.length > 0) {
@@ -973,7 +974,7 @@ async function applyCoachAction(
           sealLocation: 'root',
         })
         if (prepared.status === 'blocked') {
-          throw new Error('No pude verificar una sesión de fuerza compatible con la restricción registrada.')
+          throw new Error(BLOCKED_STRENGTH_COPY)
         }
         verifiedStrengthExercises = prepared.session.exercises
         if (prepared.removed.length > 0 || prepared.replaced.length > 0) {

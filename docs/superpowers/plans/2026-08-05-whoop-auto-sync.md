@@ -16,7 +16,7 @@
 - **Los commits los hace el owner** (regla de `CLAUDE.md`). Ningún paso de este plan ejecuta `git commit` ni `git add`. Cada tarea termina en una verificación con salida a la vista.
 - **Alcance total: 3 archivos de producción** — `src/services/readiness/whoopAutoSync.ts` (nuevo), `src/hooks/useWhoopSync.ts`, `src/pages/Dashboard.tsx`. Si aparece un cuarto, parar y consultar.
 - **Umbral de frescura:** `WHOOP_AUTO_SYNC_STALE_AFTER_MS = 1_800_000` (30 min), parametrizable por `staleAfterMs`.
-- **Copy exacto del cooldown:** `Whoop ya está al día. Podés volver a sincronizar en 5 min.` — con tildes, "Podés" en voseo, y el tiempo redondeado **hacia arriba**.
+- **Copy exacto del cooldown:** `Whoop ya está al día. Puedes volver a sincronizar en 5 min.` — con tildes, "Puedes" en voseo, y el tiempo redondeado **hacia arriba**.
 - **Copy exacto de consentimiento:** `Aceptá el descargo biométrico en Ajustes para reanudar la sincronización.` (ya existe, no cambiarlo).
 - **Scope de atleta:** el auto-sync solo corre para el self. El guard es `canConnectWhoop`, que ya existe en `Dashboard.tsx:60`. No inventar uno nuevo.
 - Comandos: tests `npx vitest run <ruta>`; regresión final `npm run lint && npm test && npm run build`.
@@ -531,11 +531,11 @@ Agregar al mismo `describe`:
 
 ```tsx
   it.each([
-    [300_000, 'Whoop ya está al día. Podés volver a sincronizar en 5 min.'],
-    [287_000, 'Whoop ya está al día. Podés volver a sincronizar en 5 min.'],
-    [60_000, 'Whoop ya está al día. Podés volver a sincronizar en 1 min.'],
-    [59_000, 'Whoop ya está al día. Podés volver a sincronizar en 59s.'],
-    [1_000, 'Whoop ya está al día. Podés volver a sincronizar en 1s.'],
+    [300_000, 'Whoop ya está al día. Puedes volver a sincronizar en 5 min.'],
+    [287_000, 'Whoop ya está al día. Puedes volver a sincronizar en 5 min.'],
+    [60_000, 'Whoop ya está al día. Puedes volver a sincronizar en 1 min.'],
+    [59_000, 'Whoop ya está al día. Puedes volver a sincronizar en 59s.'],
+    [1_000, 'Whoop ya está al día. Puedes volver a sincronizar en 1s.'],
   ])('formatea el cooldown de %ims redondeando hacia arriba', async (retryAfterMs, expected) => {
     mocks.syncWhoopNow.mockResolvedValue({ ok: false, reason: 'cooldown', retryAfterMs })
     const { result } = renderHook(() => useWhoopSync())
@@ -568,7 +568,7 @@ Y reemplazar la rama `cooldown` (líneas 19-22) por:
 
 ```ts
   if (result.reason === 'cooldown') {
-    return `Whoop ya está al día. Podés volver a sincronizar en ${formatRetryDelay(result.retryAfterMs)}.`
+    return `Whoop ya está al día. Puedes volver a sincronizar en ${formatRetryDelay(result.retryAfterMs)}.`
   }
 ```
 
@@ -829,7 +829,7 @@ Run: `npm run dev`, entrar con la cuenta del owner (que tiene Whoop conectado) y
 
 1. Al cargar el Inicio, el botón de la tarjeta de Readiness pasa por "Sincronizando" solo y los datos se actualizan **sin apretar nada**.
 2. No aparece ningún cartel de texto bajo la tarjeta durante ese sync.
-3. Apretar "Sincronizar" enseguida muestra `Whoop ya está al día. Podés volver a sincronizar en 5 min.`
+3. Apretar "Sincronizar" enseguida muestra `Whoop ya está al día. Puedes volver a sincronizar en 5 min.`
 4. Recargar la página dentro de los 30 min **no** dispara un segundo sync (verificable en la pestaña Network: hay `whoop-status`, no hay `whoop-sync`).
 5. Cambiar a un atleta gestionado desde el switcher y volver al Inicio: **no** dispara sync.
 

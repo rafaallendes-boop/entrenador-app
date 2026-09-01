@@ -1,3 +1,4 @@
+import { LockKeyhole } from 'lucide-react'
 import { useState } from 'react'
 import type { QuickAction, SupportedSport } from '../../types'
 
@@ -27,6 +28,9 @@ const TAIL_QUICK_ACTIONS: QuickAction[] = [
 interface QuickActionChipsProps {
   onSelect: (prompt: string) => void
   onOpenPlanBuilder?: () => void
+  /** Las acciones que generan una semana se ven bloqueadas y abren la oferta. */
+  canCreateWeek?: boolean
+  onRequireWeekCreator?: () => void
   disabled?: boolean
   enabledSports?: SupportedSport[]
 }
@@ -34,6 +38,8 @@ interface QuickActionChipsProps {
 export default function QuickActionChips({
   onSelect,
   onOpenPlanBuilder,
+  canCreateWeek = true,
+  onRequireWeekCreator,
   disabled,
   enabledSports = [],
 }: QuickActionChipsProps) {
@@ -51,8 +57,16 @@ export default function QuickActionChips({
 
   const allActions = [...BASE_QUICK_ACTIONS, ...sportChips, ...TAIL_QUICK_ACTIONS]
 
+  const isWeekCreatorAction = (action: QuickAction) => (
+    action.id === 'create_week' || action.id.startsWith('prioritize_')
+  )
+
   const handleAction = (action: QuickAction) => {
     if (disabled) return
+    if (isWeekCreatorAction(action) && !canCreateWeek) {
+      onRequireWeekCreator?.()
+      return
+    }
     if (action.id === 'create_week') {
       if (onOpenPlanBuilder) {
         onOpenPlanBuilder()
@@ -70,14 +84,22 @@ export default function QuickActionChips({
         <div className="flex items-center gap-2 overflow-x-auto px-1 pb-1 scrollbar-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <span className="text-xs text-ink-muted flex-shrink-0">¿Para qué semana?</span>
           <button
-            onClick={() => { setWeekPicker(false); onSelect('Créame una semana de entrenamiento para esta semana') }}
+            onClick={() => {
+              setWeekPicker(false)
+              if (!canCreateWeek) return onRequireWeekCreator?.()
+              onSelect('Créame una semana de entrenamiento para esta semana')
+            }}
             disabled={disabled}
             className="flex-shrink-0 px-3 py-1.5 rounded-pill text-xs font-medium bg-brand/15 border border-brand/30 text-brand-light hover:bg-brand/25 transition-colors disabled:opacity-40"
           >
             Esta semana
           </button>
           <button
-            onClick={() => { setWeekPicker(false); onSelect('Créame una semana de entrenamiento para la próxima semana') }}
+            onClick={() => {
+              setWeekPicker(false)
+              if (!canCreateWeek) return onRequireWeekCreator?.()
+              onSelect('Créame una semana de entrenamiento para la próxima semana')
+            }}
             disabled={disabled}
             className="flex-shrink-0 px-3 py-1.5 rounded-pill text-xs font-medium bg-brand/15 border border-brand/30 text-brand-light hover:bg-brand/25 transition-colors disabled:opacity-40"
           >
@@ -104,8 +126,11 @@ export default function QuickActionChips({
             key={action.id}
             onClick={() => handleAction(action)}
             disabled={disabled}
-            className="flex-shrink-0 px-3 py-1.5 rounded-pill text-xs font-medium bg-surface-raised border border-surface-border text-ink-muted hover:border-brand/40 hover:text-ink transition-colors disabled:opacity-40"
+            aria-disabled={isWeekCreatorAction(action) && !canCreateWeek}
+            title={isWeekCreatorAction(action) && !canCreateWeek ? 'Disponible en Avanzado' : undefined}
+            className="flex flex-shrink-0 items-center gap-1 px-3 py-1.5 rounded-pill text-xs font-medium bg-surface-raised border border-surface-border text-ink-muted hover:border-brand/40 hover:text-ink transition-colors disabled:opacity-40 aria-disabled:cursor-pointer aria-disabled:border-brand/25 aria-disabled:text-ink-faint"
           >
+            {isWeekCreatorAction(action) && !canCreateWeek && <LockKeyhole size={11} aria-hidden />}
             {action.label}
           </button>
         ))}

@@ -494,13 +494,13 @@ export default function PricingPage() {
     { text: 'Semana simple con estado de cada sesión' },
     { text: 'Check-in diario de sueño, energía y molestias' },
     { text: 'Funciona sin conexión y sincroniza después' },
-    { text: 'Plan semanal generado por el coach', dim: true },
+    { text: 'Semana completa generada por IA', dim: true },
     { text: 'Plan Builder por objetivo', dim: true },
   ]
 
   const proFeatures: TierFeature[] = [
     { text: 'Coach AI con contexto completo de tu semana' },
-    { text: 'Entrenamientos semanales sugeridos y ajustables' },
+    { text: 'Planificación y ajustes sobre sesiones existentes' },
     { text: 'Squash, running, fuerza, movilidad y ciclismo' },
     { text: 'Cambios por fatiga, alcohol, sueño o dolor' },
     { text: 'Resúmenes semanales y notas accionables' },
@@ -510,6 +510,7 @@ export default function PricingPage() {
 
   const eliteFeatures: TierFeature[] = [
     { text: 'Todo lo del plan Coach Semanal' },
+    { text: 'Una semana completa generada por IA' },
     { text: 'Plan Builder por carrera, torneo o bloque' },
     { text: 'Periodización por fases: base, build, peak y taper' },
     { text: 'Reparación automática de semanas incoherentes' },
@@ -562,7 +563,7 @@ export default function PricingPage() {
             />
             <TierCard
               name="Coach Semanal"
-              tagline="Para que RallyIQ te ayude a armar y ajustar la semana de entrenamiento."
+              tagline="Para seguimiento, contexto y resúmenes accionables de tu semana."
               monthlyPrice={12990}
               annualPrice={9990}
               isAnnual={isAnnual}
@@ -579,7 +580,7 @@ export default function PricingPage() {
             />
             <TierCard
               name="Avanzado"
-              tagline="Para preparar carreras, torneos o bloques completos con Plan Builder."
+              tagline="Para generar semanas completas y preparar carreras, torneos o bloques con Plan Builder."
               monthlyPrice={24990}
               annualPrice={19990}
               isAnnual={isAnnual}
@@ -660,7 +661,7 @@ export default function PricingPage() {
               <tbody>
                 <tr className="section-row"><td colSpan={4}>Planificación</td></tr>
                 <tr><td>Crear y registrar entrenamientos</td><td><span className="chk">✓</span></td><td className="pro"><span className="chk brand">✓</span></td><td><span className="chk">✓</span></td></tr>
-                <tr><td>Entrenamientos semanales sugeridos</td><td className="dash">—</td><td className="pro"><span className="chk brand">✓</span></td><td><span className="chk">✓</span></td></tr>
+                <tr><td>Semana completa generada por IA</td><td className="dash">—</td><td className="pro dash">—</td><td><span className="chk">✓</span></td></tr>
                 <tr><td>Plan Builder por objetivo</td><td className="dash">—</td><td className="dash">—</td><td><span className="chk">✓</span></td></tr>
                 <tr><td>Deportes soportados</td><td>5</td><td className="pro">5</td><td>5</td></tr>
 

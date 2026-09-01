@@ -26,6 +26,7 @@ import { getLocalReadinessForDate } from '../services/readiness/localReadiness'
 import { pullReadiness } from '../services/readiness/pullReadiness'
 import { loadWhoopWorkoutBlock } from '../services/readiness/whoopWorkoutBlock'
 import { getSessionsForDateRange } from '../db/queries'
+import { useEntitlement } from '../hooks/useEntitlement'
 
 const QuickActionChips = lazy(() => import('../components/chat/QuickActionChips'))
 const ProposalDrawer = lazy(() => import('../components/chat/ProposalDrawer'))
@@ -105,6 +106,7 @@ export default function ChatCoach() {
     responsePhase,
     error,
     entitlementOffer,
+    showEntitlementOffer,
     loadHistory,
     sendMessage,
     newSession,
@@ -121,6 +123,12 @@ export default function ChatCoach() {
   const pendingScrollTargetRef = useRef<string | null>(null)
   const conversationSelectionTokenRef = useRef(0)
   const { launchIntent, launchId } = useWeeklyLaunchIntent()
+  const { canUse: canUseEntitlement, pending: entitlementPending } = useEntitlement()
+  // Mientras el tier no es una respuesta se deja pasar: el servidor sigue
+  // gateando y devuelve la oferta reactiva. Bloquear en ese hueco le ponía un
+  // candado —y una oferta de Avanzado— a alguien que ya paga Avanzado, cada vez
+  // que abría el chat antes de que terminara la hidratación.
+  const canCreateWeek = entitlementPending || canUseEntitlement('week_creator')
 
   const [activeProposal, setActiveProposal] = useState<CoachProposal | null>(null)
   const [acceptedFeedback, setAcceptedFeedback] = useState<string | null>(null)
@@ -175,7 +183,11 @@ export default function ChatCoach() {
   useEffect(() => {
     if (pendingScrollTargetRef.current) return
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, isLoading])
+    // `entitlementOffer` entra en las dependencias porque la tarjeta se
+    // renderiza al final del hilo y los chips viven en la barra fija: en una
+    // conversación con scroll, tocar un chip bloqueado la dejaba fuera de la
+    // pantalla y la acción parecía no hacer nada.
+  }, [messages, isLoading, entitlementOffer])
 
   useEffect(() => {
     if (!scrollTargetId) return
@@ -648,6 +660,8 @@ export default function ChatCoach() {
           <Suspense fallback={<div className="h-8" />}>
             <QuickActionChips
               onSelect={handleSend}
+              canCreateWeek={canCreateWeek}
+              onRequireWeekCreator={() => showEntitlementOffer('week_creator')}
               disabled={isLoading}
               enabledSports={getEnabledSports(athleteProfile)}
             />

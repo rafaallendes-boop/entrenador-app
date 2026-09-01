@@ -3029,8 +3029,8 @@ export function UpsellCard({
         {feature} está en el plan {TIER_LABEL[requiredTier]}
       </p>
       <p className="mt-1 text-sm text-ink-muted">
-        Podés seguir usando el coach y registrando tus entrenamientos. Cuando
-        quieras que arme y ajuste tu planificación, subí de plan.
+        Puedes seguir usando el coach y registrando tus entrenamientos. Cuando
+        quieras que arme y ajuste tu planificación, sube de plan.
       </p>
       <Link
         to="/pricing"

@@ -53,6 +53,29 @@ describe('chatRouting', () => {
   it('still routes generic conversation to chat_general', () => {
     expect(resolveChatRoute('cómo va mi semana').kind).toBe('chat_general')
     expect(resolveChatRoute('qué opinas de mi progreso').kind).toBe('chat_general')
+    expect(resolveChatRoute('¿Qué debería priorizar hoy antes de mis sesiones?').kind).toBe('chat_general')
+    expect(resolveChatRoute('¿Qué me recomiendas para hoy?').kind).toBe('chat_general')
+    expect(resolveChatRoute('¿Cuánto debería bajar la carga esta semana?').kind).toBe('chat_general')
+    // `hacer` queda deliberadamente fuera del guard de mutación: es el verbo
+    // más genérico del idioma y esta es exactamente la consulta de asesoría
+    // que el desvío existe para permitir.
+    expect(resolveChatRoute('¿Qué debería hacer hoy?').kind).toBe('chat_general')
+  })
+
+  // La pregunta de asesoría no puede tragarse una petición de acción sólo por
+  // venir en forma interrogativa: "sacar", "mover" y "cambio" son mutaciones
+  // explícitas y su camino sigue siendo el motor de acciones.
+  it('keeps action requests phrased as questions in chat_action', () => {
+    expect(resolveChatRoute('¿Cuál sesión debería sacar del lunes?').kind).toBe('chat_action')
+    expect(resolveChatRoute('¿Qué sesión me conviene mover al jueves?').kind).toBe('chat_action')
+    expect(resolveChatRoute('¿Cómo cambio mi sesión del martes para que quede mejor?').kind).toBe('chat_action')
+    expect(resolveChatRoute('¿Qué sesión conviene que agregues el viernes?').kind).toBe('chat_action')
+    // Los patrones de acción están en imperativo; en una pregunta el verbo va
+    // en infinitivo y ninguno de los dos lo cubría, así que estas peticiones
+    // reales terminaban en prosa sin poder emitir propuesta.
+    expect(resolveChatRoute('¿Qué sesión me conviene agendar el jueves?').kind).toBe('chat_action')
+    expect(resolveChatRoute('¿Cuál sesión conviene reducir el martes?').kind).toBe('chat_action')
+    expect(resolveChatRoute('¿Qué entreno conviene adelantar al miércoles?').kind).toBe('chat_action')
   })
 
   it('routes infinitive move requests to the action flow', () => {

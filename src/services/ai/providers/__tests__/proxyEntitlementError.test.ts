@@ -188,7 +188,7 @@ describe('classifyProxyHttpError conserva las ramas y precedencias historicas', 
 describe('ProxyProvider delega ambos transportes al clasificador', () => {
   const detail = {
     requestClass: 'week_creator',
-    requiredTier: 'weekly',
+    requiredTier: 'advanced',
     currentTier: 'free',
   } as const
 

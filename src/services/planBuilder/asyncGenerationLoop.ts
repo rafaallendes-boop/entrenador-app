@@ -41,7 +41,7 @@ export interface PlanGenerationAttemptTelemetry {
   cacheReadInputTokens?: number
   durationMs?: number
   finishReason?: string
-  outcome: 'succeeded' | 'validation_failed' | 'truncated' | 'provider_failed'
+  outcome: 'succeeded' | 'validation_failed' | 'truncated' | 'provider_failed' | 'post_generation_failed'
   errorClass?: string
   retryUsed: boolean
   maxTokens: number
@@ -191,6 +191,13 @@ type QualityReviewMeta = Pick<GenerateWeekCoreResult['meta'],
   | 'correctedSessionsAffected'
   | 'structurallyRepairedSessionsAffected'
 >
+
+type CompletedAttempt = {
+  attempt: number
+  result: GenerateWeekCoreResult
+  createdAt: number
+  maxTokens: number
+}
 
 export function buildAttemptQualityReviewCacheKey(meta: QualityReviewMeta): string {
   return JSON.stringify({
@@ -1094,6 +1101,88 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
         attemptQualityBySessions.set(candidateResult.sessions, nextCache)
         return review
       }
+      // Un intento sólo es "succeeded" una vez que su semana quedó
+      // materializada. Antes se escribía dentro de `onAttemptCompleted`, es
+      // decir antes de `putWeek`/`putPlan`: si uno de esos checkpoints fallaba,
+      // el plan terminaba partial pero la única fila del intento ya decía
+      // succeeded. Retenemos datos no sensibles del intento y los vaciamos al
+      // finalizar el checkpoint para que ambos planos cuenten la misma verdad.
+      const completedAttempts: CompletedAttempt[] = []
+      let attemptTelemetryFlushed = false
+      const flushAttemptTelemetry = async (
+        finalizationFailure?: { errorClass: string },
+      ): Promise<void> => {
+        if (attemptTelemetryFlushed) return
+        attemptTelemetryFlushed = true
+        if (!input.writer.putAttempt) return
+
+        for (let index = 0; index < completedAttempts.length; index += 1) {
+          const completed = completedAttempts[index]!
+          const meta = completed.result.meta
+          const isTerminalAttempt = index === completedAttempts.length - 1
+          const outcome = finalizationFailure && isTerminalAttempt
+            ? 'post_generation_failed' as const
+            : classifyAttemptOutcome(completed.result)
+          try {
+            const qualityReview = reviewAttemptWeek(completed.result)
+            await input.writer.putAttempt({
+              athleteId: plan.athleteId,
+              planId: plan.id,
+              jobId: input.jobId,
+              weekIndex,
+              attempt: completed.attempt,
+              traceId: meta.traceId,
+              provider: meta.provider,
+              model: meta.model,
+              promptTokens: meta.promptTokens,
+              completionTokens: meta.completionTokens,
+              cacheCreationInputTokens: meta.cacheCreationInputTokens,
+              cacheReadInputTokens: meta.cacheReadInputTokens,
+              durationMs: meta.durationMs,
+              finishReason: meta.finishReason,
+              outcome,
+              errorClass: finalizationFailure && isTerminalAttempt
+                ? finalizationFailure.errorClass
+                : meta.errorClass,
+              retryUsed: completed.attempt > 1 || Boolean(meta.retryUsed),
+              maxTokens: completed.maxTokens,
+              workerConcurrency: concurrency,
+              rawSessionCount: meta.rawSessionCount,
+              validSessionCount: meta.validSessionCount,
+              droppedSessionCount: meta.droppedSessionCount,
+              repairedSessionCount: meta.repairedSessionCount,
+              addedFallbackCount: meta.addedFallbackCount,
+              qualityScore: qualityReview?.score,
+              qualityGrade: qualityReview?.grade,
+              qualityCriticalIssueCount: qualityReview?.issues.filter((issue) => issue.severity === 'error').length,
+              qualityWarningCount: qualityReview?.issues.filter((issue) => issue.severity === 'warning').length,
+              variantId: variant?.variantId,
+              effort: variant?.effort,
+              thinkingMode: variant?.thinkingMode,
+              promptVersion: variant?.promptVersion,
+              schemaVersion: variant?.schemaVersion,
+              qualityVersion: effectiveQualityVersion,
+              repairTaxonomyVersion: meta.repairTaxonomyVersion,
+              correctiveActionCount: meta.correctiveActionCount,
+              structuralActionCount: meta.structuralActionCount,
+              hydrationActionCount: meta.hydrationActionCount,
+              movedSessionCount: meta.movedSessionCount,
+              filteredSportCount: meta.filteredSportCount,
+              hydratedSessionsAffected: meta.hydratedSessionsAffected,
+              correctedSessionsAffected: meta.correctedSessionsAffected,
+              structurallyRepairedSessionsAffected: meta.structurallyRepairedSessionsAffected,
+              createdAt: completed.createdAt,
+            })
+          } catch (error) {
+            // Observabilidad best-effort: un fallo de telemetría nunca altera
+            // el resultado ni convierte un único provider attempt en reintento.
+            const code = typeof (error as { code?: unknown })?.code === 'string'
+              ? (error as { code: string }).code
+              : 'unknown'
+            console.warn(`[plan-builder] attempt telemetry failed traceId=${meta.traceId} week=${weekIndex} attempt=${completed.attempt} code=${code}`)
+          }
+        }
+      }
       try {
         // En generación paralela la semana previa puede no estar lista todavía.
         // Usamos la versión generada si existe (para evitar clonar sesiones), y si
@@ -1168,53 +1257,11 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
                 : null
               costUsd = attemptCost === null ? null : costUsd + attemptCost
             }
-            if (!input.writer.putAttempt) return
-            const qualityReview = reviewAttemptWeek(attemptResult)
-            await input.writer.putAttempt({
-              athleteId: plan.athleteId,
-              planId: plan.id,
-              jobId: input.jobId,
-              weekIndex,
+            completedAttempts.push({
               attempt,
-              traceId: meta.traceId,
-              provider: meta.provider,
-              model: meta.model,
-              promptTokens: meta.promptTokens,
-              completionTokens: meta.completionTokens,
-              cacheCreationInputTokens: meta.cacheCreationInputTokens,
-              cacheReadInputTokens: meta.cacheReadInputTokens,
-              durationMs: meta.durationMs,
-              finishReason: meta.finishReason,
-              outcome: classifyAttemptOutcome(attemptResult),
-              errorClass: meta.errorClass,
-              retryUsed: attempt > 1 || Boolean(meta.retryUsed),
-              maxTokens: attemptMaxTokens,
-              workerConcurrency: concurrency,
-              rawSessionCount: meta.rawSessionCount,
-              validSessionCount: meta.validSessionCount,
-              droppedSessionCount: meta.droppedSessionCount,
-              repairedSessionCount: meta.repairedSessionCount,
-              addedFallbackCount: meta.addedFallbackCount,
-              qualityScore: qualityReview?.score,
-              qualityGrade: qualityReview?.grade,
-              qualityCriticalIssueCount: qualityReview?.issues.filter((issue) => issue.severity === 'error').length,
-              qualityWarningCount: qualityReview?.issues.filter((issue) => issue.severity === 'warning').length,
-              variantId: variant?.variantId,
-              effort: variant?.effort,
-              thinkingMode: variant?.thinkingMode,
-              promptVersion: variant?.promptVersion,
-              schemaVersion: variant?.schemaVersion,
-              qualityVersion: effectiveQualityVersion,
-              repairTaxonomyVersion: meta.repairTaxonomyVersion,
-              correctiveActionCount: meta.correctiveActionCount,
-              structuralActionCount: meta.structuralActionCount,
-              hydrationActionCount: meta.hydrationActionCount,
-              movedSessionCount: meta.movedSessionCount,
-              filteredSportCount: meta.filteredSportCount,
-              hydratedSessionsAffected: meta.hydratedSessionsAffected,
-              correctedSessionsAffected: meta.correctedSessionsAffected,
-              structurallyRepairedSessionsAffected: meta.structurallyRepairedSessionsAffected,
+              result: attemptResult,
               createdAt,
+              maxTokens: attemptMaxTokens,
             })
           },
         })
@@ -1251,6 +1298,7 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
             weeks = replaceWeek(weeks, erroredWeek)
             await input.writer.putWeek(erroredWeek)
             observeWeekWrite(erroredWeek)
+            await flushAttemptTelemetry()
             return
           }
         }
@@ -1299,6 +1347,7 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
           cancelRequested: cancelled || undefined,
         })
         await input.writer.putPlan(plan)
+        await flushAttemptTelemetry()
       } catch (error) {
         if (isUsageGateRejection(error)) {
           // Un rechazo del gate de uso (o una falla del gate en sí) es
@@ -1320,19 +1369,32 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
           const message = usageGateRejectionMessage(error)
           const erroredWeek = makeErroredWeek(generatingWeek, message, getNow(), error.code, 0)
           weeks = replaceWeek(weeks, erroredWeek)
-          await input.writer.putWeek(erroredWeek)
-          observeWeekWrite(erroredWeek)
-          if (shouldMarkRemaining) {
-            await markRemainingWeeksAsUsageGateRejected(targetPosition, error)
+          // El vaciado va en `finally`, no antes de estas escrituras: un
+          // `await` extra acá reabre la ventana de interleaving que el guard
+          // de un solo disparo cierra, y otro worker alcanzaría a lanzar una
+          // semana que el marcado ya está terminalizando. En `finally` la
+          // telemetría sobrevive igual si una escritura lanza —el caso que
+          // esta instrumentación existe para observar— sin mover el orden.
+          try {
+            await input.writer.putWeek(erroredWeek)
+            observeWeekWrite(erroredWeek)
+            if (shouldMarkRemaining) {
+              await markRemainingWeeksAsUsageGateRejected(targetPosition, error)
+            }
+            plan = buildPlanCheckpoint(plan, weeks, {
+              generationState: 'generating',
+              jobId: input.jobId,
+              startedAt,
+              updatedAt: erroredWeek.updatedAt,
+              cancelRequested: cancelled || undefined,
+            })
+            await input.writer.putPlan(plan)
+          } finally {
+            // Los intentos que el proveedor sí respondió antes del rechazo
+            // conservan su outcome real: el corte es del gate, no una falla
+            // posterior a materializar la semana.
+            await flushAttemptTelemetry()
           }
-          plan = buildPlanCheckpoint(plan, weeks, {
-            generationState: 'generating',
-            jobId: input.jobId,
-            startedAt,
-            updatedAt: erroredWeek.updatedAt,
-            cancelRequested: cancelled || undefined,
-          })
-          await input.writer.putPlan(plan)
           return
         }
         const message = error instanceof Error ? error.message : String(error)
@@ -1347,16 +1409,30 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
             )
           : makeErroredWeek(generatingWeek, message, getNow())
         weeks = replaceWeek(weeks, erroredWeek)
-        await input.writer.putWeek(erroredWeek)
-        observeWeekWrite(erroredWeek)
-        plan = buildPlanCheckpoint(plan, weeks, {
-          generationState: 'generating',
-          jobId: input.jobId,
-          startedAt,
-          updatedAt: erroredWeek.updatedAt,
-          cancelRequested: cancelled || undefined,
-        })
-        await input.writer.putPlan(plan)
+        // `finally`: si la escritura terminal también falla —que es una causa
+        // muy probable de estar en este catch— la excepción sigue propagando,
+        // pero las filas de intento ya no se pierden. La escritura eager
+        // anterior no las perdía y esta instrumentación no puede empeorar
+        // justo el caso que existe para observar.
+        try {
+          await input.writer.putWeek(erroredWeek)
+          observeWeekWrite(erroredWeek)
+          plan = buildPlanCheckpoint(plan, weeks, {
+            generationState: 'generating',
+            jobId: input.jobId,
+            startedAt,
+            updatedAt: erroredWeek.updatedAt,
+            cancelRequested: cancelled || undefined,
+          })
+          await input.writer.putPlan(plan)
+        } finally {
+          // Sólo hay "falla posterior a la generación" si el proveedor llegó a
+          // responder. Aplicarlo a un throw anterior invertiría la fidelidad
+          // que `027` existe para arreglar.
+          await flushAttemptTelemetry(
+            providerResult ? { errorClass: 'post_generation_failed' } : undefined,
+          )
+        }
       }
     }
 

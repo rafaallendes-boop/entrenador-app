@@ -49,6 +49,35 @@ const SESSION_CREATION_VERB_PATTERN = /\b(crea(?:r|me)?|haz(?:me)?|arma(?:me)?|g
 // prose, even though the preceding turn was asking to create a session.
 const ACTION_CONFIRMATION_PATTERN = /\b(si|sí|ok|okay|dale|confirmo|correcto|hazlo|hacelo|crea(?:la|lo)?|aplica(?:lo)?|aplicar|realiza(?:r)?(?:\s+el)?\s+cambio|procede|adelante)\b/
 const RECENT_ACTION_DISCUSSION_PATTERN = /\b(confirmas?|quieres?|quiero|cambio|cambiar|reemplaza(?:r)?|reemplazo|elimina(?:r)?|eliminar|borra(?:r)?|borrar|saca(?:r)?|sacar|ajusta(?:r)?|modifica(?:r)?|sesion|entreno|entrenamiento|running|corrida|trote|squash|zona\s*2|z2)\b/
+// Una pregunta que pide criterio no debe escalar a `chat_action` sólo porque
+// nombra una sesión y un día. Ese camino exige una propuesta estructurada; al
+// forzarlo sobre una consulta como "¿Qué debería priorizar hoy?" se descarta
+// una respuesta de asesoría perfectamente válida por no traer `<actions>`.
+const ADVISORY_QUESTION_PATTERN = /^[¿?\s]*(?:que|como|cual|cuanto|cuando|donde|por que|para que)\b.*\b(?:deberia|recomiendas?|priorizar|conviene|mejor)\b/
+// `conviene` y `mejor` también aparecen en peticiones de acción ("¿qué sesión me
+// conviene mover al jueves?"), así que la forma interrogativa por sí sola no
+// basta para desviar a prosa: sin este guard, "sacar", "mover" y "cambio"
+// dejaban de producir propuesta. Se compone desde las mismas fuentes de verbos
+// que usan las ramas de acción para que ampliar una amplíe también el guard, y
+// agrega las conjugaciones que ninguna de las dos cubre porque allí el usuario
+// siempre habla en imperativo: primera persona ("¿cómo cambio mi sesión?") y
+// segunda en subjuntivo ("¿qué conviene que agregues?").
+const CONJUGATED_MUTATION_PATTERN = /\b(cambio|muevo|saco|quito|agrego|pongo|elimino|borro|reemplazo|ajusto|modifico|programo|armo|genero)\b|\b(cambies|muevas|saques|quites|agregues|pongas|elimines|borres|reemplaces|ajustes|modifiques|programes|armes|generes)\b/
+// Los patrones de acción están escritos en imperativo porque ahí el usuario
+// manda ("agenda el jueves"). En una pregunta el mismo verbo aparece en
+// infinitivo ("¿qué me conviene agendar el jueves?"), forma que ninguno de los
+// dos cubre: sin esto, una petición real de cambio se desviaba a prosa y ya no
+// podía emitir una propuesta.
+// Deliberadamente NO incluye `hacer`: es el verbo más genérico del idioma y
+// "¿qué debería hacer hoy?" es exactamente la consulta de asesoría que este
+// desvío existe para permitir.
+const INFINITIVE_MUTATION_PATTERN = /\b(agendar|armar|incorporar|reducir|bajar|subir|acortar|alargar|adelantar|atrasar|intercambiar|dividir)\b/
+const MUTATION_INTENT_PATTERN = new RegExp([
+  ADJUSTMENT_VERB_PATTERN.source,
+  SESSION_CREATION_VERB_PATTERN.source,
+  CONJUGATED_MUTATION_PATTERN.source,
+  INFINITIVE_MUTATION_PATTERN.source,
+].join('|'))
 
 export function resolveChatRoute(
   message: string,
@@ -67,6 +96,10 @@ export function resolveChatRoute(
 
   if (isActionConfirmation(normalized) && hasRecentActionDiscussion(context)) {
     return { kind: 'chat_action' }
+  }
+
+  if (ADVISORY_QUESTION_PATTERN.test(normalized) && !MUTATION_INTENT_PATTERN.test(normalized)) {
+    return { kind: 'chat_general' }
   }
 
   const isSpecificDaySessionRequest =

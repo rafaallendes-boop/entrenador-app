@@ -57,8 +57,8 @@ afterEach(() => {
 
 describe('normalizeError preserva el 403 de entitlement', () => {
   it('un 403 con entitlement_required conserva codigo y detail', () => {
-    const detail = { requestClass: 'week_creator', requiredTier: 'weekly', currentTier: 'free' }
-    const source = Object.assign(new Error('Requiere plan weekly.'), {
+    const detail = { requestClass: 'week_creator', requiredTier: 'advanced', currentTier: 'free' }
+    const source = Object.assign(new Error('Requiere plan advanced.'), {
       statusCode: 403,
       errorCode: 'entitlement_required' as const,
       detail,
@@ -119,7 +119,7 @@ describe('gate real de entitlement en coach', () => {
       errorCode: 'entitlement_required',
       detail: {
         requestClass: 'week_creator',
-        requiredTier: 'weekly',
+        requiredTier: 'advanced',
         currentTier: 'free',
       },
     })

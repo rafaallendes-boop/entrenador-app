@@ -1,4 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+
+import { canonicalJson } from '../../utils/canonicalJson'
 import { Check, ChevronDown, ChevronUp } from 'lucide-react'
 import type {
   AthleteProfile,
@@ -51,11 +53,18 @@ interface Props {
   profile: AthleteProfile | null
   isSaving: boolean
   onSave: (patch: Partial<Omit<AthleteProfile, 'id' | 'updatedAt'>>) => Promise<void>
+  /**
+   * El padre remonta este editor por `key` cuando cambia `updatedAt`. Un sync
+   * en segundo plano descartaría en silencio lo que el atleta está escribiendo,
+   * justo lo que el aviso de cambios sin guardar promete evitar, así que el
+   * estado sucio tiene que ser visible desde afuera.
+   */
+  onDirtyChange?: (dirty: boolean) => void
 }
 
 type Section = 'sport' | 'running' | 'strength' | 'recovery' | 'schedule' | 'nutrition'
 
-export default function AthleteProfileEditor({ profile, isSaving, onSave }: Props) {
+export default function AthleteProfileEditor({ profile, isSaving, onSave, onDirtyChange }: Props) {
   const [open, setOpen] = useState<Section | null>(null)
   const [saved, setSaved] = useState(false)
 
@@ -142,6 +151,40 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
     })
   }
 
+  // El editor no autoguarda. Un snapshot canónico de todo lo editable permite
+  // detectar cambios pendientes sin instrumentar cada setter, y sobrevive al
+  // reordenamiento de claves.
+  const formSnapshot = useMemo(() => JSON.stringify(canonicalJson({
+    name, age, weightKg, enabledSports, primarySportCtx, trainingPriority,
+    mainGoal, secondaryGoal, running, strength, recovery, availableDays,
+    doubleSessionDays, scheduleSessionsPerWeek, scheduleConstraints, nutrition,
+  })), [
+    name, age, weightKg, enabledSports, primarySportCtx, trainingPriority,
+    mainGoal, secondaryGoal, running, strength, recovery, availableDays,
+    doubleSessionDays, scheduleSessionsPerWeek, scheduleConstraints, nutrition,
+  ])
+  const [savedSnapshot, setSavedSnapshot] = useState(formSnapshot)
+  const hasUnsavedChanges = formSnapshot !== savedSnapshot
+
+  useEffect(() => {
+    onDirtyChange?.(hasUnsavedChanges)
+  }, [hasUnsavedChanges, onDirtyChange])
+
+  // Cubre cerrar la pestaña y recargar. La navegación interna de la SPA no pasa
+  // por acá: para esa ruta el aviso visible es la única defensa.
+  useEffect(() => {
+    if (!hasUnsavedChanges) return
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      // WebKit todavía condiciona el diálogo a un `returnValue` no vacío, y la
+      // app se distribuye también como build iOS: sin esta línea el aviso
+      // simplemente no aparece ahí.
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [hasUnsavedChanges])
+
   async function handleSave() {
     const requestedSessionsPerWeek = numOrUndef(scheduleSessionsPerWeek)
     const scheduleProfile: ScheduleProfile = {
@@ -159,6 +202,7 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
       constraints: scheduleConstraints.trim() || undefined,
     }
 
+    const snapshotAtSave = formSnapshot
     await onSave({
       name: name.trim() || undefined,
       age: numOrUndef(age),
@@ -183,6 +227,7 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
       nutritionProfile: hasData(nutrition) ? nutrition : undefined,
     })
 
+    setSavedSnapshot(snapshotAtSave)
     setSaved(true)
     setTimeout(() => setSaved(false), 3000)
   }
@@ -683,7 +728,15 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave }: Prop
       </SectionPanel>
 
       <div className="flex items-center justify-end gap-3 pt-1">
-        {saved && (
+        {hasUnsavedChanges ? (
+          <span
+            role="status"
+            data-testid="profile-unsaved-badge"
+            className="inline-flex items-center gap-1 rounded-lg bg-amber-500/10 px-2 py-1 text-xs font-semibold text-amber-300"
+          >
+            Cambios sin guardar
+          </span>
+        ) : saved && (
           <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-500/10 px-2 py-1 text-xs font-semibold text-emerald-400">
             ✓ Guardado en este dispositivo
           </span>

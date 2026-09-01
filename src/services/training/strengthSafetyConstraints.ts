@@ -179,6 +179,33 @@ export function hasUnrecognizedRestrictionText(input: SafetyConstraintInput): bo
   })
 }
 
+/**
+ * ¿El atleta declaró ALGO, aunque el parser no lo estructure?
+ *
+ * Distinta de `hasUnrecognizedRestrictionText`, que sólo cuenta el texto capaz
+ * de esconder una restricción real. Acá alcanza con que la declaración no sea
+ * una ausencia explícita: "vengo con sobrecarga general" no produce ninguna
+ * zona y aun así es contexto legítimo para el prompt, mientras que "Ninguna."
+ * no debe inducir cautela que nadie pidió.
+ *
+ * Vive acá porque este módulo es la única autoridad que interpreta texto libre.
+ */
+export function hasDeclaredRestrictionSignal(input: SafetyConstraintInput): boolean {
+  const fields: Array<[string | undefined, ConstraintSource]> = [
+    [input.currentInjuries, 'current_injuries'],
+    [input.restrictions, 'restrictions'],
+    [input.injuryNotes, 'injury_notes'],
+  ]
+  return fields.some(([text, source]) => {
+    if (!text?.trim()) return false
+    return splitClauses(normalize(text)).some((rawClause) => {
+      const clause = rawClause.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '').trim()
+      if (!clause || ABSENCE_SENTINELS.includes(clause)) return false
+      return classifyClause(clause, source) !== 'resolved_absence'
+    })
+  })
+}
+
 export function constraintKey(constraint: StrengthConstraint): ConstraintKey {
   if (constraint.kind === 'region') return `region:${constraint.region}`
   if (constraint.kind === 'load_pattern') return `pattern:${constraint.pattern}`

@@ -16,7 +16,7 @@ import type {
 } from '../../types'
 import type { StrengthConstraint } from '../../types/strengthSafety'
 import type { TrainingPlanWeek } from '../../types/planBuilder'
-import type { AIProvider, AIRawResponse, CoachNormalizedResponse } from '../ai/types'
+import type { AIProvider, AIProviderError, AIRawResponse, CoachNormalizedResponse } from '../ai/types'
 import { buildAIGenerationId, buildAITraceId, getAIRequestPolicy, resolveWeekCreatorMaxTokens } from '../ai/requestPolicy'
 import { assertDailyAIRequestLimit } from '../ai/aiTelemetry'
 import { normalizeResponse } from '../ai/responseNormalizer'
@@ -72,10 +72,33 @@ import {
   applyWeekCreatorEventContextToConfig,
   resolveWeekCreatorEventContext,
 } from './WeekCreatorEventContext'
+import { BLOCKED_STRENGTH_COPY } from '../training/strengthSafetyCopy'
+import { EntitlementRequiredError } from '../entitlements/entitlementError'
+import {
+  KillSwitchActiveError,
+  QuotaExceededError,
+  SpendCapExceededError,
+  UsageGateUnavailableError,
+} from '../entitlements/usageGateError'
+
+/**
+ * Rechazos del gate de servidor: entitlement, cuota diaria, techo de gasto y
+ * kill switch. Ninguno es una caída del proveedor. Tratarlos como tal hacía dos
+ * cosas malas a la vez: gastaba un reintento contra un 403/429 que va a repetir
+ * el mismo resultado, y terminaba entregando la semana determinista local —es
+ * decir, el servidor bloqueaba la generación y el cliente la producía igual.
+ */
+function isServerGateRejection(error: unknown): boolean {
+  return error instanceof EntitlementRequiredError
+    || error instanceof QuotaExceededError
+    || error instanceof SpendCapExceededError
+    || error instanceof KillSwitchActiveError
+    || error instanceof UsageGateUnavailableError
+}
 
 const WEEK_CREATOR_RESPONSE_SCHEMA_CHAR_COUNT = JSON.stringify(WEEK_CREATOR_RESPONSE_SCHEMA).length
 const WEEK_CREATOR_SKELETON_SCHEMA_CHAR_COUNT = JSON.stringify(WEEK_CREATOR_SKELETON_RESPONSE_SCHEMA).length
-const WEEK_CREATOR_SAFETY_DECLINE_COPY = 'No pude verificar una sesión de fuerza compatible con la restricción registrada.'
+const WEEK_CREATOR_SAFETY_DECLINE_COPY = BLOCKED_STRENGTH_COPY
 
 export class WeekCreatorSafeDecline extends Error {
   readonly isSafeDecline = true
@@ -597,6 +620,24 @@ export const WeekCreatorEngine = {
           })
           tracker.flush(outcome, { generationId, attempt, aborted: true })
           throw error instanceof Error ? error : new Error(String(error))
+        }
+        // Un rechazo del gate de servidor no es una caída del proveedor.
+        // Convertirlo en fallback local permitía obtener sesiones que el
+        // servidor acababa de bloquear. Se propaga para que el chat muestre la
+        // oferta o el mensaje de cupo, sin gastar el segundo intento.
+        if (isServerGateRejection(error)) {
+          // Las cinco clases extienden `AIProviderError`, así que su `code` ya
+          // es el `AIErrorCode` que corresponde: no se aplana a uno solo.
+          const gateErrorCode = (error as AIProviderError).code
+          useAIDebugStore.getState().failRequest(traceId, {
+            provider: provider.name,
+            errorCode: gateErrorCode,
+            warnings: [`week_creator_server_gate:${gateErrorCode}`],
+            ...buildRawTelemetry(raw),
+            stageTimings: tracker.timings(),
+          })
+          tracker.flush(outcome, { generationId, attempt, errorCode: gateErrorCode })
+          throw error
         }
         const failure = classifyWeekCreatorProviderFailure(error)
         lastFailure = {
