@@ -1,10 +1,12 @@
 import {
-  isClassAllowed,
-  minTierForClass,
   resolveTier,
   type EntitlementRow,
   type Tier,
 } from '../../../src/services/entitlements/entitlementPolicy'
+import {
+  resolveCapability,
+  type CapabilityDecision,
+} from '../../../src/services/entitlements/resolveCapability'
 import { USER_ENTITLEMENT_SELECT } from '../../../src/services/entitlements/entitlementColumns'
 import {
   buildEntitlementDetail,
@@ -100,13 +102,27 @@ export interface EntitlementHttpError extends Error {
 
 /**
  * Lanza un error con forma HTTP si el tier no alcanza para generar planes.
- * Compartido por enqueue y worker para que los dos rechacen idéntico.
+ * Cuando permite, devuelve la decisión completa que debe pasar sin
+ * reinterpretarse hasta `usageGate`. Compartido por enqueue y worker para
+ * que los dos rechacen y contabilicen de forma idéntica.
  */
-export function assertPlanGenerationEntitlement(tier: Tier): void {
-  if (isClassAllowed(tier, PLAN_GENERATION_REQUEST_CLASS)) return
+export function assertPlanGenerationEntitlement(
+  tier: Tier,
+  actorUserId: string,
+): CapabilityDecision {
+  const decision = resolveCapability({
+    actorUserId,
+    targetAthleteId: null,
+    capability: PLAN_GENERATION_REQUEST_CLASS,
+    now: Date.now(),
+    // `tier` ya fue resuelto por `resolveEntitlementTier`; no se debe volver
+    // a interpretar vencimientos dentro de este borde.
+    entitlement: { tier, expiresAt: null },
+  })
+  if (decision.allowed) return decision
 
-  const requiredTier = minTierForClass(PLAN_GENERATION_REQUEST_CLASS) ?? 'advanced'
-  const detail = buildEntitlementDetail(PLAN_GENERATION_REQUEST_CLASS, requiredTier, tier)
+  const requiredTier = decision.requiredTier ?? 'advanced'
+  const detail = buildEntitlementDetail(PLAN_GENERATION_REQUEST_CLASS, requiredTier, decision.tier)
   const error = new Error(formatEntitlementMessage(detail)) as EntitlementHttpError
   error.statusCode = 403
   error.errorCode = 'entitlement_required'

@@ -44,10 +44,10 @@ describe('isClassAllowed — matriz completa 3 tiers x 8 clases', () => {
   // no puede detectar que el mapa cambió.
   const EXPECTED: Record<AIRequestClass, Record<Tier, boolean>> = {
     chat_general:      { free: true,  weekly: true, advanced: true },
-    chat_action:       { free: true,  weekly: true, advanced: true },
+    chat_action:       { free: false, weekly: true, advanced: true },
     import_extract:    { free: true,  weekly: true, advanced: true },
     weekly_summary:    { free: false, weekly: true, advanced: true },
-    week_creator:      { free: false, weekly: false, advanced: true },
+    week_creator:      { free: false, weekly: true, advanced: true },
     plan_builder_week: { free: false, weekly: false, advanced: true },
     plan_builder_pair: { free: false, weekly: false, advanced: true },
     coach_assistant_message: { free: false, weekly: false, advanced: true },

@@ -27,12 +27,17 @@ export const TIER_ORDER: Record<Tier, number> = {
  */
 export const REQUEST_CLASS_MIN_TIER: Record<AIRequestClass, Tier> = {
   chat_general: 'free',
-  chat_action: 'free',
+  // "Base consulta, pagado modifica": un Free conserva el chat completo con el
+  // mismo prompt y el mismo contexto de su clase; lo que pierde es que el
+  // coach escriba en su calendario.
+  chat_action: 'weekly',
   import_extract: 'free',
   weekly_summary: 'weekly',
-  // Generar una semana completa tiene el mismo carácter de planificación que
-  // Plan Builder; no se ofrece como fallback local en el plan semanal.
-  week_creator: 'advanced',
+  // El plan se llama "Coach Semanal": un plan semanal que no puede crear una
+  // semana es una promesa rota en el nombre. La razón original para dejarlo en
+  // `advanced` —no degradarlo a sesiones locales— sigue valiendo para Free, que
+  // no lo recibe; Weekly recibe la versión real, no una degradada.
+  week_creator: 'weekly',
   plan_builder_week: 'advanced',
   plan_builder_pair: 'advanced',
   coach_assistant_message: 'advanced',

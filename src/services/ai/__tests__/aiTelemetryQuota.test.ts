@@ -70,9 +70,9 @@ describe('BUCKET COMPARTIDO: 15 de chat_general agotan tambien chat_action', () 
 })
 
 describe('el limite depende del tier', () => {
-  it('weekly aguanta 100 de chat donde free ya habria fallado', async () => {
+  it('weekly aguanta 39 de chat donde free ya habria fallado', async () => {
     currentTier = 'weekly'
-    for (let i = 0; i < 100; i++) {
+    for (let i = 0; i < 39; i++) {
       await upsertAIRequestLog(log(`t${i}`, USER, 'chat_general'))
     }
     await expect(

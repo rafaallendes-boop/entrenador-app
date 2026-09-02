@@ -302,7 +302,7 @@ describe('useChatStore.sendMessage', () => {
 
     expect(useChatStore.getState().entitlementOffer).toEqual({
       requestClass: 'week_creator',
-      requiredTier: 'advanced',
+      requiredTier: 'weekly',
       currentTier: 'free',
     })
     expect(mocks.chatMessages).toHaveLength(0)
@@ -311,7 +311,7 @@ describe('useChatStore.sendMessage', () => {
 
   it('convierte el 403 tipado en una oferta efimera sin persistir una burbuja de error', async () => {
     mocks.routeKind = 'week_creator'
-    const detail = buildEntitlementDetail('week_creator', 'advanced', 'free')
+    const detail = buildEntitlementDetail('week_creator', 'weekly', 'free')
     mocks.sendWeekCreate.mockRejectedValueOnce(new EntitlementRequiredError(detail))
 
     await useChatStore.getState().sendMessage('armame la semana', makeContext())
@@ -342,7 +342,7 @@ describe('useChatStore.sendMessage', () => {
 
   it('una respuesta tardia no publica la oferta en otra conversacion', async () => {
     mocks.routeKind = 'week_creator'
-    const detail = buildEntitlementDetail('week_creator', 'advanced', 'free')
+    const detail = buildEntitlementDetail('week_creator', 'weekly', 'free')
     let rejectRequest: (reason: unknown) => void = () => undefined
     mocks.sendWeekCreate.mockImplementationOnce(() => new Promise((_, reject) => {
       rejectRequest = reject
@@ -373,14 +373,14 @@ describe('useChatStore.sendMessage', () => {
 
     expect(useChatStore.getState().entitlementOffer).toEqual({
       requestClass: 'week_creator',
-      requiredTier: 'advanced',
+      requiredTier: 'weekly',
       currentTier: 'free',
     })
     expect(mocks.chatMessages).toHaveLength(2)
   })
 
   it.each(['weekly', 'advanced'] as const)(
-    '%s resuelve la oferta según el requisito de semana completa',
+    '%s no ve la oferta porque puede crear la semana completa',
     async (tier) => {
       useEntitlementStore.setState({ tier })
       mocks.sendAction.mockResolvedValue({
@@ -394,15 +394,7 @@ describe('useChatStore.sendMessage', () => {
 
       await useChatStore.getState().sendMessage('armame la semana', makeContext())
 
-      expect(useChatStore.getState().entitlementOffer).toEqual(
-        tier === 'weekly'
-          ? {
-              requestClass: 'week_creator',
-              requiredTier: 'advanced',
-              currentTier: 'weekly',
-            }
-          : null,
-      )
+      expect(useChatStore.getState().entitlementOffer).toBeNull()
     },
   )
 

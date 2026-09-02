@@ -7,7 +7,6 @@ import type {
   PlanGenerationJobVariant,
 } from '../../src/services/planBuilder/asyncGenerationLoop'
 import { emitUnstartedJobTelemetry, runAsyncPlanGeneration } from '../../src/services/planBuilder/asyncGenerationLoop'
-import type { Tier } from '../../src/services/entitlements/entitlementPolicy'
 import {
   PRODUCTIVE_QUALITY_VERSION,
   resolveEffectiveRunQualityVersion,
@@ -172,7 +171,7 @@ export const handler: Handler = async (event) => {
       resolveAuthContext(event),
       gateEnabled && bearer
         ? resolveEntitlementTier(bearer)
-        : Promise.resolve('free' as Tier),
+        : Promise.resolve('free' as const),
     ])
 
     // Kill switch DESPUÉS de auth, ANTES de entitlement — mismo orden que
@@ -201,26 +200,31 @@ export const handler: Handler = async (event) => {
       throw makeKillSwitchError()
     }
 
-    if (gateEnabled) {
-      try {
-        assertPlanGenerationEntitlement(gateTier)
-      } catch (error) {
-        // Esta función admite llamadas autenticadas directas y puede acuñar su
-        // propio jobId. El gate es obligatorio aquí, no sólo en el enqueue.
-        // El writer sólo se crea si hay un job durable que intentar limpiar.
-        const rejectedJobId = typeof body.jobId === 'string' && body.jobId
-          ? body.jobId
-          : undefined
-        const cleanupOutcome = rejectedJobId
-          ? await terminalizeRejectedJob(
-              createSupabaseWriter(auth.userId, auth.token),
-              body.plan.id,
-              rejectedJobId,
-            )
-          : 'skipped'
-        console.warn(`[generate-plan] entitlement denied tier=${gateTier} planId=${body.plan.id} cleanup=${cleanupOutcome}`)
-        throw error
-      }
+    let decision: ReturnType<typeof assertPlanGenerationEntitlement>
+    try {
+      // Igual que enqueue: con entitlement apagado la decisión Advanced es
+      // neutral para autorización, pero deja una única fuente de tier/bucket/
+      // dueño para el usage gate durante un rollout intermedio.
+      decision = assertPlanGenerationEntitlement(
+        gateEnabled ? gateTier : 'advanced',
+        auth.userId,
+      )
+    } catch (error) {
+      // Esta función admite llamadas autenticadas directas y puede acuñar su
+      // propio jobId. El gate es obligatorio aquí, no sólo en el enqueue.
+      // El writer sólo se crea si hay un job durable que intentar limpiar.
+      const rejectedJobId = typeof body.jobId === 'string' && body.jobId
+        ? body.jobId
+        : undefined
+      const cleanupOutcome = rejectedJobId
+        ? await terminalizeRejectedJob(
+            createSupabaseWriter(auth.userId, auth.token),
+            body.plan.id,
+            rejectedJobId,
+          )
+        : 'skipped'
+      console.warn(`[generate-plan] entitlement denied tier=${gateTier} planId=${body.plan.id} cleanup=${cleanupOutcome}`)
+      throw error
     }
 
     const writer = createSupabaseWriter(auth.userId, auth.token)
@@ -296,18 +300,6 @@ export const handler: Handler = async (event) => {
     await Promise.all(body.weeks.map((week) => writer.putWeek(week)))
     console.log(`[generate-plan] initial writes ok planId=${planId}`)
 
-    // Con `ENTITLEMENTS_ENABLED` apagado, `gateTier` resuelve siempre a
-    // 'free' — no hay auth de plan real. Si el gate de USO
-    // (`AI_USAGE_LIMITS_ENABLED`) se enciende en ese estado (rollout
-    // intermedio, o alguien lo activa sin activar entitlements), una clase
-    // `weekly`/`advanced` no tiene límite definido para 'free' en
-    // `QUOTA_BUCKETS`, así que `assertUsageGate` devolvería `null` (no
-    // gatea) justo para las clases más caras. `'advanced'` es el tier
-    // neutro acá: no bloquea nada por sí solo, solo evita que "nadie tiene
-    // límite" se lea como "cuota infinita". Mismo razonamiento que en
-    // `coach.ts`.
-    const effectiveTier: Tier = gateEnabled ? gateTier : 'advanced'
-
     const gatedCallLLM = async (request: AIRequest): Promise<AIRawResponse> => {
       // Config primero (síncrono, sin I/O): una config inválida no debe
       // consumir cuota. `callAnthropicForWeek` vuelve a resolver
@@ -327,9 +319,7 @@ export const handler: Handler = async (event) => {
       let reservation: Awaited<ReturnType<typeof assertUsageGate>>
       try {
         reservation = await assertUsageGate({
-          userId: auth.userId,
-          requestClass: 'plan_builder_week',
-          tier: effectiveTier,
+          decision,
         })
       } catch (error) {
         // Server-shaped (`UsageGateHttpError`) → client-shaped
@@ -340,7 +330,7 @@ export const handler: Handler = async (event) => {
       }
       const result = await callAnthropicForWeek(request)
       if (reservation) {
-        await recordCostIfKnown({ userId: auth.userId, reservation, result })
+        await recordCostIfKnown({ userId: decision.quotaOwnerUserId, reservation, result })
       }
       return result
     }

@@ -85,6 +85,14 @@ describe('coach.ts — usage gate', () => {
     expect(body.errorCode).toBe('quota_exceeded')
     expect(body.detail).toEqual({ bucketId: 'chat', limit: 15, remaining: 0 })
     expect(providerFetch).not.toHaveBeenCalled()
+    expect(handlerMocks.assertUsageGate).toHaveBeenCalledWith({
+      decision: expect.objectContaining({
+        tier: 'advanced',
+        quotaOwnerUserId: 'user-1',
+        quotaBucketId: 'chat',
+        consumptionUnits: 1,
+      }),
+    })
   })
 
   it('recalcula el timeout del proveedor DESPUÉS de una latencia real del gate, no reusa el valor pre-gate', async () => {

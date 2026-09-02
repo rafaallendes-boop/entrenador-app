@@ -6,6 +6,9 @@ import {
   isUsageLimitsEnabled,
   recordUsageCost,
 } from '../_shared/usageGate'
+import { resolveCapability, type CapabilityDecision } from '../../../src/services/entitlements/resolveCapability'
+import type { AIRequestClass } from '../../../src/types'
+import type { Tier } from '../../../src/services/entitlements/entitlementPolicy'
 
 const ENV = {
   SUPABASE_URL: 'https://project.supabase.co',
@@ -14,6 +17,25 @@ const ENV = {
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+}
+
+function gateInput(
+  capability: AIRequestClass,
+  tier: Tier,
+  overrides: Partial<CapabilityDecision> = {},
+): { decision: CapabilityDecision } {
+  return {
+    decision: {
+      ...resolveCapability({
+        actorUserId: 'u1',
+        targetAthleteId: null,
+        capability,
+        now: 0,
+        entitlement: { tier, expiresAt: null },
+      }),
+      ...overrides,
+    },
+  }
 }
 
 describe('flags', () => {
@@ -51,7 +73,7 @@ describe('assertUsageGate', () => {
     const fetchMock = vi.fn()
     global.fetch = fetchMock as unknown as typeof fetch
 
-    await expect(assertUsageGate({ userId: 'u1', requestClass: 'chat_general', tier: 'free' }))
+    await expect(assertUsageGate(gateInput('chat_general', 'free')))
       .rejects.toMatchObject({ statusCode: 503, errorCode: 'kill_switch_active' })
     expect(fetchMock).not.toHaveBeenCalled()
   })
@@ -61,8 +83,22 @@ describe('assertUsageGate', () => {
     const fetchMock = vi.fn()
     global.fetch = fetchMock as unknown as typeof fetch
 
-    const result = await assertUsageGate({ userId: 'u1', requestClass: 'chat_general', tier: 'free' })
+    const result = await assertUsageGate(gateInput('chat_general', 'free'))
     expect(result).toBeNull()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('con limits apagado no valida una decisión malformada', async () => {
+    process.env['AI_USAGE_LIMITS_ENABLED'] = 'false'
+    const fetchMock = vi.fn()
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    await expect(assertUsageGate(gateInput('chat_general', 'free', {
+      consumptionUnits: 2,
+      quotaOwnerUserId: '',
+      quotaBucketId: null,
+      limit: null,
+    }))).resolves.toBeNull()
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
@@ -75,11 +111,11 @@ describe('assertUsageGate', () => {
     })
     global.fetch = fetchMock as unknown as typeof fetch
 
-    await expect(assertUsageGate({ userId: 'u1', requestClass: 'chat_general', tier: 'weekly' }))
+    await expect(assertUsageGate(gateInput('chat_general', 'weekly')))
       .rejects.toMatchObject({
         statusCode: 429,
         errorCode: 'spend_cap_exceeded',
-        detail: { scope: 'account', capUsd: 3 },
+        detail: { scope: 'account', capUsd: 0.8 },
       })
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
@@ -96,11 +132,11 @@ describe('assertUsageGate', () => {
     })
     global.fetch = fetchMock as unknown as typeof fetch
 
-    await expect(assertUsageGate({ userId: 'u1', requestClass: 'chat_general', tier: 'weekly' }))
+    await expect(assertUsageGate(gateInput('chat_general', 'weekly')))
       .rejects.toMatchObject({
         statusCode: 429,
         errorCode: 'quota_exceeded',
-        detail: { bucketId: 'chat', limit: 120, remaining: 0 },
+        detail: { bucketId: 'chat', limit: 40, remaining: 0 },
       })
   })
 
@@ -116,15 +152,61 @@ describe('assertUsageGate', () => {
     })
     global.fetch = fetchMock as unknown as typeof fetch
 
-    const result = await assertUsageGate({ userId: 'u1', requestClass: 'chat_general', tier: 'weekly' })
-    expect(result).toEqual({ bucketId: 'chat', limit: 120, usageDate: '2026-08-16' })
+    const result = await assertUsageGate(gateInput('chat_general', 'weekly'))
+    expect(result).toEqual({ bucketId: 'chat', limit: 40, usageDate: '2026-08-16' })
+  })
+
+  it('usa estrictamente el dueño y límite de la decisión, con bucket ligado a su capacidad', async () => {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes('/rpc/read_ai_usage_spend')) {
+        expect(JSON.parse(String(init?.body))).toEqual({ p_user_id: 'coach-owner' })
+        return jsonResponse([{ account_cost_usd: 0, global_cost_usd: 0 }])
+      }
+      if (url.includes('/rpc/increment_ai_usage_if_under_limit')) {
+        expect(JSON.parse(String(init?.body))).toEqual({
+          p_user_id: 'coach-owner', p_bucket_id: 'chat', p_limit: 7,
+        })
+        return jsonResponse([{ usage_date: '2026-08-16', request_count: 1 }])
+      }
+      throw new Error(`fetch inesperado: ${url}`)
+    })
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    await assertUsageGate(gateInput('chat_general', 'weekly', {
+      quotaOwnerUserId: 'coach-owner',
+      quotaBucketId: 'chat',
+      limit: 7,
+    }))
+  })
+
+  it('un consumo distinto de un intento falla cerrado sin tocar Supabase', async () => {
+    const fetchMock = vi.fn()
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    await expect(assertUsageGate(gateInput('chat_general', 'weekly', { consumptionUnits: 2 })))
+      .rejects.toMatchObject({ statusCode: 503, errorCode: 'server_error' })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['dueño vacío', { quotaOwnerUserId: '' }],
+    ['bucket ausente', { quotaBucketId: null }],
+    ['límite no positivo', { limit: 0 }],
+    ['bucket que no corresponde a la capability', { capability: 'plan_builder_week' as const }],
+  ] as const)('una decisión con %s falla cerrada sin tocar Supabase', async (_case, overrides) => {
+    const fetchMock = vi.fn()
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    await expect(assertUsageGate(gateInput('chat_general', 'weekly', overrides)))
+      .rejects.toMatchObject({ statusCode: 503, errorCode: 'server_error' })
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it('clase sin bucket o sin límite para el tier no gatea (lo resuelve entitlement)', async () => {
     const fetchMock = vi.fn()
     global.fetch = fetchMock as unknown as typeof fetch
 
-    const result = await assertUsageGate({ userId: 'u1', requestClass: 'plan_builder_week', tier: 'free' })
+    const result = await assertUsageGate(gateInput('plan_builder_week', 'free'))
     expect(result).toBeNull()
     expect(fetchMock).not.toHaveBeenCalled()
   })
@@ -136,7 +218,7 @@ describe('assertUsageGate', () => {
     })
     global.fetch = fetchMock as unknown as typeof fetch
 
-    await expect(assertUsageGate({ userId: 'u1', requestClass: 'chat_general', tier: 'weekly' }))
+    await expect(assertUsageGate(gateInput('chat_general', 'weekly')))
       .rejects.toMatchObject({ statusCode: 503, errorCode: 'server_error' })
   })
 
@@ -147,21 +229,21 @@ describe('assertUsageGate', () => {
     })
     global.fetch = fetchMock as unknown as typeof fetch
 
-    await expect(assertUsageGate({ userId: 'u1', requestClass: 'chat_general', tier: 'weekly' }))
+    await expect(assertUsageGate(gateInput('chat_general', 'weekly')))
       .rejects.toMatchObject({ statusCode: 503, errorCode: 'server_error' })
   })
 
   it('un error de red (fetch rechaza) se convierte en server_error, no escapa crudo', async () => {
     global.fetch = vi.fn(async () => { throw new TypeError('fetch failed') }) as unknown as typeof fetch
 
-    await expect(assertUsageGate({ userId: 'u1', requestClass: 'chat_general', tier: 'weekly' }))
+    await expect(assertUsageGate(gateInput('chat_general', 'weekly')))
       .rejects.toMatchObject({ statusCode: 503, errorCode: 'server_error' })
   })
 
   it('un cuerpo no-JSON en una respuesta 200 se convierte en server_error, no escapa como SyntaxError', async () => {
     global.fetch = vi.fn(async () => new Response('esto no es json', { status: 200 })) as unknown as typeof fetch
 
-    await expect(assertUsageGate({ userId: 'u1', requestClass: 'chat_general', tier: 'weekly' }))
+    await expect(assertUsageGate(gateInput('chat_general', 'weekly')))
       .rejects.toMatchObject({ statusCode: 503, errorCode: 'server_error' })
   })
 
@@ -186,7 +268,7 @@ describe('assertUsageGate', () => {
 
     let thrown: unknown
     try {
-      await assertUsageGate({ userId: 'u1', requestClass: 'chat_general', tier: 'weekly' })
+      await assertUsageGate(gateInput('chat_general', 'weekly'))
     } catch (error) {
       thrown = error
     }
@@ -221,7 +303,7 @@ describe('assertUsageGate', () => {
     })
     global.fetch = fetchMock as unknown as typeof fetch
 
-    await expect(assertUsageGate({ userId: 'u1', requestClass: 'chat_general', tier: 'weekly' }))
+    await expect(assertUsageGate(gateInput('chat_general', 'weekly')))
       .rejects.toMatchObject({ statusCode: 503, errorCode: 'server_error' })
   })
 })
@@ -244,16 +326,39 @@ describe('checkUsagePreflight', () => {
         return jsonResponse([{ account_cost_usd: 0, global_cost_usd: 0 }])
       }
       if (url.includes('/ai_usage_daily?')) {
-        return jsonResponse([{ request_count: 12 }])
+        return jsonResponse([{ request_count: 16 }])
       }
       throw new Error(`fetch inesperado: ${url}`)
     })
     global.fetch = fetchMock as unknown as typeof fetch
 
-    await expect(checkUsagePreflight({ userId: 'u1', requestClass: 'plan_builder_week', tier: 'advanced' }))
+    await expect(checkUsagePreflight(gateInput('plan_builder_week', 'advanced')))
       .rejects.toMatchObject({ statusCode: 429, errorCode: 'quota_exceeded' })
     const calledIncrement = fetchMock.mock.calls.some(([url]) => String(url).includes('increment_ai_usage_if_under_limit'))
     expect(calledIncrement).toBe(false)
+  })
+
+  it('preflight usa el dueño y límite de la decisión sin re-resolverlos', async () => {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes('/rpc/read_ai_usage_spend')) {
+        expect(JSON.parse(String(init?.body))).toEqual({ p_user_id: 'coach-owner' })
+        return jsonResponse([{ account_cost_usd: 0, global_cost_usd: 0 }])
+      }
+      if (url.includes('/ai_usage_daily?')) {
+        const params = new URL(url).searchParams
+        expect(params.get('user_id')).toBe('eq.coach-owner')
+        expect(params.get('bucket_id')).toBe('eq.chat')
+        return jsonResponse([{ request_count: 6 }])
+      }
+      throw new Error(`fetch inesperado: ${url}`)
+    })
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    await expect(checkUsagePreflight(gateInput('chat_general', 'weekly', {
+      quotaOwnerUserId: 'coach-owner',
+      quotaBucketId: 'chat',
+      limit: 7,
+    }))).resolves.toBeUndefined()
   })
 
   it('lectura del contador con cuerpo no-JSON falla cerrado', async () => {
@@ -264,7 +369,7 @@ describe('checkUsagePreflight', () => {
     })
     global.fetch = fetchMock as unknown as typeof fetch
 
-    await expect(checkUsagePreflight({ userId: 'u1', requestClass: 'plan_builder_week', tier: 'advanced' }))
+    await expect(checkUsagePreflight(gateInput('plan_builder_week', 'advanced')))
       .rejects.toMatchObject({ statusCode: 503, errorCode: 'server_error' })
   })
 
@@ -273,7 +378,7 @@ describe('checkUsagePreflight', () => {
     const fetchMock = vi.fn()
     global.fetch = fetchMock as unknown as typeof fetch
 
-    await expect(checkUsagePreflight({ userId: 'u1', requestClass: 'plan_builder_week', tier: 'advanced' }))
+    await expect(checkUsagePreflight(gateInput('plan_builder_week', 'advanced')))
       .rejects.toMatchObject({ statusCode: 503, errorCode: 'kill_switch_active' })
     expect(fetchMock).not.toHaveBeenCalled()
   })
@@ -283,7 +388,7 @@ describe('checkUsagePreflight', () => {
     const fetchMock = vi.fn()
     global.fetch = fetchMock as unknown as typeof fetch
 
-    await expect(checkUsagePreflight({ userId: 'u1', requestClass: 'plan_builder_week', tier: 'advanced' }))
+    await expect(checkUsagePreflight(gateInput('plan_builder_week', 'advanced')))
       .resolves.toBeUndefined()
     expect(fetchMock).not.toHaveBeenCalled()
   })
@@ -300,7 +405,7 @@ describe('checkUsagePreflight', () => {
     })
     global.fetch = fetchMock as unknown as typeof fetch
 
-    await expect(checkUsagePreflight({ userId: 'u1', requestClass: 'plan_builder_week', tier: 'advanced' }))
+    await expect(checkUsagePreflight(gateInput('plan_builder_week', 'advanced')))
       .rejects.toMatchObject({ statusCode: 503, errorCode: 'server_error' })
   })
 
@@ -312,7 +417,7 @@ describe('checkUsagePreflight', () => {
     })
     global.fetch = fetchMock as unknown as typeof fetch
 
-    await expect(checkUsagePreflight({ userId: 'u1', requestClass: 'plan_builder_week', tier: 'advanced' }))
+    await expect(checkUsagePreflight(gateInput('plan_builder_week', 'advanced')))
       .rejects.toMatchObject({ statusCode: 503, errorCode: 'server_error' })
   })
 
@@ -324,7 +429,7 @@ describe('checkUsagePreflight', () => {
     })
     global.fetch = fetchMock as unknown as typeof fetch
 
-    await expect(checkUsagePreflight({ userId: 'u1', requestClass: 'plan_builder_week', tier: 'advanced' }))
+    await expect(checkUsagePreflight(gateInput('plan_builder_week', 'advanced')))
       .resolves.toBeUndefined()
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })

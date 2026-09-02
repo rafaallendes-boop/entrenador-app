@@ -7,7 +7,7 @@ import { useCoachActionsStore } from '../store/useCoachActionsStore'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
 import { useTrainingStore } from '../store/useTrainingStore'
 import { useAuthStore } from '../store/useAuthStore'
-import { detectChatIntent } from '../services/ai/contextOptimizer'
+import { detectChatIntent, inferRequestClassFromIntent } from '../services/ai/contextOptimizer'
 import { currentWeekStartISO, fromISO, todayISO, toISO } from '../utils/date'
 import { getAthleteFirstName, getEnabledSports, getProfileCompleteness } from '../utils/athlete'
 import ChatBubble from '../components/chat/ChatBubble'
@@ -123,7 +123,11 @@ export default function ChatCoach() {
   const pendingScrollTargetRef = useRef<string | null>(null)
   const conversationSelectionTokenRef = useRef(0)
   const { launchIntent, launchId } = useWeeklyLaunchIntent()
-  const { canUse: canUseEntitlement, pending: entitlementPending } = useEntitlement()
+  const {
+    canUse: canUseEntitlement,
+    decide: decideEntitlement,
+    pending: entitlementPending,
+  } = useEntitlement()
   // Mientras el tier no es una respuesta se deja pasar: el servidor sigue
   // gateando y devuelve la oferta reactiva. Bloquear en ese hueco le ponía un
   // candado —y una oferta de Avanzado— a alguien que ya paga Avanzado, cada vez
@@ -273,6 +277,20 @@ export default function ChatCoach() {
   }, [sessions, currentWeekSummary, dayLogs, readiness, coachMemory, athleteProfile, proposals, loadAnalytics])
 
   const submitMessage = useCallback(async (message: string) => {
+    const requestClass = inferRequestClassFromIntent(detectChatIntent(message))
+    // Prevención de UX para las acciones que mutan el plan. Es sólo una
+    // cortesía de cliente: mientras el tier está pendiente dejamos pasar y el
+    // servidor sigue siendo la autoridad. Las demás capacidades mantienen sus
+    // flujos existentes (chips y oferta reactiva del servidor).
+    if (
+      !entitlementPending
+      && requestClass === 'chat_action'
+      && !decideEntitlement(requestClass).allowed
+    ) {
+      showEntitlementOffer(requestClass)
+      return
+    }
+
     const today = todayISO()
     const planningHorizonEnd = toISO(addDays(fromISO(today), 20))
     const athleteIdAtStart = getActiveAthleteId()
@@ -323,7 +341,15 @@ export default function ChatCoach() {
         },
       })
     }
-  }, [buildContext, navigate, sendMessage, sessions])
+  }, [
+    buildContext,
+    decideEntitlement,
+    entitlementPending,
+    navigate,
+    sendMessage,
+    sessions,
+    showEntitlementOffer,
+  ])
 
   const handleSend = useCallback(async (message: string) => {
     setMenuOpen(false)

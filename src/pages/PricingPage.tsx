@@ -493,28 +493,29 @@ export default function PricingPage() {
     { text: 'Crea y registra entrenamientos multideporte' },
     { text: 'Semana simple con estado de cada sesión' },
     { text: 'Check-in diario de sueño, energía y molestias' },
+    { text: 'Conecta Whoop y mira tu readiness' },
+    { text: 'Tu historial completo y tu análisis de carga' },
     { text: 'Funciona sin conexión y sincroniza después' },
+    { text: 'El coach aplica cambios en tu calendario', dim: true },
     { text: 'Semana completa generada por IA', dim: true },
     { text: 'Plan Builder por objetivo', dim: true },
   ]
 
   const proFeatures: TierFeature[] = [
-    { text: 'Coach AI con contexto completo de tu semana' },
-    { text: 'Planificación y ajustes sobre sesiones existentes' },
+    { text: 'El coach aplica cambios directo en tu calendario' },
+    { text: 'Una semana completa generada por IA cuando la necesitas' },
     { text: 'Squash, running, fuerza, movilidad y ciclismo' },
-    { text: 'Cambios por fatiga, alcohol, sueño o dolor' },
+    { text: 'Ajustes por fatiga, sueño, alcohol o molestias' },
     { text: 'Resúmenes semanales y notas accionables' },
-    { text: 'Historial y carga por deporte' },
     { text: 'Plan Builder por objetivo', dim: true },
   ]
 
   const eliteFeatures: TierFeature[] = [
     { text: 'Todo lo del plan Coach Semanal' },
-    { text: 'Una semana completa generada por IA' },
     { text: 'Plan Builder por carrera, torneo o bloque' },
     { text: 'Periodización por fases: base, build, peak y taper' },
     { text: 'Reparación automática de semanas incoherentes' },
-    { text: 'Exporta tus datos cuando quieras' },
+    { text: 'Historial de ciclos y cierre de bloque' },
     { text: 'Soporte prioritario para preparar objetivos' },
   ]
 
@@ -661,27 +662,33 @@ export default function PricingPage() {
               <tbody>
                 <tr className="section-row"><td colSpan={4}>Planificación</td></tr>
                 <tr><td>Crear y registrar entrenamientos</td><td><span className="chk">✓</span></td><td className="pro"><span className="chk brand">✓</span></td><td><span className="chk">✓</span></td></tr>
-                <tr><td>Semana completa generada por IA</td><td className="dash">—</td><td className="pro dash">—</td><td><span className="chk">✓</span></td></tr>
+                <tr><td>El coach aplica cambios en tu calendario</td><td className="dash">—</td><td className="pro"><span className="chk brand">✓</span></td><td><span className="chk">✓</span></td></tr>
+                <tr><td>Semana completa generada por IA</td><td className="dash">—</td><td className="pro"><span className="chk brand">✓</span></td><td><span className="chk">✓</span></td></tr>
                 <tr><td>Plan Builder por objetivo</td><td className="dash">—</td><td className="dash">—</td><td><span className="chk">✓</span></td></tr>
+                <tr><td>Consultar un plan ya creado</td><td><span className="chk">✓</span></td><td className="pro"><span className="chk brand">✓</span></td><td><span className="chk">✓</span></td></tr>
                 <tr><td>Deportes soportados</td><td>5</td><td className="pro">5</td><td>5</td></tr>
 
                 <tr className="section-row"><td colSpan={4}>RallyIQ AI</td></tr>
-                <tr><td>Chat con contexto</td><td><span className="chk">✓</span></td><td className="pro"><span className="chk brand">Completo</span></td><td><span className="chk">Completo</span></td></tr>
-                <tr><td>Propuestas automáticas aplicables</td><td className="dash">—</td><td className="pro"><span className="chk brand">✓</span></td><td><span className="chk">✓</span></td></tr>
+                <tr><td>Chat con contexto de tu semana</td><td><span className="chk">✓</span></td><td className="pro"><span className="chk brand">✓</span></td><td><span className="chk">✓</span></td></tr>
                 <tr><td>Notas semanales del coach</td><td className="dash">—</td><td className="pro"><span className="chk brand">✓</span></td><td><span className="chk">✓</span></td></tr>
-                <tr><td>Razonamiento transparente</td><td className="dash">—</td><td className="pro"><span className="chk brand">✓</span></td><td><span className="chk">✓</span></td></tr>
+                <tr><td>Razonamiento transparente</td><td><span className="chk">✓</span></td><td className="pro"><span className="chk brand">✓</span></td><td><span className="chk">✓</span></td></tr>
 
-                <tr className="section-row"><td colSpan={4}>Analytics & datos</td></tr>
-                <tr><td>Historial</td><td>30 días</td><td className="pro">Completo</td><td>Completo</td></tr>
-                <tr><td>ACWR, strain, monotonía</td><td className="dash">—</td><td className="pro"><span className="chk brand">✓</span></td><td><span className="chk">✓</span></td></tr>
-                <tr><td>Export CSV / JSON</td><td className="dash">—</td><td className="dash">—</td><td><span className="chk">✓</span></td></tr>
-                <tr><td>Plan exportable</td><td className="dash">—</td><td className="dash">—</td><td><span className="chk">✓</span></td></tr>
+                <tr className="section-row"><td colSpan={4}>Tus datos</td></tr>
+                <tr><td>Historial</td><td>Completo</td><td className="pro">Completo</td><td>Completo</td></tr>
+                <tr><td>ACWR, strain, monotonía</td><td><span className="chk">✓</span></td><td className="pro"><span className="chk brand">✓</span></td><td><span className="chk">✓</span></td></tr>
+                <tr><td>Whoop: readiness y entrenamientos</td><td><span className="chk">✓</span></td><td className="pro"><span className="chk brand">✓</span></td><td><span className="chk">✓</span></td></tr>
+                <tr><td>Respaldo y exportación</td><td><span className="chk">✓</span></td><td className="pro"><span className="chk brand">✓</span></td><td><span className="chk">✓</span></td></tr>
 
                 <tr className="section-row"><td colSpan={4}>Colaboración & soporte</td></tr>
                 <tr><td>Configuración inicial acompañada</td><td className="dash">—</td><td className="pro">Beta</td><td>Beta</td></tr>
                 <tr><td>Soporte</td><td>Email</td><td className="pro">Email prioritario</td><td>Prioritario</td></tr>
               </tbody>
             </table>
+            <p style={{ fontSize: '12px', color: INK_FAINT, marginTop: '16px', lineHeight: 1.6 }}>
+              Todos los planes tienen límites diarios de uso justo en las funciones con IA,
+              para que el servicio siga siendo estable para todos. Durante la beta cerrada los
+              ajustamos con uso real; si alcanzas un límite, te lo decimos en el momento.
+            </p>
           </div>
         </div>
       </section>

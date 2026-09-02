@@ -7,7 +7,17 @@ const handlerMocks = vi.hoisted(() => ({
   resolveAuthContext: vi.fn(async () => ({ userId: 'user-1', token: 'token-1' })),
   isEntitlementEnforcementEnabled: vi.fn(() => false),
   resolveEntitlementTier: vi.fn(async () => 'advanced'),
-  assertPlanGenerationEntitlement: vi.fn(),
+  assertPlanGenerationEntitlement: vi.fn(() => ({
+    allowed: true,
+    tier: 'advanced',
+    requiredTier: 'advanced',
+    entitlementSource: 'self',
+    entitlementOwnerUserId: 'user-1',
+    quotaOwnerUserId: 'user-1',
+    quotaBucketId: 'plan_builder_week',
+    consumptionUnits: 1,
+    limit: 16,
+  })),
 }))
 
 vi.mock('../_shared/usageGate', async (importActual) => {
@@ -71,7 +81,7 @@ describe('enqueue-plan-generation — usage gate', () => {
     const gateError = Object.assign(new Error('cupo agotado'), {
       statusCode: 429,
       errorCode: 'quota_exceeded',
-      detail: { bucketId: 'plan_builder_week', limit: 12, remaining: 0 },
+      detail: { bucketId: 'plan_builder_week', limit: 16, remaining: 0 },
     })
     handlerMocks.checkUsagePreflight.mockRejectedValue(gateError)
 
@@ -91,19 +101,22 @@ describe('enqueue-plan-generation — usage gate', () => {
 
     const response = await handler(buildEnqueueEvent(), {} as never) as { statusCode: number; body: string }
 
-    // `beforeEach` deja `isEntitlementEnforcementEnabled` en `false`: este es
-    // el único lugar que prueba que el preflight recibe el tier neutro
-    // 'advanced' en vez de 'free' en ese modo — 'free' haría que
-    // `resolveBucket` devuelva `null` para `plan_builder_week` y el preflight
-    // se vuelva un no-op silencioso (hallazgo de review, ronda 1).
+    // `beforeEach` deja `isEntitlementEnforcementEnabled` en `false`: la
+    // decisión sigue siendo Advanced neutral, y el preflight recibe esa
+    // decisión completa, no valores sueltos que vuelva a resolver.
+    expect(handlerMocks.assertPlanGenerationEntitlement).toHaveBeenCalledWith('advanced', 'user-1')
     expect(handlerMocks.checkUsagePreflight).toHaveBeenCalledWith(
-      expect.objectContaining({ userId: 'user-1', requestClass: 'plan_builder_week', tier: 'advanced' }),
+      expect.objectContaining({
+        decision: expect.objectContaining({
+          tier: 'advanced', quotaOwnerUserId: 'user-1', quotaBucketId: 'plan_builder_week', limit: 16,
+        }),
+      }),
     )
     expect(response.statusCode).not.toBe(429)
     expect(response.statusCode).not.toBe(503)
   })
 
-  it('con entitlements habilitado, el preflight recibe el tier resuelto (no el neutro)', async () => {
+  it('con entitlements habilitado, la decisión se resuelve desde el tier real (no el neutro)', async () => {
     handlerMocks.isEntitlementEnforcementEnabled.mockReturnValue(true)
     handlerMocks.resolveEntitlementTier.mockResolvedValue('weekly')
     handlerMocks.createSupabaseWriter.mockReturnValue({
@@ -114,8 +127,6 @@ describe('enqueue-plan-generation — usage gate', () => {
 
     await handler(buildEnqueueEvent(), {} as never)
 
-    expect(handlerMocks.checkUsagePreflight).toHaveBeenCalledWith(
-      expect.objectContaining({ userId: 'user-1', requestClass: 'plan_builder_week', tier: 'weekly' }),
-    )
+    expect(handlerMocks.assertPlanGenerationEntitlement).toHaveBeenCalledWith('weekly', 'user-1')
   })
 })

@@ -10,8 +10,10 @@ verdad.
 **Architecture:** El gate sigue viviendo entero sobre `AIRequestClass` en tres
 Netlify Functions. Se agrega un módulo puro `resolveCapability` que centraliza la
 decisión con contexto explícito —hoy `targetAthleteId` se ignora— para que el
-Proyecto 2 (producto Coach) sea aditivo. `spendCapPolicy` pasa de un literal
-único a una tabla por tier. Ningún cambio de Supabase ni de Dexie.
+Proyecto 2 (producto Coach) sea aditivo. La `CapabilityDecision` resultante
+viaja hasta `usageGate`: éste no puede volver a resolver bucket, límite ni dueño
+de cuota desde `requestClass + tier`. `spendCapPolicy` pasa de un literal único a
+una tabla por tier. Ningún cambio de Supabase ni de Dexie.
 
 **Tech Stack:** TypeScript, Vitest, React, Netlify Functions, Supabase
 (solo lectura de `user_entitlements`, sin migración).
@@ -37,17 +39,15 @@ Proyecto 2 (producto Coach) sea aditivo. `spendCapPolicy` pasa de un literal
 - **Los commits los hace el owner.** Las tareas dejan el árbol listo y verificado;
   el paso "Commit" se ejecuta solo si el owner lo pide explícitamente.
 
-### Precondición: el árbol de trabajo está sucio
+### Precondición resuelta: Competition Plan read-only aislado
 
-Al escribir este plan hay 7 archivos modificados sin commitear que pertenecen a
-la feature de **Competition Plan read-only para Free** (`CycleHistory.tsx`,
-`CompetitionPlanPage.tsx`, `PlanDashboard.tsx`, sus tres tests,
-`PROJECT_REVIEW_AND_ROADMAP.md` y la spec de 2026-08-15).
-
-**Esa feature no es parte de este plan** y el spec la declara como la única
-excepción preexistente al gating no-IA (§4.1). Antes de empezar la Task 2, el
-owner tiene que decidir si se commitea aparte o se descarta. Trabajar encima de
-un árbol sucio hace que los diffs de este plan sean irrevisables.
+Los 8 archivos de la feature **Competition Plan read-only para Free**
+(`CycleHistory.tsx`, `CompetitionPlanPage.tsx`, `PlanDashboard.tsx`, sus tres
+tests, `PROJECT_REVIEW_AND_ROADMAP.md` y la spec de 2026-08-15) se aislaron en
+el commit `6806bc2`. **Esa feature no es parte de este plan**, aunque el spec la
+declara como la única excepción preexistente al gating no-IA (§4.1). El árbol
+debe mantenerse limpio antes de iniciar tareas de implementación para que los
+diffs sigan siendo revisables.
 
 ---
 
@@ -60,9 +60,11 @@ un árbol sucio hace que los diffs de este plan sean irrevisables.
 | `src/services/entitlements/entitlementPolicy.ts` | Modificar — mapa clase→tier | 4 |
 | `src/services/entitlements/resolveCapability.ts` | Crear — la costura con contexto | 3 |
 | `src/services/entitlements/spendCapPolicy.ts` | Modificar — cap por tier | 5 |
-| `netlify/functions/_shared/usageGate.ts` | Modificar — pasar tier al cap | 5 |
-| `netlify/functions/_shared/resolveEntitlement.ts` | Modificar — usar `resolveCapability` | 6 |
-| `netlify/functions/coach.ts` | Modificar — usar `resolveCapability` | 6 |
+| `netlify/functions/_shared/usageGate.ts` | Modificar — cap por tier y consumir `CapabilityDecision` | 5, 6 |
+| `netlify/functions/_shared/resolveEntitlement.ts` | Modificar — resolver y devolver `CapabilityDecision` | 6 |
+| `netlify/functions/coach.ts` | Modificar — propagar una sola `CapabilityDecision` | 6 |
+| `netlify/functions/enqueue-plan-generation.ts` | Modificar — preflight con `CapabilityDecision` | 6 |
+| `netlify/functions/generate-plan-background.ts` | Modificar — cuota/costo con `CapabilityDecision` | 6 |
 | `src/hooks/useEntitlement.ts` | Modificar — exponer la decisión completa | 7 |
 | `src/pages/PricingPage.tsx` | Modificar — copy alineado, sin cifras | 8 |
 
@@ -101,6 +103,11 @@ select
   sum(coalesce(prompt_tokens, 0) + coalesce(completion_tokens, 0))      as tokens_total,
   sum(coalesce(prompt_tokens, 0) + coalesce(completion_tokens, 0))
     filter (where estimated_cost_usd is not null)                       as tokens_con_costo,
+  round(100.0
+    * sum(coalesce(prompt_tokens, 0) + coalesce(completion_tokens, 0))
+        filter (where estimated_cost_usd is not null)
+    / nullif(sum(coalesce(prompt_tokens, 0) + coalesce(completion_tokens, 0)), 0), 1)
+                                                                        as cobertura_tokens_pct,
   percentile_disc(0.5) within group (order by prompt_tokens)            as in_p50,
   percentile_disc(0.9) within group (order by prompt_tokens)            as in_p90,
   max(prompt_tokens)                                                    as in_max,
@@ -429,6 +436,8 @@ export interface ResolveCapabilityInput {
 export interface CapabilityDecision {
   allowed: boolean
   tier: Tier
+  /** Capacidad canónica que originó la decisión y su cuota. */
+  capability: AIRequestClass
   /** `null` = clase desconocida. El llamador la trata como denegación. */
   requiredTier: Tier | null
   /** Quién aporta la capacidad. Proyecto 2 agrega 'coach' | 'delegated'. */
@@ -460,6 +469,7 @@ export function resolveCapability(input: ResolveCapabilityInput): CapabilityDeci
   return {
     allowed,
     tier,
+    capability: input.capability,
     requiredTier,
     entitlementSource: 'self',
     entitlementOwnerUserId: input.actorUserId,
@@ -820,147 +830,130 @@ git commit -m "feat(entitlements): spend cap por tier"
 
 ---
 
-### Task 6: Cablear `resolveCapability` en el servidor
+### Task 6: Llevar `resolveCapability` hasta el contador server-side
 
 **Files:**
-- Modify: `netlify/functions/_shared/resolveEntitlement.ts:105-116`
-- Modify: `netlify/functions/coach.ts:1918`
-- Test: `netlify/functions/_shared/__tests__/resolveEntitlementCapability.test.ts` (crear)
+- Modify: `netlify/functions/_shared/resolveEntitlement.ts`
+- Modify: `netlify/functions/_shared/usageGate.ts`
+- Modify: `netlify/functions/coach.ts`
+- Modify: `netlify/functions/enqueue-plan-generation.ts`
+- Modify: `netlify/functions/generate-plan-background.ts`
+- Modify: `netlify/functions/__tests__/usageGate.test.ts`
+- Modify test: `netlify/functions/__tests__/enqueuePlanEntitlement.test.ts`
 
 **Interfaces:**
 - Consumes: `resolveCapability`, `CapabilityDecision` de la Task 3.
-- Produces: `assertPlanGenerationEntitlement(tier: Tier, actorUserId: string): void`
-  — **gana un segundo parámetro obligatorio**. Los dos llamadores
-  (`enqueue-plan-generation.ts:93`, `generate-plan-background.ts:206`) deben
-  pasar el id de usuario que ya tienen autenticado.
+- Produces: `assertPlanGenerationEntitlement(tier, actorUserId): CapabilityDecision`.
+  Al permitir, **devuelve** la decisión; al denegar conserva los mismos 403,
+  `errorCode` y `detail`. Sus llamadores pasan la decisión resultante a
+  `checkUsagePreflight`/`assertUsageGate`.
+- `UsageGateInput` deja de aceptar `userId`, `requestClass` y `tier` como tres
+  datos re-resolubles. Recibe `{ decision: CapabilityDecision }` y usa sólo
+  `decision.tier`, `capability`, `quotaOwnerUserId`, `quotaBucketId`, `limit` y
+  `consumptionUnits`.
 
-El comportamiento observable **no cambia**: mismos 403, mismo `errorCode`, mismo
-`detail`. Lo que cambia es que la decisión sale de un punto único con contexto.
+El comportamiento observable **no cambia**. El cambio es arquitectónico: una
+sola decisión determina entitlement, spend cap, bucket y dueño de cuota. Así el
+Proyecto 2 puede cambiar la asignación coach-atleta en `resolveCapability`, sin
+rastrear reglas por `usageGate` ni por los handlers.
 
-- [ ] **Step 1: Escribir el test que falla**
+- [ ] **Step 1: Escribir tests de cableado que realmente fallen**
 
-Crear `netlify/functions/_shared/__tests__/resolveEntitlementCapability.test.ts`:
+Extender `netlify/functions/__tests__/enqueuePlanEntitlement.test.ts`.
+El caso permitido debe comprobar la decisión retornada —por ejemplo
+`quotaOwnerUserId: 'user-1'`, `quotaBucketId: 'plan_builder_week'`, `limit: 16`
+y `tier: 'advanced'`—, no sólo que no lance. Los casos Weekly y Free deben
+seguir comprobar 403 `entitlement_required` y el `detail` existente.
 
-```ts
-import { describe, expect, it } from 'vitest'
-import { assertPlanGenerationEntitlement } from '../resolveEntitlement'
-
-describe('assertPlanGenerationEntitlement', () => {
-  it('advanced pasa sin lanzar', () => {
-    expect(() => assertPlanGenerationEntitlement('advanced', 'user-1')).not.toThrow()
-  })
-
-  it('weekly es rechazado con 403 entitlement_required', () => {
-    try {
-      assertPlanGenerationEntitlement('weekly', 'user-1')
-      throw new Error('debió lanzar')
-    } catch (error) {
-      const typed = error as { statusCode?: number; errorCode?: string; detail?: unknown }
-      expect(typed.statusCode).toBe(403)
-      expect(typed.errorCode).toBe('entitlement_required')
-      expect(typed.detail).toMatchObject({ requiredTier: 'advanced', currentTier: 'weekly' })
-    }
-  })
-
-  it('free es rechazado igual que weekly', () => {
-    expect(() => assertPlanGenerationEntitlement('free', 'user-1')).toThrow()
-  })
-})
-```
-
-- [ ] **Step 2: Correr el test y ver que falla**
-
-Run: `npx vitest run netlify/functions/_shared/__tests__/resolveEntitlementCapability.test.ts`
-Expected: FAIL de TypeScript por el segundo argumento, o fallo en tiempo de
-ejecución si la firma vieja lo ignora.
-
-- [ ] **Step 3: Reescribir `assertPlanGenerationEntitlement`**
-
-En `netlify/functions/_shared/resolveEntitlement.ts`, reemplazar la función y
-agregar el import:
+En `netlify/functions/__tests__/usageGate.test.ts`, crear un helper de decisión
+sintética permitida y actualizar cada llamada a:
 
 ```ts
-import { resolveCapability } from '../../../src/services/entitlements/resolveCapability'
+assertUsageGate({ decision })
+checkUsagePreflight({ decision })
 ```
 
-```ts
-/**
- * Lanza un error con forma HTTP si el tier no alcanza para generar planes.
- * Compartido por enqueue y worker para que los dos rechacen idéntico.
- *
- * Delega en `resolveCapability` para que exista un solo punto de decisión: el
- * tier ya viene resuelto por `resolveEntitlementTier`, así que se pasa como una
- * fila sin vencimiento y `resolveCapability` no lo vuelve a expirar.
- */
-export function assertPlanGenerationEntitlement(tier: Tier, actorUserId: string): void {
-  const decision = resolveCapability({
-    actorUserId,
-    targetAthleteId: null,
-    capability: PLAN_GENERATION_REQUEST_CLASS,
-    now: Date.now(),
-    entitlement: { tier, expiresAt: null },
-  })
-  if (decision.allowed) return
+Agregar un caso con dueño y límite no re-resolubles desde la clase:
+`quotaOwnerUserId: 'owner-coach'`, `quotaBucketId: 'chat'`, `limit: 7`,
+`tier: 'weekly'`, `capability: 'chat_general'`. Verificar que las llamadas a
+`read_ai_usage_spend`, `increment_ai_usage_if_under_limit` y la lectura de
+`ai_usage_daily` usan exactamente owner, bucket y límite de esa decisión. El
+bucket debe corresponder a `capability`: ésa es la invariante que evita cobrar
+en silencio una clase distinta, sin volver a resolver dueño, límite o tier.
 
-  const requiredTier = decision.requiredTier ?? 'advanced'
-  const detail = buildEntitlementDetail(PLAN_GENERATION_REQUEST_CLASS, requiredTier, decision.tier)
-  const error = new Error(formatEntitlementMessage(detail)) as EntitlementHttpError
-  error.statusCode = 403
-  error.errorCode = 'entitlement_required'
-  error.detail = detail
-  throw error
-}
-```
+- [ ] **Step 2: Correr los tests y ver que fallan**
 
-- [ ] **Step 4: Actualizar los dos llamadores**
+Run: `npx vitest run netlify/functions/__tests__/enqueuePlanEntitlement.test.ts netlify/functions/__tests__/usageGate.test.ts`
+Expected: FAIL. La función vieja retorna `undefined` al permitir y el gate aún
+espera `userId/requestClass/tier`; Vitest no hace typecheck, por lo que el fallo
+debe ser de aserción/forma, no confiar en un argumento extra.
 
-En los tres archivos la identidad verificada ya existe como `auth.userId`
-—verificado en `enqueue-plan-generation.ts:104`, `generate-plan-background.ts:330`
-y `coach.ts:1911`—. **No introducir un id nuevo ni leerlo del body:**
-`actorUserId` se deriva siempre del JWT verificado.
+- [ ] **Step 3: Retornar la decisión desde el helper de Plan Builder**
 
-En `netlify/functions/enqueue-plan-generation.ts:93`:
+En `netlify/functions/_shared/resolveEntitlement.ts`, importar
+`resolveCapability` y `CapabilityDecision`. Reescribir
+`assertPlanGenerationEntitlement` para resolver una vez, con `actorUserId` del
+JWT y `{ tier, expiresAt: null }`; si está permitida debe **retornar** esa
+`CapabilityDecision`. Si no, debe crear exactamente el error HTTP existente,
+usando `decision.requiredTier` y `decision.tier`.
 
-```ts
-    if (gateEnabled) assertPlanGenerationEntitlement(gateTier, auth.userId)
-```
+Los llamadores autenticados de `enqueue-plan-generation.ts` y
+`generate-plan-background.ts` pasan `auth.userId`, nunca un id de body. Cuando
+el flag de entitlement esté encendido, conservan la decisión devuelta; cuando
+esté apagado, crean una decisión neutra de `advanced` con el mismo
+`resolveCapability`, para que el usage gate siga aplicando sus límites sin
+convertir una clase cara en cuota infinita.
 
-En `netlify/functions/generate-plan-background.ts:206`:
+- [ ] **Step 4: Hacer que `usageGate` consuma la decisión, sin re-resolverla**
 
-```ts
-        assertPlanGenerationEntitlement(gateTier, auth.userId)
-```
+En `netlify/functions/_shared/usageGate.ts`:
 
-- [ ] **Step 5: Cablear el gate de clase de `coach.ts`**
+1. Eliminar la función local y el import de `bucketLimitForTier` que resuelven
+   bucket/límite. Conservar `bucketForClass` sólo para comprobar que
+   `bucketForClass(decision.capability)?.id === decision.quotaBucketId`.
+2. Cambiar `UsageGateInput` a `{ decision: CapabilityDecision }`.
+3. En el preámbulo, después de flags, tratar `!decision.allowed` como `skip`;
+   para una decisión permitida, bucket nulo/incorrecto, dueño inválido, límite
+   nulo/no positivo o unidades no soportadas deben fallar cerrado con
+   `server_error`. Usar `decision.tier` para `evaluateSpendCaps`.
+4. Usar `decision.quotaOwnerUserId` para leer gasto, incrementar cuota, leer el
+   contador de preflight y registrar costos desde los handlers.
+5. Mientras `consumptionUnits` sea 1, validarlo explícitamente y fallar cerrado
+   con `server_error` ante otro valor. No añadir una migración ni fingir que la
+   RPC existente soporta ponderación; la decisión queda ya encaminada para el
+   bucket mensual de Proyecto 2.
 
-En `netlify/functions/coach.ts:1918`, reemplazar el predicado por la decisión:
+`UsageGateReservation` conserva bucket, límite y fecha: el llamador que registra
+costo ya tiene la misma `decision` y debe pasar
+`decision.quotaOwnerUserId`, no el actor por defecto.
 
-```ts
-      const capabilityDecision = resolveCapability({
-        actorUserId: auth.userId,
-        targetAthleteId: null,
-        capability: gateClass,
-        now: Date.now(),
-        entitlement: { tier: currentTier, expiresAt: null },
-      })
-      if (!capabilityDecision.allowed) {
-```
+- [ ] **Step 5: Propagar una sola decisión en los tres handlers**
 
-Agregar el import correspondiente y **quitar** `isClassAllowed` del import de
-`entitlementPolicy` si ya no queda ningún uso en el archivo. El cuerpo del `if`
-no cambia: sigue construyendo el mismo 403.
+En `coach.ts`, resolver la capability una sola vez tras auth/kill switch. Con
+entitlements encendidos, denegar con el mismo detalle existente si
+`!decision.allowed`; con el flag apagado, resolver el mismo `gateClass` como
+`advanced` sólo para el usage gate. Guardar la decisión en `gateContext` y hacer
+que cada retry/fallback llame `assertUsageGate({ decision })`. La persistencia y
+la auditoría de request continúan usando el actor autenticado; el costo usa el
+dueño de cuota de la decisión.
 
-- [ ] **Step 6: Verificar typecheck y suite completa**
+En enqueue, pasar la decisión de Plan Builder a
+`checkUsagePreflight({ decision })`. En el worker, pasar esa misma clase de
+decisión a cada `assertUsageGate({ decision })` y a `recordCostIfKnown`. El
+orden auth → kill switch → entitlement → spend cap → cuota → proveedor no cambia.
+
+- [ ] **Step 6: Verificar typecheck y regresión completa**
 
 Run: `npx tsc -b && npm test`
-Expected: PASS. `tsc` es el que garantiza que no quedó un llamador con la firma
+Expected: PASS. Confirmar además que no quedan imports de `bucketForClass` o
+`bucketLimitForTier` en `usageGate.ts`, ni llamadas a usage gate con la forma
 vieja.
 
 - [ ] **Step 7: Commit (solo si el owner lo pide)**
 
 ```bash
 git add netlify/functions
-git commit -m "refactor(entitlements): las tres funciones deciden vía resolveCapability"
+git commit -m "refactor(entitlements): propagar capability decision al usage gate"
 ```
 
 ---
@@ -981,58 +974,37 @@ oferta antes de gastar una request; el servidor sigue siendo quien rechaza. Por
 eso `actorUserId` acá sale de la sesión local y **no** es una autoridad: si el
 cliente miente, el servidor lo rechaza igual con su propio JWT.
 
-- [ ] **Step 1: Escribir el test que falla**
+- [ ] **Step 1: Escribir el test del hook que falla**
 
-Crear `src/hooks/__tests__/useEntitlement.test.ts`:
+Crear `src/hooks/__tests__/useEntitlement.test.ts` con entorno jsdom e importar
+`renderHook` desde `@testing-library/react`, `useEntitlement` y
+`useEntitlementStore`. En `beforeEach`, usar `useEntitlementStore.setState(...)`
+para fijar un tier hidratado; en `afterEach`, ejecutar `reset()`.
+
+Probar el contrato público del hook, no `resolveCapability` en aislamiento:
 
 ```ts
-import { describe, expect, it } from 'vitest'
-import { resolveCapability } from '../../services/entitlements/resolveCapability'
+const { result } = renderHook(() => useEntitlement())
 
-describe('gate preventivo del cliente', () => {
-  it('un free no ve week_creator habilitado', () => {
-    const decision = resolveCapability({
-      actorUserId: 'local',
-      targetAthleteId: null,
-      capability: 'week_creator',
-      now: Date.now(),
-      entitlement: { tier: 'free', expiresAt: null },
-    })
-    expect(decision.allowed).toBe(false)
-    expect(decision.requiredTier).toBe('weekly')
-  })
-
-  it('un weekly sí ve week_creator habilitado', () => {
-    const decision = resolveCapability({
-      actorUserId: 'local',
-      targetAthleteId: null,
-      capability: 'week_creator',
-      now: Date.now(),
-      entitlement: { tier: 'weekly', expiresAt: null },
-    })
-    expect(decision.allowed).toBe(true)
-  })
-
-  it('un weekly NO ve plan_builder_week habilitado', () => {
-    const decision = resolveCapability({
-      actorUserId: 'local',
-      targetAthleteId: null,
-      capability: 'plan_builder_week',
-      now: Date.now(),
-      entitlement: { tier: 'weekly', expiresAt: null },
-    })
-    expect(decision.allowed).toBe(false)
-    expect(decision.requiredTier).toBe('advanced')
-  })
+expect(result.current.decide('week_creator')).toMatchObject({
+  allowed: false,
+  tier: 'free',
+  requiredTier: 'weekly',
 })
 ```
 
-- [ ] **Step 2: Correr el test**
+Agregar los casos Weekly → `week_creator` permitido y Weekly →
+`plan_builder_week` denegado con `requiredTier: 'advanced'`. Incluir una
+aserción de que `canUse` sigue existiendo, para proteger la compatibilidad con
+los llamadores actuales. Este archivo debe fallar antes del Step 3 porque
+`decide` aún no existe en `EntitlementView`.
+
+- [ ] **Step 2: Correr el test y ver que falla**
 
 Run: `npx vitest run src/hooks/__tests__/useEntitlement.test.ts`
-Expected: PASS ya con la Task 4 aplicada — este test fija el contrato de
-producto que el cliente muestra, no una implementación nueva. Si falla, la Task 4
-está incompleta.
+Expected: FAIL porque `result.current.decide` no existe. No sustituir este test
+por uno que llame `resolveCapability` directamente: eso pasaría antes de cablear
+el hook.
 
 - [ ] **Step 3: Exponer la decisión completa en el hook**
 
@@ -1224,6 +1196,22 @@ order by u.created_at;
 Cualquier cuenta en `free` distinta del owner pierde las propuestas aplicables
 al desplegar y hay que avisarle.
 
+**Paso 0c — guardar el estado original del owner y el rollback.** Registrar en
+el documento el resultado completo de:
+
+```sql
+select user_id, tier, expires_at, source, updated_at
+from public.user_entitlements
+where user_id = '<OWNER_UUID>';
+```
+
+El smoke sólo cambia `tier`; guardar el valor inicial permite volverlo a dejar
+exactamente como estaba. Antes de cualquier cambio, anotar también el deploy de
+producción actualmente activo. Si falla un smoke de entitlement/cuota, detener
+el rollout, mantener `VITE_ENTITLEMENTS` apagada, restaurar el tier original y
+revertir al deploy anterior; no intentar compensarlo encendiendo o apagando
+flags a medias.
+
 **Paso 1 — desplegar con `VITE_ENTITLEMENTS` todavía apagada.** El servidor
 aplica el corte nuevo; la UI todavía no tiene gate preventivo.
 
@@ -1248,11 +1236,21 @@ Avanzado.
 **Paso 4 — smoke `advanced`:** volver el tier con el mismo `update` guardado por
 `and tier = 'weekly'`, y confirmar que Plan Builder genera.
 
+**Paso 4b — restaurar el owner a Free.** Antes de probar el gate preventivo de
+cliente, restaurar el `tier` que se guardó en Paso 0c (para este piloto, `free`)
+con un `update` protegido por `and tier = 'advanced'`; registrar el `returning`.
+Si el valor inicial no era `free`, usar una segunda cuenta Free para el Paso 5,
+en vez de dejar el owner en un estado alterado.
+
 **Paso 5 — encender `VITE_ENTITLEMENTS`** y **redesplegar**: Netlify fija las
 variables al publicar, así que un cambio de variable no surte efecto sin
 redeploy. Verificar que un `free` ve la oferta *antes* de gastar una request.
 
-**Paso 6 — publicar `/pricing`.**
+**Paso 6 — verificar y anunciar `/pricing`.** El archivo de Pricing forma parte
+del bundle desplegado en Paso 1, por lo que ya está publicado técnicamente. Tras
+el smoke exitoso, verificar la página live y anunciarla; no tratar este paso
+como un deploy independiente. Si se requiere que el copy no sea público antes
+del smoke, separar Task 8 en un commit y deploy posterior de forma explícita.
 
 - [ ] **Step 3: Registrar los pendientes que este plan NO cierra**
 

@@ -30,10 +30,12 @@ import {
   formatEntitlementMessage,
 } from '../../src/services/entitlements/entitlementError'
 import {
-  isClassAllowed,
-  minTierForClass,
-  type Tier,
+  type EntitlementRow,
 } from '../../src/services/entitlements/entitlementPolicy'
+import {
+  resolveCapability,
+  type CapabilityDecision,
+} from '../../src/services/entitlements/resolveCapability'
 import {
   isEntitlementEnforcementEnabled,
   resolveEntitlementTier,
@@ -1529,7 +1531,7 @@ async function recordCostIfKnown(input: {
 
 async function executeWithPolicy(
   req: CoachRequest,
-  gateContext: { userId: string; tier: Tier },
+  gateContext: { decision: CapabilityDecision },
   onChunk?: (chunk: string) => void,
 ): Promise<ProviderExecutionResult> {
   const requestClass = normalizeRequestClass(req.requestClass)
@@ -1587,7 +1589,7 @@ async function executeWithPolicy(
       // al proveedor.
       //
       // Con `AUTH_REQUIRED=false` (modo anónimo local/loadtest, ver
-      // `resolveAuthContext`), `gateContext.userId` es el literal
+      // `resolveAuthContext`), `quotaOwnerUserId` es el literal
       // `'anonymous'`, no un uuid — igual que el entitlement de arriba, que
       // ya trata esa identidad como 'free' sin consultar el tier real. Las
       // RPC de `ai_usage_daily` declaran `p_user_id uuid`: mandarles
@@ -1595,12 +1597,10 @@ async function executeWithPolicy(
       // a cada request que pasa por acá con `AI_USAGE_LIMITS_ENABLED`
       // encendida. No hay una identidad real a la cual atribuir cuota, así
       // que el bypass es el mismo tratamiento que "gate apagado".
-      const reservation = gateContext.userId === ANONYMOUS_USER_ID
+      const reservation = gateContext.decision.quotaOwnerUserId === ANONYMOUS_USER_ID
         ? null
         : await assertUsageGate({
-          userId: gateContext.userId,
-          requestClass,
-          tier: gateContext.tier,
+          decision: gateContext.decision,
         })
 
       // Recalcular el presupuesto real DESPUÉS del gate (hallazgo de
@@ -1671,7 +1671,12 @@ async function executeWithPolicy(
         maxTokens: req.maxTokens,
       })
       if (reservation) {
-        await recordCostIfKnown({ userId: gateContext.userId, reservation, result, deadline })
+        await recordCostIfKnown({
+          userId: gateContext.decision.quotaOwnerUserId,
+          reservation,
+          result,
+          deadline,
+        })
       }
       return result
     } catch (error) {
@@ -1766,7 +1771,7 @@ async function executeWithPolicy(
 
 function streamResponse(
   req: CoachRequest,
-  gateContext: { userId: string; tier: Tier },
+  gateContext: { decision: CapabilityDecision },
   timing: { requestReceivedAt: number; authDurationMs: number },
   persistence?: { userId: string; token: string },
 ): StreamingResponse {
@@ -1877,7 +1882,7 @@ export const handler = stream(async (event: HandlerEvent): Promise<StreamingResp
   // con `const` dentro del `try` de abajo, así que lo que se necesita
   // después de ese bloque (las 2 llamadas a `executeWithPolicy`/`streamResponse`)
   // tiene que vivir afuera.
-  let gateContext: { userId: string; tier: Tier } | undefined
+  let gateContext: { decision: CapabilityDecision } | undefined
   try {
     const bearer = getBearerToken(event)
     const gateEnabled = isEntitlementEnforcementEnabled()
@@ -1885,7 +1890,7 @@ export const handler = stream(async (event: HandlerEvent): Promise<StreamingResp
       resolveAuthContext(event),
       gateEnabled && AUTH_REQUIRED && bearer
         ? resolveEntitlementTier(bearer)
-        : Promise.resolve('free' as Tier),
+        : Promise.resolve('free' as const),
     ])
 
     // Desde aquí la identidad ya está verificada. Preparar la persistencia
@@ -1912,32 +1917,36 @@ export const handler = stream(async (event: HandlerEvent): Promise<StreamingResp
 
     // Entitlement ANTES que cualquier cuota: una clase bloqueada por plan no
     // puede reportarse como límite diario, o el usuario recibe la oferta
-    // equivocada y vuelve mañana esperando que se le renueve.
-    if (gateEnabled) {
-      const gateClass = normalizeRequestClass(req.requestClass)
-      if (!isClassAllowed(currentTier, gateClass)) {
-        const requiredTier = minTierForClass(gateClass) ?? 'advanced'
-        const detail = buildEntitlementDetail(gateClass, requiredTier, currentTier)
-        throw makeError(
-          formatEntitlementMessage(detail),
-          403,
-          'entitlement_required',
-          false,
-          detail,
-        )
-      }
+    // equivocada y vuelve mañana esperando que se le renueve. Con enforcement
+    // apagado se conserva el acceso previo, pero se construye una decisión
+    // Advanced neutral para que `usageGate` no reinterprete el tier/bucket/
+    // dueño durante un rollout intermedio.
+    const effectiveTier = gateEnabled ? currentTier : 'advanced'
+    const entitlement: EntitlementRow = { tier: effectiveTier, expiresAt: null }
+    const decision = resolveCapability({
+      actorUserId: auth.userId,
+      targetAthleteId: null,
+      capability: normalizeRequestClass(req.requestClass),
+      now: Date.now(),
+      entitlement,
+    })
+    if (gateEnabled && !decision.allowed) {
+      const requiredTier = decision.requiredTier ?? 'advanced'
+      const detail = buildEntitlementDetail(
+        normalizeRequestClass(req.requestClass),
+        requiredTier,
+        currentTier,
+      )
+      throw makeError(
+        formatEntitlementMessage(detail),
+        403,
+        'entitlement_required',
+        false,
+        detail,
+      )
     }
 
-    // Con `ENTITLEMENTS_ENABLED` apagado, `gateTier`/`currentTier` resuelven
-    // siempre a 'free' — no hay auth de plan real. Si el gate de USO
-    // (`AI_USAGE_LIMITS_ENABLED`) se enciende en ese estado (rollout
-    // intermedio, o alguien lo activa sin activar entitlements), una clase
-    // `weekly`/`advanced` no tiene límite definido para 'free' en
-    // `QUOTA_BUCKETS`, así que `assertUsageGate` devolvería `null` (no
-    // gatea) justo para las clases más caras. `'advanced'` es el tier
-    // neutro acá: no bloquea nada por sí solo, solo evita que "nadie tiene
-    // límite" se lea como "cuota infinita".
-    gateContext = { userId: auth.userId, tier: gateEnabled ? currentTier : 'advanced' }
+    gateContext = { decision }
 
     authDurationMs = Date.now() - authStartedAt
   } catch (error) {

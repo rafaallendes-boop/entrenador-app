@@ -9,7 +9,17 @@ const handlerMocks = vi.hoisted(() => ({
   createSupabaseWriter: vi.fn(),
   isEntitlementEnforcementEnabled: vi.fn(() => false),
   resolveEntitlementTier: vi.fn(async () => 'advanced'),
-  assertPlanGenerationEntitlement: vi.fn(),
+  assertPlanGenerationEntitlement: vi.fn(() => ({
+    allowed: true,
+    tier: 'advanced',
+    requiredTier: 'advanced',
+    entitlementSource: 'self',
+    entitlementOwnerUserId: 'user-1',
+    quotaOwnerUserId: 'user-1',
+    quotaBucketId: 'plan_builder_week',
+    consumptionUnits: 1,
+    limit: 16,
+  })),
 }))
 
 vi.mock('../_shared/usageGate', async (importActual) => {
@@ -100,7 +110,7 @@ describe('generate-plan-background — usage gate', () => {
     const writer = buildWriterStub(null)
     handlerMocks.createSupabaseWriter.mockReturnValue(writer)
     handlerMocks.assertUsageGate.mockRejectedValue(
-      Object.assign(new Error('cupo agotado'), { statusCode: 429, errorCode: 'quota_exceeded', detail: { bucketId: 'plan_builder_week', limit: 12, remaining: 0 } }),
+      Object.assign(new Error('cupo agotado'), { statusCode: 429, errorCode: 'quota_exceeded', detail: { bucketId: 'plan_builder_week', limit: 16, remaining: 0 } }),
     )
 
     await handler(buildBackgroundEvent({ jobId: undefined }), {} as never)
@@ -120,6 +130,14 @@ describe('generate-plan-background — usage gate', () => {
     //    vuelto a invocar `gatedCallLLM`, y con él `assertUsageGate`, una
     //    segunda vez.
     expect(handlerMocks.assertUsageGate).toHaveBeenCalledTimes(1)
+    expect(handlerMocks.assertUsageGate).toHaveBeenCalledWith({
+      decision: expect.objectContaining({
+        tier: 'advanced',
+        quotaOwnerUserId: 'user-1',
+        quotaBucketId: 'plan_builder_week',
+        limit: 16,
+      }),
+    })
 
     // 2. La semana final queda marcada con el mensaje por-causa que SOLO
     //    emite la rama `isUsageGateRejection` de `asyncGenerationLoop.ts`
@@ -145,7 +163,7 @@ describe('generate-plan-background — usage gate', () => {
   it('gate aceptado permite la llamada y registra costo después de la respuesta, esperado (no fire-and-forget)', async () => {
     const writer = buildWriterStub(null)
     handlerMocks.createSupabaseWriter.mockReturnValue(writer)
-    handlerMocks.assertUsageGate.mockResolvedValue({ bucketId: 'plan_builder_week', limit: 12, usageDate: '2026-08-16' })
+    handlerMocks.assertUsageGate.mockResolvedValue({ bucketId: 'plan_builder_week', limit: 16, usageDate: '2026-08-16' })
     let costRecordedBeforeReturn = false
     handlerMocks.recordUsageCost.mockImplementation(async () => { costRecordedBeforeReturn = true })
     // Corrección tras verificación local (no en el brief literal): sin
@@ -205,7 +223,7 @@ describe('generate-plan-background — usage gate', () => {
   it('si el proveedor no reporta tokens, no se registra costo y queda logueada una advertencia', async () => {
     const writer = buildWriterStub(null)
     handlerMocks.createSupabaseWriter.mockReturnValue(writer)
-    handlerMocks.assertUsageGate.mockResolvedValue({ bucketId: 'plan_builder_week', limit: 12, usageDate: '2026-08-16' })
+    handlerMocks.assertUsageGate.mockResolvedValue({ bucketId: 'plan_builder_week', limit: 16, usageDate: '2026-08-16' })
     handlerMocks.callAnthropicForWeek.mockResolvedValue({ model: 'claude-sonnet-4-6' })   // sin promptTokens/completionTokens
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
 

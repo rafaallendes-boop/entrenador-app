@@ -1,4 +1,9 @@
+import type { AIRequestClass } from '../types'
 import { isClassAllowed, type Tier } from '../services/entitlements/entitlementPolicy'
+import {
+  resolveCapability,
+  type CapabilityDecision,
+} from '../services/entitlements/resolveCapability'
 import {
   isEntitlementPending,
   useEntitlementStore,
@@ -18,6 +23,8 @@ export interface EntitlementView {
    */
   pending: boolean
   canUse: (requestClass: string) => boolean
+  /** Consulta preventiva para la UI; el servidor siempre autoriza con su JWT. */
+  decide: (capability: AIRequestClass) => CapabilityDecision
 }
 
 /** Selector puro sobre el store global. No hidrata: eso lo hace App.tsx. */
@@ -33,5 +40,16 @@ export function useEntitlement(): EntitlementView {
     source,
     pending: isEntitlementPending({ loading, hydrated }),
     canUse: (requestClass: string) => isClassAllowed(tier, requestClass),
+    decide: (capability: AIRequestClass): CapabilityDecision => resolveCapability({
+      // Literal a propósito. `useEntitlementStore` no expone identidad y esta
+      // llamada es CONSULTIVA: sólo decide si la UI muestra la oferta antes de
+      // gastar una request. El servidor resuelve de nuevo con su propio JWT;
+      // pasar un id de sesión sugeriría, falsamente, que el cliente autoriza.
+      actorUserId: 'local',
+      targetAthleteId: null,
+      capability,
+      now: Date.now(),
+      entitlement: { tier, expiresAt: null },
+    }),
   }
 }

@@ -1,6 +1,5 @@
-import type { AIRequestClass } from '../../../src/types'
-import type { Tier } from '../../../src/services/entitlements/entitlementPolicy'
-import { bucketForClass, bucketLimitForTier } from '../../../src/services/entitlements/quotaBuckets'
+import type { CapabilityDecision } from '../../../src/services/entitlements/resolveCapability'
+import { bucketForClass } from '../../../src/services/entitlements/quotaBuckets'
 import { evaluateSpendCaps, type SpendSnapshot } from '../../../src/services/entitlements/spendCapPolicy'
 
 const RPC_TIMEOUT_MS = 3_000
@@ -152,18 +151,13 @@ async function readSpend(userId: string): Promise<SpendSnapshot> {
   return { accountCostUsd: row.account_cost_usd, globalCostUsd: row.global_cost_usd }
 }
 
-function resolveBucket(requestClass: AIRequestClass, tier: Tier): { bucketId: string; limit: number } | null {
-  const bucket = bucketForClass(requestClass)
-  if (!bucket) return null
-  const limit = bucketLimitForTier(bucket, tier)
-  if (limit == null) return null
-  return { bucketId: bucket.id, limit }
-}
-
 export interface UsageGateInput {
-  userId: string
-  requestClass: AIRequestClass
-  tier: Tier
+  /**
+   * Decisión ya resuelta por el borde de autorización. El gate no vuelve a
+   * derivar clase, bucket, dueño ni tier: hacerlo introduciría una segunda
+   * fuente de verdad e impediría delegar cuota en el producto Coach.
+   */
+  decision: CapabilityDecision
 }
 
 export interface UsageGateReservation {
@@ -178,27 +172,52 @@ type GatePreamble =
 
 /**
  * Preámbulo compartido por `assertUsageGate` y `checkUsagePreflight`: kill
- * switch → flag de limits → resolución de bucket/tier → gasto → spend caps.
+ * switch → flag de limits → decisión permitida y válida → gasto → spend caps.
  * Extraído a propósito (hallazgo de review) para que un cambio futuro a
  * cualquiera de estas cinco precondiciones no pueda aplicarse por accidente
  * a un solo entry point y no al otro — exactamente el tipo de bug que ya
  * produjo dos hallazgos fail-open en rondas previas de este mismo plan.
- * `{ skip: true }` cubre los dos casos "no gatea": limits apagado, o la
- * clase no tiene bucket/límite para el tier (eso lo resuelve el gate de
- * entitlement, no este módulo).
+ * `{ skip: true }` cubre los dos casos "no gatea": limits apagado, o una
+ * capacidad no permitida (eso lo resuelve el gate de entitlement, no este
+ * módulo). Con limits apagado no se valida la decisión: el flag deshabilita
+ * por completo este gate, excepto el kill switch que siempre prevalece.
  */
 async function evaluateGatePreamble(input: UsageGateInput): Promise<GatePreamble> {
   if (isKillSwitchActive()) throw makeKillSwitchError()
+  const { decision } = input
   if (!isUsageLimitsEnabled()) return { skip: true }
 
-  const resolved = resolveBucket(input.requestClass, input.tier)
-  if (!resolved) return { skip: true }
+  // La denegación pertenece al gate de entitlement, que corre antes. Mantener
+  // este no-op conserva el contrato de `assertUsageGate` para callers que
+  // llegan con una capacidad no permitida, sin inventar bucket ni límite.
+  if (!decision.allowed) return { skip: true }
 
-  const spend = await readSpend(input.userId)
-  const capCheck = evaluateSpendCaps(spend)
+  // La cuota actual representa exactamente un intento de proveedor. Cuando
+  // cambie la ponderación por producto, este gate no puede fingir que una
+  // unidad distinta equivale a uno: debe cambiar junto con la RPC atómica.
+  if (decision.consumptionUnits !== 1) {
+    throw makeServerError('La decisión de cuota tiene unidades no soportadas.')
+  }
+
+  // El gate no re-resuelve la decisión (eso permitiría divergir de futuros
+  // dueños/tier delegados), pero sí verifica su vínculo estructural con la
+  // capacidad que la originó. Así una decisión reutilizada para otra clase no
+  // puede cobrar en silencio el bucket equivocado.
+  const expectedBucketId = bucketForClass(decision.capability)?.id
+  if (
+    typeof decision.quotaOwnerUserId !== 'string' || decision.quotaOwnerUserId.length === 0
+    || typeof decision.quotaBucketId !== 'string' || decision.quotaBucketId.length === 0
+    || typeof decision.limit !== 'number' || !Number.isFinite(decision.limit) || decision.limit <= 0
+    || decision.quotaBucketId !== expectedBucketId
+  ) {
+    throw makeServerError('La decisión de cuota está incompleta, es inválida o no corresponde a su capacidad.')
+  }
+
+  const spend = await readSpend(decision.quotaOwnerUserId)
+  const capCheck = evaluateSpendCaps(spend, decision.tier)
   if (capCheck.exceeded) throw makeSpendCapError(capCheck.scope, capCheck.capUsd)
 
-  return { skip: false, bucketId: resolved.bucketId, limit: resolved.limit }
+  return { skip: false, bucketId: decision.quotaBucketId, limit: decision.limit }
 }
 
 /**
@@ -213,7 +232,7 @@ export async function assertUsageGate(input: UsageGateInput): Promise<UsageGateR
   if (preamble.skip) return null
 
   const rows = await callRpc<unknown>('increment_ai_usage_if_under_limit', {
-    p_user_id: input.userId,
+    p_user_id: input.decision.quotaOwnerUserId,
     p_bucket_id: preamble.bucketId,
     p_limit: preamble.limit,
   })
@@ -249,7 +268,7 @@ export async function checkUsagePreflight(input: UsageGateInput): Promise<void> 
   if (!creds) throw makeServerError('Configuración de Supabase ausente en el servidor.')
   const today = new Date().toISOString().slice(0, 10)
   const query = new URLSearchParams({
-    user_id: `eq.${input.userId}`,
+    user_id: `eq.${input.decision.quotaOwnerUserId}`,
     usage_date: `eq.${today}`,
     bucket_id: `eq.${preamble.bucketId}`,
     select: 'request_count',

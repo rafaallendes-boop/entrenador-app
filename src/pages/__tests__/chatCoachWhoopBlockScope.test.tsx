@@ -7,10 +7,13 @@ import type { ChatContext } from '../../types'
 
 const h = vi.hoisted(() => ({
   sendMessage: vi.fn(),
+  showEntitlementOffer: vi.fn(),
   athleteId: null as string | null,
   switchEpoch: 0,
   loadWhoopWorkoutBlock: vi.fn(),
   getSessionsForDateRange: vi.fn(),
+  chatActionAllowed: true,
+  entitlementPending: false,
 }))
 
 /**
@@ -43,6 +46,16 @@ vi.mock('../../services/readiness/pullReadiness', () => ({
 
 vi.mock('../../components/chat/ConversationDrawer', () => ({ default: () => null }))
 
+vi.mock('../../hooks/useEntitlement', () => ({
+  useEntitlement: () => ({
+    canUse: () => true,
+    decide: (requestClass: string) => ({
+      allowed: requestClass !== 'chat_action' || h.chatActionAllowed,
+    }),
+    pending: h.entitlementPending,
+  }),
+}))
+
 vi.mock('../../store/useChatStore', () => {
   const useChatStore = () => ({
     messages: [],
@@ -50,6 +63,8 @@ vi.mock('../../store/useChatStore', () => {
     streamingText: '',
     responsePhase: 'idle',
     error: null,
+    entitlementOffer: null,
+    showEntitlementOffer: h.showEntitlementOffer,
     loadHistory: vi.fn(),
     sendMessage: h.sendMessage,
     newSession: vi.fn(),
@@ -110,12 +125,15 @@ const BLOCK = 'Carga objetiva registrada por Whoop (ultimos 7 dias):'
 beforeEach(() => {
   h.sendMessage.mockReset()
   h.sendMessage.mockResolvedValue({ route: 'chat' })
+  h.showEntitlementOffer.mockReset()
   h.loadWhoopWorkoutBlock.mockReset()
   h.loadWhoopWorkoutBlock.mockResolvedValue(BLOCK)
   h.getSessionsForDateRange.mockReset()
   h.getSessionsForDateRange.mockResolvedValue([])
   h.athleteId = 'ath_self'
   h.switchEpoch = 0
+  h.chatActionAllowed = true
+  h.entitlementPending = false
   Element.prototype.scrollIntoView = () => {}
 })
 
@@ -135,6 +153,24 @@ function sentContext(): ChatContext {
 }
 
 describe('ChatCoach — scope del bloque de Whoop', () => {
+  it('intercepta una chat_action no permitida antes de consultar o enviar', async () => {
+    h.chatActionAllowed = false
+
+    await send('ajusta mi sesión de running de mañana')
+
+    expect(h.showEntitlementOffer).toHaveBeenCalledWith('chat_action')
+    expect(h.getSessionsForDateRange).not.toHaveBeenCalled()
+    expect(h.loadWhoopWorkoutBlock).not.toHaveBeenCalled()
+    expect(h.sendMessage).not.toHaveBeenCalled()
+  })
+
+  it('deja pasar una chat_action permitida', async () => {
+    await send('ajusta mi sesión de running de mañana')
+
+    expect(h.showEntitlementOffer).not.toHaveBeenCalled()
+    expect(h.sendMessage).toHaveBeenCalledTimes(1)
+  })
+
   it('adjunta el bloque cuando el scope no se movió', async () => {
     await send('hola')
 

@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useCallback, useEffect, useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import PlanDashboard from './PlanDashboard'
 import { ChevronLeft, ChevronRight, Target, Sparkles, SkipForward, Trash2 } from 'lucide-react'
@@ -8,6 +8,7 @@ import { CycleHistory } from '../components/planBuilder/CycleHistory'
 import { useEntitlement } from '../hooks/useEntitlement'
 import { db } from '../db/db'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
+import { useAuthStore } from '../store/useAuthStore'
 import { usePlanBuilderStore } from '../store/usePlanBuilderStore'
 import { useTrainingStore } from '../store/useTrainingStore'
 import { computeMacroPlan, getPrimaryGoalEvent, getPhaseLabel } from '../services/macroPlan'
@@ -482,6 +483,12 @@ export default function CompetitionPlanPage() {
   const { athleteProfile, saveAthleteProfile } = useCoachMemoryStore()
   const { allWeekSummaries, loadAllSummaries } = useTrainingStore()
   const { canUse, pending: entitlementPending } = useEntitlement()
+  const activeAthleteId = useAuthStore((state) => state.activeAthleteId)
+  const lastSuccessfulSyncAt = useAuthStore((state) => state.syncDetails.lastSuccessfulSyncAt)
+  const syncAttemptInFlight = useAuthStore((state) => state.syncDetails.syncAttemptInFlight)
+  // `null` conserva la semántica legacy/self hasta que se hidrate el scope,
+  // pero no debe confundirse con una consulta ya resuelta de otro atleta.
+  const activePlanScopeKey = activeAthleteId ?? '__legacy_or_self__'
   const now = useMemo(() => new Date(), [])
   const enabledSports = getEnabledSports(athleteProfile)
   const existingEvent = getPrimaryGoalEvent(athleteProfile)
@@ -494,32 +501,54 @@ export default function CompetitionPlanPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [showDeletePlanConfirm, setShowDeletePlanConfirm] = useState(false)
   const [hasActiveGeneratedPlan, setHasActiveGeneratedPlan] = useState(false)
-  const [hasResolvedActiveGeneratedPlan, setHasResolvedActiveGeneratedPlan] = useState(false)
+  const [resolvedActivePlanScopeKey, setResolvedActivePlanScopeKey] = useState<string | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [state, setState] = useState<WizardState>(() =>
     initWizardState(athleteProfile, existingEvent, existingConfig)
   )
 
-  useEffect(() => {
-    let cancelled = false
-    void db.trainingPlans.toArray()
-      .then((all) => {
-        const active = filterRowsToActiveScope(all)
-          .filter((plan) => plan.status === 'active')
-        if (!cancelled) setHasActiveGeneratedPlan(active.length > 0)
-      })
+  const refreshActiveGeneratedPlan = useCallback(async (
+    scopeKey: string,
+    isMounted: () => boolean,
+  ) => {
+    // La tabla puede cambiar cuando termina el pull inicial o al alternar el
+    // atleta activo. Capturamos el scope para no adoptar un resultado tardío
+    // perteneciente al atleta que acabamos de abandonar.
+    const athleteIdAtStart = getActiveAthleteId()
+    const switchEpochAtStart = getSwitchEpoch()
+
+    try {
+      const all = await db.trainingPlans.toArray()
+      if (!isMounted() || (
+        getActiveAthleteId() !== athleteIdAtStart
+        || getSwitchEpoch() !== switchEpochAtStart
+      )) return
+
+      const active = filterRowsToActiveScope(all)
+        .filter((plan) => plan.status === 'active')
+      setHasActiveGeneratedPlan(active.length > 0)
+    } catch {
       // Si el almacenamiento local falla, Free sigue viendo la oferta. Nunca
       // dejamos la ruta bloqueada en una espera infinita.
-      .catch(() => {
-        if (!cancelled) setHasActiveGeneratedPlan(false)
-      })
-      .finally(() => {
-        if (!cancelled) setHasResolvedActiveGeneratedPlan(true)
-      })
+      if (isMounted() && (
+        getActiveAthleteId() === athleteIdAtStart
+        && getSwitchEpoch() === switchEpochAtStart
+      )) setHasActiveGeneratedPlan(false)
+    } finally {
+      if (isMounted() && (
+        getActiveAthleteId() === athleteIdAtStart
+        && getSwitchEpoch() === switchEpochAtStart
+      )) setResolvedActivePlanScopeKey(scopeKey)
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    void refreshActiveGeneratedPlan(activePlanScopeKey, () => !cancelled)
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [activePlanScopeKey, lastSuccessfulSyncAt, refreshActiveGeneratedPlan, syncAttemptInFlight])
 
   useEffect(() => {
     void loadAllSummaries()
@@ -535,6 +564,7 @@ export default function CompetitionPlanPage() {
   const macroPlanPhaseLabel = macroPlan ? getPhaseLabel(macroPlan.currentPhase) : undefined
   const hasSavedPlan = Boolean(existingEvent || existingConfig || hasActiveGeneratedPlan)
   const canManageCompetitionPlan = canUse('plan_builder_week')
+  const hasResolvedActiveGeneratedPlan = resolvedActivePlanScopeKey === activePlanScopeKey
 
   // Derive primary sport from event type
   const primarySportForEvent = useMemo<SupportedSport | null>(() => {

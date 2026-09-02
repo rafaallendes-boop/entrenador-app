@@ -38,13 +38,19 @@ afterEach(() => {
 })
 
 describe('assertPlanGenerationEntitlement', () => {
-  it('advanced pasa sin lanzar', () => {
-    expect(() => assertPlanGenerationEntitlement('advanced')).not.toThrow()
+  it('advanced pasa y devuelve la decisión que el gate debe propagar', () => {
+    expect(assertPlanGenerationEntitlement('advanced', 'user-1')).toMatchObject({
+      allowed: true,
+      tier: 'advanced',
+      quotaOwnerUserId: 'user-1',
+      quotaBucketId: 'plan_builder_week',
+      limit: 16,
+    })
   })
 
   it('free es rechazado con 403 y detail', () => {
     try {
-      assertPlanGenerationEntitlement('free')
+      assertPlanGenerationEntitlement('free', 'user-1')
       throw new Error('debio lanzar')
     } catch (error) {
       const err = error as { statusCode?: number; errorCode?: string; detail?: unknown }
@@ -59,7 +65,7 @@ describe('assertPlanGenerationEntitlement', () => {
   })
 
   it('weekly tambien es rechazado: Plan Builder es advanced', () => {
-    expect(() => assertPlanGenerationEntitlement('weekly')).toThrow()
+    expect(() => assertPlanGenerationEntitlement('weekly', 'user-1')).toThrow()
   })
 })
 

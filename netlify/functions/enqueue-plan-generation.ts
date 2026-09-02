@@ -13,7 +13,6 @@ import {
   type GeneratePlanPayload,
 } from './_shared/planGenerationShared'
 import { corsPreflight } from './_shared/cors'
-import type { Tier } from '../../src/services/entitlements/entitlementPolicy'
 import {
   assertPlanGenerationEntitlement,
   isEntitlementEnforcementEnabled,
@@ -78,7 +77,7 @@ export const handler: Handler = async (event) => {
       resolveAuthContext(event),
       gateEnabled && bearer
         ? resolveEntitlementTier(bearer)
-        : Promise.resolve('free' as Tier),
+        : Promise.resolve('free' as const),
     ])
     // Antes de cualquier escritura: un rechazo acá no debe dejar un plan en
     // 'generating' ni un jobId huérfano.
@@ -90,21 +89,18 @@ export const handler: Handler = async (event) => {
     // este orden cambie.
     if (isKillSwitchActive()) throw makeKillSwitchError()
 
-    if (gateEnabled) assertPlanGenerationEntitlement(gateTier)
+    // Aun con el enforcement de entitlement apagado se construye una
+    // decisión neutral Advanced. Así `usageGate` no vuelve a inferir tier,
+    // bucket o dueño desde valores sueltos, y los limits siguen cerrando los
+    // costos durante un rollout intermedio.
+    const decision = assertPlanGenerationEntitlement(
+      gateEnabled ? gateTier : 'advanced',
+      auth.userId,
+    )
 
     // Preflight de solo lectura: no reserva nada, solo evita crear un job que
-    // el worker (Task 8) va a rechazar igual por cuota/gasto agotados. Con
-    // gate de entitlements apagado el tier efectivo del resto del archivo es
-    // 'free', pero eso bloquearía plan_builder_week por completo en el
-    // preflight (mínimo advanced); como nadie es rechazado por plan cuando
-    // gateEnabled es false, tampoco corresponde inventar acá un tier ficticio
-    // que bloquee — se usa 'advanced' como valor neutro solo para resolver
-    // bucket/límite.
-    await checkUsagePreflight({
-      userId: auth.userId,
-      requestClass: 'plan_builder_week',
-      tier: gateEnabled ? gateTier : 'advanced',
-    })
+    // el worker va a rechazar igual por cuota/gasto agotados.
+    await checkUsagePreflight({ decision })
 
     const writer = createSupabaseWriter(auth.userId, auth.token)
     const now = Date.now()

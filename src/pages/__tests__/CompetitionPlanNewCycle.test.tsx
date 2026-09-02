@@ -23,6 +23,9 @@ const mocks = vi.hoisted(() => ({
   order: [] as string[],
   tier: 'advanced' as 'free' | 'weekly' | 'advanced',
   entitlementPending: false,
+  activeAthleteId: 'ath-self' as string | null,
+  lastSuccessfulSyncAt: null as number | null,
+  syncAttemptInFlight: false,
 }))
 
 vi.mock('react-router-dom', () => ({ useNavigate: () => mocks.navigate }))
@@ -38,6 +41,34 @@ vi.mock('../../store/useTrainingStore', () => ({
     loadAllSummaries: mocks.loadAllSummaries,
   }),
 }))
+vi.mock('../../store/useAuthStore', () => {
+  const getState = () => ({
+    user: null,
+    activeAthleteId: mocks.activeAthleteId,
+    syncDetails: {
+      lastSuccessfulSyncAt: mocks.lastSuccessfulSyncAt,
+      syncAttemptInFlight: mocks.syncAttemptInFlight,
+      lastErrorEntity: null,
+      pendingTables: [],
+      consecutiveFailures: 0,
+    },
+    setActiveAthleteId: () => undefined,
+    setSyncDetails: () => undefined,
+    setSyncStatus: () => undefined,
+  })
+  const useAuthStore = Object.assign(<T,>(selector: (state: {
+    activeAthleteId: string | null
+    syncDetails: {
+      lastSuccessfulSyncAt: number | null
+      syncAttemptInFlight: boolean
+    }
+  }) => T) => selector(getState()), {
+    getState,
+    setState: () => undefined,
+    subscribe: () => () => undefined,
+  })
+  return { useAuthStore }
+})
 vi.mock('../../hooks/useEntitlement', () => ({
   useEntitlement: () => ({
     tier: mocks.tier,
@@ -191,6 +222,9 @@ describe('CompetitionPlanPage new_cycle', () => {
     mocks.order = []
     mocks.tier = 'advanced'
     mocks.entitlementPending = false
+    mocks.activeAthleteId = 'ath-self'
+    mocks.lastSuccessfulSyncAt = null
+    mocks.syncAttemptInFlight = false
     mocks.saveAthleteProfile.mockReset().mockImplementation(async (
       patch: Partial<Omit<AthleteProfile, 'id' | 'updatedAt'>>,
     ) => {
@@ -210,6 +244,7 @@ describe('CompetitionPlanPage new_cycle', () => {
   })
 
   afterEach(() => {
+    vi.restoreAllMocks()
     cleanup()
     usePlanBuilderStore.getState().resetBuilderState()
     setActiveAthleteId(null)
@@ -217,18 +252,21 @@ describe('CompetitionPlanPage new_cycle', () => {
     db.close()
   })
 
-  it('en Free sin plan generado reemplaza el wizard por el CTA de Avanzado', async () => {
-    mocks.tier = 'free'
+  it.each(['free', 'weekly'] as const)(
+    'en %s sin plan generado reemplaza el wizard por el CTA de Avanzado',
+    async (tier) => {
+      mocks.tier = tier
 
-    render(<CompetitionPlanPage />)
+      render(<CompetitionPlanPage />)
 
-    expect(await screen.findByRole('heading', { name: /Planifica tu próximo objetivo/i })).toBeTruthy()
-    expect(screen.getByText('Taper')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: /Ver planes/i }))
-    expect(mocks.navigate).toHaveBeenCalledWith('/pricing')
-    expect(screen.queryByText('Paso 1 de 7')).toBeNull()
-    expect(screen.queryByRole('button', { name: /Continuar/i })).toBeNull()
-  })
+      expect(await screen.findByRole('heading', { name: /Planifica tu próximo objetivo/i })).toBeTruthy()
+      expect(screen.getByText('Taper')).toBeTruthy()
+      fireEvent.click(screen.getByRole('button', { name: /Ver planes/i }))
+      expect(mocks.navigate).toHaveBeenCalledWith('/pricing')
+      expect(screen.queryByText('Paso 1 de 7')).toBeNull()
+      expect(screen.queryByRole('button', { name: /Continuar/i })).toBeNull()
+    },
+  )
 
   it('en Free conserva un plan generado sólo para consulta', async () => {
     mocks.tier = 'free'
@@ -239,6 +277,61 @@ describe('CompetitionPlanPage new_cycle', () => {
     expect(await screen.findByText('Plan en solo lectura')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Editar' })).toBeNull()
     expect(screen.queryByRole('button', { name: /Planificar próximo evento/i })).toBeNull()
+  })
+
+  it('relee el plan recibido durante la sincronización y abre la consulta para Free', async () => {
+    mocks.tier = 'free'
+    const view = render(<CompetitionPlanPage />)
+
+    expect(await screen.findByRole('heading', { name: /Planifica tu próximo objetivo/i })).toBeTruthy()
+    await db.trainingPlans.put(previousCompletePlan)
+    mocks.lastSuccessfulSyncAt = 1
+    view.rerender(<CompetitionPlanPage />)
+
+    expect(await screen.findByText('Plan en solo lectura')).toBeTruthy()
+  })
+
+  it('no conserva la consulta de otro atleta al cambiar de scope', async () => {
+    mocks.tier = 'free'
+    await db.trainingPlans.put(previousCompletePlan)
+    const view = render(<CompetitionPlanPage />)
+
+    expect(await screen.findByText('Plan en solo lectura')).toBeTruthy()
+    mocks.activeAthleteId = 'ath-other'
+    setActiveAthleteId('ath-other')
+    view.rerender(<CompetitionPlanPage />)
+
+    expect(await screen.findByRole('heading', { name: /Planifica tu próximo objetivo/i })).toBeTruthy()
+  })
+
+  it('mientras se resuelve el entitlement no muestra ni wizard ni oferta', () => {
+    mocks.tier = 'free'
+    mocks.entitlementPending = true
+
+    render(<CompetitionPlanPage />)
+
+    expect(screen.getByRole('status').textContent).toContain('Revisando tu plan…')
+    expect(screen.queryByRole('heading', { name: /Planifica tu próximo objetivo/i })).toBeNull()
+    expect(screen.queryByText('Paso 1 de 7')).toBeNull()
+  })
+
+  it('en Free no llama endpoints de coach o generación sólo por entrar', async () => {
+    mocks.tier = 'free'
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+
+    render(<CompetitionPlanPage />)
+
+    await screen.findByRole('heading', { name: /Planifica tu próximo objetivo/i })
+    const protectedPaths = [
+      '/.netlify/functions/coach',
+      '/.netlify/functions/enqueue-plan-generation',
+      '/.netlify/functions/generate-plan-background',
+    ]
+    const protectedRequests = fetchSpy.mock.calls.filter(([input]) => (
+      protectedPaths.some((path) => String(input).includes(path))
+    ))
+    expect(protectedRequests).toHaveLength(0)
+    fetchSpy.mockRestore()
   })
 
   it('precarga hábitos anteriores pero vuelve a pedir evento, objetivo y estado actual', async () => {

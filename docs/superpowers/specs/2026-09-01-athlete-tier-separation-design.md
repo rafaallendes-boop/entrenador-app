@@ -461,6 +461,8 @@ export function resolveCapability(input: {
 export interface CapabilityDecision {
   allowed: boolean
   tier: Tier
+  /** Capacidad canónica que originó la decisión y su cuota. */
+  capability: AIRequestClass
   requiredTier: Tier | null
   /** Quién aporta la capacidad. Proyecto 2 agrega 'coach' | 'delegated'. */
   entitlementSource: 'self'
@@ -477,15 +479,18 @@ export interface CapabilityDecision {
 }
 ```
 
-Reglas de esta versión: `entitlementSource` es siempre `'self'`;
+Reglas de esta versión: `capability` conserva la capacidad de entrada;
+`entitlementSource` es siempre `'self'`;
 `entitlementOwnerUserId` y `quotaOwnerUserId` son ambos `actorUserId`;
 `consumptionUnits` es siempre `1`, porque hoy la cuota cuenta intentos y cada
 llamada es un intento; `targetAthleteId` se acepta, se registra y se ignora.
 
-`quotaBucketId` y `consumptionUnits` existen desde ahora **precisamente para que
-Proyecto 2 no tenga que resolver bucket y unidades fuera de esta función**, que
-es donde hoy se resuelven y donde se perdería la coherencia al introducir la
-ponderación de §8.
+`capability`, `quotaBucketId` y `consumptionUnits` existen desde ahora
+**precisamente para que Proyecto 2 no tenga que resolver bucket y unidades fuera
+de esta función**. El usage gate conserva la decisión como fuente de verdad para
+dueño, tier y límite, y comprueba que `quotaBucketId` corresponde a
+`capability`; así una decisión no puede reutilizarse para cobrar otra clase en
+silencio.
 
 **`actorUserId` nunca se acepta desde el cliente como autoridad.** En las tres
 Netlify Functions se deriva del JWT verificado. El cliente llama al mismo módulo

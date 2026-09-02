@@ -87,7 +87,7 @@ describe('gate anónimo de entitlement en coach', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
-  it.each(['chat_general', 'chat_action'])('permite %s como Free anónimo', async (requestClass) => {
+  it.each(['chat_general'])('permite %s como Free anónimo', async (requestClass) => {
     stubSuccessfulProvider()
     const handler = await loadAnonymousHandler(true)
 
@@ -97,7 +97,8 @@ describe('gate anónimo de entitlement en coach', () => {
   })
 
   it.each([
-    ['week_creator', 'advanced'],
+    ['chat_action', 'weekly'],
+    ['week_creator', 'weekly'],
     ['weekly_summary', 'weekly'],
   ])('deniega %s como Free anónimo sin tocar proveedor', async (requestClass, requiredTier) => {
     const fetchMock = stubSuccessfulProvider()
