@@ -32,6 +32,9 @@ function gateInput(
         capability,
         now: 0,
         entitlement: { tier, expiresAt: null },
+        accountRole: 'athlete',
+        membership: null,
+        roleGate: 'off',
       }),
       ...overrides,
     },
@@ -120,12 +123,12 @@ describe('assertUsageGate', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
-  it('incremento atómico sin filas devueltas rechaza con quota_exceeded', async () => {
+  it('reserva con cero filas falla cerrado: no es una cuota agotada', async () => {
     const fetchMock = vi.fn(async (url: string) => {
       if (url.includes('/rpc/read_ai_usage_spend')) {
         return jsonResponse([{ account_cost_usd: 0, global_cost_usd: 0 }])
       }
-      if (url.includes('/rpc/increment_ai_usage_if_under_limit')) {
+      if (url.includes('/rpc/reserve_ai_usage')) {
         return jsonResponse([])
       }
       throw new Error(`fetch inesperado: ${url}`)
@@ -134,9 +137,8 @@ describe('assertUsageGate', () => {
 
     await expect(assertUsageGate(gateInput('chat_general', 'weekly')))
       .rejects.toMatchObject({
-        statusCode: 429,
-        errorCode: 'quota_exceeded',
-        detail: { bucketId: 'chat', limit: 40, remaining: 0 },
+        statusCode: 503,
+        errorCode: 'server_error',
       })
   })
 
@@ -145,7 +147,7 @@ describe('assertUsageGate', () => {
       if (url.includes('/rpc/read_ai_usage_spend')) {
         return jsonResponse([{ account_cost_usd: 0, global_cost_usd: 0 }])
       }
-      if (url.includes('/rpc/increment_ai_usage_if_under_limit')) {
+      if (url.includes('/rpc/reserve_ai_usage')) {
         return jsonResponse([{ usage_date: '2026-08-16', request_count: 1 }])
       }
       throw new Error(`fetch inesperado: ${url}`)
@@ -162,9 +164,10 @@ describe('assertUsageGate', () => {
         expect(JSON.parse(String(init?.body))).toEqual({ p_user_id: 'coach-owner' })
         return jsonResponse([{ account_cost_usd: 0, global_cost_usd: 0 }])
       }
-      if (url.includes('/rpc/increment_ai_usage_if_under_limit')) {
+      if (url.includes('/rpc/reserve_ai_usage')) {
         expect(JSON.parse(String(init?.body))).toEqual({
           p_user_id: 'coach-owner', p_bucket_id: 'chat', p_limit: 7,
+          p_subject_athlete_id: null, p_subject_limit: null,
         })
         return jsonResponse([{ usage_date: '2026-08-16', request_count: 1 }])
       }
@@ -258,7 +261,7 @@ describe('assertUsageGate', () => {
       if (url.includes('/rpc/read_ai_usage_spend')) {
         return jsonResponse([{ account_cost_usd: 0, global_cost_usd: 0 }])
       }
-      if (url.includes('/rpc/increment_ai_usage_if_under_limit')) {
+      if (url.includes('/rpc/reserve_ai_usage')) {
         return new Response(`${upstreamBody}${'x'.repeat(2_100)}`, { status: 400 })
       }
       throw new Error(`fetch inesperado: ${url}`)
@@ -287,16 +290,44 @@ describe('assertUsageGate', () => {
     expect(errorSpy).toHaveBeenCalledWith(
       '[usage-gate] RPC failed',
       expect.objectContaining({
-        functionName: 'increment_ai_usage_if_under_limit',
+        functionName: 'reserve_ai_usage',
         diagnostics: expect.objectContaining({ upstreamStatus: 400 }),
       }),
     )
   })
 
+  // `MissingRpcError` es una señal interna del módulo. Si NI `reserve_ai_usage`
+  // (029) NI `increment_ai_usage_if_under_limit` (021) existen —esquema fresco
+  // o parcialmente aplicado— el fallback está dentro del `catch` y su throw no
+  // lo envuelve nadie: escaparía crudo y `coach.ts` lo aplanaría a un 500
+  // genérico en vez del 503 fail-closed que promete el contrato.
+  it('sin ninguna de las dos RPC de cuota falla cerrado como server_error', async () => {
+    const missingRpc = JSON.stringify({
+      code: 'PGRST202',
+      message: 'Could not find the function in the schema cache',
+      details: null,
+      hint: null,
+    })
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.includes('/rpc/read_ai_usage_spend')) {
+        return jsonResponse([{ account_cost_usd: 0, global_cost_usd: 0 }])
+      }
+      if (url.includes('/rpc/reserve_ai_usage')) return new Response(missingRpc, { status: 404 })
+      if (url.includes('/rpc/increment_ai_usage_if_under_limit')) {
+        return new Response(missingRpc, { status: 404 })
+      }
+      throw new Error(`fetch inesperado: ${url}`)
+    })
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    await expect(assertUsageGate(gateInput('chat_general', 'weekly')))
+      .rejects.toMatchObject({ statusCode: 503, errorCode: 'server_error' })
+  })
+
   it('el incremento con más de una fila devuelta falla cerrado (cardinalidad estricta)', async () => {
     const fetchMock = vi.fn(async (url: string) => {
       if (url.includes('/rpc/read_ai_usage_spend')) return jsonResponse([{ account_cost_usd: 0, global_cost_usd: 0 }])
-      if (url.includes('/rpc/increment_ai_usage_if_under_limit')) {
+      if (url.includes('/rpc/reserve_ai_usage')) {
         return jsonResponse([{ usage_date: '2026-08-16', request_count: 1 }, { usage_date: '2026-08-16', request_count: 1 }])
       }
       throw new Error(`fetch inesperado: ${url}`)
@@ -334,8 +365,8 @@ describe('checkUsagePreflight', () => {
 
     await expect(checkUsagePreflight(gateInput('plan_builder_week', 'advanced')))
       .rejects.toMatchObject({ statusCode: 429, errorCode: 'quota_exceeded' })
-    const calledIncrement = fetchMock.mock.calls.some(([url]) => String(url).includes('increment_ai_usage_if_under_limit'))
-    expect(calledIncrement).toBe(false)
+    const calledReservation = fetchMock.mock.calls.some(([url]) => String(url).includes('reserve_ai_usage'))
+    expect(calledReservation).toBe(false)
   })
 
   it('preflight usa el dueño y límite de la decisión sin re-resolverlos', async () => {

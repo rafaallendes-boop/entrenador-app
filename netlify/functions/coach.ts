@@ -30,6 +30,7 @@ import {
   formatEntitlementMessage,
 } from '../../src/services/entitlements/entitlementError'
 import {
+  resolveTier,
   type EntitlementRow,
 } from '../../src/services/entitlements/entitlementPolicy'
 import {
@@ -38,15 +39,29 @@ import {
 } from '../../src/services/entitlements/resolveCapability'
 import {
   isEntitlementEnforcementEnabled,
-  resolveEntitlementTier,
+  readEntitlementRecord,
+  readVerifiedMembership,
+  type EntitlementReadResult,
+  type VerifiedMembershipReadResult,
 } from './_shared/resolveEntitlement'
 import {
   assertUsageGate,
   isKillSwitchActive,
   makeKillSwitchError,
+  makeServerError,
   recordUsageCost,
 } from './_shared/usageGate'
 import { estimateCostUsd } from '../../src/services/planBuilder/pricing'
+import {
+  formatCoachAccessMessage,
+  isCoachAccessReason,
+} from '../../src/services/entitlements/coachAccessError'
+import {
+  auditUnavailableShadow,
+  reconcileDecision,
+  resolveCoachAuthzMode,
+  type ShadowUnavailableReason,
+} from '../../src/services/entitlements/coachAuthzMode'
 
 export { mapGeminiUsage, mapOpenAIUsage } from '../../src/services/ai/providerUsage'
 
@@ -62,7 +77,7 @@ type RequestClass =
   | 'coach_assistant_message'
 type TechnicalErrorCode =
   | 'timeout' | 'rate_limit' | 'parse_error' | 'server_error' | 'misconfigured'
-  | 'unknown' | 'unauthorized' | 'entitlement_required'
+  | 'unknown' | 'unauthorized' | 'entitlement_required' | 'coach_access_required'
   | 'quota_exceeded' | 'spend_cap_exceeded' | 'kill_switch_active'
 type ResponseSchema = Record<string, unknown>
 
@@ -75,6 +90,13 @@ interface CoachRequest {
   }>
   requestClass?: RequestClass
   traceId?: string
+  /**
+   * Atleta sobre el que el cliente afirma ejercer la acción cuando no es el
+   * propio actor. Es una PROPUESTA: acá sólo se valida su forma. Quién puede
+   * actuar sobre ese atleta lo decide la verificación de membresía del
+   * servidor, nunca este campo por sí solo.
+   */
+  targetAthleteId?: string | null
   generationId?: string
   logicalAttempt?: number
   maxTokens?: number
@@ -227,6 +249,7 @@ const USER_MESSAGE_MAX_CHARS = 8000
 const CONVERSATION_MESSAGE_MAX_CHARS = 4000
 const TRACE_ID_MAX_CHARS = 160
 const GENERATION_ID_MAX_CHARS = 160
+const ATHLETE_ID_MAX_CHARS = 128
 const RESPONSE_SCHEMA_MAX_CHARS = 20000
 // Netlify Pro synchronous functions cut off at 26s; keep 2s for response finalization.
 const MAX_FUNCTION_WALLCLOCK_MS = 24000
@@ -503,6 +526,17 @@ function validateCoachRequest(input: unknown): RequestValidationResult {
     return { ok: false, error: 'logicalAttempt invalid' }
   }
 
+  // Ausente y null significan lo mismo: la acción es sobre el propio actor.
+  let targetAthleteId: string | null = null
+  if (raw.targetAthleteId != null) {
+    if (typeof raw.targetAthleteId !== 'string'
+        || raw.targetAthleteId.length === 0
+        || raw.targetAthleteId.length > ATHLETE_ID_MAX_CHARS) {
+      return { ok: false, error: 'Invalid targetAthleteId' }
+    }
+    targetAthleteId = raw.targetAthleteId
+  }
+
   if (raw.allowFallback != null && typeof raw.allowFallback !== 'boolean') {
     return { ok: false, error: 'allowFallback must be boolean' }
   }
@@ -518,6 +552,7 @@ function validateCoachRequest(input: unknown): RequestValidationResult {
       conversation: processedConversation,
       requestClass,
       traceId: raw.traceId,
+      targetAthleteId,
       generationId: raw.generationId,
       logicalAttempt: raw.logicalAttempt,
       maxTokens: raw.maxTokens,
@@ -529,6 +564,9 @@ function validateCoachRequest(input: unknown): RequestValidationResult {
     },
   }
 }
+
+/** Validación pura del payload, expuesta para test (misma convención que `normalizeErrorForTest`). */
+export const validateCoachRequestForTest = validateCoachRequest
 
 function makeError(
   message: string,
@@ -554,6 +592,9 @@ function normalizeError(error: unknown): NormalizedServerError {
   // descartaría su `detail`, dejando la oferta sin datos para armarse.
   if (statusCode === 403 && err.errorCode === 'entitlement_required') {
     return makeError(message, 403, 'entitlement_required', false, err.detail)
+  }
+  if (statusCode === 403 && err.errorCode === 'coach_access_required') {
+    return makeError(message, 403, 'coach_access_required', false, err.detail)
   }
   // Igual razonamiento que entitlement_required: estos tres ya traen su
   // propio código y `detail` desde `_shared/usageGate` — aplanarlos a
@@ -1886,11 +1927,23 @@ export const handler = stream(async (event: HandlerEvent): Promise<StreamingResp
   try {
     const bearer = getBearerToken(event)
     const gateEnabled = isEntitlementEnforcementEnabled()
-    const [auth, gateTier] = await Promise.all([
+    const recordPromise: Promise<EntitlementReadResult> = AUTH_REQUIRED && bearer
+      ? readEntitlementRecord(bearer)
+      : Promise.resolve({ status: 'absent' })
+    // La membresía se lee EN PARALELO con auth, no después. Encadenarla le
+    // restaba hasta `READ_TIMEOUT_MS` al presupuesto del proveedor en cada
+    // request coach-operated —que siempre adjunta `targetAthleteId`— y en modo
+    // `audit` ese resultado ni siquiera decide nada. Depende sólo del payload
+    // y del bearer, ambos disponibles antes de resolver la identidad; el
+    // descarte para un caller anónimo se aplica abajo, ya con `auth` resuelta.
+    const membershipPromise: Promise<VerifiedMembershipReadResult> = AUTH_REQUIRED
+      && bearer && req.targetAthleteId != null
+      ? readVerifiedMembership(bearer, req.targetAthleteId)
+      : Promise.resolve({ status: 'absent' })
+    const [auth, record, membershipCandidate] = await Promise.all([
       resolveAuthContext(event),
-      gateEnabled && AUTH_REQUIRED && bearer
-        ? resolveEntitlementTier(bearer)
-        : Promise.resolve('free' as const),
+      recordPromise,
+      membershipPromise,
     ])
 
     // Desde aquí la identidad ya está verificada. Preparar la persistencia
@@ -1911,9 +1964,44 @@ export const handler = stream(async (event: HandlerEvent): Promise<StreamingResp
 
     enforceRateLimit(auth)
 
+    const mode = resolveCoachAuthzMode(process.env)
+
+    // No se construye ni compara una decisión role-aware sobre una lectura de
+    // rol rota. A diferencia del tier (que puede degradarse a Free), degradar
+    // el rol a atleta concede clases que un coach no debería recibir.
+    //
+    // Pero cortar el request es una decisión de `enforce`, NO de `audit`: en
+    // auditoría la sombra no decide nada, así que un 503 acá haría que un blip
+    // de Supabase —o desplegar este bundle antes de `028`— tumbara el chat
+    // completo con ambos flags apagados. La constante no negociable del plan
+    // manda: en `audit` la ruta efectiva es la legacy, sin excepción. El fallo
+    // queda como evidencia.
+    let shadowUnavailable: ShadowUnavailableReason | null = null
+    if (record.status === 'unreadable') {
+      if (mode === 'enforce') throw makeServerError('No se pudo resolver la autorización de la cuenta.')
+      shadowUnavailable = 'entitlement_unreadable'
+    }
+
+    // Sin identidad verificada no hay delegación posible: la lectura que se
+    // lanzó en paralelo se descarta, igual que antes se omitía.
+    const membershipRead: VerifiedMembershipReadResult = auth.userId !== ANONYMOUS_USER_ID
+      ? membershipCandidate
+      : { status: 'absent' }
+    if (membershipRead.status === 'unreadable' && shadowUnavailable == null) {
+      // Mismo criterio: `013b` puede no estar desplegada todavía y el cliente
+      // ya adjunta `targetAthleteId` en el flujo coach-operated actual. En
+      // `audit` eso no puede convertirse en 503 para cada mensaje.
+      if (mode === 'enforce') throw makeServerError('No se pudo verificar el acceso al atleta.')
+      shadowUnavailable = 'membership_unreadable'
+    }
+
     // Con auth desactivada no existe una identidad verificada a la cual
     // atribuir un tier: ese caller es Free, incluso si envía un bearer.
-    const currentTier = auth.userId === ANONYMOUS_USER_ID ? 'free' : gateTier
+    const persistedEntitlement = record.status === 'present' ? record.row : null
+    const accountRole = record.status === 'present' ? record.accountRole : 'athlete'
+    const currentTier = auth.userId === ANONYMOUS_USER_ID
+      ? 'free'
+      : resolveTier(persistedEntitlement, Date.now())
 
     // Entitlement ANTES que cualquier cuota: una clase bloqueada por plan no
     // puede reportarse como límite diario, o el usuario recibe la oferta
@@ -1923,17 +2011,58 @@ export const handler = stream(async (event: HandlerEvent): Promise<StreamingResp
     // dueño durante un rollout intermedio.
     const effectiveTier = gateEnabled ? currentTier : 'advanced'
     const entitlement: EntitlementRow = { tier: effectiveTier, expiresAt: null }
-    const decision = resolveCapability({
+    const requestClass = normalizeRequestClass(req.requestClass)
+    const shared = {
       actorUserId: auth.userId,
-      targetAthleteId: null,
-      capability: normalizeRequestClass(req.requestClass),
+      capability: requestClass,
       now: Date.now(),
       entitlement,
+    } as const
+    // Audit nunca altera la ruta efectiva: legacy sigue ignorando tanto el
+    // rol como el atleta propuesto. La sombra usa únicamente hechos leídos y
+    // validados por servidor.
+    const legacy = resolveCapability({
+      ...shared,
+      targetAthleteId: null,
+      accountRole: 'athlete',
+      membership: null,
+      roleGate: 'off',
     })
-    if (gateEnabled && !decision.allowed) {
+    const { decision, audit } = shadowUnavailable
+      ? auditUnavailableShadow(legacy, shadowUnavailable)
+      : reconcileDecision(legacy, resolveCapability({
+        ...shared,
+        targetAthleteId: req.targetAthleteId ?? null,
+        accountRole,
+        membership: membershipRead.status === 'present' ? membershipRead.membership : null,
+        roleGate: 'on',
+      }), mode)
+    if (audit) console.info('[coach-authz]', audit)
+
+    // `ENTITLEMENTS_ENABLED` mantiene el rollout de plan existente. El único
+    // literal `COACH_AUTHZ_MODE=enforce` añade el corte de rol/membresía; si
+    // el gate de plan sigue apagado, la decisión usa el tier Advanced neutral
+    // de arriba y por tanto no introduce un recorte de tier incidental.
+    if ((gateEnabled || mode === 'enforce') && !decision.allowed) {
+      // Rol, membresía e identidad NO se destraban pagando: llevan su propio
+      // código para que el cliente no abra la oferta de plan.
+      if (isCoachAccessReason(decision.denialReason)) {
+        const accessDetail = { requestClass, reason: decision.denialReason }
+        throw makeError(
+          formatCoachAccessMessage(accessDetail),
+          403,
+          'coach_access_required',
+          false,
+          accessDetail,
+        )
+      }
       const requiredTier = decision.requiredTier ?? 'advanced'
+      // El tier reportado es el REAL de la cuenta, no el sintético 'advanced'
+      // que se usa cuando `ENTITLEMENTS_ENABLED` está apagado: con
+      // `COACH_AUTHZ_MODE=enforce` y el gate de plan apagado, `decision.tier`
+      // le anunciaría al usuario un plan que no tiene.
       const detail = buildEntitlementDetail(
-        normalizeRequestClass(req.requestClass),
+        requestClass,
         requiredTier,
         currentTier,
       )

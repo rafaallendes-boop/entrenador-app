@@ -58,12 +58,23 @@ describe('streaming coach telemetry', () => {
   })
 
   it('emits request completion telemetry and timing fields in the done event', async () => {
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ id: 'user-1' }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input)
+      if (url.includes('/auth/v1/user')) {
+        return new Response(JSON.stringify({ id: 'user-1' }), { status: 200 })
+      }
+      if (url.includes('/rest/v1/user_entitlements')) {
+        return new Response(JSON.stringify([{
+          tier: 'free',
+          expires_at: null,
+          account_role: 'athlete',
+        }]), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      }
+      return new Response(
         'data: {"choices":[{"delta":{"content":"Respuesta final · algún día"},"finish_reason":"stop"}],"service_tier":"priority","usage":{"prompt_tokens":120,"completion_tokens":30,"completion_tokens_details":{"reasoning_tokens":10}}}',
         { status: 200, headers: { 'Content-Type': 'text/event-stream' } },
-      ))
+      )
+    })
     vi.stubGlobal('fetch', fetchMock)
     const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => undefined)
 

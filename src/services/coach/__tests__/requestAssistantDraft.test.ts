@@ -22,6 +22,7 @@ import { ASSISTANT_MESSAGE_SCHEMA, ASSISTANT_SYSTEM_PROMPT } from '../assistantM
 import { requestAssistantDraft } from '../requestAssistantDraft'
 
 const SIGNALS: TriageSignal[] = [{ kind: 'pain', days: 2 }]
+const ATHLETE_ID = 'ath_m_1'
 
 describe('requestAssistantDraft', () => {
   beforeEach(() => {
@@ -31,7 +32,7 @@ describe('requestAssistantDraft', () => {
   it('llama con clase, superficie y salida estructurada explícitas', async () => {
     mocks.extractRaw.mockResolvedValueOnce('{"body":"¿Cómo vas?"}')
 
-    await requestAssistantDraft(SIGNALS)
+    await requestAssistantDraft(ATHLETE_ID, SIGNALS)
 
     expect(mocks.extractRaw).toHaveBeenCalledWith(
       ASSISTANT_SYSTEM_PROMPT,
@@ -39,6 +40,7 @@ describe('requestAssistantDraft', () => {
       {
         requestClass: 'coach_assistant_message',
         surface: 'coach_assistant',
+        targetAthleteId: ATHLETE_ID,
         responseMimeType: 'application/json',
         responseSchema: ASSISTANT_MESSAGE_SCHEMA,
         classifyResponse: expect.any(Function),
@@ -49,7 +51,7 @@ describe('requestAssistantDraft', () => {
   it('no envía identificadores, texto libre ni fechas absolutas', async () => {
     mocks.extractRaw.mockResolvedValueOnce('{"body":"ok"}')
 
-    await requestAssistantDraft(SIGNALS)
+    await requestAssistantDraft(ATHLETE_ID, SIGNALS)
     const userMessage = mocks.extractRaw.mock.calls.at(-1)?.[1] as string
 
     expect(JSON.parse(userMessage)).toEqual({ signals: [{ kind: 'pain', days: 2 }] })
@@ -61,7 +63,7 @@ describe('requestAssistantDraft', () => {
   it('devuelve el cuerpo validado', async () => {
     mocks.extractRaw.mockResolvedValueOnce('{"body":"¿Cómo vas?"}')
 
-    await expect(requestAssistantDraft(SIGNALS)).resolves.toEqual({
+    await expect(requestAssistantDraft(ATHLETE_ID, SIGNALS)).resolves.toEqual({
       ok: true,
       body: '¿Cómo vas?',
     })
@@ -70,7 +72,7 @@ describe('requestAssistantDraft', () => {
   it('descarta entera una respuesta inválida', async () => {
     mocks.extractRaw.mockResolvedValueOnce('{"body":"","advice":"baja la carga"}')
 
-    await expect(requestAssistantDraft(SIGNALS)).resolves.toEqual({
+    await expect(requestAssistantDraft(ATHLETE_ID, SIGNALS)).resolves.toEqual({
       ok: false,
       reason: 'invalid-response',
     })
@@ -79,14 +81,14 @@ describe('requestAssistantDraft', () => {
   it('explica cuando el proveedor devuelve un borrador sobre el tope', async () => {
     mocks.extractRaw.mockResolvedValueOnce(JSON.stringify({ body: 'x'.repeat(601) }))
 
-    await expect(requestAssistantDraft(SIGNALS)).resolves.toEqual({
+    await expect(requestAssistantDraft(ATHLETE_ID, SIGNALS)).resolves.toEqual({
       ok: false,
       reason: 'too-long',
     })
   })
 
   it('sin señales falla cerrado y no llama al proveedor', async () => {
-    await expect(requestAssistantDraft([])).resolves.toEqual({
+    await expect(requestAssistantDraft(ATHLETE_ID, [])).resolves.toEqual({
       ok: false,
       reason: 'invalid-response',
     })
@@ -104,7 +106,7 @@ describe('requestAssistantDraft', () => {
   ] as const)('clasifica el rechazo tipado %# como %s', async (error, reason) => {
     mocks.extractRaw.mockRejectedValueOnce(error)
 
-    await expect(requestAssistantDraft(SIGNALS)).resolves.toEqual({ ok: false, reason })
+    await expect(requestAssistantDraft(ATHLETE_ID, SIGNALS)).resolves.toEqual({ ok: false, reason })
   })
 
   it.each([
@@ -119,7 +121,7 @@ describe('requestAssistantDraft', () => {
   ] as const)('clasifica el fallo técnico %# como %s', async (error, reason) => {
     mocks.extractRaw.mockRejectedValueOnce(error)
 
-    await expect(requestAssistantDraft(SIGNALS)).resolves.toEqual({ ok: false, reason })
+    await expect(requestAssistantDraft(ATHLETE_ID, SIGNALS)).resolves.toEqual({ ok: false, reason })
   })
 
   it('clasifica AbortError como timeout', async () => {
@@ -127,7 +129,7 @@ describe('requestAssistantDraft', () => {
     error.name = 'AbortError'
     mocks.extractRaw.mockRejectedValueOnce(error)
 
-    await expect(requestAssistantDraft(SIGNALS)).resolves.toEqual({
+    await expect(requestAssistantDraft(ATHLETE_ID, SIGNALS)).resolves.toEqual({
       ok: false,
       reason: 'timeout',
     })

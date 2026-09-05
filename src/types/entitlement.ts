@@ -1,4 +1,4 @@
-import type { Tier } from '../services/entitlements/entitlementPolicy'
+import type { AccountRole, Tier } from '../services/entitlements/entitlementPolicy'
 
 export const ENTITLEMENT_SOURCE = {
   REMOTE: 'remote',
@@ -16,4 +16,10 @@ export interface StoredEntitlement {
   /** Epoch ms; `null` = sin vencimiento. Se conserva para resolver offline. */
   expiresAt: number | null
   confirmedAt: number
+  /**
+   * Ausente en espejos escritos antes de la separación de roles. Una ausencia
+   * no es evidencia de que la cuenta sea atleta: el runtime la resuelve como
+   * `unknown` y mantiene el scope cerrado hasta una lectura remota válida.
+   */
+  accountRole?: AccountRole
 }

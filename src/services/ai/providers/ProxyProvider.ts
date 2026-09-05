@@ -96,6 +96,9 @@ export class ProxyProvider implements AIProvider {
           conversation: request.conversation,
           requestClass: request.requestClass,
           traceId: request.traceId,
+          // Se omite cuando es nulo para no ensanchar el cuerpo de cada
+          // request del propio atleta, que es la mayoría.
+          ...(request.targetAthleteId ? { targetAthleteId: request.targetAthleteId } : {}),
           generationId: request.generationId,
           logicalAttempt: request.logicalAttempt,
           maxTokens: request.maxTokens,

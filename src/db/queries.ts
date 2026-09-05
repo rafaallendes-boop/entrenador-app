@@ -11,6 +11,12 @@ import {
   getSelfAthleteId,
   isSelfScopeActive,
 } from '../services/athlete/activeAthlete'
+import { getAccountRole } from '../services/entitlements/accountRoleHolder'
+import {
+  canAdoptLegacyRows,
+  resolveAthleteScopeKind,
+  type AthleteScopeKind,
+} from '../services/athlete/athleteScopeKind'
 import { isScopedAthleteId } from '../services/athlete/effectiveAthleteKey'
 import { isWhoopPrefilled } from '../services/readiness/dayLogPrefillSave'
 import {
@@ -57,11 +63,23 @@ function pickLegacyOrOnlyRow<T extends { athleteId?: string }>(rows: T[]): T | u
   return rows.length === 1 ? rows[0] : undefined
 }
 
+function resolveCurrentAthleteScopeKind(): AthleteScopeKind {
+  return resolveAthleteScopeKind({
+    accountRole: getAccountRole(),
+    activeAthleteId: getActiveAthleteId(),
+    selfAthleteId: getSelfAthleteId(),
+  })
+}
+
 function captureActiveWeekScope(): AthleteWeekScope | null {
+  const kind = resolveCurrentAthleteScopeKind()
+  // `none` is an empty scope, not the legacy pre-hydration mode. Returning
+  // null here is safe because every fallback below first checks
+  // isSelfScopeActive(), which is false for `none`.
+  if (kind === 'none') return null
   const athleteId = getActiveAthleteId()
   if (!athleteId) return null
-  const selfId = getSelfAthleteId()
-  return { athleteId, includeLegacy: athleteId === selfId }
+  return { athleteId, includeLegacy: canAdoptLegacyRows(kind) }
 }
 
 async function getSessionsForWeekLegacy(weekStartISO: string): Promise<Session[]> {
@@ -82,7 +100,8 @@ export const getSessionsForWeekCore = async (
 
 export const getSessionsForWeek = async (weekStartISO: string): Promise<Session[]> => {
   const scope = captureActiveWeekScope()
-  return scope ? getSessionsForWeekCore(scope, weekStartISO) : getSessionsForWeekLegacy(weekStartISO)
+  if (scope) return getSessionsForWeekCore(scope, weekStartISO)
+  return isSelfScopeActive() ? getSessionsForWeekLegacy(weekStartISO) : []
 }
 
 export const getSessionsForDateRange = async (
@@ -94,7 +113,7 @@ export const getSessionsForDateRange = async (
     .between(startDateISO, endDateISO, true, true)
     .toArray()
   const scope = captureActiveWeekScope()
-  if (!scope) return rows
+  if (!scope) return isSelfScopeActive() ? rows : []
   return rows.filter((row) =>
     row.athleteId === scope.athleteId
       || (scope.includeLegacy && !isScopedAthleteId(row.athleteId)))
@@ -129,13 +148,15 @@ export const getDayLogsForWeekCore = async (
 
 export const getDayLogsForWeek = async (weekStartISO: string): Promise<DayLog[]> => {
   const scope = captureActiveWeekScope()
-  return scope ? getDayLogsForWeekCore(scope, weekStartISO) : getDayLogsForWeekLegacy(weekStartISO)
+  if (scope) return getDayLogsForWeekCore(scope, weekStartISO)
+  return isSelfScopeActive() ? getDayLogsForWeekLegacy(weekStartISO) : []
 }
 
 export const getSessionsForDay = async (dateISO: string): Promise<Session[]> =>
   filterRowsToActiveScope(await db.sessions.where('date').equals(dateISO).toArray())
 
 export const getDayLog = async (dateISO: string): Promise<DayLog | undefined> => {
+  if (resolveCurrentAthleteScopeKind() === 'none') return undefined
   const activeAthleteId = getActiveAthleteId()
   if (!activeAthleteId) {
     const candidates = await db.dayLogs.where('date').equals(dateISO).toArray()
@@ -205,7 +226,8 @@ export const getWeekSummaryCore = async (
 
 export const getWeekSummary = async (weekStartISO: string): Promise<WeekSummary | undefined> => {
   const scope = captureActiveWeekScope()
-  return scope ? getWeekSummaryCore(scope, weekStartISO) : getWeekSummaryLegacy(weekStartISO)
+  if (scope) return getWeekSummaryCore(scope, weekStartISO)
+  return isSelfScopeActive() ? getWeekSummaryLegacy(weekStartISO) : undefined
 }
 
 export function hasWeekSummaryMeaningfulChanges(
@@ -454,8 +476,10 @@ function resolveProfileLocalId(): string {
   return resolveProfileLocalIdForScope(getActiveAthleteId(), getSelfAthleteId())
 }
 
-export const getAthleteProfile = async (): Promise<AthleteProfile | undefined> =>
-  db.athleteProfiles.get(resolveProfileLocalId())
+export const getAthleteProfile = async (): Promise<AthleteProfile | undefined> => {
+  if (resolveCurrentAthleteScopeKind() === 'none') return undefined
+  return db.athleteProfiles.get(resolveProfileLocalId())
+}
 
 export const upsertAthleteProfile = async (
   patch: Partial<Omit<AthleteProfile, 'id' | 'updatedAt' | 'athleteId'>>

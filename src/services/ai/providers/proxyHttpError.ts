@@ -1,4 +1,8 @@
 import {
+  CoachAccessRequiredError,
+  isCoachAccessRequiredDetail,
+} from '../../entitlements/coachAccessError'
+import {
   EntitlementRequiredError,
   isEntitlementRequiredDetail,
 } from '../../entitlements/entitlementError'
@@ -35,6 +39,16 @@ export function classifyProxyHttpError(
     && isEntitlementRequiredDetail(data.detail)
   ) {
     throw new EntitlementRequiredError(data.detail)
+  }
+
+  // Segunda excepción al aplanado de 403: rol/membresía conservan su causa
+  // para que la UI muestre el motivo real y NO la oferta de plan.
+  if (
+    res.status === 403
+    && data.errorCode === 'coach_access_required'
+    && isCoachAccessRequiredDetail(data.detail)
+  ) {
+    throw new CoachAccessRequiredError(data.detail)
   }
 
   if (

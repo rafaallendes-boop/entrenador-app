@@ -7,9 +7,16 @@ import {
   setSelfAthleteId,
   isSelfScopeActive,
 } from '../activeAthlete'
+import { setAccountRole } from '../../entitlements/accountRoleHolder'
 
 describe('activeAthlete', () => {
-  beforeEach(() => setActiveAthleteId(null))
+  beforeEach(() => {
+    setActiveAthleteId(null)
+    // Los casos legacy describen una sesión atleta ya resuelta. El holder
+    // global arranca `unknown` a propósito para que una sesión coach no
+    // adopte estas filas antes de conocer su rol.
+    setAccountRole('athlete')
+  })
 
   it('exposes the legacy local profile id constant', () => {
     expect(ATHLETE_PROFILE_LOCAL_ID).toBe('default')
@@ -32,9 +39,12 @@ describe('activeAthlete', () => {
 })
 
 describe('selfAthleteId holder', () => {
+  beforeEach(() => setAccountRole('athlete'))
+
   afterEach(() => {
     setActiveAthleteId(null)
     setSelfAthleteId(null)
+    setAccountRole('unknown')
   })
 
   it('stores and returns the self athlete id', () => {

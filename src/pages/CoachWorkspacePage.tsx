@@ -224,7 +224,7 @@ export default function CoachWorkspacePage({
     if (!athlete || athlete.signals.length === 0 || athleteId === assistantSelfAthleteId) {
       return { ok: false, reason: 'invalid-response' }
     }
-    return requestAssistantDraft(athlete.signals)
+    return requestAssistantDraft(athleteId, athlete.signals)
   }
 
   async function handleCreateAthlete(name: string) {

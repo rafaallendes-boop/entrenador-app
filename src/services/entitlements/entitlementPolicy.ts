@@ -8,6 +8,21 @@ import type { AIRequestClass } from '../../types'
 
 export type Tier = 'free' | 'weekly' | 'advanced'
 
+/** Rol persistido. `unknown` NO se persiste: ver ResolvedAccountRole. */
+export type AccountRole = 'athlete' | 'coach'
+
+/**
+ * Rol tal como lo ve el runtime. `unknown` es el resultado de un FALLO de
+ * lectura, distinto de una ausencia confirmada de fila, que resuelve `athlete`
+ * por compatibilidad (§5.1). Colapsarlos rompe el fail-closed: degradar
+ * identidad CONCEDE capacidades de tier `free`, no sólo las quita.
+ */
+export type ResolvedAccountRole = AccountRole | 'unknown'
+
+export function parseAccountRole(value: unknown): AccountRole | null {
+  return value === 'athlete' || value === 'coach' ? value : null
+}
+
 export interface EntitlementRow {
   tier: Tier
   /** Epoch ms. `null` significa sin vencimiento. */
@@ -42,6 +57,17 @@ export const REQUEST_CLASS_MIN_TIER: Record<AIRequestClass, Tier> = {
   plan_builder_pair: 'advanced',
   coach_assistant_message: 'advanced',
 }
+
+/**
+ * Clases cuyo requisito real es el ROL. Su entrada en REQUEST_CLASS_MIN_TIER se
+ * conserva para que la ruta legacy (`roleGate: 'off'`) no cambie; en la ruta
+ * role-aware el tier deja de consultarse para ellas.
+ * Provisional: durante el piloto toda cuenta coach las recibe. Al monetizar el
+ * producto Coach, el requisito se muda a su plan propio y NO al tier del atleta.
+ */
+export const CLASS_REQUIRES_COACH_ROLE: ReadonlySet<AIRequestClass> = new Set([
+  'coach_assistant_message',
+])
 
 export function isTier(value: unknown): value is Tier {
   return value === 'free' || value === 'weekly' || value === 'advanced'

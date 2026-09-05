@@ -1,11 +1,17 @@
-import { describe, it, expect, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { isRowInActiveScope, filterRowsToActiveScope, withActiveAthleteStamp } from '../activeScopeFilter'
 import { setActiveAthleteId, setSelfAthleteId } from '../activeAthlete'
+import { setAccountRole } from '../../entitlements/accountRoleHolder'
 
 describe('isRowInActiveScope', () => {
+  // An athlete retains the old single-athlete read behavior until its scope
+  // hydrates. Other roles are covered explicitly below and fail closed.
+  beforeEach(() => setAccountRole('athlete'))
+
   afterEach(() => {
     setActiveAthleteId(null)
     setSelfAthleteId(null)
+    setAccountRole('unknown')
   })
 
   it('no active athlete (legacy mode) → everything in scope', () => {
@@ -37,12 +43,44 @@ describe('isRowInActiveScope', () => {
     expect(isRowInActiveScope('ath_m_1')).toBe(true)
     expect(isRowInActiveScope('ath_self')).toBe(false)
   })
+
+  // Un rol ilegible NO cierra el scope: sólo un rol coach confirmado lo hace.
+  // Cerrarlo dejaba la app en blanco offline y para toda cuenta sin fila de
+  // entitlement. Ver `athleteScopeKind.ts`.
+  it('unknown behaves like an athlete account', () => {
+    setSelfAthleteId('ath_self')
+    setActiveAthleteId('ath_m_1')
+    setAccountRole('unknown')
+    expect(isRowInActiveScope('ath_m_1')).toBe(true)
+    // Las filas legacy siguen siendo exclusivas del self, también con unknown.
+    expect(isRowInActiveScope(undefined)).toBe(false)
+
+    setActiveAthleteId('ath_self')
+    expect(isRowInActiveScope(undefined)).toBe(true)
+  })
+
+  it('coach without an active athlete has an empty scope', () => {
+    setAccountRole('coach')
+    expect(isRowInActiveScope('ath_m_1')).toBe(false)
+    expect(isRowInActiveScope(undefined)).toBe(false)
+  })
+
+  it('coach with an active athlete reads only its scoped rows', () => {
+    setAccountRole('coach')
+    setActiveAthleteId('ath_m_1')
+    expect(isRowInActiveScope('ath_m_1')).toBe(true)
+    expect(isRowInActiveScope('ath_m_2')).toBe(false)
+    expect(isRowInActiveScope(undefined)).toBe(false)
+  })
 })
 
 describe('filterRowsToActiveScope', () => {
+  beforeEach(() => setAccountRole('athlete'))
+
   afterEach(() => {
     setActiveAthleteId(null)
     setSelfAthleteId(null)
+    setAccountRole('unknown')
   })
 
   it('filters by athleteId with the same policy', () => {
@@ -59,9 +97,12 @@ describe('filterRowsToActiveScope', () => {
 })
 
 describe('withActiveAthleteStamp', () => {
+  beforeEach(() => setAccountRole('athlete'))
+
   afterEach(() => {
     setActiveAthleteId(null)
     setSelfAthleteId(null)
+    setAccountRole('unknown')
   })
 
   it('estampa el atleta activo en filas nuevas sin scope', () => {

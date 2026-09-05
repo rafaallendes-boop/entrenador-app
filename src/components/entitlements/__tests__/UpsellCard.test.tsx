@@ -24,11 +24,33 @@ describe('UpsellCard', () => {
     expect(screen.getByRole('link', { name: /ver planes/i }).getAttribute('href')).toBe('/pricing')
   })
 
-  it('explica la semana completa como capacidad de Avanzado', () => {
-    renderCard('week_creator', 'advanced')
+  it('explica la semana completa nombrando el plan que de verdad la habilita', () => {
+    // `week_creator` bajó a `weekly`. El cuerpo llevaba 'plan Avanzado' escrito
+    // a mano, así que la misma tarjeta decía "Coach Semanal" en el título y
+    // "Avanzado" dos líneas abajo.
+    renderCard('week_creator', 'weekly')
 
-    expect(screen.getAllByText(/Avanzado/i).length).toBeGreaterThan(0)
     expect(screen.getByText(/generar una semana completa de entrenamiento/i)).toBeTruthy()
+    expect(screen.getAllByText(/Coach Semanal/i).length).toBeGreaterThan(0)
+  })
+
+  it('nunca nombra un plan distinto del requerido', () => {
+    // Regresión estructural: cualquier literal de tier escrito a mano en el
+    // cuerpo vuelve a contradecir al título en cuanto una clase cambia de plan.
+    const OTHER_TIER_NAMES: Record<string, RegExp[]> = {
+      weekly: [/Avanzado/i, /\bBase\b/i],
+      advanced: [/Coach Semanal/i, /\bBase\b/i],
+    }
+
+    for (const requiredTier of ['weekly', 'advanced'] as const) {
+      for (const requestClass of ['week_creator', 'weekly_summary', 'plan_builder_week', 'clase_inventada']) {
+        const { container } = renderCard(requestClass, requiredTier)
+        for (const forbidden of OTHER_TIER_NAMES[requiredTier]) {
+          expect(container.textContent).not.toMatch(forbidden)
+        }
+        cleanup()
+      }
+    }
   })
 
   it('presenta una oferta sin lenguaje de error', () => {

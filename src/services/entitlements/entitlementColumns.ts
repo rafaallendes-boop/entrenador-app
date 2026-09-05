@@ -8,6 +8,7 @@
 export const USER_ENTITLEMENT_SELECT_COLUMNS = [
   'tier',
   'expires_at',
+  'account_role',
 ] as const
 
 export const USER_ENTITLEMENT_SELECT = USER_ENTITLEMENT_SELECT_COLUMNS.join(',')

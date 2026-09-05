@@ -6,7 +6,11 @@ const handlerMocks = vi.hoisted(() => ({
   assertUsageGate: vi.fn(),
   recordUsageCost: vi.fn(async () => undefined),
   isEntitlementEnforcementEnabled: vi.fn(() => false),
-  resolveEntitlementTier: vi.fn(async () => 'free' as const),
+  readEntitlementRecord: vi.fn(async () => ({
+    status: 'present' as const,
+    row: { tier: 'advanced' as const, expiresAt: null },
+    accountRole: 'athlete' as const,
+  })),
 }))
 
 vi.mock('../_shared/usageGate', async (importActual) => {
@@ -25,7 +29,7 @@ vi.mock('../_shared/resolveEntitlement', async (importActual) => {
   return {
     ...actual,
     isEntitlementEnforcementEnabled: handlerMocks.isEntitlementEnforcementEnabled,
-    resolveEntitlementTier: handlerMocks.resolveEntitlementTier,
+    readEntitlementRecord: handlerMocks.readEntitlementRecord,
   }
 })
 
@@ -47,7 +51,11 @@ describe('coach.ts — usage gate', () => {
     handlerMocks.isKillSwitchActive.mockReturnValue(false)
     handlerMocks.isUsageLimitsEnabled.mockReturnValue(true)
     handlerMocks.isEntitlementEnforcementEnabled.mockReturnValue(false)
-    handlerMocks.resolveEntitlementTier.mockResolvedValue('free')
+    handlerMocks.readEntitlementRecord.mockResolvedValue({
+      status: 'present',
+      row: { tier: 'advanced', expiresAt: null },
+      accountRole: 'athlete',
+    })
     stubAuthFetch({ userId: 'user-1' })
   })
 

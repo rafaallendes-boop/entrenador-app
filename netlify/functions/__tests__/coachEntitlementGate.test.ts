@@ -2,7 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   entitlementEnabled: vi.fn(() => false),
-  resolveEntitlementTier: vi.fn(async () => 'free' as const),
+  readEntitlementRecord: vi.fn(async () => ({
+    status: 'present' as const,
+    row: { tier: 'free' as const, expiresAt: null },
+    accountRole: 'athlete' as const,
+  })),
   insertCoachRequestRow: vi.fn(async () => 'ok' as const),
 }))
 
@@ -11,7 +15,7 @@ vi.mock('../_shared/resolveEntitlement', async (importOriginal) => {
   return {
     ...actual,
     isEntitlementEnforcementEnabled: mocks.entitlementEnabled,
-    resolveEntitlementTier: mocks.resolveEntitlementTier,
+    readEntitlementRecord: mocks.readEntitlementRecord,
   }
 })
 
@@ -43,8 +47,12 @@ function makeDeferred<T>(): {
 beforeEach(() => {
   mocks.entitlementEnabled.mockReset()
   mocks.entitlementEnabled.mockReturnValue(false)
-  mocks.resolveEntitlementTier.mockReset()
-  mocks.resolveEntitlementTier.mockResolvedValue('free')
+  mocks.readEntitlementRecord.mockReset()
+  mocks.readEntitlementRecord.mockResolvedValue({
+    status: 'present',
+    row: { tier: 'free', expiresAt: null },
+    accountRole: 'athlete',
+  })
   mocks.insertCoachRequestRow.mockClear()
   stubAuthFetch({ userId: AUTHED_USER_ID })
 })
@@ -100,7 +108,7 @@ describe('gate real de entitlement en coach', () => {
     })
 
     expect(response.statusCode).toBe(200)
-    expect(mocks.resolveEntitlementTier).not.toHaveBeenCalled()
+    expect(mocks.readEntitlementRecord).toHaveBeenCalledWith('tok')
   })
 
   it('rechaza a Free con detail antes de tocar al proveedor', async () => {
@@ -123,7 +131,7 @@ describe('gate real de entitlement en coach', () => {
         currentTier: 'free',
       },
     })
-    expect(mocks.resolveEntitlementTier).toHaveBeenCalledWith('tok')
+    expect(mocks.readEntitlementRecord).toHaveBeenCalledWith('tok')
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/auth/v1/user')
   })
@@ -131,14 +139,18 @@ describe('gate real de entitlement en coach', () => {
   it('inicia la lectura de entitlement sin esperar a que termine auth', async () => {
     mocks.entitlementEnabled.mockReturnValue(true)
     const auth = makeDeferred<{ ok: boolean; json: () => Promise<{ id: string }> }>()
-    const entitlement = makeDeferred<'free'>()
+    const entitlement = makeDeferred<{
+      status: 'present'
+      row: { tier: 'free'; expiresAt: null }
+      accountRole: 'athlete'
+    }>()
     let authStarted = false
     let entitlementStarted = false
     vi.stubGlobal('fetch', vi.fn(() => {
       authStarted = true
       return auth.promise
     }))
-    mocks.resolveEntitlementTier.mockImplementation(() => {
+    mocks.readEntitlementRecord.mockImplementation(() => {
       entitlementStarted = true
       return entitlement.promise
     })
@@ -156,7 +168,11 @@ describe('gate real de entitlement en coach', () => {
       ok: true,
       json: async () => ({ id: '66666666-6666-4666-8666-666666666666' }),
     })
-    entitlement.resolve('free')
+    entitlement.resolve({
+      status: 'present',
+      row: { tier: 'free', expiresAt: null },
+      accountRole: 'athlete',
+    })
 
     expect((await responsePromise).statusCode).toBe(403)
     expect(observedBeforeSettling).toEqual({ authStarted: true, entitlementStarted: true })

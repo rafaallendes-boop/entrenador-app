@@ -31,6 +31,12 @@ export interface AIRequest {
   conversation?: AIConversationMessage[]
   requestClass: AIRequestClass
   traceId: string
+  /**
+   * Atleta sobre el que se ejerce la acción, cuando no es el propio actor.
+   * El cliente lo PROPONE; el servidor verifica la membresía. Nunca autoriza
+   * por sí solo.
+   */
+  targetAthleteId?: string | null
   generationId?: string
   /** Logical engine attempt; distinct from retries performed inside the proxy. */
   logicalAttempt?: number
@@ -171,6 +177,7 @@ export type AIErrorCode =
   | 'misconfigured'  // server or provider config missing
   | 'server_error'   // internal proxy/backend error
   | 'entitlement_required' // el plan del usuario no alcanza para esta clase
+  | 'coach_access_required' // rol/membresía: NO se resuelve cambiando de plan
   | 'quota_exceeded'
   | 'spend_cap_exceeded'
   | 'kill_switch_active'

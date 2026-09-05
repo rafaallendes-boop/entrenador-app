@@ -978,6 +978,10 @@ export function formatError(e: unknown): string {
         return 'RallyIQ no está configurado correctamente en el servidor.'
       case 'entitlement_required':
         return 'Esta función está en un plan superior. Mirá los planes disponibles.'
+      // Rol/membresía: el mensaje del servidor ya explica la causa real y
+      // ningún plan la resuelve, así que no se reemplaza por copy de upsell.
+      case 'coach_access_required':
+        return e.message
       case 'quota_exceeded':
         return 'Alcanzaste el cupo diario de esta función. Vuelve a intentarlo mañana.'
       case 'spend_cap_exceeded':

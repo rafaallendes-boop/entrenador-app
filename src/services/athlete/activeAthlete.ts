@@ -1,3 +1,6 @@
+import { getAccountRole } from '../entitlements/accountRoleHolder'
+import { canAdoptLegacyRows, resolveAthleteScopeKind } from './athleteScopeKind'
+
 /** Local Dexie key of the singleton athlete profile. Never written to athlete_id. */
 export const ATHLETE_PROFILE_LOCAL_ID = 'default'
 
@@ -28,11 +31,16 @@ export function setSelfAthleteId(id: string | null): void {
 }
 
 /**
- * True when reads may adopt legacy/unscoped rows: no active athlete yet
- * (pre-hydration legacy mode) or the active athlete IS the self athlete.
+ * True when reads may adopt legacy/unscoped rows. Sólo una identidad atleta
+ * confirmada puede entrar en la rama legacy de pre-hidratación; coach y
+ * unknown fallan cerrados aunque todavía no tengan atleta activo.
  */
 export function isSelfScopeActive(): boolean {
-  return activeAthleteId === null || activeAthleteId === selfAthleteId
+  return canAdoptLegacyRows(resolveAthleteScopeKind({
+    accountRole: getAccountRole(),
+    activeAthleteId,
+    selfAthleteId,
+  }))
 }
 
 // Guard shared by async flows that must discard late writes after an athlete switch.

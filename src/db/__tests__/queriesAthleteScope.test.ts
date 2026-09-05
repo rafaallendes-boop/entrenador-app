@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '../db'
 import { getDayLog, getDayLogsForWeek, getWeekSummary, upsertDayLog, upsertWeekSummary } from '../queries'
 import { setActiveAthleteId, setSelfAthleteId } from '../../services/athlete/activeAthlete'
+import { setAccountRole } from '../../services/entitlements/accountRoleHolder'
 import type { WeekSummary } from '../../types'
 
 vi.mock('../../services/syncService', () => ({
@@ -10,6 +11,7 @@ vi.mock('../../services/syncService', () => ({
 
 describe('upsertDayLog athlete scope', () => {
   beforeEach(async () => {
+    setAccountRole('athlete')
     db.close()
     await db.delete()
     await db.open()
@@ -18,6 +20,7 @@ describe('upsertDayLog athlete scope', () => {
   })
 
   afterEach(() => {
+    setAccountRole('unknown')
     setActiveAthleteId(null)
     setSelfAthleteId(null)
     db.close()
@@ -63,6 +66,7 @@ describe('upsertDayLog athlete scope', () => {
 
 describe('upsertWeekSummary athlete scope', () => {
   beforeEach(async () => {
+    setAccountRole('athlete')
     db.close()
     await db.delete()
     await db.open()
@@ -71,6 +75,7 @@ describe('upsertWeekSummary athlete scope', () => {
   })
 
   afterEach(() => {
+    setAccountRole('unknown')
     setActiveAthleteId(null)
     setSelfAthleteId(null)
     db.close()
@@ -114,6 +119,7 @@ describe('upsertWeekSummary athlete scope', () => {
 
 describe('athlete-aware lookups', () => {
   beforeEach(async () => {
+    setAccountRole('athlete')
     db.close()
     await db.delete()
     await db.open()
@@ -122,6 +128,7 @@ describe('athlete-aware lookups', () => {
   })
 
   afterEach(() => {
+    setAccountRole('unknown')
     setActiveAthleteId(null)
     setSelfAthleteId(null)
     db.close()

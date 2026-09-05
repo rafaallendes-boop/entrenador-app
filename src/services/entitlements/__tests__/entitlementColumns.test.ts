@@ -8,19 +8,34 @@ const MIGRATION = readFileSync(
   'utf8',
 )
 
-describe('guard de drift entre codigo y migracion 020', () => {
-  it('toda columna que el codigo pide existe en el grant de la migracion', () => {
-    const grantMatch = /grant select \(([^)]+)\)/i.exec(MIGRATION)
-    expect(grantMatch).not.toBeNull()
-    const granted = grantMatch![1].split(',').map((c) => c.trim())
+const MIGRATIONS = [
+  'supabase/020_user_entitlements.sql',
+  'supabase/028_user_entitlement_account_role.sql',
+]
+
+function grantedColumns(): string[] {
+  const granted = new Set<string>()
+  for (const file of MIGRATIONS) {
+    const sql = readFileSync(resolve(process.cwd(), file), 'utf8')
+    // Un archivo puede traer más de un `grant select (...)`: se toman todos, y
+    // el último gana en Postgres, así que la UNIÓN es la cota superior segura.
+    for (const match of sql.matchAll(/grant select \(([^)]+)\)/gi)) {
+      for (const col of match[1].split(',')) granted.add(col.trim())
+    }
+  }
+  return [...granted]
+}
+
+describe('guard de drift entre codigo y migraciones 020/028', () => {
+  it('toda columna que el codigo pide existe en el grant de alguna migracion', () => {
+    const granted = grantedColumns()
     for (const column of USER_ENTITLEMENT_SELECT_COLUMNS) {
       expect(granted).toContain(column)
     }
   })
 
   it('`note` NO esta en el grant: es comentario operacional interno', () => {
-    const grantMatch = /grant select \(([^)]+)\)/i.exec(MIGRATION)
-    const granted = grantMatch![1].split(',').map((c) => c.trim())
+    const granted = grantedColumns()
     expect(granted).not.toContain('note')
   })
 

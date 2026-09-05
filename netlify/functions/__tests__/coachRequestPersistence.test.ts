@@ -49,10 +49,22 @@ async function callHandler(
 }
 
 function stubAuthFetch(): void {
-  vi.stubGlobal('fetch', vi.fn(async () => ({
-    ok: true,
-    json: async () => ({ id: AUTHED_USER_ID }),
-  })))
+  vi.stubGlobal('fetch', vi.fn(async (url: unknown) => {
+    const href = String(url)
+    if (href.includes('/auth/v1/user')) {
+      return { ok: true, json: async () => ({ id: AUTHED_USER_ID }) }
+    }
+    if (href.includes('/rest/v1/user_entitlements')) {
+      return {
+        ok: true,
+        json: async () => [{ tier: 'advanced', expires_at: null, account_role: 'athlete' }],
+      }
+    }
+    if (href.includes('/rest/v1/athlete_memberships')) {
+      return { ok: true, json: async () => [] }
+    }
+    return { ok: true, json: async () => ({}) }
+  }))
 }
 
 /** Deja correr efectos best-effort posteriores del test. */

@@ -50,6 +50,12 @@ export function useEntitlement(): EntitlementView {
       capability,
       now: Date.now(),
       entitlement: { tier, expiresAt: null },
+      // El store no expone rol ni membresía, así que esta consulta no puede
+      // aplicar el gate role-aware sin inventar identidad: queda en la ruta
+      // legacy. El servidor decide con el rol real leído de su propio JWT.
+      accountRole: 'athlete',
+      membership: null,
+      roleGate: 'off',
     }),
   }
 }

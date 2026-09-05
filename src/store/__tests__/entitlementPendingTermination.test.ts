@@ -6,6 +6,7 @@ const h = vi.hoisted(() => ({
 }))
 
 vi.mock('../../services/entitlements/entitlementService', () => ({
+  readMirroredEntitlementRole: async () => 'unknown',
   readMirroredTier: async () => h.mirrored,
   hydrateEntitlement: async () => (h.remoteOk
     ? { ok: true, tier: 'advanced' as const }

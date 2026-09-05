@@ -16,6 +16,7 @@ import { createStageTracker, trackStage, type CoachOutcome } from './stageLogger
 import { postProcessCoachActions } from './actionPostProcessor'
 import { assertDailyAIRequestLimit } from './aiTelemetry'
 import { persistSafetyBlockedOutcome } from './safetyOutcomeTelemetry'
+import { resolveRequestTargetAthleteId } from './requestTarget'
 
 export type CoachActionIntent = 'create_full_plan' | 'modify_plan' | 'none'
 type CoachSendOptions = {
@@ -77,6 +78,8 @@ export const CoachEngine = {
       temperature?: number
       requestClass?: AIRequestClass
       surface?: AITechnicalSurface
+      /** Atleta explícito de la acción; el helper descarta el self. */
+      targetAthleteId?: string | null
       conversation?: AIRequest['conversation']
       signal?: AbortSignal
       responseMimeType?: 'application/json'
@@ -104,6 +107,7 @@ export const CoachEngine = {
       const raw = await provider.call({
         requestClass,
         traceId,
+        targetAthleteId: resolveRequestTargetAthleteId(options?.targetAthleteId),
         allowFallback: policy.allowFallback,
         conversation: options?.conversation,
         systemPrompt,
@@ -189,6 +193,7 @@ async function sendTrackedCoachRequest(
         userMessage,
         requestClass,
         traceId,
+        targetAthleteId: resolveRequestTargetAthleteId(),
         conversation: (context.recentMessages ?? []).map(message => ({
           role: message.role === 'coach' ? 'assistant' : 'user',
           content: message.content,

@@ -1,17 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const hydrateEntitlement = vi.fn()
+const readMirroredEntitlementRole = vi.fn()
 const readMirroredTier = vi.fn()
 
 vi.mock('../../services/entitlements/entitlementService', () => ({
   hydrateEntitlement: (...args: unknown[]) => hydrateEntitlement(...args),
+  readMirroredEntitlementRole: (...args: unknown[]) => readMirroredEntitlementRole(...args),
   readMirroredTier: (...args: unknown[]) => readMirroredTier(...args),
 }))
 
 const { useEntitlementStore, getEntitlementTier } = await import('../useEntitlementStore')
+const { getAccountRole } = await import('../../services/entitlements/accountRoleHolder')
 
 beforeEach(() => {
   hydrateEntitlement.mockReset()
+  readMirroredEntitlementRole.mockReset()
+  readMirroredEntitlementRole.mockResolvedValue('unknown')
   readMirroredTier.mockReset()
   useEntitlementStore.getState().reset()
 })
@@ -101,14 +106,17 @@ describe('getEntitlementTier', () => {
 })
 
 describe('reset', () => {
-  it('vuelve a free al cerrar sesion', async () => {
+  it('vuelve a free y cierra el rol global al cerrar sesion', async () => {
     readMirroredTier.mockResolvedValue(null)
-    hydrateEntitlement.mockResolvedValue({ ok: true, tier: 'advanced' })
+    hydrateEntitlement.mockResolvedValue({ ok: true, tier: 'advanced', accountRole: 'coach' })
     await useEntitlementStore.getState().hydrate('user-1')
+    expect(getAccountRole()).toBe('coach')
 
     useEntitlementStore.getState().reset()
 
     expect(useEntitlementStore.getState().tier).toBe('free')
+    expect(useEntitlementStore.getState().accountRole).toBe('unknown')
+    expect(getAccountRole()).toBe('unknown')
     expect(useEntitlementStore.getState().userId).toBeNull()
   })
 })

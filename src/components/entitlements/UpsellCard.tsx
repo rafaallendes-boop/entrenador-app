@@ -34,7 +34,7 @@ export function UpsellCard({
       </p>
       <p className="mt-1 text-sm leading-relaxed text-ink-muted">
         {requestClass === 'week_creator'
-          ? 'Si quieres generar una semana completa de entrenamiento, está disponible para usuarios del plan Avanzado.'
+          ? `Si quieres generar una semana completa de entrenamiento, está disponible desde el plan ${TIER_LABEL[requiredTier]}.`
           : 'Puedes seguir usando el coach y registrando tus entrenamientos. Cuando quieras que arme y ajuste tu planificación, sube de plan.'}
       </p>
       <Link

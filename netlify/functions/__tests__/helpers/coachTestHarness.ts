@@ -94,11 +94,23 @@ function authResponse(userId: string, ok: boolean): FetchStubResponse {
     : { ok: false, status: 401, json: async () => ({}) }
 }
 
+function entitlementResponse(): FetchStubResponse {
+  return {
+    ok: true,
+    status: 200,
+    json: async () => [{ tier: 'advanced', expires_at: null, account_role: 'athlete' }],
+  }
+}
+
+function noMembershipResponse(): FetchStubResponse {
+  return { ok: true, status: 200, json: async () => [] }
+}
+
 /**
  * Stub de `fetch` que sólo sabe responder al endpoint de auth de Supabase
- * (`/auth/v1/user`); cualquier otra URL devuelve un 200 vacío para no
- * romper escrituras best-effort (telemetría) que no son el objeto bajo
- * prueba. También fija las env vars de Supabase y `GEMINI_API_KEY` (el
+ * (`/auth/v1/user`) y las lecturas role-aware del Coach; cualquier otra URL
+ * devuelve un 200 vacío para no romper escrituras best-effort (telemetría)
+ * que no son el objeto bajo prueba. También fija las env vars de Supabase y `GEMINI_API_KEY` (el
  * proveedor primario por default de todas las clases sin override — ver
  * OPTIMIZATION_AND_COSTS.md §8), para que un test que necesite borrar esa
  * key para simular "provider mal configurado" tenga algo que borrar.
@@ -116,7 +128,10 @@ export function stubAuthFetch(
   const userId = opts.userId ?? DEFAULT_USER_ID
   const ok = opts.ok ?? true
   const fetchMock = vi.fn(async (url: unknown) => {
-    if (String(url).includes('/auth/v1/user')) return authResponse(userId, ok)
+    const href = String(url)
+    if (href.includes('/auth/v1/user')) return authResponse(userId, ok)
+    if (href.includes('/rest/v1/user_entitlements')) return entitlementResponse()
+    if (href.includes('/rest/v1/athlete_memberships')) return noMembershipResponse()
     return { ok: true, status: 200, json: async () => ({}) }
   })
   vi.stubGlobal('fetch', fetchMock)
@@ -181,6 +196,8 @@ export function stubProviderFetch(
   const router = vi.fn(async (url: unknown): Promise<FetchStubResponse> => {
     const href = String(url)
     if (href.includes('/auth/v1/user')) return authResponse(authUserId, true)
+    if (href.includes('/rest/v1/user_entitlements')) return entitlementResponse()
+    if (href.includes('/rest/v1/athlete_memberships')) return noMembershipResponse()
     if (href.includes('generativelanguage.googleapis.com')) return providerFetchMock()
     return { ok: true, status: 200, json: async () => ({}) }
   })

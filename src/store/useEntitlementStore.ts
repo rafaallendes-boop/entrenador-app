@@ -1,9 +1,11 @@
 import { create } from 'zustand'
 import {
   hydrateEntitlement,
+  readMirroredEntitlementRole,
   readMirroredTier,
 } from '../services/entitlements/entitlementService'
-import type { Tier } from '../services/entitlements/entitlementPolicy'
+import { type ResolvedAccountRole, type Tier } from '../services/entitlements/entitlementPolicy'
+import { setAccountRole } from '../services/entitlements/accountRoleHolder'
 import {
   ENTITLEMENT_SOURCE,
   type EntitlementSource,
@@ -13,6 +15,8 @@ export type { EntitlementSource } from '../types/entitlement'
 
 interface EntitlementState {
   tier: Tier
+  /** Identidad de producto: unknown hasta que una lectura remota la confirme. */
+  accountRole: ResolvedAccountRole
   loading: boolean
   source: EntitlementSource
   /**
@@ -36,6 +40,7 @@ let epoch = 0
 
 export const useEntitlementStore = create<EntitlementState>((set, get) => ({
   tier: 'free',
+  accountRole: 'unknown',
   loading: false,
   source: ENTITLEMENT_SOURCE.DEFAULT,
   hydrated: false,
@@ -47,9 +52,11 @@ export const useEntitlementStore = create<EntitlementState>((set, get) => ({
     // Cambiar de cuenta descarta el tier anterior de inmediato: heredarlo aunque
     // sea por un frame le mostraría a la cuenta nueva un plan que no tiene.
     if (get().userId !== userId) {
+      setAccountRole('unknown')
       set({
         userId,
         tier: 'free',
+        accountRole: 'unknown',
         source: ENTITLEMENT_SOURCE.DEFAULT,
         hydrated: false,
         loading: true,
@@ -60,14 +67,29 @@ export const useEntitlementStore = create<EntitlementState>((set, get) => ({
 
     const myEpoch = ++epoch
     const promise = (async () => {
-      const mirrored = await readMirroredTier(userId)
+      const [mirrored, mirroredRole] = await Promise.all([
+        readMirroredTier(userId),
+        readMirroredEntitlementRole(userId),
+      ])
       if (myEpoch !== epoch) return
-      if (mirrored) set({ tier: mirrored, source: ENTITLEMENT_SOURCE.MIRROR })
+      if (mirrored) {
+        setAccountRole(mirroredRole)
+        set({
+          tier: mirrored,
+          accountRole: mirroredRole,
+          source: ENTITLEMENT_SOURCE.MIRROR,
+        })
+      }
 
       const remote = await hydrateEntitlement(userId)
       if (myEpoch !== epoch) return
+      // Todo desenlace remoto explícitamente transporta rol. El fallback sólo
+      // existe para mocks/bundles intermedios y sigue siendo fail-closed.
+      const accountRole = remote.accountRole ?? 'unknown'
+      setAccountRole(accountRole)
       set({
         tier: remote.tier,
+        accountRole,
         source: remote.ok
           ? ENTITLEMENT_SOURCE.REMOTE
           : (mirrored ? ENTITLEMENT_SOURCE.MIRROR : ENTITLEMENT_SOURCE.DEFAULT),
@@ -85,8 +107,10 @@ export const useEntitlementStore = create<EntitlementState>((set, get) => ({
   reset: () => {
     epoch += 1
     inFlight = null
+    setAccountRole('unknown')
     set({
       tier: 'free',
+      accountRole: 'unknown',
       loading: false,
       source: ENTITLEMENT_SOURCE.DEFAULT,
       hydrated: false,

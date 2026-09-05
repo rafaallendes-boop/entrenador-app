@@ -33,6 +33,11 @@ import { pullWorkouts } from './services/readiness/pullWorkouts'
 import { autoCompleteFromWorkouts } from './services/readiness/autoCompleteFromWorkouts'
 import { capturePendingClaimTokenFromUrl } from './services/athlete/claimGate'
 import { isIOSPlatform } from './services/platform'
+import {
+  invalidateSessionBootstrap,
+  runSessionBootstrap,
+} from './services/bootstrap/sessionBootstrap'
+import { roleOwnsLegacySelfData } from './services/athlete/athleteScopeKind'
 
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const WeeklyView = lazy(() => import('./pages/WeeklyView'))
@@ -180,54 +185,56 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (!userId) {
-      useEntitlementStore.getState().reset()
-      return
-    }
-    void useEntitlementStore.getState().hydrate(userId)
-  }, [userId])
-
-  useEffect(() => {
     if (!hasLoadedMemory || !athleteProfile) return
     void usePlanBuilderStore.getState().resumeGenerationJobs(athleteProfile)
   }, [athleteProfile, hasLoadedMemory])
 
-  // Athlete Scope Foundation: ensure the owner's athlete row + stamp athleteId on
-  // legacy local rows, then hydrate the active athlete id. Additive and invisible
-  // with VITE_ATHLETE_SCOPE off; prepares data so the flag can be flipped safely.
   useEffect(() => {
-    if (!userId) return
-    let cancelled = false
-    void (async () => {
-      try {
-        await db.open().catch(() => {})
-        capturePendingClaimTokenFromUrl()
-        await pullMemberships(userId)
-        if (cancelled) return
-        const backfilled = await backfillLocalAthleteScope(userId)
-        if (cancelled) return
-        if (backfilled !== null) {
-          await hydrateActiveAthlete(userId)
-          if (cancelled) return
-          useAuthStore.getState().setActiveAthleteId(getActiveAthleteId())
-        }
-      } catch (error) {
-        console.error('[athlete-scope] hydration failed', error)
-      }
-    })()
-    return () => {
-      cancelled = true
+    if (!userId) {
+      // El logout también debe invalidar una corrida que espera I/O; no basta
+      // con resetear el store, porque la frontera anterior podría continuar.
+      invalidateSessionBootstrap()
+      useEntitlementStore.getState().reset()
+      return
     }
-  }, [userId])
 
-  useEffect(() => {
-    if (!userId) return
+    // Esta limpieza ocurre ANTES de cruzar la frontera async. Si cambió la
+    // cuenta, el holder no puede conservar por un frame el rol anterior
+    // mientras `prepareLocalDataForUser` todavía está vaciando Dexie.
+    if (useEntitlementStore.getState().userId !== userId) {
+      useEntitlementStore.getState().reset()
+    }
 
     let cancelled = false
     let syncInFlight = false
     let lastAutoRetryAt = 0
+    let bootstrapReady = false
+    let bootstrapInFlight = false
 
-    const syncSignedInUser = async (reason: 'initial' | 'online' | 'visible' | 'focus' = 'initial') => {
+    // Un rol ilegible NO invalida la sesión: `unknown` sigue el camino de
+    // `athlete` (ver `athleteScopeKind.ts`). Exigir un rol resuelto acá dejaba
+    // `bootstrapReady` en false para siempre en una sesión offline, así que
+    // ningún `online`/`focus`/`visible` posterior llegaba a sincronizar.
+    const isCurrentResolvedSession = () => {
+      const entitlement = useEntitlementStore.getState()
+      return !cancelled
+        && useAuthStore.getState().user?.id === userId
+        && entitlement.userId === userId
+    }
+
+    const hydrateScope = async (id: string) => {
+      await hydrateActiveAthlete(id)
+      if (!isCurrentResolvedSession()) return
+      useAuthStore.getState().setActiveAthleteId(getActiveAthleteId())
+    }
+
+    const syncSignedInUser = async (
+      reason: 'initial' | 'online' | 'visible' | 'focus' = 'initial',
+      options: { fromBootstrap?: boolean; shouldMigrate?: boolean } = {},
+    ) => {
+      // Los listeners siguen vivos, pero no pueden sincronizar ni adoptar scope
+      // antes de que la frontera de cuenta y el rol estén resueltos.
+      if ((!bootstrapReady && !options.fromBootstrap) || !isCurrentResolvedSession()) return
       if (syncInFlight) return
       if (reason !== 'initial') {
         const now = Date.now()
@@ -242,24 +249,31 @@ export default function App() {
       })
 
       try {
-        await db.open().catch(() => {})
-        capturePendingClaimTokenFromUrl()
-        await pullMemberships(userId)
-        if (cancelled) return
-        const backfilled = await backfillLocalAthleteScope(userId)
-        if (cancelled) return
-        if (backfilled !== null) {
-          await hydrateActiveAthlete(userId)
-          if (cancelled) return
-          useAuthStore.getState().setActiveAthleteId(getActiveAthleteId())
+        // El bootstrap ya hizo estas tres operaciones en orden. Los re-syncs
+        // las conservan para refrescar roster/scope, pero nunca backfillean un
+        // coach bajo el self legacy.
+        if (!options.fromBootstrap) {
+          await pullMemberships(userId)
+          if (!isCurrentResolvedSession()) return
+          let skipScopeHydration = false
+          if (roleOwnsLegacySelfData(useEntitlementStore.getState().accountRole)) {
+            const backfilled = await backfillLocalAthleteScope(userId)
+            if (!isCurrentResolvedSession()) return
+            // `null` = claim pendiente. Hidratar el scope acá lo ataría al self
+            // legacy antes de que el claim decida a qué atleta pertenece.
+            skipScopeHydration = backfilled === null
+          }
+          if (!skipScopeHydration) {
+            await hydrateScope(userId)
+            if (!isCurrentResolvedSession()) return
+          }
         }
 
-        const { shouldMigrate } = await prepareLocalDataForUser(userId)
-        if (cancelled) return
-
-        if (shouldMigrate) {
+        // Sólo el bootstrap cruza la frontera destructiva y calcula esta marca.
+        // Un coach no migra datos legacy como si fuesen su atleta self.
+        if (options.shouldMigrate && roleOwnsLegacySelfData(useEntitlementStore.getState().accountRole)) {
           await migrateLocalDataToCloud(userId)
-          if (cancelled) return
+          if (!isCurrentResolvedSession()) return
         }
 
         // Prioriza los datos que el usuario está mirando. El sync completo también
@@ -275,7 +289,7 @@ export default function App() {
           // habituales; un fallo de esta optimización no debe bloquearlo.
           console.warn('[app] priority week pull failed', error)
         }
-        if (cancelled) return
+        if (!isCurrentResolvedSession()) return
 
         // La semana puede haber cambiado mientras el request estaba en vuelo.
         // Releer el último destino evita volver a mostrar una semana anterior.
@@ -285,10 +299,10 @@ export default function App() {
           priorityWeekStart,
         )
         await trainingStateAfterPriorityPull.loadWeek(weekStartAfterPriorityPull)
-        if (cancelled) return
+        if (!isCurrentResolvedSession()) return
 
         await runFullSync(userId)
-        if (cancelled) return
+        if (!isCurrentResolvedSession()) return
 
         // Refrescar el calendario antes de WHOOP y memoria: ninguno de esos pulls
         // debe retrasar la aparición de entrenamientos recién sincronizados.
@@ -298,16 +312,16 @@ export default function App() {
           trainingStateAfterSync.loadWeek(weekStartAfterSync),
           trainingStateAfterSync.loadAllSummaries(),
         ])
-        if (cancelled) return
+        if (!isCurrentResolvedSession()) return
 
         await pullWorkouts()
           .then(() => autoCompleteFromWorkouts())
           .catch((error) => console.warn('[whoop:auto-complete] pull+run failed', error))
-        if (cancelled) return
+        if (!isCurrentResolvedSession()) return
 
         const { loadMemory } = useCoachMemoryStore.getState()
         await loadMemory()
-        if (cancelled) return
+        if (!isCurrentResolvedSession()) return
 
         useAuthStore.getState().setSyncDetails({
           memoryLoadedForSyncAt: syncBoundaryAt,
@@ -316,7 +330,7 @@ export default function App() {
         const { loadMemory } = useCoachMemoryStore.getState()
         try {
           await loadMemory()
-          if (!cancelled) {
+          if (isCurrentResolvedSession()) {
             useAuthStore.getState().setSyncDetails({
               memoryLoadedForSyncAt: syncBoundaryAt,
             })
@@ -330,10 +344,49 @@ export default function App() {
       }
     }
 
-    void syncSignedInUser()
+    const startBootstrap = () => {
+      if (bootstrapInFlight || bootstrapReady || cancelled) return
+      bootstrapInFlight = true
+      let shouldMigrate = false
+      void runSessionBootstrap(userId, {
+        prepareLocalDataForUser: async (id) => {
+          await db.open().catch(() => {})
+          capturePendingClaimTokenFromUrl()
+          const result = await prepareLocalDataForUser(id)
+          shouldMigrate = result.shouldMigrate
+        },
+        hydrateRole: async (id) => {
+          await useEntitlementStore.getState().hydrate(id)
+          return useEntitlementStore.getState().accountRole
+        },
+        pullMemberships,
+        backfillLegacyScope: backfillLocalAthleteScope,
+        hydrateAthleteScope: hydrateScope,
+        runFullSync: async () => syncSignedInUser('initial', {
+          fromBootstrap: true,
+          shouldMigrate,
+        }),
+      }).then(() => {
+        if (isCurrentResolvedSession()) bootstrapReady = true
+      }).catch((error) => {
+        if (!cancelled) console.error('[bootstrap] failed', error)
+      }).finally(() => {
+        bootstrapInFlight = false
+      })
+    }
+
+    const requestResync = (reason: 'online' | 'visible' | 'focus') => {
+      if (!bootstrapReady) {
+        startBootstrap()
+        return
+      }
+      void syncSignedInUser(reason)
+    }
+
+    startBootstrap()
 
     const handleOnline = () => {
-      void syncSignedInUser('online')
+      requestResync('online')
     }
 
     // Shared foreground/resume auto-sync policy: skip while a schema_mismatch
@@ -342,7 +395,7 @@ export default function App() {
       const { syncStatus, syncDetails } = useAuthStore.getState()
       if (syncStatus === 'error' && syncDetails.lastErrorCategory === 'schema_mismatch' && syncDetails.retryScheduledAt == null) return
       if (shouldAutoSyncOnFocus(syncStatus, syncDetails)) {
-        void syncSignedInUser(reason)
+        requestResync(reason)
       }
     }
 
@@ -369,7 +422,7 @@ export default function App() {
       if (syncDetails.pendingOps === 0 && syncStatus !== 'error' && syncStatus !== 'offline') return
       const retryAt = syncDetails.retryScheduledAt
       if (retryAt != null && retryAt > Date.now()) return
-      void syncSignedInUser('visible')
+      requestResync('visible')
     }, 15000)
 
     return () => {

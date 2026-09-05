@@ -1,5 +1,6 @@
 import { CoachEngine } from '../ai/CoachEngine'
 import { AIProviderError } from '../ai/types'
+import { CoachAccessRequiredError } from '../entitlements/coachAccessError'
 import { EntitlementRequiredError } from '../entitlements/entitlementError'
 import {
   KillSwitchActiveError,
@@ -18,6 +19,7 @@ export type DraftFailure =
   | 'quota'
   | 'kill-switch'
   | 'entitlement'
+  | 'coach-access'
   | 'timeout'
   | 'network'
   | 'rate-limit'
@@ -59,6 +61,14 @@ function classifyDraftError(error: unknown): DraftFailure {
     || errorName(error) === 'KillSwitchActiveError'
   ) return 'kill-switch'
 
+  // Antes que `entitlement`: rol/membresía no se resuelven con un plan y la
+  // UI no debe ofrecer una compra que no destraba nada.
+  if (
+    error instanceof CoachAccessRequiredError
+    || (error instanceof AIProviderError && error.code === 'coach_access_required')
+    || errorName(error) === 'CoachAccessRequiredError'
+  ) return 'coach-access'
+
   if (
     error instanceof EntitlementRequiredError
     || (error instanceof AIProviderError && error.code === 'entitlement_required')
@@ -85,7 +95,14 @@ function classifyDraftError(error: unknown): DraftFailure {
   return 'network'
 }
 
-export async function requestAssistantDraft(signals: TriageSignal[]): Promise<DraftResult> {
+/**
+ * `athleteId` es el único objetivo explícito del producto: el coach le escribe
+ * a un alumno concreto de la tarjeta, no al atleta del scope activo.
+ */
+export async function requestAssistantDraft(
+  athleteId: string,
+  signals: TriageSignal[],
+): Promise<DraftResult> {
   // Fail closed: sin una señal factual el modelo tendría que inventar el
   // motivo del contacto y además gastaría cuota sin aportar valor.
   if (signals.length === 0) return { ok: false, reason: 'invalid-response' }
@@ -100,6 +117,7 @@ export async function requestAssistantDraft(signals: TriageSignal[]): Promise<Dr
       {
         requestClass: 'coach_assistant_message',
         surface: 'coach_assistant',
+        targetAthleteId: athleteId,
         responseMimeType: 'application/json',
         responseSchema: ASSISTANT_MESSAGE_SCHEMA,
         classifyResponse: (text) => {

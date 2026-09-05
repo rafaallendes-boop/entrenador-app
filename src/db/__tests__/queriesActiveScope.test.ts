@@ -6,6 +6,7 @@ import {
   getWeekSummary,
   getAllWeekSummaries,
   getSessionsForWeek,
+  getSessionsForDateRange,
   getSessionsForDay,
   getHistoricalSessionsWindow,
   getMatchSessions,
@@ -14,6 +15,7 @@ import {
 } from '../queries'
 import { ATHLETE_PROFILE_LOCAL_ID, setActiveAthleteId, setSelfAthleteId } from '../../services/athlete/activeAthlete'
 import { withActiveAthleteStamp } from '../../services/athlete/activeScopeFilter'
+import { setAccountRole } from '../../services/entitlements/accountRoleHolder'
 
 const asManaged = () => {
   setSelfAthleteId('ath_self')
@@ -26,11 +28,13 @@ const asSelf = () => {
 
 describe('lecturas athlete-aware con política legacy self-only', () => {
   beforeEach(async () => {
+    setAccountRole('athlete')
     db.close()
     await db.delete()
     await db.open()
   })
   afterEach(() => {
+    setAccountRole('unknown')
     setActiveAthleteId(null)
     setSelfAthleteId(null)
     db.close()
@@ -120,15 +124,60 @@ describe('lecturas athlete-aware con política legacy self-only', () => {
     setSelfAthleteId(null)
     expect((await getSessionsForWeek('2026-06-29')).map((s) => s.id)).toEqual(['s1'])
   })
+
+  // Un rol ilegible ya NO vacía el scope: hacerlo dejaba la app entera en
+  // blanco en el arranque offline y para toda cuenta sin fila de entitlement.
+  // `unknown` sigue el camino de `athlete`; sólo un coach confirmado cierra.
+  // Ver `athleteScopeKind.ts`.
+  it('rol unknown lee como una cuenta athlete', async () => {
+    await db.sessions.put({ id: 's-legacy', date: '2026-06-29', type: 'squash', status: 'planned', durationMin: 60 } as never)
+    await db.dayLogs.put({ id: 'd-legacy', date: '2026-06-29', updatedAt: 1 } as never)
+    await db.weekSummaries.put({ id: 'w-legacy', weekStartDate: '2026-06-29', updatedAt: 1 } as never)
+    await db.athleteProfiles.put({ id: ATHLETE_PROFILE_LOCAL_ID, updatedAt: 1 } as never)
+    setSelfAthleteId('ath_self')
+    setActiveAthleteId('ath_self')
+    setAccountRole('unknown')
+
+    expect((await getSessionsForWeek('2026-06-29')).map((s) => s.id)).toEqual(['s-legacy'])
+    expect((await getDayLogsForWeek('2026-06-29')).map((d) => d.id)).toEqual(['d-legacy'])
+    expect((await getWeekSummary('2026-06-29'))?.id).toBe('w-legacy')
+    expect(await getAthleteProfile()).toBeDefined()
+  })
+
+  // La invariante que sí se conserva: las filas legacy son del self y de nadie
+  // más, también cuando el rol es ilegible.
+  it('rol unknown sobre un gestionado sigue sin adoptar filas legacy', async () => {
+    await db.sessions.put({ id: 's-legacy', date: '2026-06-29', type: 'squash', status: 'planned', durationMin: 60 } as never)
+    await db.dayLogs.put({ id: 'd-legacy', date: '2026-06-29', updatedAt: 1 } as never)
+    setSelfAthleteId('ath_self')
+    setActiveAthleteId('ath_m_1')
+    setAccountRole('unknown')
+
+    expect(await getSessionsForWeek('2026-06-29')).toEqual([])
+    expect(await getDayLogsForWeek('2026-06-29')).toEqual([])
+    expect(await getDayLog('2026-06-29')).toBeUndefined()
+  })
+
+  it('coach sin atleta seleccionado es scope vacío, no fallback legacy', async () => {
+    await db.sessions.put({ id: 's-legacy', date: '2026-06-29', type: 'squash', status: 'planned', durationMin: 60 } as never)
+    setAccountRole('coach')
+    setActiveAthleteId(null)
+    setSelfAthleteId(null)
+
+    expect(await getSessionsForWeek('2026-06-29')).toEqual([])
+    expect(await getSessionsForDateRange('2026-06-29', '2026-06-29')).toEqual([])
+  })
 })
 
 describe('perfil por atleta', () => {
   beforeEach(async () => {
+    setAccountRole('athlete')
     db.close()
     await db.delete()
     await db.open()
   })
   afterEach(() => {
+    setAccountRole('unknown')
     setActiveAthleteId(null)
     setSelfAthleteId(null)
     db.close()

@@ -31,14 +31,15 @@ describe('hydrateEntitlement — reconciliacion', () => {
   afterEach(() => db.close())
 
   it('fila presente escribe el espejo', async () => {
-    remoteReturns({ tier: 'advanced', expires_at: null })
+    remoteReturns({ tier: 'advanced', expires_at: null, account_role: 'athlete' })
 
     const result = await hydrateEntitlement(USER)
 
-    expect(result).toEqual({ ok: true, tier: 'advanced' })
+    expect(result).toEqual({ ok: true, tier: 'advanced', accountRole: 'athlete' })
     expect(await db.entitlements.get(USER)).toMatchObject({
       userId: USER,
       tier: 'advanced',
+      accountRole: 'athlete',
     })
   })
 
@@ -53,7 +54,7 @@ describe('hydrateEntitlement — reconciliacion', () => {
 
     const result = await hydrateEntitlement(USER)
 
-    expect(result).toEqual({ ok: true, tier: 'free' })
+    expect(result).toEqual({ ok: true, tier: 'free', accountRole: 'athlete' })
     expect(await db.entitlements.get(USER)).toBeUndefined()
   })
 
@@ -68,7 +69,7 @@ describe('hydrateEntitlement — reconciliacion', () => {
 
     const result = await hydrateEntitlement(USER)
 
-    expect(result).toEqual({ ok: false, tier: 'advanced' })
+    expect(result).toEqual({ ok: false, tier: 'advanced', accountRole: 'unknown' })
     expect(await db.entitlements.get(USER)).toMatchObject({ tier: 'advanced' })
   })
 
@@ -79,11 +80,11 @@ describe('hydrateEntitlement — reconciliacion', () => {
       expiresAt: null,
       confirmedAt: 1,
     })
-    remoteReturns({ tier: 'advanced', expires_at: 'no-es-fecha' })
+    remoteReturns({ tier: 'advanced', expires_at: 'no-es-fecha', account_role: 'athlete' })
 
     const result = await hydrateEntitlement(USER)
 
-    expect(result).toEqual({ ok: true, tier: 'free' })
+    expect(result).toEqual({ ok: true, tier: 'free', accountRole: 'unknown' })
     expect(await db.entitlements.get(USER)).toBeUndefined()
   })
 
@@ -94,11 +95,11 @@ describe('hydrateEntitlement — reconciliacion', () => {
       expiresAt: null,
       confirmedAt: 1,
     })
-    remoteReturns({ tier: 'advanced' })
+    remoteReturns({ tier: 'advanced', account_role: 'athlete' })
 
     const result = await hydrateEntitlement(USER)
 
-    expect(result).toEqual({ ok: true, tier: 'free' })
+    expect(result).toEqual({ ok: true, tier: 'free', accountRole: 'unknown' })
     expect(await db.entitlements.get(USER)).toBeUndefined()
   })
 })

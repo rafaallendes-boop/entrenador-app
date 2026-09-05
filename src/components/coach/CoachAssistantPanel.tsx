@@ -43,6 +43,8 @@ const FAILURE_COPY: Record<DraftFailure, string> = {
   quota: 'Se agotó el cupo disponible para redactar mensajes.',
   'kill-switch': 'La redacción con IA está temporalmente pausada.',
   entitlement: 'Esta acción requiere el plan Advanced.',
+  // No menciona planes: rol y membresía no se destraban pagando.
+  'coach-access': 'Tu cuenta no tiene acceso a este atleta desde el espacio de entrenador.',
   timeout: 'La redacción tardó demasiado. Puedes reintentar; puede consumir cupo.',
   network: 'No pudimos conectar con el servicio. Puedes reintentar; puede consumir cupo.',
   'rate-limit': 'El proveedor está temporalmente saturado. Puedes reintentar; puede consumir cupo.',

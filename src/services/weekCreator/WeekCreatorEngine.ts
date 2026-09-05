@@ -24,6 +24,7 @@ import { getProviderForRequestClass } from '../ai/providerResolver'
 import { useAIDebugStore } from '../../store/useAIDebugStore'
 import { createStageTracker, type CoachOutcome } from '../ai/stageLogger'
 import { persistSafetyBlockedOutcome } from '../ai/safetyOutcomeTelemetry'
+import { resolveRequestTargetAthleteId } from '../ai/requestTarget'
 import { buildWeekCreatorPrompt, summarizeWeekCreatorAction } from './WeekCreatorPromptBuilder'
 import { validateWeekCreatorResponse } from './validateWeekCreatorResponse'
 import { resolveWeekCreatorConfig, type WeekCreatorEffectiveConfig, withRequestedSessionsPerWeek } from './WeekCreatorConfig'
@@ -73,6 +74,7 @@ import {
   resolveWeekCreatorEventContext,
 } from './WeekCreatorEventContext'
 import { BLOCKED_STRENGTH_COPY } from '../training/strengthSafetyCopy'
+import { CoachAccessRequiredError } from '../entitlements/coachAccessError'
 import { EntitlementRequiredError } from '../entitlements/entitlementError'
 import {
   KillSwitchActiveError,
@@ -90,6 +92,7 @@ import {
  */
 function isServerGateRejection(error: unknown): boolean {
   return error instanceof EntitlementRequiredError
+    || error instanceof CoachAccessRequiredError
     || error instanceof QuotaExceededError
     || error instanceof SpendCapExceededError
     || error instanceof KillSwitchActiveError
@@ -385,6 +388,7 @@ export const WeekCreatorEngine = {
             userMessage: prompt.userPrompt,
             requestClass: 'week_creator',
             traceId,
+            targetAthleteId: resolveRequestTargetAthleteId(),
             generationId,
             logicalAttempt: attempt,
             maxTokens: effectiveMaxTokens,

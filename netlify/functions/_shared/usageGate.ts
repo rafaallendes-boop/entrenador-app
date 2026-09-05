@@ -52,12 +52,19 @@ export function makeSpendCapError(scope: 'account' | 'global', capUsd: number): 
   )
 }
 
-export function makeQuotaExceededError(bucketId: string, limit: number, remaining = 0): UsageGateHttpError {
+export function makeQuotaExceededError(
+  bucketId: string,
+  limit: number,
+  remaining = 0,
+  scope: 'account' | 'subject' = 'account',
+): UsageGateHttpError {
   return makeGateError(
-    'Alcanzaste el cupo diario de esta función.',
+    scope === 'subject'
+      ? 'Alcanzaste el cupo diario de esta función para este atleta.'
+      : 'Alcanzaste el cupo diario de esta función.',
     429,
     'quota_exceeded',
-    { bucketId, limit, remaining },
+    { bucketId, limit, remaining, scope },
   )
 }
 
@@ -73,6 +80,57 @@ function serviceRoleCredentials(): { url: string; key: string } | null {
   const key = process.env['SUPABASE_SERVICE_ROLE_KEY']
   if (!url || !key) return null
   return { url: url.replace(/\/$/, ''), key }
+}
+
+const QUOTA_SQLSTATE = '45001'
+
+/** Códigos con que PostgREST reporta una columna que el esquema todavía no tiene. */
+const UNDEFINED_COLUMN_CODES = new Set(['42703', 'PGRST204'])
+/** Ídem para una función ausente (RPC de una migración no aplicada). */
+const UNDEFINED_FUNCTION_CODES = new Set(['42883', 'PGRST202'])
+
+function errorCodeOf(body: string): string | null {
+  try {
+    const parsed = JSON.parse(body) as { code?: unknown }
+    return typeof parsed.code === 'string' ? parsed.code : null
+  } catch {
+    return null
+  }
+}
+
+function isUndefinedColumn(body: string): boolean {
+  const code = errorCodeOf(body)
+  return code != null && UNDEFINED_COLUMN_CODES.has(code)
+}
+
+/**
+ * Señal interna: la RPC no existe en el esquema remoto. NUNCA escapa de este
+ * módulo — el llamador o cae al contrato anterior o la convierte en 503.
+ */
+class MissingRpcError extends Error {
+  readonly functionName: string
+
+  constructor(functionName: string) {
+    super(`RPC ${functionName} no existe en el esquema remoto.`)
+    this.name = 'MissingRpcError'
+    this.functionName = functionName
+  }
+}
+
+function isUndefinedFunction(body: string): boolean {
+  const code = errorCodeOf(body)
+  return code != null && UNDEFINED_FUNCTION_CODES.has(code)
+}
+
+/** `null` = no es un rechazo de cuota reconocido; el llamador lo trata como 503. */
+function parseQuotaRejection(body: string): 'account' | 'subject' | null {
+  try {
+    const parsed = JSON.parse(body) as { code?: unknown; details?: unknown }
+    if (parsed.code !== QUOTA_SQLSTATE) return null
+    return parsed.details === 'account' || parsed.details === 'subject' ? parsed.details : null
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -112,10 +170,14 @@ async function callRpc<T>(functionName: string, args: Record<string, unknown>, t
     // PostgREST entrega code/message/details/hint en este body. Se conserva
     // truncado para diagnóstico de servidor, pero no se incorpora al mensaje
     // que los handlers serializan hacia el cliente.
-    const diagnostics = {
-      upstreamStatus: response.status,
-      upstreamBody: (await response.text().catch(() => '')).slice(0, UPSTREAM_BODY_MAX_CHARS),
+    const rawBody = (await response.text().catch(() => '')).slice(0, UPSTREAM_BODY_MAX_CHARS)
+    const scope = parseQuotaRejection(rawBody)
+    if (scope) {
+      const limit = Number(scope === 'subject' ? args['p_subject_limit'] : args['p_limit']) || 0
+      throw makeQuotaExceededError(String(args['p_bucket_id'] ?? ''), limit, 0, scope)
     }
+    if (isUndefinedFunction(rawBody)) throw new MissingRpcError(functionName)
+    const diagnostics = { upstreamStatus: response.status, upstreamBody: rawBody }
     console.error('[usage-gate] RPC failed', { functionName, diagnostics })
     throw makeServerError(`RPC ${functionName} devolvió ${response.status}.`, diagnostics)
   }
@@ -209,6 +271,11 @@ async function evaluateGatePreamble(input: UsageGateInput): Promise<GatePreamble
     || typeof decision.quotaBucketId !== 'string' || decision.quotaBucketId.length === 0
     || typeof decision.limit !== 'number' || !Number.isFinite(decision.limit) || decision.limit <= 0
     || decision.quotaBucketId !== expectedBucketId
+    || (decision.quotaSubject !== null && (
+      typeof decision.quotaSubject.athleteId !== 'string' || decision.quotaSubject.athleteId.length === 0
+      || typeof decision.quotaSubject.limit !== 'number' || !Number.isFinite(decision.quotaSubject.limit)
+      || decision.quotaSubject.limit <= 0 || decision.quotaSubject.limit >= decision.limit
+    ))
   ) {
     throw makeServerError('La decisión de cuota está incompleta, es inválida o no corresponde a su capacidad.')
   }
@@ -231,24 +298,64 @@ export async function assertUsageGate(input: UsageGateInput): Promise<UsageGateR
   const preamble = await evaluateGatePreamble(input)
   if (preamble.skip) return null
 
-  const rows = await callRpc<unknown>('increment_ai_usage_if_under_limit', {
-    p_user_id: input.decision.quotaOwnerUserId,
-    p_bucket_id: preamble.bucketId,
-    p_limit: preamble.limit,
-  })
-  if (!Array.isArray(rows)) throw makeServerError('increment_ai_usage_if_under_limit devolvió una forma inesperada.')
-  if (rows.length === 0) throw makeQuotaExceededError(preamble.bucketId, preamble.limit, 0)
+  const subject = input.decision.quotaSubject
+  let rows: unknown
+  try {
+    rows = await callRpc<unknown>('reserve_ai_usage', {
+      p_user_id: input.decision.quotaOwnerUserId,
+      p_bucket_id: preamble.bucketId,
+      p_limit: preamble.limit,
+      p_subject_athlete_id: subject?.athleteId ?? null,
+      p_subject_limit: subject?.limit ?? null,
+    })
+  } catch (error) {
+    if (!(error instanceof MissingRpcError)) throw error
+    // `029` todavía no aplicada. Sin tope por atleta el contrato anterior es
+    // equivalente, así que la cuota sigue funcionando y desplegar este bundle
+    // deja de exigir la migración. CON tope por atleta no hay equivalencia
+    // posible: la reserva dual es justamente lo que `029` agrega, y dejar
+    // pasar sin ella sería fail-open sobre el límite delegado.
+    if (subject !== null) {
+      throw makeServerError('El tope por atleta requiere la migración 029 aplicada.')
+    }
+    try {
+      rows = await callRpc<unknown>('increment_ai_usage_if_under_limit', {
+        p_user_id: input.decision.quotaOwnerUserId,
+        p_bucket_id: preamble.bucketId,
+        p_limit: preamble.limit,
+      })
+    } catch (fallbackError) {
+      // Si TAMPOCO existe el contrato anterior, no hay forma de reservar cuota.
+      // `MissingRpcError` es una señal interna y no puede escapar del módulo:
+      // afuera se aplanaría a un 500 genérico en vez del 503 fail-closed.
+      if (fallbackError instanceof MissingRpcError) {
+        throw makeServerError(
+          `No hay ninguna RPC de cuota disponible: falta ${fallbackError.functionName}.`,
+        )
+      }
+      throw fallbackError
+    }
+    // El contrato anterior sí usa `[]` para cuota agotada; el nuevo no.
+    if (Array.isArray(rows) && rows.length === 0) {
+      throw makeQuotaExceededError(preamble.bucketId, preamble.limit, 0)
+    }
+  }
+  if (!Array.isArray(rows)) throw makeServerError('reserve_ai_usage devolvió una forma inesperada.')
+  // La denegación legítima llega como SQLSTATE 45001 y se clasifica en
+  // `callRpc`. Un arreglo vacío sólo puede ser el guard de argumentos de la
+  // RPC: es un defecto de programación/configuración, nunca una cuota agotada.
+  if (rows.length === 0) throw makeServerError('reserve_ai_usage devolvió cero filas: argumentos inválidos.')
   // Cardinalidad estricta (P2, ronda 2): la PK de ai_usage_daily garantiza
   // que un UPSERT nunca produce más de una fila — más de una fila acá es
   // señal de que algo está mal configurado (RPC equivocada, tabla sin PK
   // real), no un caso a tolerar en silencio.
-  if (rows.length !== 1) throw makeServerError('increment_ai_usage_if_under_limit devolvió más de una fila.')
+  if (rows.length !== 1) throw makeServerError('reserve_ai_usage devolvió más de una fila.')
   const row = rows[0] as { usage_date?: unknown; request_count?: unknown }
   if (typeof row.usage_date !== 'string' || row.usage_date.length === 0) {
-    throw makeServerError('increment_ai_usage_if_under_limit devolvió usage_date inválido.')
+    throw makeServerError('reserve_ai_usage devolvió usage_date inválido.')
   }
   if (!isFiniteNonNegative(row.request_count)) {
-    throw makeServerError('increment_ai_usage_if_under_limit devolvió request_count no numérico.')
+    throw makeServerError('reserve_ai_usage devolvió request_count no numérico.')
   }
 
   return { bucketId: preamble.bucketId, limit: preamble.limit, usageDate: row.usage_date }
@@ -260,19 +367,24 @@ export async function assertUsageGate(input: UsageGateInput): Promise<UsageGateR
  * autoridad real es `assertUsageGate`, invocado por el worker en cada
  * intento real.
  */
-export async function checkUsagePreflight(input: UsageGateInput): Promise<void> {
-  const preamble = await evaluateGatePreamble(input)
-  if (preamble.skip) return
+/** Sentinela de la fila global; debe coincidir con el default de `029`. */
+const GLOBAL_SUBJECT = ''
+/**
+ * Tope de filas del preflight. Una cuenta acumula 1 fila global más una por
+ * atleta delegado en el día. Si se alcanza el tope no se puede distinguir
+ * "no hay más" de "PostgREST truncó", así que se falla cerrado.
+ */
+const PREFLIGHT_ROW_CAP = 500
 
-  const creds = serviceRoleCredentials()
-  if (!creds) throw makeServerError('Configuración de Supabase ausente en el servidor.')
-  const today = new Date().toISOString().slice(0, 10)
-  const query = new URLSearchParams({
-    user_id: `eq.${input.decision.quotaOwnerUserId}`,
-    usage_date: `eq.${today}`,
-    bucket_id: `eq.${preamble.bucketId}`,
-    select: 'request_count',
-  })
+interface UsageRow { subject_athlete_id: string; request_count: number }
+
+/** Marca de "la columna no existe todavía" (esquema previo a `029`). */
+const SUBJECT_COLUMN_MISSING = Symbol('subject_column_missing')
+
+async function readUsageRows(
+  creds: { url: string; key: string },
+  query: URLSearchParams,
+): Promise<UsageRow[] | typeof SUBJECT_COLUMN_MISSING> {
   let response: Response
   try {
     response = await fetch(`${creds.url}/rest/v1/ai_usage_daily?${query.toString()}`, {
@@ -280,28 +392,87 @@ export async function checkUsagePreflight(input: UsageGateInput): Promise<void> 
       signal: AbortSignal.timeout(RPC_TIMEOUT_MS),
     })
   } catch (error) {
-    // Mismo fix que callRpc (P1, ronda 2): esta lectura no pasa por callRpc
-    // (es un GET directo a PostgREST, no una RPC), así que necesita el mismo
-    // try/catch de red por separado.
+    // Esta lectura es un GET directo a PostgREST (no pasa por callRpc), por
+    // eso necesita convertir su propio error de red a 503 fail-closed.
     throw makeServerError(`Lectura de cuota no se pudo completar: ${error instanceof Error ? error.message : 'error de red'}.`)
   }
-  if (!response.ok) throw makeServerError(`Lectura de cuota devolvió ${response.status}.`)
+  if (!response.ok) {
+    const body = await response.text().catch(() => '')
+    if (isUndefinedColumn(body)) return SUBJECT_COLUMN_MISSING
+    throw makeServerError(`Lectura de cuota devolvió ${response.status}.`)
+  }
   let rows: unknown
   try {
     rows = await response.json()
   } catch {
     throw makeServerError('Lectura de cuota devolvió un cuerpo no JSON.')
   }
-  if (!Array.isArray(rows)) throw makeServerError('Lectura de cuota devolvió una forma inesperada.')
-  // Cero filas es un estado válido (todavía no hay actividad hoy en este
-  // bucket) — a diferencia de readSpend/increment, acá SÍ corresponde 0.
-  const row = rows[0] as { request_count?: unknown } | undefined
-  const current = row ? row.request_count : 0
-  if (!isFiniteNonNegative(current)) {
-    throw makeServerError('Lectura de cuota devolvió request_count no numérico.')
+  if (!Array.isArray(rows)) {
+    throw makeServerError('Lectura de cuota devolvió una forma inesperada.')
   }
-  if (current >= preamble.limit) {
+  if (rows.length >= PREFLIGHT_ROW_CAP) {
+    throw makeServerError('Lectura de cuota devolvió más filas de las esperadas.')
+  }
+  return rows.map((raw) => {
+    const row = raw as { subject_athlete_id?: unknown; request_count?: unknown }
+    if (!isFiniteNonNegative(row.request_count)) {
+      throw makeServerError('Lectura de cuota devolvió request_count no numérico.')
+    }
+    const subject = row.subject_athlete_id
+    if (subject !== undefined && typeof subject !== 'string') {
+      throw makeServerError('Lectura de cuota devolvió subject_athlete_id no textual.')
+    }
+    return { subject_athlete_id: subject ?? GLOBAL_SUBJECT, request_count: row.request_count }
+  })
+}
+
+export async function checkUsagePreflight(input: UsageGateInput): Promise<void> {
+  const preamble = await evaluateGatePreamble(input)
+  if (preamble.skip) return
+
+  const creds = serviceRoleCredentials()
+  if (!creds) throw makeServerError('Configuración de Supabase ausente en el servidor.')
+  const today = new Date().toISOString().slice(0, 10)
+
+  // Sin filtro por `subject_athlete_id`: expresar la fila global como
+  // `subject_athlete_id=eq.` depende de que PostgREST interprete un valor
+  // vacío como la cadena vacía, y si no lo hiciera esta lectura devolvería
+  // cero filas y el preflight dejaría pasar en vez de bloquear — fail-OPEN
+  // silencioso. Se traen todas las filas del día para (usuario, bucket) y se
+  // reparten acá, que además ahorra un round trip.
+  const query = new URLSearchParams({
+    user_id: `eq.${input.decision.quotaOwnerUserId}`,
+    usage_date: `eq.${today}`,
+    bucket_id: `eq.${preamble.bucketId}`,
+    select: 'subject_athlete_id,request_count',
+    limit: String(PREFLIGHT_ROW_CAP),
+  })
+
+  let rows = await readUsageRows(creds, query)
+  if (rows === SUBJECT_COLUMN_MISSING) {
+    // `029` todavía no aplicada: la tabla no tiene `subject_athlete_id` y cada
+    // (usuario, día, bucket) tiene exactamente una fila, que es la global.
+    const legacy = new URLSearchParams(query)
+    legacy.set('select', 'request_count')
+    const legacyRows = await readUsageRows(creds, legacy)
+    if (legacyRows === SUBJECT_COLUMN_MISSING) {
+      throw makeServerError('Lectura de cuota rechazada por esquema en ambos contratos.')
+    }
+    rows = legacyRows.map((row) => ({ ...row, subject_athlete_id: GLOBAL_SUBJECT }))
+  }
+
+  const countFor = (subject: string): number => {
+    const row = rows.find((candidate) => candidate.subject_athlete_id === subject)
+    return row ? row.request_count : 0
+  }
+
+  if (countFor(GLOBAL_SUBJECT) >= preamble.limit) {
     throw makeQuotaExceededError(preamble.bucketId, preamble.limit, 0)
+  }
+
+  const quotaSubject = input.decision.quotaSubject
+  if (quotaSubject !== null && countFor(quotaSubject.athleteId) >= quotaSubject.limit) {
+    throw makeQuotaExceededError(preamble.bucketId, quotaSubject.limit, 0, 'subject')
   }
 }
 

@@ -239,3 +239,49 @@ describe('ProxyProvider streaming fallback', () => {
     })
   })
 })
+
+describe('ProxyProvider — transporte de targetAthleteId', () => {
+  beforeEach(() => {
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: globalThis,
+    })
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  function stubOkFetch() {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({ text: 'ok', provider: 'gemini', traceId: 'trace-1' }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    ))
+    vi.stubGlobal('fetch', fetchMock)
+    return fetchMock
+  }
+
+  it('propone el objetivo cuando la request lo trae', async () => {
+    const fetchMock = stubOkFetch()
+
+    await new ProxyProvider().call(makeRequest({
+      onChunk: undefined,
+      targetAthleteId: 'ath_m_1',
+    }))
+
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as Record<string, unknown>
+    expect(body['targetAthleteId']).toBe('ath_m_1')
+  })
+
+  it('omite la clave cuando la acción es sobre el propio actor', async () => {
+    const fetchMock = stubOkFetch()
+
+    await new ProxyProvider().call(makeRequest({
+      onChunk: undefined,
+      targetAthleteId: null,
+    }))
+
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as Record<string, unknown>
+    expect(body).not.toHaveProperty('targetAthleteId')
+  })
+})

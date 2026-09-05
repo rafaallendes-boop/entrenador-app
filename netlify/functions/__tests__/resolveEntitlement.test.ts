@@ -38,7 +38,7 @@ describe('isEntitlementEnforcementEnabled', () => {
 
 describe('resolveEntitlementTier', () => {
   it('fila presente y vigente devuelve su tier', async () => {
-    mockFetchJson(200, [{ tier: 'advanced', expires_at: null }])
+    mockFetchJson(200, [{ tier: 'advanced', expires_at: null, account_role: 'athlete' }])
     await expect(resolveEntitlementTier('tok')).resolves.toBe('advanced')
   })
 
@@ -48,24 +48,24 @@ describe('resolveEntitlementTier', () => {
   })
 
   it('fila vencida devuelve free', async () => {
-    mockFetchJson(200, [{ tier: 'advanced', expires_at: '2020-01-01T00:00:00Z' }])
+    mockFetchJson(200, [{ tier: 'advanced', expires_at: '2020-01-01T00:00:00Z', account_role: 'athlete' }])
     await expect(resolveEntitlementTier('tok')).resolves.toBe('free')
   })
 
   it('tier invalido en la fila devuelve free', async () => {
-    mockFetchJson(200, [{ tier: 'pro', expires_at: null }])
+    mockFetchJson(200, [{ tier: 'pro', expires_at: null, account_role: 'athlete' }])
     await expect(resolveEntitlementTier('tok')).resolves.toBe('free')
   })
 
   it('expires_at ILEGIBLE devuelve free, no "sin vencimiento"', async () => {
     for (const bad of ['no-es-fecha', '', 42, {}]) {
-      mockFetchJson(200, [{ tier: 'advanced', expires_at: bad }])
+      mockFetchJson(200, [{ tier: 'advanced', expires_at: bad, account_role: 'athlete' }])
       await expect(resolveEntitlementTier('tok')).resolves.toBe('free')
     }
   })
 
   it('expires_at ausente sigue siendo sin vencimiento', async () => {
-    mockFetchJson(200, [{ tier: 'advanced' }])
+    mockFetchJson(200, [{ tier: 'advanced', account_role: 'athlete' }])
     await expect(resolveEntitlementTier('tok')).resolves.toBe('advanced')
   })
 

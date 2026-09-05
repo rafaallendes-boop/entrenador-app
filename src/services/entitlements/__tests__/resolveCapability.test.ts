@@ -9,6 +9,13 @@ function row(tier: EntitlementRow['tier'], expiresAt: number | null = null): Ent
   return { tier, expiresAt }
 }
 
+/**
+ * Esta suite fija el contrato de la ruta legacy, que es la efectiva en esta
+ * entrega. Las reglas de rol y delegación viven en
+ * `resolveCapabilityDelegation.test.ts`.
+ */
+const LEGACY = { accountRole: 'athlete', membership: null, roleGate: 'off' } as const
+
 describe('resolveCapability — decisión básica', () => {
   it('advanced puede plan_builder_week, con bucket y límite resueltos', () => {
     const decision = resolveCapability({
@@ -17,6 +24,7 @@ describe('resolveCapability — decisión básica', () => {
       capability: 'plan_builder_week',
       now: NOW,
       entitlement: row('advanced'),
+      ...LEGACY,
     })
 
     expect(decision.allowed).toBe(true)
@@ -34,6 +42,7 @@ describe('resolveCapability — decisión básica', () => {
       capability: 'plan_builder_week',
       now: NOW,
       entitlement: row('free'),
+      ...LEGACY,
     })
 
     expect(decision.allowed).toBe(false)
@@ -49,6 +58,7 @@ describe('resolveCapability — decisión básica', () => {
       capability: 'week_creator',
       now: NOW,
       entitlement: row('advanced', NOW - 1),
+      ...LEGACY,
     })
 
     expect(decision.tier).toBe('free')
@@ -62,6 +72,7 @@ describe('resolveCapability — decisión básica', () => {
       capability: 'chat_general',
       now: NOW,
       entitlement: null,
+      ...LEGACY,
     })
 
     expect(decision.tier).toBe('free')
@@ -77,6 +88,7 @@ describe('resolveCapability — contrato de propiedad', () => {
       capability: 'chat_general',
       now: NOW,
       entitlement: row('weekly'),
+      ...LEGACY,
     })
 
     expect(decision.entitlementSource).toBe('self')
@@ -92,19 +104,21 @@ describe('resolveCapability — contrato de propiedad', () => {
         capability,
         now: NOW,
         entitlement: row('advanced'),
+        ...LEGACY,
       })
       expect(decision.consumptionUnits).toBe(1)
     }
   })
 })
 
-describe('resolveCapability — targetAthleteId se ignora en esta versión', () => {
+describe('resolveCapability — targetAthleteId se ignora en la ruta legacy', () => {
   it('la decisión es idéntica con y sin atleta objetivo', () => {
     const base = {
       actorUserId: ACTOR,
       capability: 'week_creator' as const,
       now: NOW,
       entitlement: row('weekly'),
+      ...LEGACY,
     }
 
     expect(resolveCapability({ ...base, targetAthleteId: null }))
@@ -121,6 +135,7 @@ describe('resolveCapability — clase desconocida', () => {
       capability: 'clase_inventada' as never,
       now: NOW,
       entitlement: row('advanced'),
+      ...LEGACY,
     })
 
     expect(decision.allowed).toBe(false)
