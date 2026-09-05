@@ -458,6 +458,7 @@ export function buildWeekCreatorHydrationRepairContext(
     goalEventId,
     trainingDays: input.config.trainingDays,
     sessionsPerWeek: input.config.sessionsPerWeek,
+    targetHardPrimaryMatches: input.config.targetHardPrimaryMatches,
     sessionDurationMins: input.config.sessionDurationMins,
     allowDoubleSession: input.config.allowDoubleSession,
     doubleSessionDays: input.config.doubleSessionDays,

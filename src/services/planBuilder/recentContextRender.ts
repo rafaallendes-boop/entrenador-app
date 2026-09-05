@@ -1,3 +1,4 @@
+import type { ExecutionSignals } from '../training/loadDirectivePolicy'
 import type { SessionType } from '../../types'
 
 export interface PlanBuilderRecentWeekContext {
@@ -13,6 +14,16 @@ export interface PlanBuilderRecentWeekContext {
   sports: Partial<Record<SessionType, number>>
   painNotes: string[]
   sessionHighlights: string[]
+  /** RPE real autoreportado, excluyendo prefill Whoop. */
+  avgManualActualRpe?: number
+  /** Cuántos valores respaldan `avgManualActualRpe`. */
+  manualRpeSampleCount: number
+  /** Energía autoreportada más reciente de la semana, excluyendo prefill Whoop. */
+  latestManualEnergyLevel?: number
+  /** Dolor numérico más reciente de la semana. Whoop nunca lo prellena. */
+  latestManualPainLevel?: number
+  /** Sueño autoreportado promedio, excluyendo prefill Whoop. */
+  avgManualSleepHours?: number
 }
 
 export interface PlanBuilderWeeklyStructureSport {
@@ -34,6 +45,16 @@ export interface PlanBuilderRecentContext {
   weeks: PlanBuilderRecentWeekContext[]
   structureWeeks: number
   weeklyStructure: PlanBuilderWeeklyStructureDay[]
+  /**
+   * Semanas del propio plan que el atleta YA vivió. Sólo se puebla cuando se
+   * pide el contexto con `asOfDate` (recalibración de un plan en curso). En la
+   * generación inicial es `undefined`, porque ninguna semana del plan ocurrió
+   * todavía.
+   *
+   * NOTA: esta interfaz está duplicada en `recentContextRender.ts` y
+   * `recentContext.ts`. Mantener ambas en sincronía.
+   */
+  livedPlanWeeks?: PlanBuilderRecentWeekContext[]
   summary: {
     avgAdherencePct?: number
     avgCompletedMinutes?: number
@@ -67,12 +88,40 @@ function renderWeeklyStructure(context: PlanBuilderRecentContext): string {
   ].join('\n')
 }
 
+function renderLivedLines(context: PlanBuilderRecentContext): string[] {
+  return (context.livedPlanWeeks ?? []).map((week) => {
+    return [
+      `- Semana ${week.weekStartDate}: ${week.completedSessions}/${week.plannedSessions} sesiones`,
+      week.adherencePct != null ? `adh ${week.adherencePct}%` : '',
+      week.avgManualActualRpe != null ? `RPE real ${week.avgManualActualRpe}` : '',
+      week.latestManualEnergyLevel != null ? `energía ${week.latestManualEnergyLevel}` : '',
+      week.painNotes.length > 0 ? `dolor: ${week.painNotes.join(' | ')}` : '',
+    ].filter(Boolean).join(' · ')
+  })
+}
+
 export function renderPlanBuilderRecentContext(context: PlanBuilderRecentContext | undefined): string {
-  if (!context || !context.hasHistory) {
+  const hasLivedWeeks = (context?.livedPlanWeeks?.length ?? 0) > 0
+
+  if (!context || (!context.hasHistory && !hasLivedWeeks)) {
     return [
       'Historial reciente:',
       '- Sin historial suficiente antes del inicio del plan. No inventes adherencia, fatiga ni cargas previas.',
       '- Usa el perfil, el wizard y las reglas de fase como fuente principal.',
+    ].join('\n')
+  }
+
+  if (!context.hasHistory) {
+    // Recalibración de un plan sin historial pre-plan (p.ej. un atleta nuevo):
+    // no hay base sobre la que armar "Historial reciente real", pero sí hay
+    // semanas del propio plan ya vividas. Mostrarlas en vez de descartarlas
+    // silenciosamente tras el guard de arriba.
+    return [
+      'Historial reciente:',
+      '- Sin historial suficiente antes del inicio del plan. No inventes adherencia, fatiga ni cargas previas basadas en el pasado.',
+      'Semanas de ESTE plan que el atleta ya vivió (datos reales, no planificados):',
+      ...renderLivedLines(context),
+      'Uso del historial: calibra el ajuste con estos datos reales, pero respeta evento, fase, días disponibles y deportes permitidos.',
     ].join('\n')
   }
 
@@ -104,11 +153,43 @@ export function renderPlanBuilderRecentContext(context: PlanBuilderRecentContext
     ].filter(Boolean).join(' · ')
   })
 
+  const livedLines = renderLivedLines(context)
+
   return [
     ...header,
     weekLines.length > 0 ? 'Últimas semanas:' : '',
     ...weekLines,
+    livedLines.length > 0 ? 'Semanas de ESTE plan que el atleta ya vivió (datos reales, no planificados):' : '',
+    ...livedLines,
     renderWeeklyStructure(context),
     'Uso del historial: calibra el arranque del plan con estos datos, pero respeta evento, fase, días disponibles y deportes permitidos.',
   ].filter(Boolean).join('\n')
+}
+
+/**
+ * Normaliza la última semana YA VIVIDA de este plan a señales de ejecución.
+ *
+ * Sólo mira `livedPlanWeeks`, no el historial pre-plan: el pre-plan ya calibra
+ * el arranque a través de `summary.recommendation` y mezclarlo acá haría que
+ * un mal mes anterior siguiera frenando la semana 9 del plan.
+ *
+ * No lee ningún campo de Whoop.
+ */
+export function executionSignalsFromLivedWeeks(
+  recentContext: PlanBuilderRecentContext | undefined,
+): ExecutionSignals | undefined {
+  const lived = recentContext?.livedPlanWeeks
+  if (!lived || lived.length === 0) return undefined
+  const last = lived[lived.length - 1]
+  return {
+    // Sólo señales AUTOREPORTADAS: los campos `avgActualRpe`/`avgEnergy`/
+    // `avgSleep` de la semana incluyen valores prellenados por Whoop y no
+    // cumplen el contrato de `ExecutionSignals`.
+    avgActualRpe: last.avgManualActualRpe,
+    rpeSampleCount: last.manualRpeSampleCount,
+    latestEnergyLevel: last.latestManualEnergyLevel,
+    latestPainLevel: last.latestManualPainLevel,
+    avgSleepHours: last.avgManualSleepHours,
+    adherencePct: last.adherencePct,
+  }
 }

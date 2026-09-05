@@ -767,6 +767,18 @@ export interface PlanWizardConfig {
   currentFitnessLevel: WizardFitnessLevel
   currentFatigue: WizardFatigueLevel
   injuryNotes?: string
+  /**
+   * Partidos duros del deporte principal que el atleta quiere por semana.
+   *
+   * Un partido duro es una sesión del deporte principal con exposición
+   * competitiva real (`hasSquashCompetitiveExposureContent`) y `rpe >= 8`.
+   *
+   * Ausente = se usa la política de exposición vigente sin cambios. La meta
+   * **nunca** anula los vetos de `resolveSquashWeeklyExposurePolicy`
+   * (sin partner, restricción médica, fatiga `overloaded`) ni aplica fuera de
+   * base/build/peak.
+   */
+  targetHardPrimaryMatches?: number
   createdAt: string
   updatedAt: string
 }
@@ -900,6 +912,17 @@ export interface AthleteProfile {
   }
   mainGoal?: string
   secondaryGoal?: string
+  /**
+   * Limitante de rendimiento declarado por el atleta (ej. "recuperación
+   * cardíaca entre puntos").
+   *
+   * NO es una lesión y NO se pasa a `resolveStrengthSafetyConstraints`:
+   * `recoveryProfile.currentInjuries`/`.restrictions` alimentan el filtro
+   * fail-closed de ejercicios, y un limitante de rendimiento ahí podría
+   * bloquear trabajo de fuerza legítimo. Es contexto para el prompt, no una
+   * restricción de seguridad.
+   */
+  performanceLimiter?: string
   runningProfile?: RunningProfile
   strengthProfile?: StrengthProfile
   recoveryProfile?: RecoveryProfile

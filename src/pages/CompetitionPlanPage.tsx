@@ -134,6 +134,9 @@ const SESSIONS_PER_WEEK_OPTIONS = Array.from(
   (_, index) => index + 2,
 )
 
+/** Opciones del selector de meta de partidos duros; `undefined` = Automático. */
+const HARD_PRIMARY_MATCHES_OPTIONS = [1, 2, 3, 4]
+
 const FITNESS_OPTIONS: { value: WizardFitnessLevel; label: string; sub: string }[] = [
   { value: 'fit',       label: 'En buena forma', sub: 'Vengo entrenando bien' },
   { value: 'normal',    label: 'Normal, base sólida', sub: 'Sin picos, pero constante' },
@@ -184,6 +187,8 @@ interface WizardState {
   fitnessLevel?: WizardFitnessLevel
   fatigue?: WizardFatigueLevel
   injuryNotes: string
+  /** `undefined` = Automático (usa la política de exposición sin meta declarada). */
+  hardPrimaryMatches?: number
 }
 
 function getSportForEventType(eventType: GoalEventType | undefined): SupportedSport | null {
@@ -231,6 +236,7 @@ function initWizardState(
     fitnessLevel: existingConfig?.currentFitnessLevel,
     fatigue: existingConfig?.currentFatigue,
     injuryNotes: existingConfig?.injuryNotes ?? '',
+    hardPrimaryMatches: existingConfig?.targetHardPrimaryMatches,
   }
 }
 
@@ -729,6 +735,7 @@ export default function CompetitionPlanPage() {
         currentFitnessLevel: state.fitnessLevel!,
         currentFatigue: state.fatigue!,
         injuryNotes: state.injuryNotes.trim() || undefined,
+        targetHardPrimaryMatches: state.hardPrimaryMatches,
         createdAt: isNewCycle ? now : (existingConfig?.createdAt ?? now),
         updatedAt: now,
       }
@@ -827,7 +834,14 @@ export default function CompetitionPlanPage() {
         {step === 1 && <Step1EventType state={state} update={update} />}
         {step === 2 && <Step2EventDate state={state} update={update} planWindow={planWindow} />}
         {step === 3 && <Step3Objective state={state} update={update} primarySport={primarySportForEvent} />}
-        {step === 4 && <Step4Schedule state={state} update={update} updateWith={updateWith} />}
+        {step === 4 && (
+          <Step4Schedule
+            state={state}
+            update={update}
+            updateWith={updateWith}
+            primarySport={primarySportForEvent}
+          />
+        )}
         {step === 5 && (
           <Step5ComplementarySports
             state={state}
@@ -1210,10 +1224,12 @@ function Step4Schedule({
   state,
   update,
   updateWith,
+  primarySport,
 }: {
   state: WizardState
   update: (p: Partial<WizardState>) => void
   updateWith: (recipe: (prev: WizardState) => WizardState) => void
+  primarySport: SupportedSport | null
 }) {
   function toggleDay(day: DayOfWeek) {
     updateWith((current) => {
@@ -1327,6 +1343,34 @@ function Step4Schedule({
         <p className="text-xs text-ink-faint mb-5">
           Máximo posible con tu selección actual: {maxSessions} sesión(es){state.allowDoubleSession ? ' considerando doble sesión.' : ' sin doble sesión.'}
         </p>
+      )}
+
+      {primarySport === 'squash' && (
+        <>
+          <label className="text-sm font-medium text-ink block mb-2">Partidos duros objetivo por semana</label>
+          <div className="flex flex-wrap gap-2 mb-2">
+            <button
+              type="button"
+              onClick={() => update({ hardPrimaryMatches: undefined })}
+              className={chipCls(state.hardPrimaryMatches == null)}
+            >
+              Automático
+            </button>
+            {HARD_PRIMARY_MATCHES_OPTIONS.map(n => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => update({ hardPrimaryMatches: n })}
+                className={chipCls(state.hardPrimaryMatches === n)}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-ink-faint mb-5">
+            Cuántos partidos exigentes quieres por semana. En taper, descarga o si no tienes con quién jugar, se respeta la periodización y tu seguridad.
+          </p>
+        </>
       )}
 
       <label className="text-sm font-medium text-ink block mb-2">Duración por sesión</label>

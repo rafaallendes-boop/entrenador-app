@@ -4006,6 +4006,29 @@ async function deleteLocalTrainingPlan(planId: string): Promise<void> {
   )
 }
 
+/**
+ * Campos de `TrainingPlan` que sólo existen en el cliente y nunca viajan a
+ * Supabase — `planRows.ts` (`trainingPlanToRow`/`rowToTrainingPlan`) no los
+ * mapea a ninguna columna a propósito, así que `remotePlan` (siempre
+ * `rowToTrainingPlan(row)`) jamás los trae. Hoy sólo `pendingRecalibration`
+ * (marcador de recuperación de una recalibración cuya pestaña se cerró antes
+ * de reconciliar el calendario — ver `usePlanBuilderStore.ts`).
+ *
+ * Sin esto, un LWW remoto-gana pisaba el plan local COMPLETO con
+ * `remotePlan` y borraba el marcador en silencio — justo en el escenario en
+ * que existe para ayudar: el job termina en el servidor (que actualiza
+ * `updated_at`), el usuario reabre la app, `runFullSync` corre antes de que
+ * el usuario llegue a Plan Builder, y el merge normal ya había destruido la
+ * única pista de que había una reconciliación pendiente.
+ *
+ * Al agregar el próximo campo local-only del plan, sumarlo aquí — no hace
+ * falta volver a razonar este bug.
+ */
+function preserveLocalOnlyTrainingPlanFields(remotePlan: TrainingPlan, localPlan: TrainingPlan): TrainingPlan {
+  if (localPlan.pendingRecalibration === undefined) return remotePlan
+  return { ...remotePlan, pendingRecalibration: localPlan.pendingRecalibration }
+}
+
 async function mergeTrainingPlans(userId: string, context: MergeContext): Promise<void> {
   if (context.pendingRemoteWipeTables.has('training_plans')) return
   if (isSchemaMismatchBlocked('training_plans')) return
@@ -4044,7 +4067,8 @@ async function mergeTrainingPlans(userId: string, context: MergeContext): Promis
     }
 
     if (remotePlan.updatedAt > localPlan.updatedAt) {
-      await runAthleteWrite(remotePlan.athleteId, () => db.trainingPlans.put(remotePlan))
+      const mergedPlan = preserveLocalOnlyTrainingPlanFields(remotePlan, localPlan)
+      await runAthleteWrite(remotePlan.athleteId, () => db.trainingPlans.put(mergedPlan))
     } else if (localPlan.updatedAt > remotePlan.updatedAt && isSyncablePlanStatus(localPlan.status)) {
       context.pendingWrites.push(() => pushTrainingPlan(localPlan))
     }

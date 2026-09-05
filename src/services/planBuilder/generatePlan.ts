@@ -674,6 +674,7 @@ async function generateWeekPair(
         diagnostic,
         previousWeek,
         planWeekDescriptors,
+        recentContext,
       )
       weekResults.set(targetWeekStart, {
         repairTaxonomyVersion: evaluation.repairTaxonomyVersion,

@@ -170,6 +170,27 @@ describe('trimRecentContextForPayload', () => {
     expect(trimmed.weeks[0].painNotes).toHaveLength(3)
   })
 
+  // `livedPlanWeeks` crece con el largo del plan: una recalibración en la
+  // semana 9 de un plan de 12 arrastra 8 objetos al payload de
+  // `generate-plan-background` y los renderiza en CADA prompt del batch.
+  // El tope existe justo para acotar ese payload.
+  it('caps the lived plan weeks like the pre-plan history', () => {
+    const lived = Array.from({ length: 8 }, (_, i) => makeWeek({
+      weekStartDate: `2026-07-${String(i + 1).padStart(2, '0')}`,
+      sessionHighlights: Array.from({ length: 10 }, (_, j) => `highlight ${j}`),
+    }))
+    const trimmed = trimRecentContextForPayload(makeContext({ livedPlanWeeks: lived }))
+    expect(trimmed.livedPlanWeeks).toHaveLength(4)
+    expect(trimmed.livedPlanWeeks?.map((week) => week.weekStartDate)).toEqual([
+      '2026-07-05', '2026-07-06', '2026-07-07', '2026-07-08',
+    ])
+    expect(trimmed.livedPlanWeeks?.[0].sessionHighlights).toHaveLength(3)
+  })
+
+  it('leaves livedPlanWeeks undefined when the context has none', () => {
+    expect(trimRecentContextForPayload(makeContext()).livedPlanWeeks).toBeUndefined()
+  })
+
   it('preserves the summary and structural fields', () => {
     const context = makeContext({ weeklyStructure: [{ weekday: 1, sports: [{ sport: 'squash', count: 2 }] }] })
     const trimmed = trimRecentContextForPayload(context)

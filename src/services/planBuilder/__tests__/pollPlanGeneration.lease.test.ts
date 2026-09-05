@@ -62,6 +62,7 @@ vi.mock('../../sync/athleteDeleteTombstones', () => ({
 }))
 
 import { db } from '../../../db/db'
+import { rowToTrainingPlan } from '../planRows'
 import { fetchPlanGenerationSnapshot } from '../pollPlanGeneration'
 
 describe('fetchPlanGenerationSnapshot athlete write lease', () => {
@@ -76,6 +77,16 @@ describe('fetchPlanGenerationSnapshot athlete write lease', () => {
 
   afterEach(() => {
     db.close()
+  })
+
+  it('preserva el marcador local al persistir cada snapshot remoto', async () => {
+    const pendingRecalibration = { weekIndexes: [2, 3], requestedAt: 50 }
+    await db.trainingPlans.put({ ...rowToTrainingPlan(planRow), pendingRecalibration })
+
+    const snapshot = await fetchPlanGenerationSnapshot('plan-late')
+
+    expect(snapshot?.plan.pendingRecalibration).toEqual(pendingRecalibration)
+    expect((await db.trainingPlans.get('plan-late'))?.pendingRecalibration).toEqual(pendingRecalibration)
   })
 
   it('no reinserta plan ni semanas si el atleta queda tombstoned durante el fetch', async () => {

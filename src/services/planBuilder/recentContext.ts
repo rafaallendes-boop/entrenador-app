@@ -4,6 +4,7 @@ import type { DayLog, Session, SessionType, WeekSummary } from '../../types'
 import type { TrainingPlan } from '../../types/planBuilder'
 import { fromISO, getWeekStart, toISO } from '../../utils/date'
 import { filterRowsToActiveScope } from '../athlete/activeScopeFilter'
+import { isWhoopPrefilled } from '../readiness/dayLogPrefillSave'
 
 export interface PlanBuilderRecentWeekContext {
   weekStartDate: string
@@ -18,6 +19,16 @@ export interface PlanBuilderRecentWeekContext {
   sports: Partial<Record<SessionType, number>>
   painNotes: string[]
   sessionHighlights: string[]
+  /** RPE real autoreportado, excluyendo prefill Whoop. */
+  avgManualActualRpe?: number
+  /** Cuántos valores respaldan `avgManualActualRpe`. */
+  manualRpeSampleCount: number
+  /** Energía autoreportada más reciente de la semana, excluyendo prefill Whoop. */
+  latestManualEnergyLevel?: number
+  /** Dolor numérico más reciente de la semana. Whoop nunca lo prellena. */
+  latestManualPainLevel?: number
+  /** Sueño autoreportado promedio, excluyendo prefill Whoop. */
+  avgManualSleepHours?: number
 }
 
 export interface PlanBuilderWeeklyStructureSport {
@@ -41,6 +52,16 @@ export interface PlanBuilderRecentContext {
   structureWeeks: number
   /** Esqueleto semanal por día derivado del último bloque real del atleta. */
   weeklyStructure: PlanBuilderWeeklyStructureDay[]
+  /**
+   * Semanas del propio plan que el atleta YA vivió. Sólo se puebla cuando se
+   * pide el contexto con `asOfDate` (recalibración de un plan en curso). En la
+   * generación inicial es `undefined`, porque ninguna semana del plan ocurrió
+   * todavía.
+   *
+   * NOTA: esta interfaz está duplicada en `recentContext.ts` y
+   * `recentContextRender.ts`. Mantener ambas en sincronía.
+   */
+  livedPlanWeeks?: PlanBuilderRecentWeekContext[]
   summary: {
     avgAdherencePct?: number
     avgCompletedMinutes?: number
@@ -146,6 +167,38 @@ function buildWeekContext(
     .map((log) => `${log.date}: ${log.painNotes ?? `dolor ${log.painLevel}/10`}`)
     .slice(-3)
 
+  // Señales AUTOREPORTADAS. Se calculan aparte de los promedios existentes a
+  // propósito: `avgActualRpe`/`avgEnergy`/`avgSleep` alimentan el render del
+  // historial y el `recommendation`, y cambiarles la definición movería un
+  // comportamiento ya desplegado. Estas otras alimentan la directiva de carga,
+  // que exige datos declarados por el atleta.
+  const manualLogs = [...dayLogs].sort((a, b) => a.date.localeCompare(b.date))
+
+  const manualRpeValues = [
+    ...completedSessions
+      .map((session) => session.actualRpe)
+      .filter((value): value is number => value != null),
+    ...manualLogs
+      .filter((log) => !isWhoopPrefilled(log, 'rpeActual'))
+      .map((log) => log.rpeActual)
+      .filter((value): value is number => value != null),
+  ]
+
+  const manualSleepValues = manualLogs
+    .filter((log) => !isWhoopPrefilled(log, 'sleepHours'))
+    .map((log) => log.sleepHours)
+    .filter((value): value is number => value != null)
+
+  const manualEnergyLogs = manualLogs.filter((log) => !isWhoopPrefilled(log, 'energyLevel'))
+  const latestManualEnergy = [...manualEnergyLogs]
+    .reverse()
+    .find((log) => log.energyLevel != null)?.energyLevel
+
+  // El dolor no es prellenable por Whoop, así que no se filtra.
+  const latestManualPain = [...manualLogs]
+    .reverse()
+    .find((log) => log.painLevel != null)?.painLevel
+
   return {
     weekStartDate,
     plannedSessions,
@@ -159,6 +212,11 @@ function buildWeekContext(
     sports: summarizeSports(sessions),
     painNotes,
     sessionHighlights: summarizeHighlights(sessions),
+    avgManualActualRpe: average(manualRpeValues),
+    manualRpeSampleCount: manualRpeValues.length,
+    latestManualEnergyLevel: latestManualEnergy,
+    latestManualPainLevel: latestManualPain,
+    avgManualSleepHours: average(manualSleepValues),
   }
 }
 
@@ -213,23 +271,48 @@ const PAYLOAD_MAX_PAIN_NOTES = 3
  * because they are already bounded and carry the highest signal per byte.
  */
 export function trimRecentContextForPayload(context: PlanBuilderRecentContext): PlanBuilderRecentContext {
+  const trimWeek = (week: PlanBuilderRecentWeekContext): PlanBuilderRecentWeekContext => ({
+    ...week,
+    sessionHighlights: week.sessionHighlights.slice(0, PAYLOAD_MAX_HIGHLIGHTS),
+    painNotes: week.painNotes.slice(0, PAYLOAD_MAX_PAIN_NOTES),
+  })
   return {
     ...context,
-    weeks: context.weeks.slice(-PAYLOAD_MAX_WEEKS).map((week) => ({
-      ...week,
-      sessionHighlights: week.sessionHighlights.slice(0, PAYLOAD_MAX_HIGHLIGHTS),
-      painNotes: week.painNotes.slice(0, PAYLOAD_MAX_PAIN_NOTES),
-    })),
+    weeks: context.weeks.slice(-PAYLOAD_MAX_WEEKS).map(trimWeek),
+    // `livedPlanWeeks` crece con el largo del plan, así que necesita el mismo
+    // tope que el historial pre-plan: sin esto un plan de 12 semanas
+    // recalibrado tarde manda las semanas vividas sin acotar y las renderiza
+    // en cada prompt del batch. Se conserva `undefined` cuando no hay
+    // recalibración, para no introducir un arreglo vacío en el payload.
+    ...(context.livedPlanWeeks
+      ? { livedPlanWeeks: context.livedPlanWeeks.slice(-PAYLOAD_MAX_WEEKS).map(trimWeek) }
+      : {}),
   }
 }
 
 export async function buildPlanBuilderRecentContext(
   plan: TrainingPlan,
   lookbackWeeks = DEFAULT_LOOKBACK_WEEKS,
+  options?: { asOfDate?: string },
 ): Promise<PlanBuilderRecentContext> {
-  const referenceDate = plan.startDate
+  // Sin `asOfDate` el anclaje sigue siendo el inicio del plan, que es el
+  // comportamiento de la generación inicial y no debe cambiar. Con `asOfDate`
+  // —recalibración— el anclaje se mueve a hoy, de modo que la ventana de
+  // lookback alcanza las semanas del plan que el atleta ya vivió.
+  const referenceDate = options?.asOfDate ?? plan.startDate
   const referenceWeekStart = getWeekStart(fromISO(referenceDate))
-  const firstWeekStart = toISO(addDays(referenceWeekStart, -(lookbackWeeks * 7)))
+  const planStart = toISO(getWeekStart(fromISO(plan.startDate)))
+  const lookbackFirstWeekStart = toISO(addDays(referenceWeekStart, -(lookbackWeeks * 7)))
+  // Con `asOfDate`, la ventana de lookback fija (6 semanas por defecto) puede
+  // no alcanzar hasta el inicio del plan en un plan largo, dejando fuera en
+  // silencio las primeras semanas vividas. La ventana de lectura se extiende
+  // hacia atrás como mínimo hasta la semana de `plan.startDate` — nunca la
+  // acorta — para que `livedPlanWeeks` siempre pueda cubrir el plan completo.
+  // Sin `asOfDate` esto no aplica: `planStart` coincide con `referenceWeekStart`
+  // (no hay semanas vividas que cubrir) y el comportamiento no cambia.
+  const firstWeekStart = options?.asOfDate && planStart < lookbackFirstWeekStart
+    ? planStart
+    : lookbackFirstWeekStart
   const lastHistoryDate = toISO(addDays(referenceWeekStart, -1))
   const sessions = filterRowsToActiveScope(
     await db.sessions
@@ -262,27 +345,51 @@ export async function buildPlanBuilderRecentContext(
     logsByWeek.set(weekStart, [...(logsByWeek.get(weekStart) ?? []), log])
   }
 
-  const weeks: PlanBuilderRecentWeekContext[] = []
-  for (let i = 0; i < lookbackWeeks; i++) {
-    const weekStartDate = toISO(addDays(fromISO(firstWeekStart), i * 7))
+  // `allWeeks` recorre toda la ventana leída (`firstWeekStart` .. `referenceWeekStart`
+  // exclusivo) en pasos de 7 días. Con `asOfDate`, esa ventana ya puede exceder
+  // `lookbackWeeks` semanas (ver comentario de `firstWeekStart`), así que el
+  // recorrido usa la distancia real en vez del contador fijo original.
+  const allWeeks: PlanBuilderRecentWeekContext[] = []
+  let cursor = fromISO(firstWeekStart)
+  while (cursor < referenceWeekStart) {
+    const weekStartDate = toISO(cursor)
     const weekSessions = sessionsByWeek.get(weekStartDate) ?? []
     const weekLogs = logsByWeek.get(weekStartDate) ?? []
     const summary = summariesByWeek.get(weekStartDate)
-    if (!summary && weekSessions.length === 0 && weekLogs.length === 0) continue
-    weeks.push(buildWeekContext(weekStartDate, weekSessions, weekLogs, summary))
+    if (summary || weekSessions.length > 0 || weekLogs.length > 0) {
+      allWeeks.push(buildWeekContext(weekStartDate, weekSessions, weekLogs, summary))
+    }
+    cursor = addDays(cursor, 7)
   }
 
   const structureWeekStarts = [...sessionsByWeek.keys()].sort().slice(-STRUCTURE_WEEKS)
   const structureSessions = structureWeekStarts.flatMap((weekStart) => sessionsByWeek.get(weekStart) ?? [])
 
+  // Las semanas del propio plan ya vividas se exponen aparte: mezclarlas con el
+  // historial pre-plan borraría la distinción entre "así entrenaba antes" y
+  // "así le está yendo con ESTE plan", que es justo lo que la directiva de
+  // carga necesita distinguir. Por eso la partición ocurre en el origen —
+  // `weeks`/`summary`/`recommendation` sólo ven `preWeeks` — y no como un
+  // filtro derivado que dejaría las mismas semanas presentes en ambos lados.
+  // Sin `asOfDate`, `allWeeks` ya es puramente pre-plan (la ventana de lectura
+  // termina antes de `referenceWeekStart === planStart`), así que `preWeeks`
+  // es idéntico a `allWeeks` y `livedPlanWeeks` permanece `undefined`.
+  const preWeeks = options?.asOfDate
+    ? allWeeks.filter((week) => week.weekStartDate < planStart)
+    : allWeeks
+  const livedPlanWeeks = options?.asOfDate
+    ? allWeeks.filter((week) => week.weekStartDate >= planStart)
+    : undefined
+
   return {
     referenceDate,
     lookbackWeeks,
-    hasHistory: weeks.length > 0,
-    weeks,
+    hasHistory: preWeeks.length > 0,
+    weeks: preWeeks,
     structureWeeks: structureWeekStarts.length,
     weeklyStructure: summarizeWeeklyStructure(structureSessions),
-    summary: buildSummary(weeks),
+    livedPlanWeeks,
+    summary: buildSummary(preWeeks),
   }
 }
 

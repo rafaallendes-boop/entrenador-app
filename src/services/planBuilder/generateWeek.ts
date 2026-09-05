@@ -1,3 +1,4 @@
+import { executionSignalsFromLivedWeeks } from './recentContextRender'
 import type { CoachAction, CoachSessionProposal, AthleteProfile, PlanWizardConfig, StageTiming } from '../../types'
 import type { StrengthAllocatorMetrics, StrengthSafetyBlockedSlot, TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import { AIProviderError, type AIRawResponse, type AIProvider, type CreateWeekNormalizationDiagnostic } from '../ai/types'
@@ -175,6 +176,7 @@ export function validateGeneratedWeekAction(
   diagnostic?: CreateWeekNormalizationDiagnostic,
   previousWeek?: TrainingPlanWeek,
   planWeekDescriptors: readonly PlanWeekDescriptor[] = [{ weekIndex: week.weekIndex, phase: week.phase }],
+  recentContext?: PlanBuilderRecentContext,
 ): WeekActionEvaluation {
   const rawSessionCount = diagnostic?.rawSessions ?? (Array.isArray(action?.sessions) ? action.sessions.length : undefined)
   let normalizedSessionCount = diagnostic?.validSessions ?? (Array.isArray(action?.sessions) ? action.sessions.length : undefined)
@@ -209,6 +211,7 @@ export function validateGeneratedWeekAction(
     week,
     profile,
     wizardConfig: plan.wizardConfig,
+    executionSignals: executionSignalsFromLivedWeeks(recentContext),
     previousWeek,
     planWeekDescriptors,
   }

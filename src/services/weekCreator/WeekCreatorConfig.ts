@@ -29,6 +29,8 @@ export interface WeekCreatorEffectiveConfig {
   /** Whether the config was derived from a plan wizard; false means fallback defaults. */
   fromWizard: boolean
   configSource: 'wizard' | 'schedule' | 'defaults'
+  /** Ver `PlanWizardConfig.targetHardPrimaryMatches`. Sólo llega desde el wizard. */
+  targetHardPrimaryMatches?: number
 }
 
 export type WeekCreatorAthleteTier = 'foundation' | 'recreational' | 'competitive' | 'advanced' | 'elite'
@@ -277,6 +279,7 @@ export function resolveWeekCreatorConfig(profile: AthleteProfile | null | undefi
       currentFatigue: wizard.currentFatigue,
       fromWizard: true,
       configSource: 'wizard',
+      targetHardPrimaryMatches: wizard.targetHardPrimaryMatches,
     }
   }
 

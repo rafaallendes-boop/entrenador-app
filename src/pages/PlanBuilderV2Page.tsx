@@ -22,7 +22,9 @@ import { formatPlanBuilderCollisionBanner } from '../services/planning/createWee
 import { shouldDeleteEmptyShellDraft, shouldLoadMatchingDraftPlan } from '../services/planBuilder/draftAutoload'
 import { rowToTrainingPlan, rowToTrainingPlanWeek } from '../services/planBuilder/planRows'
 import { buildPlanQualityRepairInstructions, reviewPlanQuality } from '../services/planBuilder/qualityReview'
+import { selectRecalibrationTargets } from '../services/planBuilder/planRecalibration'
 import { isDevToolsEnabled } from '../services/devTools'
+import { todayISO } from '../utils/date'
 import { ChevronLeft, RefreshCw, CheckCircle2, AlertTriangle, X } from 'lucide-react'
 import type { AthleteProfile, PlanWizardConfig, GoalEvent, CoachSessionProposal, Session } from '../types'
 import type { PlanCommitImpact } from '../services/planBuilder/commitImpact'
@@ -530,8 +532,8 @@ export default function PlanBuilderV2Page() {
   const loadMemory = useCoachMemoryStore((s) => s.loadMemory)
   const {
     plan, weeks, issues, status, currentWeekIndex, completedWeeks, failedWeekIndexes, lastError,
-    entitlementOffer,
-    createDraft, runGeneration, retryFullGeneration, regenerateWeek, regenerateWeeks, retryFailedWeeks, retryIncompleteWeeks, cancelGeneration, acceptPlan, discard, loadDraft,
+    entitlementOffer, recalibrationNotice,
+    createDraft, runGeneration, retryFullGeneration, regenerateWeek, regenerateWeeks, recalibrateRemainingWeeks, retryFailedWeeks, retryIncompleteWeeks, cancelGeneration, acceptPlan, discard, loadDraft,
   } = usePlanBuilderStore()
   const { canUse, pending: entitlementPending } = useEntitlement()
   // Nunca crear el shell antes de conocer el tier. De otro modo Free alcanzaba
@@ -729,6 +731,12 @@ export default function PlanBuilderV2Page() {
     () => (qualityReview ? buildPlanQualityRepairInstructions(qualityReview) : {}),
     [qualityReview],
   )
+  // Sólo un plan `active` con al menos una semana futura y otra ya vivida
+  // completa entera es elegible; ver `selectRecalibrationTargets`.
+  const recalibrationTarget = useMemo(
+    () => (plan ? selectRecalibrationTargets({ plan, weeks, todayISO: todayISO() }) : null),
+    [plan, weeks],
+  )
   const selectedWeekQuality = showPlanQualityDebug && selectedWeek && qualityReview
     ? qualityReview.weeks.find((week) => week.weekIndex === selectedWeek.weekIndex)
     : null
@@ -866,6 +874,11 @@ export default function PlanBuilderV2Page() {
   async function handleRegenerateSelectedWeek() {
     if (planBuilderBlocked || entitlementPending || !effectiveAthleteProfile || !selectedWeek || isGenerating || status === 'committing') return
     await regenerateWeek(selectedWeek.weekIndex, effectiveAthleteProfile, selectedWeekRepairInstruction)
+  }
+
+  async function handleRecalibrateRemainingWeeks() {
+    if (planBuilderBlocked || entitlementPending || !effectiveAthleteProfile || isGenerating || status === 'committing') return
+    await recalibrateRemainingWeeks(effectiveAthleteProfile)
   }
 
   async function handleRepairQualityIssues() {
@@ -1595,6 +1608,44 @@ export default function PlanBuilderV2Page() {
           )}
         </div>
         </>
+        )}
+
+        {/* Recalibración con datos reales de las semanas ya vividas */}
+        {!planBuilderBlocked && recalibrationTarget && (
+          <div
+            className="mt-5 rounded-2xl p-4"
+            style={{ background: 'rgba(255,90,31,0.06)', border: '1px solid rgba(255,90,31,0.16)' }}
+          >
+            <p className="text-xs leading-5 text-ink-muted">
+              {`Se regenerarán las semanas futuras con tus datos reales de las últimas ${recalibrationTarget.livedWeekCount} semanas. Se reemplazan las sesiones planificadas de esas semanas; se conservan las que ya completaste y las que agregaste a mano. La semana en curso no se toca.`}
+            </p>
+            <button
+              type="button"
+              disabled={isGenerating || status === 'committing'}
+              onClick={() => { void handleRecalibrateRemainingWeeks() }}
+              className="mt-3 rounded-xl px-5 py-2.5 font-display text-sm font-bold uppercase tracking-[0.15em] text-white transition-all active:scale-[0.98] disabled:opacity-40"
+              style={{ background: 'linear-gradient(135deg, #ff5500, #ff4d00)' }}
+            >
+              {`Recalibrar las ${recalibrationTarget.weekIndexes.length} semanas restantes`}
+            </button>
+          </div>
+        )}
+
+        {/* Recuento de la última reconciliación de calendario (Step 3b) — mismo
+            canal donde ya se muestran avisos/errores de la generación, no un
+            mecanismo nuevo. */}
+        {recalibrationNotice && recalibrationNotice.length > 0 && (
+          <div
+            className="mt-3 rounded-2xl p-4"
+            style={{ background: 'rgba(52,211,153,0.06)', border: '1px solid rgba(52,211,153,0.16)' }}
+          >
+            <p className="text-xs font-semibold text-ink">Recalibración aplicada a tu calendario</p>
+            <ul className="mt-1.5 space-y-1 text-xs leading-5 text-ink-muted">
+              {recalibrationNotice.map((line, index) => (
+                <li key={index}>{line}</li>
+              ))}
+            </ul>
+          </div>
         )}
 
         {/* Action bar */}

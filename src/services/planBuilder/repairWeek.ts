@@ -1,3 +1,4 @@
+import { decideLoadDirective, type ExecutionSignals } from '../training/loadDirectivePolicy'
 import type {
   AthleteProfile,
   CoachExerciseProposal,
@@ -119,6 +120,7 @@ export interface RepairContext {
   profile: AthleteProfile
   wizardConfig: PlanWizardConfig
   previousWeek?: TrainingPlanWeek
+  executionSignals?: ExecutionSignals
   /** Descriptores ordenados de todas las semanas. El fallback unitario conserva compatibilidad de repair aislado. */
   planWeekDescriptors?: readonly PlanWeekDescriptor[]
 }
@@ -305,6 +307,19 @@ export function repairGeneratedWeek(
 
   // 5. Filter disallowed sports
   sessions = filterDisallowedSports(sessions, context, meta)
+
+  // 5b. Dos duras de deportes distintos el mismo día.
+  //
+  // Va ANTES del paso 6 a propósito, y esto no es negociable: el allocator de
+  // fuerza que se resuelve más abajo indexa `structuralCoreByWeek` y los ids
+  // comprometidos por `sessionKeyOf` = `date|timeBlock`, y
+  // `finalizeStrengthSafetySessions` (paso 14) vuelve a leerlos con esa clave.
+  // Cambiar la fecha de una sesión de fuerza después del paso 6 dejaría al
+  // finalizador sin su proyección de core, en silencio.
+  //
+  // Los pasos 12/13/13b pueden reintroducir un choque al agregar sesiones; ese
+  // residuo lo detecta el gate `quality.load.same_day_hard_cross_sport`.
+  sessions = separateSameDayHardCrossSportSessions(sessions, context, meta)
 
   // 6. El contrato productivo entrega esqueletos sin `exercises`. Materializa
   // primero la selección determinista y captura ese template ANTES de core y
@@ -1516,12 +1531,29 @@ function ensureSquashCompetitionMatchExposure(
   const policy = resolveSquashWeeklyExposureDecision(context)
   if (!policy.ensure) return sessions
 
+  const targetCount = policy.declaredMatchCount ?? 1
+  let working = sessions
+  for (let attempt = 0; attempt < targetCount; attempt++) {
+    const next = ensureOneSquashCompetitionMatchExposure(working, context, meta, policy, targetCount)
+    if (next === working) break
+    working = next
+  }
+  return working
+}
+
+function ensureOneSquashCompetitionMatchExposure(
+  sessions: CoachSessionProposal[],
+  context: RepairContext,
+  meta: RepairMeta,
+  policy: Extract<SquashWeeklyExposureDecision, { ensure: true }>,
+  targetCount: number,
+): CoachSessionProposal[] {
   const squashSessions = sessions.filter((session) => session.sessionType === 'squash')
   if (squashSessions.length === 0) return sessions
-  if (squashSessions.some((session) =>
-    hasCompetitiveExposureContent(session)
-      && isSafeSquashCompetitionExposureDate(session.date, context, policy.minimumDaysBeforeEvent)
-  )) return sessions
+  const meetsTarget = (session: CoachSessionProposal) => hasCompetitiveExposureContent(session)
+    && (!policy.declaredMatchCount || policy.targetRpe < 8 || (session.rpe ?? 6) >= 8)
+    && isSafeSquashCompetitionExposureDate(session.date, context, policy.minimumDaysBeforeEvent)
+  if (squashSessions.filter(meetsTarget).length >= targetCount) return sessions
 
   const safeSquashSessions = squashSessions.filter((session) =>
     isSafeSquashCompetitionExposureDate(session.date, context, policy.minimumDaysBeforeEvent)
@@ -1553,9 +1585,10 @@ function ensureSquashCompetitionMatchExposure(
 
   // Sin cupo: convertir, priorizando una sesión que ya apunta a match antes de
   // tocar la sesión específica de mayor RPE.
-  const candidate = safeSquashSessions.find(isSquashMatchIntent)
-    ?? safeSquashSessions.find((session) => session.squashDetails?.sessionKind === 'match')
-    ?? [...safeSquashSessions].sort((a, b) => (b.rpe ?? 6) - (a.rpe ?? 6))[0]
+  const candidates = safeSquashSessions.filter((session) => !meetsTarget(session))
+  const candidate = candidates.find(isSquashMatchIntent)
+    ?? candidates.find((session) => session.squashDetails?.sessionKind === 'match')
+    ?? [...candidates].sort((a, b) => (b.rpe ?? 6) - (a.rpe ?? 6))[0]
 
   if (!candidate) return sessions
 
@@ -1570,7 +1603,7 @@ function ensureSquashCompetitionMatchExposure(
     message: `Se aseguró exposición competitiva real de squash en fase ${context.week.phase}.`,
     sessionDate: candidate.date,
   })
-  return sessions
+  return [...sessions]
 }
 
 /** Envoltorio local del predicado único de exposición para proposals del repair. */
@@ -1631,6 +1664,9 @@ function resolveSquashWeeklyExposureDecision(context: RepairContext): SquashWeek
     currentFatigue: context.wizardConfig.currentFatigue,
     partnerAvailability: context.wizardConfig.partnerAvailability,
     hasMedicalRestriction: hasActiveSquashMedicalRestriction(context),
+    sessionsPerWeek: getExpectedSessionsForPlanWeek(context.plan, context.week),
+    targetHardPrimaryMatches: context.wizardConfig.targetHardPrimaryMatches,
+    executionVerdict: decideLoadDirective(context.executionSignals ?? {}).verdict,
   })
 }
 
@@ -4580,6 +4616,106 @@ function checkDoubleSessionUtilization(
   })
 
   return result.sort((a, b) => a.date.localeCompare(b.date) || a.timeBlock.localeCompare(b.timeBlock))
+}
+
+const HARD_SESSION_RPE_THRESHOLD = 8
+
+/**
+ * Dos sesiones duras de deportes DISTINTOS el mismo día son un error de
+ * programación real: suman carga sistémica sin el estímulo específico que
+ * justificaría un doble. Dos duras del MISMO deporte no entran acá —un doble
+ * de squash AM/PM es una decisión deportiva legítima y la cubre la política de
+ * dobles, no esta regla.
+ *
+ * Que `ordered.slice(1)` no toque sesiones del mismo deporte depende de una
+ * invariante del paso 4: `date|timeBlock` es único, así que un día llega a 5b
+ * con dos sesiones como máximo. Con `sports.size >= 2` sobre dos sesiones, son
+ * de deportes distintos por construcción y se mueve exactamente una. Está
+ * fijada por `sameDayHardSessions.test.ts`; si el paso 4 llegara a admitir tres
+ * sesiones en un día, este filtro tendría que volverse explícito por deporte.
+ *
+ * Se repara moviendo la sesión de MENOR carga objetivo (o, a igualdad, la que
+ * no es del deporte principal), para no desarmar el estímulo principal del día.
+ * Si no hay hueco, se conserva la sesión y se emite un warning distinto: perder
+ * una sesión sería peor que dejar el conflicto, y el gate de calidad de la
+ * Tarea 3 lo bloquea después.
+ */
+function separateSameDayHardCrossSportSessions(
+  sessions: CoachSessionProposal[],
+  context: RepairContext,
+  meta: RepairMeta,
+): CoachSessionProposal[] {
+  const isHard = (session: CoachSessionProposal) => (session.rpe ?? 6) >= HARD_SESSION_RPE_THRESHOLD
+
+  const byDate = new Map<string, CoachSessionProposal[]>()
+  for (const session of sessions) {
+    if (!isHard(session)) continue
+    byDate.set(session.date, [...(byDate.get(session.date) ?? []), session])
+  }
+
+  const primarySport = getPrimarySport(context)
+  const allowedDates = getAllowedDatesInWeek(context)
+  let working = [...sessions]
+
+  for (const [date, hardOnDate] of byDate) {
+    const sports = new Set(hardOnDate.map((session) => session.sessionType))
+    if (sports.size < 2) continue
+
+    // Conserva la más importante del día; mueve el resto.
+    const ordered = [...hardOnDate].sort((a, b) => {
+      const aPrimary = a.sessionType === primarySport ? 1 : 0
+      const bPrimary = b.sessionType === primarySport ? 1 : 0
+      if (aPrimary !== bPrimary) return bPrimary - aPrimary
+      return (b.durationMin ?? 0) - (a.durationMin ?? 0)
+    })
+
+    for (const session of ordered.slice(1)) {
+      const others = working.filter((candidate) => candidate !== session)
+      const slot = findNearestAvailableDate(
+        allowedDates.filter((candidate) => candidate !== date && !others.some((other) =>
+          other.date === candidate && isHard(other) && other.sessionType !== session.sessionType,
+        )),
+        others,
+        session.timeBlock === 'PM' ? 'PM' : 'AM',
+        date,
+        context.wizardConfig,
+      )
+      if (!slot) {
+        meta.warnings.push({
+          code: 'same_day_hard_cross_sport_unresolved',
+          message: `No hay día libre para separar dos sesiones duras de deportes distintos el ${date}; se conservan ambas.`,
+          sessionDate: date,
+        })
+        continue
+      }
+      const targetHasHard = working.some(
+        (candidate) => candidate !== session && candidate.date === slot.date && isHard(candidate)
+          && candidate.sessionType !== session.sessionType,
+      )
+      if (targetHasHard) {
+        meta.warnings.push({
+          code: 'same_day_hard_cross_sport_unresolved',
+          message: `No hay día libre sin otra dura para separar el ${date}; se conservan ambas.`,
+          sessionDate: date,
+        })
+        continue
+      }
+      working = working.map((candidate) =>
+        candidate === session
+          ? { ...candidate, date: slot.date, timeBlock: slot.timeBlock }
+          : candidate,
+      )
+      meta.movedSessionCount++
+      recordRepair(meta, 'corrective', `${slot.date}|${slot.timeBlock}`)
+      meta.warnings.push({
+        code: 'same_day_hard_cross_sport',
+        message: `Sesión dura de ${session.sessionType} movida de ${date} a ${slot.date}: ya había otra sesión dura de un deporte distinto ese día.`,
+        sessionDate: slot.date,
+      })
+    }
+  }
+
+  return working
 }
 
 function getAllowedDatesInWeek(context: RepairContext): string[] {

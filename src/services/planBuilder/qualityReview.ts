@@ -1,7 +1,8 @@
-import type { AthleteProfile, CoachSessionProposal, SupportedSport } from '../../types'
+import type { AthleteProfile, CoachSessionProposal, PlanWizardConfig, SupportedSport } from '../../types'
 import type { PlanValidationIssue, TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import { resolveStrengthExercise } from '../training/exerciseLibrary'
 import type { ReferenceLift } from '../training/strengthLoadPrescription'
+import { hasSquashCompetitiveExposureContent } from '../training/squashMatchRole'
 import { getExpectedSessionsForPlanWeek, getPlanWeekDateRange } from './dateRange'
 import { QUALITY_V2_CALIBRATION } from './qualityCalibrationV2'
 import { summarizeTaxonomy, type RepairTaxonomyMeta } from './repairTaxonomy'
@@ -375,6 +376,90 @@ function getHardSessionClusterIssues(week: TrainingPlanWeek): PlanValidationIssu
   }
 
   return issues
+}
+
+const HARD_SESSION_RPE_THRESHOLD = 8
+
+/**
+ * Dos sesiones duras de deportes DISTINTOS el mismo día.
+ *
+ * Se separa a propósito de `getHardSessionClusterIssues`, que mide días
+ * consecutivos y es agnóstico al deporte: son dos fenómenos distintos y aquel
+ * warning sigue siendo válido tal como está.
+ *
+ * `severity: 'warning'`, NO `error`. `separateSameDayHardCrossSportSessions`
+ * en `repairWeek.ts` ya corrige el caso de forma determinista y sin costo de
+ * API; esto es el respaldo para cuando el repair no encontró hueco, y para el
+ * residuo que los pasos 12/13/13b y `ensureSquashCompetitionMatchExposure`
+ * pueden reintroducir después de 5b.
+ *
+ * Un `error` bloquearía la aceptación del plan (`commitPlan.ts` rechaza con
+ * `criticalIssueCount > 0`) por un conflicto que el atleta puede resolver
+ * moviendo una sesión en el calendario — y que en producción no tiene otro
+ * remedio, porque regenerar una semana suelta es dev-only. Dejar inservible un
+ * plan ya pagado es peor que entregarlo con el aviso. Mismo criterio que
+ * `hard_primary_matches_below_target`, unas líneas más abajo.
+ */
+export function getSameDayHardCrossSportIssues(week: TrainingPlanWeek): PlanValidationIssue[] {
+  const sportsByDate = new Map<string, Set<string>>()
+  for (const session of week.sessions) {
+    if ((session.rpe ?? 6) < HARD_SESSION_RPE_THRESHOLD) continue
+    const sports = sportsByDate.get(session.date) ?? new Set<string>()
+    sports.add(session.sessionType)
+    sportsByDate.set(session.date, sports)
+  }
+
+  const offendingDates = [...sportsByDate.entries()]
+    .filter(([, sports]) => sports.size >= 2)
+    .map(([date]) => date)
+    .sort()
+
+  if (offendingDates.length === 0) return []
+
+  return [issue({
+    severity: 'warning',
+    code: 'quality.load.same_day_hard_cross_sport',
+    message: `Semana ${week.weekIndex + 1}: dos sesiones duras (RPE ≥ ${HARD_SESSION_RPE_THRESHOLD}) de deportes distintos el mismo día (${offendingDates.join(', ')}). Sepáralas en días distintos.`,
+    weekIndex: week.weekIndex,
+  })]
+}
+
+/**
+ * La meta declarada de partidos duros se verifica sobre CONTENIDO, no sobre el
+ * conteo de sesiones del deporte principal. Un "partido duro" reutiliza el
+ * único predicado de exposición competitiva del proyecto
+ * (`hasSquashCompetitiveExposureContent`) más `rpe >= HARD_SESSION_RPE_THRESHOLD`
+ * (8) — la misma barra que ya usa `getSameDayHardCrossSportIssues`.
+ *
+ * `warning` y no `error`: la política de exposición (`resolveSquashWeeklyExposurePolicy`)
+ * puede haber vetado con razón (sin partner, restricción médica, sobrecarga),
+ * y en esos casos el déficit es correcto. Un `error` obligaría a reintentos
+ * pagados contra una decisión deliberada.
+ *
+ */
+function getHardPrimaryMatchIssues(
+  plan: TrainingPlan,
+  week: TrainingPlanWeek,
+  wizardConfig: PlanWizardConfig,
+): PlanValidationIssue[] {
+  if (getPrimarySport(plan) !== 'squash') return []
+  const target = wizardConfig.targetHardPrimaryMatches
+  if (target == null || !Number.isInteger(target) || target <= 0) return []
+  if (week.phase !== 'base' && week.phase !== 'build' && week.phase !== 'peak') return []
+
+  const actual = week.sessions.filter((session) =>
+    session.sessionType === 'squash'
+      && hasSquashCompetitiveExposureContent(session.squashDetails)
+      && (session.rpe ?? 6) >= HARD_SESSION_RPE_THRESHOLD,
+  ).length
+  if (actual >= target) return []
+
+  return [issue({
+    severity: 'warning',
+    code: 'quality.load.hard_primary_matches_below_target',
+    message: `Semana ${week.weekIndex + 1}: ${actual} de ${target} partidos duros objetivo. Puede ser correcto si la política de exposición vetó por partner, salud o sobrecarga.`,
+    weekIndex: week.weekIndex,
+  })]
 }
 
 function getPlanLevelIssues(plan: TrainingPlan, weeks: TrainingPlanWeek[]): PlanValidationIssue[] {
@@ -904,6 +989,8 @@ export function reviewPlanQuality(
       ...getSportCompletenessIssues(plan, week),
       ...getDistributionIssues(plan, week),
       ...getHardSessionClusterIssues(week),
+      ...getSameDayHardCrossSportIssues(week),
+      ...getHardPrimaryMatchIssues(plan, week, plan.wizardConfig),
       ...getGenerationReliabilityIssues(week, qualityVersion),
       ...planLevelQualityIssues.filter((item) => item.weekIndex === week.weekIndex),
     ]

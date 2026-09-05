@@ -80,6 +80,7 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave, onDirt
   )
   const [mainGoal, setMainGoal] = useState(profile?.mainGoal ?? '')
   const [secondaryGoal, setSecondaryGoal] = useState(profile?.secondaryGoal ?? '')
+  const [performanceLimiter, setPerformanceLimiter] = useState(profile?.performanceLimiter ?? '')
   const [running, setRunning] = useState<RunningProfile>(profile?.runningProfile ?? {})
   const [strength, setStrength] = useState<StrengthProfile>(profile?.strengthProfile ?? {})
   const [recovery, setRecovery] = useState<RecoveryProfile>(profile?.recoveryProfile ?? {})
@@ -156,11 +157,11 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave, onDirt
   // reordenamiento de claves.
   const formSnapshot = useMemo(() => JSON.stringify(canonicalJson({
     name, age, weightKg, enabledSports, primarySportCtx, trainingPriority,
-    mainGoal, secondaryGoal, running, strength, recovery, availableDays,
+    mainGoal, secondaryGoal, performanceLimiter, running, strength, recovery, availableDays,
     doubleSessionDays, scheduleSessionsPerWeek, scheduleConstraints, nutrition,
   })), [
     name, age, weightKg, enabledSports, primarySportCtx, trainingPriority,
-    mainGoal, secondaryGoal, running, strength, recovery, availableDays,
+    mainGoal, secondaryGoal, performanceLimiter, running, strength, recovery, availableDays,
     doubleSessionDays, scheduleSessionsPerWeek, scheduleConstraints, nutrition,
   ])
   const [savedSnapshot, setSavedSnapshot] = useState(formSnapshot)
@@ -220,6 +221,7 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave, onDirt
           : undefined,
       mainGoal: mainGoal.trim() || undefined,
       secondaryGoal: secondaryGoal.trim() || undefined,
+      performanceLimiter: performanceLimiter.trim() || undefined,
       runningProfile: hasData(running) ? running : undefined,
       strengthProfile: hasData(strength) ? strength : undefined,
       recoveryProfile: hasData(recovery) ? recovery : undefined,
@@ -365,6 +367,18 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave, onDirt
             value={secondaryGoal}
             onChange={(e) => setSecondaryGoal(e.target.value)}
             placeholder="Ej: Preparar media maratón"
+            className={inputCls}
+          />
+        </Field>
+
+        <Field
+          label="Limitante de rendimiento (opcional)"
+          hint="Qué te limita en competencia, no una lesión. Ej: recuperación entre puntos."
+        >
+          <input
+            value={performanceLimiter}
+            onChange={(e) => setPerformanceLimiter(e.target.value)}
+            placeholder="Ej: recuperación cardíaca entre puntos"
             className={inputCls}
           />
         </Field>

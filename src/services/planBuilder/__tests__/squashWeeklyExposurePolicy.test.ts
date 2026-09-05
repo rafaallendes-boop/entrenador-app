@@ -67,3 +67,30 @@ describe('A2.5 — política semanal de exposición competitiva', () => {
     })
   })
 })
+
+describe('meta declarada de partidos duros — cupo semanal degenerado', () => {
+  const declaredInput = {
+    primarySport: 'squash' as const,
+    hasSquashGoalEvent: true,
+    phase: 'build' as const,
+    currentFatigue: 'normal' as const,
+    partnerAvailability: 'partner' as const,
+    hasMedicalRestriction: false,
+    targetHardPrimaryMatches: 2,
+  }
+
+  // `getExpectedSessionsForPlanWeek` devuelve 0 para una semana parcial sin
+  // días entrenables. Un `declaredMatchCount: 0` es indistinguible de "sin
+  // meta" para todo consumidor que use `?? 1`, y apaga en silencio la
+  // garantía preexistente de asegurar al menos una exposición competitiva.
+  it('no emite declaredMatchCount 0 cuando el cupo semanal es 0', () => {
+    const decision = resolveSquashWeeklyExposurePolicy({ ...declaredInput, sessionsPerWeek: 0 })
+    expect(decision.ensure).toBe(true)
+    expect(decision.ensure && decision.declaredMatchCount).toBeUndefined()
+  })
+
+  it('conserva la meta acotada cuando el cupo sí alcanza', () => {
+    const decision = resolveSquashWeeklyExposurePolicy({ ...declaredInput, sessionsPerWeek: 5 })
+    expect(decision.ensure && decision.declaredMatchCount).toBe(2)
+  })
+})

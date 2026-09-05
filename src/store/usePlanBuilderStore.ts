@@ -9,8 +9,9 @@ import type {
 import { db } from '../db/db'
 import { buildPlanShell } from '../services/planBuilder/buildPlanShell'
 import { validatePlan } from '../services/planBuilder/validator'
-import { commitPlan, type CommitPlanResult } from '../services/planBuilder/commitPlan'
+import { commitPlan, reconcileRecalibratedWeeks, type CommitPlanResult } from '../services/planBuilder/commitPlan'
 import { getPrimaryGoalEvent } from '../services/macroPlan'
+import { selectRecalibrationTargets, type RecalibrationTarget } from '../services/planBuilder/planRecalibration'
 import {
   derivePlanGenerationState,
   resolveConfiguredGenerationStrategy,
@@ -43,8 +44,10 @@ import {
 import { pushTrainingPlan } from '../services/syncService'
 import { supabase } from '../services/auth'
 import { useAuthStore } from './useAuthStore'
+import { useCoachMemoryStore } from './useCoachMemoryStore'
 import { ATHLETE_PROFILE_LOCAL_ID, getActiveAthleteId, getSwitchEpoch } from '../services/athlete/activeAthlete'
 import type { EntitlementRequiredDetail } from '../services/entitlements/entitlementError'
+import { todayISO } from '../utils/date'
 
 const EMPTY_DRAFT_WEEKS_MESSAGE = 'No encontramos semanas para este plan. Descártalo y vuelve a prepararlo desde el inicio.'
 
@@ -83,12 +86,27 @@ interface PlanBuilderState {
   lastError: string | null
   /** Oferta de plan efímera; nunca se persiste en Dexie ni se sincroniza. */
   entitlementOffer: EntitlementRequiredDetail | null
+  /**
+   * Recuento visible de la última reconciliación de calendario disparada por
+   * `recalibrateRemainingWeeks` (Step 3b): qué se reemplazó, qué se conservó
+   * y qué semana quedó sin recalibrar y por qué. Efímero, igual que
+   * `entitlementOffer` — no se persiste en Dexie ni se sincroniza. `null`
+   * cuando no hay nada que mostrar.
+   */
+  recalibrationNotice: string[] | null
 
   createDraft: (input: { profile: AthleteProfile; wizardConfig: PlanWizardConfig }) => Promise<void>
   runGeneration: (profile: AthleteProfile, options?: { forceNew?: boolean }) => Promise<void>
   retryFullGeneration: (profile: AthleteProfile) => Promise<void>
   regenerateWeek: (weekIndex: number, profile: AthleteProfile, repairInstruction?: string) => Promise<void>
   regenerateWeeks: (weekIndexes: number[], profile: AthleteProfile, repairInstructions?: Record<number, string>) => Promise<void>
+  /**
+   * Regenera las semanas futuras de un plan `active` con datos reales de las
+   * semanas ya vividas, y luego reconcilia el calendario materializado. Ver
+   * `selectRecalibrationTargets` (elegibilidad) y `reconcileRecalibratedWeeks`
+   * (Step 3b) para el detalle.
+   */
+  recalibrateRemainingWeeks: (profile: AthleteProfile) => Promise<void>
   retryFailedWeeks: (profile: AthleteProfile) => Promise<void>
   /** Reintenta solo las semanas sin sesiones listas (pending/error/colgadas), conservando las draft ya generadas. */
   retryIncompleteWeeks: (profile: AthleteProfile) => Promise<void>
@@ -249,6 +267,16 @@ function startGenerationPolling(
   set: PlanBuilderSet,
   get: () => PlanBuilderState,
   epochAtStart = getSwitchEpoch(),
+  /**
+   * Se dispara una sola vez, cuando el polling termina en un snapshot
+   * terminal no-stalled (`complete`/`partial`/`failed`/`cancelled`). Hoy sólo
+   * lo usa `recalibrateRemainingWeeks` para reconciliar el calendario después
+   * de que la generación de las semanas futuras realmente terminó — nunca
+   * antes, porque reconciliar semanas todavía en `generating` escribiría
+   * contenido a medias. Ningún otro caller lo pasa, así que su comportamiento
+   * es idéntico al de antes de este parámetro.
+   */
+  onTerminal?: (snapshot: PlanGenerationSnapshot) => void | Promise<void>,
 ) {
   if (!isCurrentSwitchEpoch(epochAtStart)) return
   generationPollingController?.abort()
@@ -272,6 +300,12 @@ function startGenerationPolling(
       }
       applyGenerationSnapshot(snapshot, set)
     },
+  }).then(async (latest) => {
+    if (!latest || !latest.isTerminal || latest.isStalled) return
+    if (controller.signal.aborted) return
+    if (!isCurrentSwitchEpoch(epochAtStart)) return
+    if (onTerminal) await onTerminal(latest)
+    else await recoverPendingRecalibrationIfTerminal(set, get, epochAtStart, latest.plan, latest.weeks)
   }).catch((error) => {
     if (controller.signal.aborted) return
     setErrorIfCurrentSwitchEpoch(set, epochAtStart, error)
@@ -296,6 +330,7 @@ async function resumeUncertainRemoteGeneration(
   if (!isCurrentSwitchEpoch(epochAtStart)) return false
   if (remoteSnapshot) {
     applyGenerationSnapshot(remoteSnapshot, set)
+    await recoverPendingRecalibrationIfTerminal(set, get, epochAtStart, remoteSnapshot.plan, remoteSnapshot.weeks)
     if (!remoteSnapshot.isTerminal && !remoteSnapshot.isStalled) {
       startGenerationPolling(remoteSnapshot.plan.id, set, get, epochAtStart)
     }
@@ -481,6 +516,124 @@ async function releaseReservedRemoteUsage(planId: string, weekIndexes: readonly 
   })
 }
 
+/**
+ * Quita `pendingRecalibration` de un plan en memoria, si lo tiene. Puro —
+ * no toca Dexie.
+ */
+function withoutPendingRecalibration(plan: TrainingPlan): TrainingPlan {
+  if (!plan.pendingRecalibration) return plan
+  const cleared: TrainingPlan = { ...plan }
+  delete cleared.pendingRecalibration
+  return cleared
+}
+
+/** Lee el registro actual: polling y sync conservan el marcador hasta este punto. */
+async function clearPendingRecalibration(planId: string): Promise<void> {
+  const current = await db.trainingPlans.get(planId)
+  if (!current?.pendingRecalibration) return
+  await db.trainingPlans.put(withoutPendingRecalibration(current)).catch((error) => {
+    console.warn('[plan-builder] failed to clear pendingRecalibration marker', error)
+  })
+}
+
+/**
+ * Step 3b de `recalibrateRemainingWeeks`: reconcilia el calendario real una
+ * vez que la generación de las semanas futuras terminó (local o remota).
+ *
+ * Sólo reconcilia si al menos una semana quedó lista (`complete`/`partial`);
+ * un plan `failed`/`cancelled` no tiene contenido nuevo que materializar —
+ * en ese caso el marcador se deja puesto a propósito: no hay nada que
+ * reconciliar todavía y una futura recalibración manual lo reemplazará. Un
+ * fallo de `reconcileRecalibratedWeeks` en sí (p. ej. `applyCreateWeek`
+ * lanzando por concurrencia) se reporta como error del intento y TAMPOCO
+ * limpia el marcador — la generación ya escribió `TrainingPlanWeek`, pero el
+ * calendario del atleta no cambió, así que conservarlo permite que una
+ * recarga posterior lo vuelva a intentar.
+ *
+ * Al terminar con éxito, sube `warnings` (incluidas las semanas que
+ * `reconcileRecalibratedWeeks` tuvo que saltarse por no estar listas) a
+ * `recalibrationNotice`, el mismo canal de avisos que ya mira esta página —
+ * sin eso el recuento de qué se reemplazó/conservó se perdía en
+ * `console.info`.
+ */
+async function reconcileAfterRecalibration(
+  set: PlanBuilderSet,
+  get: () => PlanBuilderState,
+  epochAtStart: number,
+  plan: TrainingPlan,
+  weeks: TrainingPlanWeek[],
+  target: RecalibrationTarget,
+  profile: AthleteProfile | null,
+): Promise<void> {
+  if (plan.status !== 'active') return
+  if (plan.generationState !== 'complete' && plan.generationState !== 'partial') return
+  // Revalidación justo antes de escribir (Minor de revisión). Los dos
+  // caminos remoto/local prechequean el epoch inmediatamente antes de llamar
+  // a esta función, pero `recoverPendingRecalibrationIfTerminal` corre en
+  // `loadDraft`, exactamente el momento donde es más probable que el atleta
+  // activo cambie (hidratación, `switchActiveAthlete`, múltiples pestañas).
+  // `reconcileRecalibratedWeeks` termina escribiendo sesiones vía
+  // `applyCreateWeek` → `store.addSession`, que estampa el atleta ACTIVO en
+  // el momento de la escritura (`withActiveAthleteStamp`) — el scope de
+  // atleta es una regla dura del proyecto, así que esta función, que es
+  // donde la escritura real se dispara, se revalida a sí misma en vez de
+  // confiar en que todo caller lo haga siempre correctamente.
+  if (!isCurrentSwitchEpoch(epochAtStart)) return
+  try {
+    const { warnings } = await reconcileRecalibratedWeeks({ plan, weeks, target: { ...target, asOfDate: todayISO() }, profile })
+    await clearPendingRecalibration(plan.id)
+    if (isCurrentSwitchEpoch(epochAtStart)) {
+      const current = get()
+      set({
+        recalibrationNotice: warnings.length > 0 ? warnings : null,
+        ...(current.plan?.id === plan.id ? { plan: withoutPendingRecalibration(current.plan) } : {}),
+      })
+    }
+  } catch (error) {
+    console.warn('[plan-builder] recalibration reconciliation failed; TrainingPlanWeek updated but the calendar was not', error)
+    if (isCurrentSwitchEpoch(epochAtStart)) {
+      setErrorIfCurrentSwitchEpoch(
+        set,
+        epochAtStart,
+        new Error('Se preparó la nueva versión, pero no pudimos actualizar tu calendario. Vuelve a intentarlo.'),
+      )
+    }
+  }
+}
+
+/**
+ * Red de seguridad de Important 2: si la pestaña que disparó una
+ * recalibración se cerró antes de que el polling terminara, el worker igual
+ * escribió las `TrainingPlanWeek` nuevas pero nadie reconcilió el
+ * calendario. Al volver a cargar el plan (`loadDraft`), si trae
+ * `pendingRecalibration` y sus semanas objetivo ya están en un estado
+ * terminal, reconcilia y limpia. Si siguen `pending`/`generating`/
+ * `regenerating`, no hace nada — no es una cola ni un reintento, es sólo la
+ * comprobación de "¿ya terminó, sin que nadie se enterara?".
+ */
+async function recoverPendingRecalibrationIfTerminal(
+  set: PlanBuilderSet,
+  get: () => PlanBuilderState,
+  epochAtStart: number,
+  plan: TrainingPlan,
+  weeks: TrainingPlanWeek[],
+): Promise<void> {
+  const marker = plan.pendingRecalibration
+  if (!marker) return
+  const targetWeeks = marker.weekIndexes
+    .map((weekIndex) => weeks.find((week) => week.weekIndex === weekIndex))
+  const allTerminal = targetWeeks.every((week) => (
+    week != null
+    && week.status !== 'pending'
+    && week.status !== 'generating'
+    && week.status !== 'regenerating'
+  ))
+  if (!allTerminal) return
+  const target: RecalibrationTarget = { weekIndexes: marker.weekIndexes, asOfDate: todayISO(), livedWeekCount: 0 }
+  const profile = useCoachMemoryStore.getState().athleteProfile
+  await reconcileAfterRecalibration(set, get, epochAtStart, plan, weeks, target, profile)
+}
+
 export function buildRunnerCallbacks(
   set: PlanBuilderSet,
   get: () => PlanBuilderState,
@@ -574,6 +727,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
   generationJob: null,
   lastError: null,
   entitlementOffer: null,
+  recalibrationNotice: null,
 
   resetBuilderState: () => {
     generationPollingController?.abort()
@@ -590,6 +744,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       generationJob: null,
       lastError: null,
       entitlementOffer: null,
+      recalibrationNotice: null,
     })
   },
 
@@ -970,6 +1125,223 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
     }
   },
 
+  /**
+   * Regenera las semanas futuras de un plan EN CURSO usando los datos reales
+   * de las semanas ya vividas, y luego reconcilia el calendario materializado
+   * (Step 3b: ver `reconcileRecalibratedWeeks` en `commitPlan.ts`).
+   *
+   * Es la única ruta del proyecto donde la generación ocurre después de que
+   * el atleta vivió parte del plan; el resto genera todo en borrador, antes
+   * de empezar. Por eso es la única acción que pasa `asOfDate` a
+   * `buildPlanBuilderRecentContext` y la única que necesita reconciliar
+   * sesiones ya materializadas al terminar.
+   *
+   * Deriva de `regenerateWeeks` de arriba y conserva sus mismos guards de
+   * rate limit, reserva/liberación de cuota, `switchEpoch` y la rama local
+   * contra remota. Si `regenerateWeeks` cambia, revisar ésta. No se extrajo
+   * un helper común porque las dos únicas piezas verdaderamente compartidas
+   * (el guard de rate limit y `releaseReservedRemoteUsage`) ya son funciones
+   * de módulo reutilizadas tal cual; el resto del cuerpo diverge en los
+   * targets, en `recentContext`, en no pasar `repairInstructions` y en la
+   * reconciliación posterior, que `regenerateWeeks` no tiene.
+   */
+  recalibrateRemainingWeeks: async (profile) => {
+    const switchEpochAtStart = getSwitchEpoch()
+    const accountUserIdAtStart = useAuthStore.getState().user?.id ?? null
+    const stateBeforeAttempt = get()
+    const { plan, weeks } = stateBeforeAttempt
+    if (!plan || stateBeforeAttempt.status === 'generating' || stateBeforeAttempt.status === 'committing') return
+
+    // Diferencia 1: los targets vienen de la selección determinista, no de un
+    // argumento del caller.
+    const target = selectRecalibrationTargets({ plan, weeks, todayISO: todayISO() })
+    if (!target) return
+    const targetWeekIndexes = target.weekIndexes
+    const targetSet = new Set(targetWeekIndexes)
+    const targets = weeks.filter((w) => targetSet.has(w.weekIndex))
+    if (targets.length === 0) return
+
+    const attemptSnapshot = captureAttemptSnapshot(stateBeforeAttempt)
+    set({ entitlementOffer: null, recalibrationNotice: null })
+    const useRemoteGeneration = canUseRemoteGeneration()
+    if (useRemoteGeneration) {
+      const canStart = await guardRemotePlanBuilderRateLimit(targetWeekIndexes, set, switchEpochAtStart)
+      if (!canStart) return
+    }
+
+    if (!isCurrentSwitchEpoch(switchEpochAtStart) || get().plan?.id !== plan.id || get().status === 'generating') return
+    const updatedAt = Date.now()
+    const nextWeeks = weeks.map((week) => (targetSet.has(week.weekIndex)
+      ? {
+        ...week,
+        status: 'pending' as const,
+        sessions: [],
+        validationIssues: [],
+        generationMeta: { attempts: 0 },
+        regenerationMeta: {
+          attempts: (week.regenerationMeta?.attempts ?? 0) + 1,
+          lastRegeneratedAt: updatedAt,
+          previousFallbackUsed: week.generationMeta.fallbackUsed,
+        },
+        updatedAt,
+      }
+      : week))
+    // Important 2 (fix de revisión): marcador durable ANTES de disparar la
+    // generación. Si esta pestaña se cierra antes de que el polling termine,
+    // `recoverPendingRecalibrationIfTerminal` (en `loadDraft`) es la red de
+    // seguridad que reconcilia el calendario en una carga posterior.
+    const generatingPlan: TrainingPlan = {
+      ...buildRetriggerPlan(plan, nextWeeks, updatedAt),
+      pendingRecalibration: { weekIndexes: targetWeekIndexes, requestedAt: updatedAt },
+    }
+    const firstWeekIndex = targets[0]?.weekIndex ?? null
+    set({
+      plan: generatingPlan,
+      weeks: nextWeeks,
+      status: 'generating',
+      lastError: null,
+      currentWeekIndex: firstWeekIndex,
+      streamingTextByWeekIndex: {
+        ...get().streamingTextByWeekIndex,
+        ...Object.fromEntries(targets.map((week) => [week.weekIndex, ''])),
+      },
+    })
+    let remotePlanPublished = false
+    let reservedRemoteUsage = false
+    try {
+      await db.trainingPlans.put(generatingPlan)
+      await db.trainingPlanWeeks.bulkPut(nextWeeks)
+      if (!useRemoteGeneration) {
+        const job = await createPlanGenerationJob({
+          plan: generatingPlan,
+          weeks: nextWeeks,
+          targetWeekIndexes,
+          strategy: 'single',
+        })
+        if (isCurrentSwitchEpoch(switchEpochAtStart)) {
+          set({
+            generationJob: job,
+            completedWeeks: countReadyWeeks(nextWeeks),
+            failedWeekIndexes: nextWeeks.filter((week) => week.status === 'error').map((week) => week.weekIndex),
+          })
+        }
+        const callbacks = buildRunnerCallbacks(set, get, switchEpochAtStart)
+        // A diferencia de `regenerateWeeks`, encadenamos la reconciliación al
+        // fin de la corrida local en vez de sólo capturar el error: sin esto
+        // el camino de dev sin Supabase nunca reconciliaría el calendario.
+        void runPlanGenerationJob({
+          jobId: job.id,
+          profile,
+          callbacks,
+        }).then(async () => {
+          if (!isCurrentSwitchEpoch(switchEpochAtStart)) return
+          const latestState = get()
+          if (!latestState.plan || latestState.plan.id !== generatingPlan.id) return
+          await reconcileAfterRecalibration(
+            set,
+            get,
+            switchEpochAtStart,
+            latestState.plan,
+            latestState.weeks,
+            target,
+            profile,
+          )
+        }).catch((error) => {
+          setErrorIfCurrentSwitchEpoch(set, switchEpochAtStart, error)
+        })
+        return
+      }
+      await pushTrainingPlan(generatingPlan)
+      remotePlanPublished = true
+      await reservePlanBuilderWeekUsage({ planId: generatingPlan.id, weekIndexes: targetWeekIndexes })
+      reservedRemoteUsage = true
+      // Diferencia 2: contexto reciente anclado a hoy (`asOfDate`), no al
+      // inicio del plan — así el lookback alcanza las semanas ya vividas.
+      const recentContext = await buildPlanBuilderRecentContext(generatingPlan, undefined, {
+        asOfDate: target.asOfDate,
+      }).catch(() => undefined)
+      // Diferencia 3: no se pasan `repairInstructions`; esto no es una
+      // reparación de calidad, es una recalibración por datos nuevos.
+      await triggerBackgroundGeneration({
+        plan: generatingPlan,
+        weeks: nextWeeks,
+        profile,
+        wizardConfig: generatingPlan.wizardConfig,
+        recentContext,
+        targetWeekIndexes,
+      })
+      if (isCurrentSwitchEpoch(switchEpochAtStart)) {
+        set({
+          generationJob: null,
+          completedWeeks: countReadyWeeks(nextWeeks),
+          failedWeekIndexes: nextWeeks.filter((week) => week.status === 'error').map((week) => week.weekIndex),
+        })
+      }
+      // Step 3b: reconciliar el calendario recién DESPUÉS de que el polling
+      // termine en un snapshot terminal — nunca antes, para no escribir
+      // contenido a medias de semanas todavía en `generating`.
+      startGenerationPolling(generatingPlan.id, set, get, switchEpochAtStart, async (snapshot) => {
+        await reconcileAfterRecalibration(set, get, switchEpochAtStart, snapshot.plan, snapshot.weeks, target, profile)
+      })
+    } catch (error) {
+      if (error instanceof PlanEnqueueRejectedError && error.entitlement) {
+        if (reservedRemoteUsage) {
+          await releaseReservedRemoteUsage(generatingPlan.id, targetWeekIndexes)
+        }
+        await restoreAfterEntitlementRejection({
+          snapshot: attemptSnapshot,
+          entitlement: error.entitlement,
+          set,
+          publishRemote: remotePlanPublished,
+          accountUserIdAtStart,
+          epochAtStart: switchEpochAtStart,
+        })
+        return
+      }
+      // Cuota/costo/kill switch: rechazo definitivo pero no es una oferta de
+      // plan, así que nunca toca entitlementOffer/UpsellCard.
+      if (error instanceof PlanEnqueueRejectedError && error.usageRejection) {
+        if (reservedRemoteUsage) {
+          await releaseReservedRemoteUsage(generatingPlan.id, targetWeekIndexes)
+        }
+        await markGenerationStartRejected({
+          plan: generatingPlan,
+          weeks: nextWeeks,
+          message: USAGE_REJECTION_COPY[error.usageRejection.errorCode],
+          set,
+          publishRemote: remotePlanPublished,
+          failedWeekIndexes: targetWeekIndexes,
+          epochAtStart: switchEpochAtStart,
+        })
+        return
+      }
+      // A definitive start failure means the worker never started: surface it
+      // instead of resuming into a poll that can only end in a stalled state.
+      if (error instanceof PlanEnqueueRejectedError || !remotePlanPublished) {
+        if (reservedRemoteUsage) {
+          await releaseReservedRemoteUsage(generatingPlan.id, targetWeekIndexes)
+        }
+        const msg = error instanceof Error ? error.message : String(error)
+        await markGenerationStartRejected({
+          plan: generatingPlan,
+          weeks: nextWeeks,
+          message: msg,
+          set,
+          publishRemote: remotePlanPublished,
+          failedWeekIndexes: targetWeekIndexes,
+          epochAtStart: switchEpochAtStart,
+        })
+        return
+      }
+      if (canUseRemoteGeneration() && remotePlanPublished) {
+        console.warn('[plan-builder] remote recalibration confirmation lost; keeping plan in background mode', error)
+        const resumed = await resumeUncertainRemoteGeneration(generatingPlan.id, set, get, switchEpochAtStart)
+        if (resumed) return
+      }
+      setErrorIfCurrentSwitchEpoch(set, switchEpochAtStart, error)
+    }
+  },
+
   retryFailedWeeks: async (profile) => {
     const switchEpochAtStart = getSwitchEpoch()
     const accountUserIdAtStart = useAuthStore.getState().user?.id ?? null
@@ -1278,11 +1650,30 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
     let plan = await db.trainingPlans.get(planId)
     if (!isCurrentSwitchEpoch(switchEpochAtStart)) return
 
+    // Important 2 (fix de revisión): red de seguridad para una recalibración
+    // cuya pestaña se cerró antes de que el polling terminara. Corre con la
+    // PRIMERA lectura local, antes de que el refresh remoto de abajo pueda
+    // reemplazar este `plan` en Dexie por una versión sin el marcador — el
+    // campo es local-only (ver su JSDoc), así que este es el único punto
+    // donde todavía es visible de forma confiable.
+    if (plan?.pendingRecalibration) {
+      const localWeeks = await db.trainingPlanWeeks.where('planId').equals(planId).toArray()
+      if (!isCurrentSwitchEpoch(switchEpochAtStart)) return
+      await recoverPendingRecalibrationIfTerminal(set, get, switchEpochAtStart, plan, localWeeks)
+      if (!isCurrentSwitchEpoch(switchEpochAtStart)) return
+      // Releer: si acabamos de reconciliar y limpiar, que el resto de
+      // `loadDraft` vea el plan ya sin el marcador.
+      plan = await db.trainingPlans.get(planId)
+      if (!isCurrentSwitchEpoch(switchEpochAtStart)) return
+    }
+
     if (supabase && (!plan || plan.generationState === 'shell' || plan.generationState === 'generating')) {
       const remoteSnapshot = await fetchPlanGenerationSnapshot(planId).catch(() => null)
       if (!isCurrentSwitchEpoch(switchEpochAtStart)) return
       if (remoteSnapshot) {
         applyGenerationSnapshot(remoteSnapshot, set)
+        await recoverPendingRecalibrationIfTerminal(set, get, switchEpochAtStart, remoteSnapshot.plan, remoteSnapshot.weeks)
+        if (!isCurrentSwitchEpoch(switchEpochAtStart)) return
         if (remoteSnapshot.plan.generationState === 'generating') {
           startGenerationPolling(remoteSnapshot.plan.id, set, get, switchEpochAtStart)
         }
@@ -1324,6 +1715,11 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
     const jobIsActive = generationJob?.status === 'queued' || generationJob?.status === 'running'
     const issues = validatePlan({ plan: normalizedPlan, weeks })
     const failedWeekIndexes = weeks.filter((week) => week.status === 'error').map((week) => week.weekIndex)
+    // El error preservado sólo vale si pertenece al plan que se está cargando
+    // —lo usa el aviso de reconciliación de una recalibración—. El store es un
+    // singleton, así que sin esta condición abrir otro borrador sano hereda el
+    // error del plan anterior.
+    const carriedError = get().plan?.id === normalizedPlan.id ? get().lastError : null
     set({
       plan: normalizedPlan,
       weeks,
@@ -1334,7 +1730,7 @@ export const usePlanBuilderStore = create<PlanBuilderState>((set, get) => ({
       completedWeeks: jobIsActive ? generationJob.completedWeeks : countReadyWeeks(weeks),
       failedWeekIndexes: jobIsActive ? generationJob.failedWeekIndexes : failedWeekIndexes,
       streamingTextByWeekIndex: {},
-      lastError: jobIsActive ? null : buildGenerationFailureMessage(failedWeekIndexes),
+      lastError: jobIsActive ? null : carriedError ?? buildGenerationFailureMessage(failedWeekIndexes),
       entitlementOffer: null,
     })
     if (normalizedPlan.generationState === 'generating') {

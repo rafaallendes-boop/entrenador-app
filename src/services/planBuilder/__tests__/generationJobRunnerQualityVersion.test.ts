@@ -12,6 +12,7 @@ vi.mock('../recentContext', () => ({
 import { db } from '../../../db/db'
 import { clearAllAthleteDeleteTombstones } from '../../sync/athleteDeleteTombstones'
 import { generatePlanWeeks } from '../generatePlan'
+import { buildPlanBuilderRecentContext } from '../recentContext'
 import { runPlanGenerationJob } from '../generationJobRunner'
 import { PRODUCTIVE_QUALITY_VERSION } from '../qualityReview'
 
@@ -145,6 +146,22 @@ describe('local runner quality version stamping', () => {
   afterEach(() => {
     vi.restoreAllMocks()
     db.close()
+  })
+
+  it('lee la ejecución vivida en una recalibración local', async () => {
+    const plan = { ...makePlan(2), status: 'active' as const,
+      pendingRecalibration: { weekIndexes: [1], requestedAt: new Date('2026-08-10T12:00:00Z').getTime() } }
+    await db.trainingPlans.put(plan)
+    await db.trainingPlanWeeks.bulkPut([makeWeek(0, { status: 'accepted' }), makeWeek(1)])
+    await db.planGenerationJobs.put(makeJob([1]))
+    vi.mocked(generatePlanWeeks).mockResolvedValue([generatedWeek(1)])
+
+    await runPlanGenerationJob({ jobId: 'job-local-q', profile })
+
+    expect(buildPlanBuilderRecentContext).toHaveBeenCalledWith(plan, undefined, { asOfDate: '2026-08-10' })
+    expect(generatePlanWeeks).toHaveBeenCalledWith(expect.objectContaining({
+      weeks: [expect.objectContaining({ weekIndex: 1 })],
+    }))
   })
 
   it('stamps the effective run version on a week it generates', async () => {

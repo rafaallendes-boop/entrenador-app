@@ -3225,6 +3225,69 @@ describe('syncService', () => {
     expect(upsertCalls.some((call) => call.table === 'training_plans')).toBe(true)
   })
 
+  it('preserva pendingRecalibration (campo local-only del plan) cuando el remoto gana el LWW', async () => {
+    // Regresión: mergeTrainingPlans pisaba el plan local COMPLETO con
+    // rowToTrainingPlan(row) cuando el remoto era más nuevo. Ese mapeo nunca
+    // conoce pendingRecalibration (planRows.ts no lo mapea a ninguna
+    // columna a propósito, ver su JSDoc), así que el marcador de
+    // recuperación de una recalibración pendiente se borraba en silencio
+    // justo en el escenario para el que existe: el job termina en el
+    // servidor, el usuario reabre la app, y runFullSync corre antes de que
+    // llegue a Plan Builder.
+    const localPlan = {
+      id: 'plan-recalibrating',
+      athleteId: 'athlete-1',
+      goalEventId: 'evt-1',
+      status: 'active',
+      title: 'Plan local desactualizado',
+      startDate: '2026-04-14',
+      endDate: '2026-04-20',
+      totalWeeks: 1,
+      phases: [],
+      wizardConfig: {},
+      macroSnapshot: {},
+      createdAt: 1,
+      updatedAt: 100,
+      pendingRecalibration: { weekIndexes: [2], requestedAt: 50 },
+    }
+    trainingPlanRows = [localPlan]
+    tableResults.set('training_plans', {
+      data: [{
+        id: 'plan-recalibrating',
+        user_id: 'user-1',
+        athlete_id: 'athlete-1',
+        goal_event_id: 'evt-1',
+        status: 'active',
+        title: 'Plan remoto (más nuevo)',
+        start_date: '2026-04-14',
+        end_date: '2026-04-20',
+        total_weeks: 1,
+        phases: [],
+        wizard_config: {},
+        macro_snapshot: {},
+        created_at: 1,
+        updated_at: 200,
+        deleted_at: null,
+      }],
+      error: null,
+    })
+    tableResults.set('training_plan_weeks', { data: [], error: null })
+
+    const syncService = await import('../syncService')
+    await syncService.runFullSync('user-1')
+
+    const merged = trainingPlanRows.find((row) => (row as { id: string }).id === 'plan-recalibrating') as
+      Record<string, unknown> | undefined
+    expect(merged).toBeTruthy()
+    // El marcador local-only sobrevive al merge...
+    expect(merged?.pendingRecalibration).toEqual({ weekIndexes: [2], requestedAt: 50 })
+    // ...y el resto de los campos del plan sí toma los valores remotos: el
+    // LWW y el criterio `updatedAt` no cambiaron, sólo se conserva lo que el
+    // mapeo remoto nunca conoció.
+    expect(merged?.title).toBe('Plan remoto (más nuevo)')
+    expect(merged?.updatedAt).toBe(200)
+  })
+
   describe('softDeleteTrainingPlan: parent tombstone commit', () => {
     const planFixture = (overrides: Partial<TrainingPlan> = {}): TrainingPlan => ({
       id: 'plan-delete',

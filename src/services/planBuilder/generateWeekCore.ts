@@ -1,3 +1,5 @@
+import type { PlanBuilderRecentContext } from './recentContextRender'
+import { executionSignalsFromLivedWeeks } from './recentContextRender'
 import type { AthleteProfile, CoachAction, CoachSessionProposal, PlanWizardConfig, StageTiming } from '../../types'
 import type { StrengthAllocatorMetrics, StrengthSafetyBlockedSlot, TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import type { AIRawResponse, AIRequest, CreateWeekNormalizationDiagnostic } from '../ai/types'
@@ -209,6 +211,7 @@ export function validateGeneratedWeekAction(
   diagnostic?: CreateWeekNormalizationDiagnostic,
   previousWeek?: TrainingPlanWeek,
   planWeekDescriptors: readonly PlanWeekDescriptor[] = [{ weekIndex: week.weekIndex, phase: week.phase }],
+  recentContext?: PlanBuilderRecentContext,
 ): WeekActionEvaluation {
   const rawSessionCount = diagnostic?.rawSessions ?? (Array.isArray(action?.sessions) ? action.sessions.length : undefined)
   let normalizedSessionCount = diagnostic?.validSessions ?? (Array.isArray(action?.sessions) ? action.sessions.length : undefined)
@@ -243,6 +246,7 @@ export function validateGeneratedWeekAction(
     week,
     profile,
     wizardConfig: plan.wizardConfig,
+    executionSignals: executionSignalsFromLivedWeeks(recentContext),
     previousWeek,
     planWeekDescriptors,
   }
@@ -398,6 +402,7 @@ export async function generateWeekCore(input: GenerateWeekCoreInput): Promise<Ge
     diagnostic,
     input.previousWeek,
     input.planWeekDescriptors,
+    input.recentContext as PlanBuilderRecentContext | undefined,
   )
   const wasTruncated = isProviderTruncated(raw)
   const lastError = evaluation.error && wasTruncated

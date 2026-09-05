@@ -6,7 +6,9 @@ import { buildStrengthLoadPack } from '../../ai/prompt/packs/quality/strengthLoa
 import { renderActionAsProse } from '../../ai/prompt/renderers/proseSchema'
 import { getExpectedSessionsForPlanWeek, getPlanWeekDateRange } from '../../planBuilder/dateRange'
 import { resolvePlanEventWindow } from '../../planBuilder/eventWindowRules'
-import { renderPlanBuilderRecentContext, type PlanBuilderRecentContext } from '../../planBuilder/recentContextRender'
+import { executionSignalsFromLivedWeeks, renderPlanBuilderRecentContext, type PlanBuilderRecentContext } from '../../planBuilder/recentContextRender'
+import { resolveSquashWeeklyExposurePolicy } from '../../planBuilder/squashWeeklyExposurePolicy'
+import { decideLoadDirective, renderLoadDirective } from '../../training/loadDirectivePolicy'
 import {
   describeSafetyConstraints,
   hasDeclaredRestrictionSignal,
@@ -50,7 +52,13 @@ function getPrimarySport(plan: TrainingPlan): SupportedSport | undefined {
   return plan.macroSnapshot.sportDetails.find((detail) => detail.role === 'primary')?.sport
 }
 
-function buildPrimarySportRule(plan: TrainingPlan, week: TrainingPlanWeek): string[] {
+function buildPrimarySportRule(
+  plan: TrainingPlan,
+  week: TrainingPlanWeek,
+  wizardConfig: PlanWizardConfig,
+  profile: AthleteProfile,
+  recentContext?: PlanBuilderRecentContext,
+): string[] {
   const primarySport = getPrimarySport(plan)
   if (!primarySport) return []
 
@@ -73,7 +81,76 @@ function buildPrimarySportRule(plan: TrainingPlan, week: TrainingPlanWeek): stri
   if (primarySport === 'squash' && (week.phase === 'build' || week.phase === 'peak') && expectedSessions >= 4) {
     lines.push(`- Para squash en fase ${week.phase} con ${expectedSessions} sesiones efectivas, usa mayoría real de squash: mínimo ${minimumSessions} sesiones squash y máximo ${expectedSessions - minimumSessions} accesorias.`)
   }
+  lines.push(...buildHardPrimaryMatchesRule(plan, week, wizardConfig, profile, primarySport, recentContext))
   return lines
+}
+
+/**
+ * Replica el mismo chequeo que `hasActiveSquashMedicalRestriction`
+ * (`repairWeek.ts`): la política de exposición semanal lo usa como veto duro,
+ * así que esta línea de prompt debe apagarse en los mismos casos o sugeriría
+ * partidos que el repair determinista después va a vetar igual.
+ */
+function hasActiveMedicalRestrictionForExposure(
+  profile: AthleteProfile,
+  wizardConfig: PlanWizardConfig,
+): boolean {
+  return [
+    wizardConfig.injuryNotes,
+    profile.recoveryProfile?.currentInjuries,
+    profile.recoveryProfile?.restrictions,
+  ].some((value) => Boolean(value?.trim()))
+}
+
+/**
+ * Línea de prompt para la meta declarada de partidos duros
+ * (`wizardConfig.targetHardPrimaryMatches`). Distinto del mínimo de sesiones
+ * del deporte principal (`requiredPrimarySessions`, que no cambia de
+ * semántica): esto pide partidos con exposición competitiva real y RPE >= 8,
+ * no sesiones cualesquiera. Resuelve la misma política que usa el repair
+ * determinista (`resolveSquashWeeklyExposurePolicy`) para que la meta nunca
+ * sugiera al modelo algo que un veto real va a rechazar después.
+ *
+ * Aproximación documentada (Ruling 5 del brief de la tarea):
+ * `buildPrimarySportRule` no recibe la decisión de exposición ya resuelta ni
+ * el contexto completo de `RepairContext`, así que se reconstruye acá el
+ * mismo mapeo de entradas que usa `resolveSquashWeeklyExposureDecision`
+ * (`repairWeek.ts`), con una simplificación para `hasSquashGoalEvent`: se
+ * asume `true` cuando `getPrimarySport(plan) === 'squash'`. Es válida porque
+ * `buildWeekUserPrompt`/`buildWeekBatchUserPrompt` sólo las usa Plan Builder
+ * (`generateWeekCore.ts`, `generatePlan.ts`); el sport detail `role: 'primary'`
+ * del `macroSnapshot` sólo existe cuando el plan tiene un evento de squash
+ * real detrás (`macroPlan.ts`). Week Creator no pasa por esta función — usa
+ * `WeekCreatorPromptBuilder.ts`, con su propio guard de fase — así que el
+ * caso sintético `goalEventId === 'week-creator'` no es alcanzable aquí.
+ */
+function buildHardPrimaryMatchesRule(
+  plan: TrainingPlan,
+  week: TrainingPlanWeek,
+  wizardConfig: PlanWizardConfig,
+  profile: AthleteProfile,
+  primarySport: SupportedSport,
+  recentContext?: PlanBuilderRecentContext,
+): string[] {
+  if (primarySport !== 'squash') return []
+  const exposure = resolveSquashWeeklyExposurePolicy({
+    primarySport,
+    hasSquashGoalEvent: true,
+    phase: week.phase,
+    currentFatigue: wizardConfig.currentFatigue,
+    partnerAvailability: wizardConfig.partnerAvailability,
+    hasMedicalRestriction: hasActiveMedicalRestrictionForExposure(profile, wizardConfig),
+    sessionsPerWeek: getExpectedSessionsForPlanWeek(plan, week),
+    targetHardPrimaryMatches: wizardConfig.targetHardPrimaryMatches,
+    executionVerdict: decideLoadDirective(executionSignalsFromLivedWeeks(recentContext) ?? {}).verdict,
+  })
+  // Distinto del mínimo de sesiones del deporte principal: esto pide partidos
+  // con exposición competitiva real y RPE >= 8, no sesiones cualesquiera.
+  return exposure.ensure && exposure.declaredMatchCount
+    ? [exposure.targetRpe >= 8
+      ? `- Partidos duros objetivo esta semana: ${exposure.declaredMatchCount}. Cuentan sólo sesiones de partido real con RPE 8 o más.`
+      : `- Meta de partidos ajustada por fase/fatiga: ${exposure.declaredMatchCount} exposición competitiva a RPE ${exposure.targetRpe}; no fuerces partidos duros.`]
+    : []
 }
 
 function requiredPrimarySessions(
@@ -330,6 +407,9 @@ export function buildWeekUserPrompt(input: WeekPromptInput): string {
     'PERFIL DEL ATLETA',
     briefAthlete(profile),
     `Nivel de condición al iniciar el plan: ${wizardConfig.currentFitnessLevel} · Fatiga declarada al iniciar el plan: ${wizardConfig.currentFatigue}`,
+    profile.performanceLimiter?.trim()
+      ? `Limitante de rendimiento a trabajar: ${profile.performanceLimiter.trim()} — incluye estímulos que lo ataquen de forma progresiva cuando la fase lo permita.`
+      : '',
     activeRestrictions
       ? `Lesiones/restricciones activas: ${activeRestrictions} — adapta cargas, evita movimientos de riesgo para la zona afectada y deja el ajuste explícito en objective o notes.`
       : '',
@@ -353,12 +433,12 @@ export function buildWeekUserPrompt(input: WeekPromptInput): string {
     `- Deportes permitidos: ${allowed.join(', ')}`,
     `- Carga objetivo por deporte: ${targetLoads}`,
     ...buildTargetLoadMaterializationRules(plan, week, wizardConfig),
-    ...buildPrimarySportRule(plan, week),
+    ...buildPrimarySportRule(plan, week, wizardConfig, profile, input.recentContext),
     ...buildRaceWeekRule(plan, week),
     ...buildSquashCompetitionRules(plan, week),
     ...buildSquashStrengthThemeRule(plan, wizardConfig),
     '',
-    ...buildProgressionSection(previousWeek, week, wizardConfig),
+    ...buildProgressionSection(previousWeek, week, wizardConfig, input.recentContext),
     '',
     ...buildPhaseContentGuide(plan, week),
     '',
@@ -368,6 +448,8 @@ export function buildWeekUserPrompt(input: WeekPromptInput): string {
     strictFormatting ? 'Modo estricto: si dudas, prioriza fechas válidas, targetDate correcto, sesiones completas y exactamente la cantidad pedida antes que creatividad.' : '',
     outputFormat === 'json' ? '' : strengthStructureSection,
     outputFormat === 'json' ? '' : strengthLoadSection,
+    '',
+    buildWeekClosingRule(),
     '',
     outputFormat === 'json'
       ? 'Devuelve sólo un objeto JSON create_week para esta semana. No uses wrappers XML, markdown ni texto explicativo.'
@@ -389,10 +471,12 @@ function sumTargetLoads(loads: Record<string, number> | undefined): number {
   return Object.values(loads).reduce((sum, load) => sum + (Number.isFinite(load) ? load : 0), 0)
 }
 
+
 function buildLoadDirective(
   previousWeek: TrainingPlanWeek | undefined,
   week: TrainingPlanWeek,
   wizardConfig: PlanWizardConfig,
+  recentContext?: PlanBuilderRecentContext,
 ): string {
   if (week.phase === 'race') {
     return 'CONSERVAR energía: el evento manda. Solo activaciones suaves alrededor del torneo, nada pesado.'
@@ -403,6 +487,19 @@ function buildLoadDirective(
   if (week.phase === 'transition') {
     return 'RECUPERAR: actividad suave y agradable, RPE <= 5 en todo, sin presión de volumen ni intensidad.'
   }
+
+  // Ejecución real, sólo en fases entrenables. La fase ya decidió arriba: una
+  // semana de taper no sube carga aunque el atleta llegue fresco.
+  const signals = executionSignalsFromLivedWeeks(recentContext)
+  if (signals) {
+    const decision = decideLoadDirective(signals)
+    if (decision.verdict === 'reduce' || decision.verdict === 'hold') {
+      // Una señal real de frenar anula la progresión que marcaba la carga
+      // planificada: el plan se escribió antes de saber cómo le iría.
+      return renderLoadDirective(decision)
+    }
+  }
+
   const previousTotal = previousWeek ? sumTargetLoads(previousWeek.targetLoadBySport) : 0
   // Tratamos como "primera semana" solo cuando no hay semana previa o su carga
   // objetivo es nula. Una semana previa sin sesiones detalladas todavía (puede
@@ -428,12 +525,13 @@ function buildProgressionSection(
   previousWeek: TrainingPlanWeek | undefined,
   week: TrainingPlanWeek,
   wizardConfig: PlanWizardConfig,
+  recentContext?: PlanBuilderRecentContext,
 ): string[] {
   const lines = ['PROGRESIÓN RESPECTO A LA SEMANA PREVIA']
   if (previousWeek && previousWeek.phase !== week.phase) {
     lines.push(`Cambio de fase: ${PHASE_LABEL[previousWeek.phase] ?? previousWeek.phase} -> ${PHASE_LABEL[week.phase] ?? week.phase}. El carácter de las sesiones debe reflejar la fase nueva, no repetir la anterior.`)
   }
-  lines.push(`Directiva de carga: ${buildLoadDirective(previousWeek, week, wizardConfig)}`)
+  lines.push(`Directiva de carga: ${buildLoadDirective(previousWeek, week, wizardConfig, recentContext)}`)
   lines.push('No clones las sesiones de la semana previa: conserva lo que progresa y varía drills, ejercicios y estímulos.')
   lines.push(briefPreviousWeek(previousWeek))
   return lines
@@ -523,14 +621,14 @@ export function buildWeekBatchUserPrompt(input: WeekBatchPromptInput): string {
   const activeRestrictions = activeRestrictionsLine(profile, wizardConfig)
   const anyStrength = allowed.includes('strength')
     && weeks.some((w) => (w.targetLoadBySport.strength ?? 0) > 0)
-  const weeksText = weeks.map((week) => {
+  const weeksText = weeks.map((week, index) => {
     const validRange = getPlanWeekDateRange(plan, week)
     const expectedSessions = getExpectedSessionsForPlanWeek(plan, week)
     const targetLoads = Object.entries(week.targetLoadBySport)
       .map(([sport, load]) => `${sport}: ${load}`)
       .join(', ')
     const blockFocus = plan.phases.find((p) => week.weekIndex >= p.startWeekIndex && week.weekIndex <= p.endWeekIndex)?.blockFocus ?? ''
-    const primarySportRule = buildPrimarySportRule(plan, week)
+    const primarySportRule = buildPrimarySportRule(plan, week, wizardConfig, profile, input.recentContext)
     return [
       `Semana ${week.weekIndex + 1}/${plan.totalWeeks}`,
       `- Lunes objetivo: ${week.weekStartDate}`,
@@ -544,6 +642,7 @@ export function buildWeekBatchUserPrompt(input: WeekBatchPromptInput): string {
       ...primarySportRule,
       ...buildRaceWeekRule(plan, week),
       ...buildSquashCompetitionRules(plan, week),
+      ...buildProgressionSection(index === 0 ? previousWeek : weeks[index - 1], week, wizardConfig, input.recentContext),
     ].join('\n')
   }).join('\n\n')
 
@@ -552,6 +651,9 @@ export function buildWeekBatchUserPrompt(input: WeekBatchPromptInput): string {
     `Evento principal: ${formatEventWindowForPrompt(eventWindow.startDate, eventWindow.endDate)} · Ancla competitiva: ${eventWindow.anchorDate}.`,
     '',
     briefAthlete(profile),
+    profile.performanceLimiter?.trim()
+      ? `Limitante de rendimiento a trabajar: ${profile.performanceLimiter.trim()} — incluye estímulos que lo ataquen de forma progresiva cuando la fase lo permita.`
+      : '',
     '',
     'Configuración del wizard:',
     `- Días permitidos: ${days}`,
@@ -581,10 +683,31 @@ export function buildWeekBatchUserPrompt(input: WeekBatchPromptInput): string {
     anyStrength && outputFormat !== 'json' ? buildStrengthStructureSection() : '',
     anyStrength && outputFormat !== 'json' ? buildStrengthLoadPack({ strengthProfile: profile.strengthProfile }) : '',
     '',
+    buildWeekClosingRule(),
+    '',
     outputFormat === 'json'
       ? 'Devuelve sólo un objeto JSON con actions[] y exactamente dos create_week, una para cada semana pedida. No uses wrappers XML, markdown ni texto explicativo.'
       : 'Devuelve sólo el bloque <actions> con exactamente dos create_week, una para cada semana pedida.',
   ].filter(Boolean).join('\n')
+}
+
+/**
+ * Criterio de cierre del prompt de semana.
+ *
+ * Va inmediatamente antes de la instrucción de formato de salida y **no la
+ * reemplaza**: el formato sigue siendo la última línea, porque es lo que el
+ * parser necesita leer sin ambigüedad. Los tres criterios son verificables a
+ * propósito —fase, ejecutabilidad y consistencia con la directiva de carga—
+ * en vez de un "hazlo bien" descriptivo.
+ */
+function buildWeekClosingRule(): string {
+  return [
+    'Definición de listo: antes de responder, verifica que la semana cumpla las tres cosas.',
+    '1. Es coherente con la fase declarada: el carácter de las sesiones corresponde a la fase, no a la semana previa ni a una fase distinta.',
+    '2. Es ejecutable sin ajustes manuales: cada sesión tiene fecha válida, duración, objetivo y contenido concreto; un atleta podría entrenarla tal como viene.',
+    '3. Es consistente con la directiva de carga de esta semana: si la directiva dice reducir, el volumen y el RPE bajan de verdad; si dice mantener, no sube.',
+    'Si alguna de las tres no se cumple, corrige la semana antes de responder.',
+  ].join('\n')
 }
 
 function buildStrengthStructureSection(): string {

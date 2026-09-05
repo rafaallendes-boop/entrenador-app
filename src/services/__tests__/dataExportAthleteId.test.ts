@@ -182,6 +182,20 @@ describe('dataExport athleteId import support', () => {
     })
   })
 
+  it('survives the export/import round-trip for a declared performance limiter', async () => {
+    await db.athleteProfiles.put({
+      id: 'default',
+      updatedAt: 1,
+      name: 'Rafa',
+      performanceLimiter: 'recuperación cardíaca entre puntos',
+    })
+
+    const exported = await exportAppData()
+    const parsed = parseAppDataExport(JSON.parse(exported.json))
+
+    expect(parsed.tables.athleteProfiles[0].performanceLimiter).toBe('recuperación cardíaca entre puntos')
+  })
+
   it('exports athletes with the rest of the app data', async () => {
     await db.athletes.put({
       id: 'ath_m_1',

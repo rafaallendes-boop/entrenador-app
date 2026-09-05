@@ -1,5 +1,5 @@
 import { addDays } from 'date-fns'
-import type { Session, WeekSummary } from '../../types'
+import type { AthleteProfile, Session, WeekSummary } from '../../types'
 import type { TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import { db } from '../../db/db'
 import { getWeekSummary, recalculateWeekSummary } from '../../db/queries'
@@ -10,7 +10,8 @@ import { fromISO, getWeekStart, toISO } from '../../utils/date'
 import { applyCreateWeek } from '../planning/applyCreateWeek'
 import { filterRowsToActiveScope } from '../athlete/activeScopeFilter'
 import { validatePlan } from './validator'
-import { reviewPlanQuality } from './qualityReview'
+import { getSameDayHardCrossSportIssues, reviewPlanQuality } from './qualityReview'
+import type { RecalibrationTarget } from './planRecalibration'
 import {
   getPlanLifecycleCutoff,
   selectActivePlansToSupersede,
@@ -25,7 +26,7 @@ export interface CommitPlanResult {
   lifecycleRemovedSessionCount: number
 }
 
-interface WeekCommitSnapshot {
+export interface WeekCommitSnapshot {
   weekIndex: number
   weekStartDate: string
   sessions: Session[]
@@ -37,7 +38,7 @@ interface PlanLifecycleCommit {
   removedSessions: Session[]
 }
 
-function getWeekEndDate(weekStartDate: string): string {
+export function getWeekEndDate(weekStartDate: string): string {
   return toISO(addDays(fromISO(weekStartDate), 6))
 }
 
@@ -130,7 +131,7 @@ async function refreshRemovedSessionWeeks(
   await useTrainingStore.getState().loadAllSummaries()
 }
 
-async function captureWeekCommitSnapshot(week: TrainingPlanWeek): Promise<WeekCommitSnapshot> {
+export async function captureWeekCommitSnapshot(week: TrainingPlanWeek): Promise<WeekCommitSnapshot> {
   const sessions = filterRowsToActiveScope(
     await db.sessions
       .where('date')
@@ -147,7 +148,7 @@ async function captureWeekCommitSnapshot(week: TrainingPlanWeek): Promise<WeekCo
   }
 }
 
-async function restoreWeekCommitSnapshots(snapshots: WeekCommitSnapshot[]): Promise<void> {
+export async function restoreWeekCommitSnapshots(snapshots: WeekCommitSnapshot[]): Promise<void> {
   const trainingStore = useTrainingStore.getState()
   const affectedWeekStarts = new Set<string>()
 
@@ -344,4 +345,128 @@ export async function commitPlan(
   }
 
   return { errors, warnings, acceptedWeeks, lifecycleRemovedSessionCount }
+}
+
+export interface ReconcileRecalibratedWeeksResult {
+  warnings: string[]
+  /** Semanas del target que no se tocaron porque no estaban listas (ver `describeRecalibrationReadiness`). */
+  skippedWeekIndexes: number[]
+}
+
+/**
+ * Mismo chequeo que `describeWeekReadiness` de `commitPlan` (arriba), pero
+ * con mensaje propio de este contexto: no es "no está lista para aceptar",
+ * es "no se recalibró". Reproducido en vez de reutilizado a propósito, para
+ * no filtrar copy de aceptación de plan en un flujo que no acepta nada.
+ *
+ * Sin este guard, `reconcileRecalibratedWeeks` dependía en silencio de que
+ * `applyCreateWeek` hiciera early-return al recibir `sessions: []` — un
+ * detalle de implementación de otro módulo, no un contrato declarado acá.
+ */
+function describeRecalibrationReadiness(week: TrainingPlanWeek): string | null {
+  if (week.status !== 'draft') {
+    return `Semana ${week.weekIndex + 1} no se recalibró: la generación terminó en estado "${week.status}", no listo.`
+  }
+  if (week.sessions.length === 0) {
+    return `Semana ${week.weekIndex + 1} no se recalibró: no generó sesiones.`
+  }
+  return null
+}
+
+/**
+ * Materializa en el calendario real las semanas futuras que acaban de
+ * recalibrarse (ver `selectRecalibrationTargets` en `planRecalibration.ts`).
+ *
+ * Regenerar `TrainingPlanWeek` no cambia por sí solo el calendario del
+ * atleta: las filas `Session` sólo se escriben vía `applyCreateWeek`, el
+ * mismo camino que usa `commitPlan` arriba al aceptar un plan por primera
+ * vez. Esta función reutiliza exactamente ese camino —mismos helpers de
+ * snapshot/rollback, mismo `applyCreateWeek`— con dos diferencias
+ * deliberadas frente a `commitPlan`:
+ *
+ * 1. Sólo toca las semanas de `target.weekIndexes`, que
+ *    `selectRecalibrationTargets` garantiza estrictamente futuras — la
+ *    semana en curso nunca entra al rango de reemplazo.
+ * 2. Siempre pasa `preserveManualSessions: true`: el atleta pudo agregar
+ *    sesiones propias a una semana futura y una recalibración por datos
+ *    nuevos no pidió borrarlas.
+ *
+ * `applyCreateWeek` ya garantiza que sólo borra sesiones
+ * `status === 'planned'` (`replacePlannedSessionsForCreateWeek`), así que
+ * una sesión `completed`/`adjusted` nunca se toca aunque su fecha caiga
+ * dentro del `replacementRange`.
+ *
+ * Si `applyCreateWeek` falla a mitad de camino, se revierten TODAS las
+ * semanas ya aplicadas en esta corrida (incluida la que falló, cuyo
+ * snapshot es un no-op porque nada llegó a mutarse) — mismo patrón que el
+ * rollback multi-semana de `commitPlan`.
+ */
+export async function reconcileRecalibratedWeeks(input: {
+  plan: TrainingPlan
+  weeks: TrainingPlanWeek[]
+  target: RecalibrationTarget
+  profile: AthleteProfile | null
+}): Promise<ReconcileRecalibratedWeeksResult> {
+  const { plan, weeks, target, profile } = input
+  const warnings: string[] = []
+  if (plan.status !== 'active') return { warnings: [], skippedWeekIndexes: target.weekIndexes }
+  const currentWeekStart = toISO(getWeekStart(fromISO(target.asOfDate)))
+  const targetSet = new Set(target.weekIndexes)
+  const recalibratedWeeks = weeks
+    .filter((week) => targetSet.has(week.weekIndex))
+    .sort((a, b) => a.weekIndex - b.weekIndex)
+
+  const trainingStore = useTrainingStore.getState()
+  const appliedSnapshots: WeekCommitSnapshot[] = []
+  const skippedWeekIndexes: number[] = []
+
+  for (const week of recalibratedWeeks) {
+    const readinessIssue = week.weekStartDate <= currentWeekStart
+      ? `Semana ${week.weekIndex + 1} no se recalibró: ya no es una semana futura.`
+      : describeRecalibrationReadiness(week)
+    if (readinessIssue) {
+      skippedWeekIndexes.push(week.weekIndex)
+      warnings.push(readinessIssue)
+      continue
+    }
+    const safetyIssues = [
+      ...week.validationIssues.filter((issue) => issue.severity === 'error'),
+      ...getSameDayHardCrossSportIssues(week),
+    ]
+    if (week.sessions.some((session) => session.date < week.weekStartDate || session.date > getWeekEndDate(week.weekStartDate))) {
+      skippedWeekIndexes.push(week.weekIndex)
+      warnings.push(`Semana ${week.weekIndex + 1} no se recalibró: hay sesiones fuera del rango de reemplazo.`)
+      continue
+    }
+    if (safetyIssues.length > 0) {
+      skippedWeekIndexes.push(week.weekIndex)
+      warnings.push(`Semana ${week.weekIndex + 1} no se recalibró: ${safetyIssues.map((issue) => issue.message).join(' ')}`)
+      continue
+    }
+    try {
+      const snapshot = await captureWeekCommitSnapshot(week)
+      appliedSnapshots.push(snapshot)
+      const result = await applyCreateWeek({
+        sessions: week.sessions,
+        weekObjectives: week.weekObjectives.map((objective) => objective.goal),
+        athleteProfile: profile,
+        store: trainingStore,
+        replacementRange: {
+          startDate: week.weekStartDate,
+          endDate: getWeekEndDate(week.weekStartDate),
+        },
+        planProvenance: {
+          planId: plan.id,
+          planWeekId: week.id,
+        },
+        preserveManualSessions: true,
+      })
+      warnings.push(...result.warnings)
+    } catch (error) {
+      await restoreWeekCommitSnapshots(appliedSnapshots)
+      throw error
+    }
+  }
+
+  return { warnings, skippedWeekIndexes }
 }

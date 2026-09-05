@@ -162,6 +162,21 @@ export interface TrainingPlan {
   acceptedAt?: number
   notes?: string
   generationSummary?: PlanGenerationSummary
+  /**
+   * Marcador durable de que una recalibración (`recalibrateRemainingWeeks`)
+   * disparó generación para estas semanas y todavía no reconcilió el
+   * calendario real. Es la red de seguridad para cuando la pestaña que
+   * disparó la recalibración se cierra antes de que el polling termine.
+   *
+   * Es local: `planRows.ts` no lo serializa. Polling y sync lo preservan al
+   * importar checkpoints remotos hasta que el calendario se reconcilia.
+   * Permite recuperar una recarga en el mismo navegador; no es una cola
+   * de reconciliación entre dispositivos.
+   */
+  pendingRecalibration?: {
+    weekIndexes: number[]
+    requestedAt: number
+  }
 }
 
 export interface TrainingPlanWeek {

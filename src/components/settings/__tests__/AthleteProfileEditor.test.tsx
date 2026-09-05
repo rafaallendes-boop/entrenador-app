@@ -113,3 +113,48 @@ describe('AthleteProfileEditor weekly session target', () => {
     expect(screen.getByText('Entendí: zona lumbar')).toBeTruthy()
   })
 })
+
+describe('AthleteProfileEditor performance limiter', () => {
+  afterEach(() => cleanup())
+
+  it('saves a declared performance limiter as its own field, outside recovery', async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined)
+    render(
+      <AthleteProfileEditor
+        profile={makeProfile(undefined)}
+        isSaving={false}
+        onSave={onSave}
+      />,
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: /Deporte y perfil base/ }))
+    await userEvent.type(
+      screen.getByPlaceholderText('Ej: recuperación cardíaca entre puntos'),
+      'recuperación cardíaca entre puntos',
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar perfil' }))
+
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+      performanceLimiter: 'recuperación cardíaca entre puntos',
+    }))
+    const savedPatch = onSave.mock.calls[0][0]
+    expect(savedPatch.recoveryProfile).toBeUndefined()
+  })
+
+  it('omits the field when left blank', async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined)
+    render(
+      <AthleteProfileEditor
+        profile={makeProfile(undefined)}
+        isSaving={false}
+        onSave={onSave}
+      />,
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar perfil' }))
+
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+      performanceLimiter: undefined,
+    }))
+  })
+})

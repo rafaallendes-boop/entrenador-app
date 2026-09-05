@@ -2,6 +2,48 @@
 
 Actualizado: 2026-08-31
 
+## Plan Builder — precisión (2026-09-04, implementación local)
+
+Las 11 tareas del [plan de precisión](docs/superpowers/plans/2026-09-02-plan-builder-precision.md)
+están implementadas en el working tree; sin commit ni deploy. El detalle de
+verificación y los pendientes operacionales están en el
+[registro local](docs/superpowers/smokes/2026-09-04-plan-builder-precision-local.md).
+
+Las cuatro correcciones de premisa se mantienen: Plan Builder ya tenía una
+directiva de carga, pero sólo comparaba objetivos planificados; con Week Creator
+se comparte la decisión sobre señales normalizadas, no su firma; el contexto
+original era exclusivamente pre-plan y generar todo en borrador no permite
+adaptación a ejecución vivida; el mínimo de sesiones principales depende de la
+fase y no equivale a una meta de partidos duros.
+
+La recalibración es la primera ruta que genera después de haber vivido parte
+del plan y materializa otra vez las semanas futuras con `applyCreateWeek`, fuera
+de la aceptación inicial de `commitPlan`. Preserva sesiones manuales y
+completadas, excluye la semana en curso y revierte las semanas aplicadas si
+falla una escritura. Un marcador local conservado por sync y polling permite
+reanudar la reconciliación tras una recarga; al recuperarla se vuelve a comprobar
+qué semanas siguen siendo futuras. Esta recuperación es del mismo navegador,
+no una garantía entre dispositivos.
+
+El gate `quality.load.same_day_hard_cross_sport` respalda al repair del paso 5b
+y bloquea también la materialización de una recalibración. Los pasos que agregan
+sesiones después de 5b aún pueden producir un residuo: el gate lo detecta.
+Cualquier cambio de `date`/`timeBlock` de fuerza debe preceder al paso 6, porque
+allocator y finalizador comparten esa clave.
+
+`targetHardPrimaryMatches` queda subordinado a la política de exposición:
+partner, restricciones y sobrecarga conservan sus vetos. Build/peak pueden
+materializar la meta a RPE 8 (máximo cuatro y dentro del cupo); base y fatiga
+`loaded` conservan una exposición de intensidad moderada; taper/race/transition
+mantienen su periodización. Una señal real de reducir o mantener impide que la
+meta vuelva a elevar el RPE durante el repair. Sin meta, la exposición anterior
+no cambia. El déficit sigue siendo un warning verificable por contenido.
+
+Week Creator usa RPE autoreportado de sesiones completadas/ajustadas, sin
+sustituirlo por RPE planificado. La política compartida también prioriza el RPE
+real alto sobre una declaración `fresh`. El limitante de rendimiento se persiste
+separado de lesiones y no entra al parser de seguridad.
+
 ## Corte Ejecutivo Vigente — 2026-08-31
 
 Esta sección es la **fuente de verdad para decisiones de beta**. Las secciones

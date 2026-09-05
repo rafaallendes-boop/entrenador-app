@@ -193,6 +193,25 @@ describe('buildWeekCreatorPrompt quality blocks', () => {
     expect(restrictionLine).toBe('- ⚠️ Restricciones activas: Molestia leve de hombro derecho. Adapta carga, ejercicios, impactos y RPE a estas restricciones.')
   })
 
+  it('renders the declared performance limiter as its own line, separate from restrictions', () => {
+    const prompt = buildPrompt({
+      athleteProfile: makeProfile({ performanceLimiter: 'recuperación cardíaca entre puntos' }),
+    })
+
+    expect(prompt).toContain('Limitante de rendimiento a trabajar: recuperación cardíaca entre puntos')
+    const limiterLine = prompt.split('\n').find((line) => line.includes('Limitante de rendimiento'))
+    expect(limiterLine).toBeDefined()
+    expect(limiterLine).not.toContain('hombro')
+  })
+
+  it('omits the performance limiter line when it is absent or blank', () => {
+    const absent = buildPrompt({ athleteProfile: makeProfile({ performanceLimiter: undefined }) })
+    expect(absent).not.toContain('Limitante de rendimiento')
+
+    const blank = buildPrompt({ athleteProfile: makeProfile({ performanceLimiter: '   ' }) })
+    expect(blank).not.toContain('Limitante de rendimiento')
+  })
+
   it('holds load without raising when fatigue is loaded', () => {
     const prompt = buildPrompt({
       historicalSessions: [
@@ -200,7 +219,7 @@ describe('buildWeekCreatorPrompt quality blocks', () => {
       ] as ChatContext['historicalSessions'],
     }, { currentFatigue: 'loaded' })
 
-    expect(prompt).toContain('MANTENER SIN SUBIR — atleta llega con carga acumulada')
+    expect(prompt).toContain('MANTENER SIN SUBIR — el atleta declara carga acumulada')
   })
 
   it('falls back to macro plan weekly intents when there is no active plan week', () => {
@@ -225,7 +244,7 @@ describe('buildWeekCreatorPrompt quality blocks', () => {
       ] as ChatContext['historicalSessions'],
     }, { currentFatigue: 'overloaded' })
 
-    expect(prompt).toContain('REDUCIR CARGA — atleta llega con fatiga acumulada')
+    expect(prompt).toContain('REDUCIR CARGA REAL — el atleta declara fatiga acumulada alta')
   })
 
   it('reduces load when the latest day log has low energy or high pain', () => {
@@ -235,7 +254,7 @@ describe('buildWeekCreatorPrompt quality blocks', () => {
       ],
     }, { currentFatigue: 'fresh' })
 
-    expect(prompt).toContain('REDUCIR CARGA — último day log indica energía baja o dolor elevado')
+    expect(prompt).toContain('REDUCIR CARGA REAL — el último registro marca energía 4/10')
   })
 
   it('uses conservative or high-load directives from recent history', () => {
@@ -244,13 +263,13 @@ describe('buildWeekCreatorPrompt quality blocks', () => {
 
     const highRpePrompt = buildPrompt({
       historicalSessions: [
-        { date: '2026-06-11', timeBlock: 'AM', type: 'squash', title: 'Match 1', durationMin: 60, rpe: 8 },
-        { date: '2026-06-10', timeBlock: 'PM', type: 'strength', title: 'Fuerza', durationMin: 60, rpe: 9 },
-        { date: '2026-06-09', timeBlock: 'AM', type: 'squash', title: 'Match 2', durationMin: 75, rpe: 8 },
+        { date: '2026-06-11', timeBlock: 'AM', type: 'squash', title: 'Match 1', durationMin: 60, rpe: 6, actualRpe: 8, status: 'completed' },
+        { date: '2026-06-10', timeBlock: 'PM', type: 'strength', title: 'Fuerza', durationMin: 60, rpe: 6, actualRpe: 9, status: 'completed' },
+        { date: '2026-06-09', timeBlock: 'AM', type: 'squash', title: 'Match 2', durationMin: 75, rpe: 6, actualRpe: 8, status: 'completed' },
       ] as ChatContext['historicalSessions'],
     }, { currentFatigue: 'normal' })
 
-    expect(highRpePrompt).toContain('MANTENER O BAJAR LIGERAMENTE')
+    expect(highRpePrompt).toContain('MANTENER SIN SUBIR — el RPE real promedio fue 8.3/10 en 3 sesiones')
     expect(highRpePrompt).toContain('RPE promedio reciente: 8.3/10')
   })
 })

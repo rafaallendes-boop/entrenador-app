@@ -11,6 +11,8 @@ import { buildWeekCreatorStructuredSystemPrompt, buildWeekCreatorSystemPrompt } 
 import { deriveWeekCreatorAthleteTier, type WeekCreatorAthleteTier, type WeekCreatorEffectiveConfig } from './WeekCreatorConfig'
 import { normalizeSport } from '../../utils/athlete'
 import { isWhoopPrefilled } from '../readiness/dayLogPrefillSave'
+import { resolveSquashWeeklyExposurePolicy } from '../planBuilder/squashWeeklyExposurePolicy'
+import { decideLoadDirective, renderLoadDirective } from '../training/loadDirectivePolicy'
 import {
   resolveWeekCreatorEventContext,
   type WeekCreatorEventContext,
@@ -76,7 +78,7 @@ export function buildWeekCreatorPrompt(
     buildWeekObjectivesBlock(profile, input.weekObjectives),
     buildConfigSummary(config),
     buildAthleteLevelRules(config),
-    buildPrioritySportSummary(prioritySport, config),
+    buildPrioritySportSummary(prioritySport ?? config.primarySport, config, eventContext, profile),
     input.skeletonOutput ? '' : buildWeekCreatorSquashRules(config),
     input.skeletonOutput ? '' : buildStrengthStructureRules(config),
     !input.skeletonOutput && config.allowedSports.includes('strength')
@@ -123,7 +125,12 @@ function buildStrengthStructureRules(config: WeekCreatorEffectiveConfig): string
   ].join('\n')
 }
 
-function buildPrioritySportSummary(prioritySport: SupportedSport | undefined, config: WeekCreatorEffectiveConfig): string {
+function buildPrioritySportSummary(
+  prioritySport: SupportedSport | undefined,
+  config: WeekCreatorEffectiveConfig,
+  eventContext: WeekCreatorEventContext,
+  profile: ChatContext['athleteProfile'],
+): string {
   if (!prioritySport) return ''
   const sessionsPerWeek = config.sessionsPerWeek
   const minimumPrioritySessions = prioritySport === 'squash'
@@ -134,7 +141,33 @@ function buildPrioritySportSummary(prioritySport: SupportedSport | undefined, co
     `- Mantén ${prioritySport} como foco principal de la semana dentro de los deportes permitidos.`,
     `- Con ${sessionsPerWeek} sesiones semanales, incluye al menos ${minimumPrioritySessions} sesiones de ${prioritySport} y máximo ${sessionsPerWeek - minimumPrioritySessions} accesorias.`,
     '- Esta prioridad no cambia el contrato de salida: debes devolver una sola acción create_week válida.',
+    ...buildHardPrimaryMatchesRuleForWeekCreator(prioritySport, config, eventContext, profile),
   ].join('\n')
+}
+
+/** Misma decisión de exposición que el repair, incluidos sus vetos. */
+function buildHardPrimaryMatchesRuleForWeekCreator(
+  prioritySport: SupportedSport,
+  config: WeekCreatorEffectiveConfig,
+  eventContext: WeekCreatorEventContext,
+  profile: ChatContext['athleteProfile'],
+): string[] {
+  const exposure = resolveSquashWeeklyExposurePolicy({
+    primarySport: prioritySport,
+    hasSquashGoalEvent: normalizeSport(eventContext.goalEvent?.sport ?? '') === 'squash',
+    phase: eventContext.phase,
+    currentFatigue: config.currentFatigue,
+    partnerAvailability: profile?.planWizardConfig?.partnerAvailability,
+    hasMedicalRestriction: [profile?.planWizardConfig?.injuryNotes,
+      profile?.recoveryProfile?.currentInjuries, profile?.recoveryProfile?.restrictions]
+      .some((value) => Boolean(value?.trim())),
+    sessionsPerWeek: config.sessionsPerWeek,
+    targetHardPrimaryMatches: config.targetHardPrimaryMatches,
+  })
+  if (!exposure.ensure || !exposure.declaredMatchCount) return []
+  return [exposure.targetRpe >= 8
+    ? `- Partidos duros objetivo esta semana: ${exposure.declaredMatchCount}. Cuentan sólo sesiones de partido real con RPE 8 o más.`
+    : `- Meta de partidos ajustada por fase/fatiga: ${exposure.declaredMatchCount} exposición competitiva a RPE ${exposure.targetRpe}; no fuerces partidos duros.`]
 }
 
 function extractPrioritySport(
@@ -179,6 +212,9 @@ function buildProfileSummaryV2(
     primarySport ? `- Deporte principal: ${primarySport}` : '',
     profile.mainGoal ? `- Objetivo principal: ${profile.mainGoal}` : '',
     profile.secondaryGoal ? `- Objetivo secundario: ${profile.secondaryGoal}` : '',
+    profile.performanceLimiter?.trim()
+      ? `- Limitante de rendimiento a trabajar: ${profile.performanceLimiter.trim()} — incluye estímulos que lo ataquen de forma progresiva cuando la fase lo permita.`
+      : '',
     `- Nivel operativo: ${athleteTier}`,
     config.competitiveLevel ? `- Nivel competitivo: ${config.competitiveLevel}` : '',
     config.trainingPriority ? `- Prioridad de entrenamiento: ${config.trainingPriority}` : '',
@@ -539,34 +575,34 @@ function buildLoadDirective(
   rpeStats: { average: number; count: number },
 ): string {
   const latestLog = logs?.[0]
-  if (config.currentFatigue === 'overloaded') {
-    return 'REDUCIR CARGA — atleta llega con fatiga acumulada. Baja volumen e intensidad. RPE máximo 6-7.'
-  }
-  if (
-    latestLog &&
-    ((latestLog.energyLevel != null && latestLog.energyLevel <= 4) ||
-      (latestLog.painLevel != null && latestLog.painLevel >= 6))
-  ) {
-    return 'REDUCIR CARGA — último day log indica energía baja o dolor elevado. Baja volumen, evita impactos agresivos y deja las sesiones duras en RPE máximo 6-7.'
-  }
-  if (config.currentFatigue === 'loaded') {
-    return 'MANTENER SIN SUBIR — atleta llega con carga acumulada. Conserva los estímulos de calidad, recorta volumen accesorio y no agregues intensidad extra esta semana.'
-  }
-  if (config.currentFatigue === 'fresh') {
-    return 'SUBIR CARGA — atleta está fresco. Puedes incrementar volumen o intensidad un escalón, no ambos a la vez.'
-  }
+  const decision = decideLoadDirective({
+    declaredFatigue: config.currentFatigue,
+    // `formatDayLogLine` ya excluye prefill Whoop en este módulo; se aplica el
+    // mismo criterio acá para no introducir la contaminación que la política
+    // prohíbe.
+    latestEnergyLevel: latestLog && !isWhoopPrefilled(latestLog, 'energyLevel')
+      ? latestLog.energyLevel ?? undefined
+      : undefined,
+    latestPainLevel: latestLog?.painLevel ?? undefined,
+    avgActualRpe: rpeStats.count > 0 ? rpeStats.average : undefined,
+    rpeSampleCount: rpeStats.count,
+  })
+
+  const rendered = renderLoadDirective(decision)
+  if (rendered) return rendered
+
+  // Caminos propios de Week Creator que el policy no cubre porque son de
+  // arranque, no de ejecución.
   if (!sessions || sessions.length === 0) {
     return 'INICIAR CON CARGA CONSERVADORA — sin historial previo. RPE 6-7.'
-  }
-  if (rpeStats.count >= 3 && rpeStats.average >= 8) {
-    return 'MANTENER O BAJAR LIGERAMENTE — viene de semana de alta carga. Conserva calidad, baja un punto de RPE o reduce volumen accesorio.'
   }
   return 'MANTENER PROGRESIÓN NORMAL — fatiga normal, sin señales de alerta.'
 }
 
 function computeRecentRpeStats(sessions: ChatContext['historicalSessions']): { average: number; count: number } {
   const values = (sessions ?? [])
-    .map((session) => session.actualRpe ?? session.rpe)
+    .filter((session) => session.status === 'completed' || session.status === 'adjusted')
+    .map((session) => session.actualRpe)
     .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
   if (values.length === 0) return { average: 0, count: 0 }
   return {

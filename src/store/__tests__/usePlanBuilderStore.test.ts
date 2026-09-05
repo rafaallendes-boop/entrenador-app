@@ -305,6 +305,38 @@ describe('usePlanBuilderStore', () => {
     expect(state.lastError).toContain('No encontramos semanas')
   })
 
+  // `lastError` se preserva a propósito para que el aviso de reconciliación de
+  // una recalibración sobreviva al `loadDraft` que la sigue. Pero el store es
+  // un singleton: sin acotarlo al plan que se está cargando, abrir OTRO
+  // borrador sano hereda el error del plan anterior.
+  it('loadDraft does not inherit the previous plan error when loading a different plan', async () => {
+    await createShell()
+    const firstPlanId = usePlanBuilderStore.getState().plan!.id
+
+    await createShell()
+    const secondPlanId = usePlanBuilderStore.getState().plan!.id
+    expect(secondPlanId).not.toBe(firstPlanId)
+
+    usePlanBuilderStore.setState({
+      plan: { ...usePlanBuilderStore.getState().plan!, id: firstPlanId },
+      lastError: 'No se pudo preparar la semana 3. Ajústala para continuar.',
+    })
+
+    await usePlanBuilderStore.getState().loadDraft(secondPlanId)
+
+    expect(usePlanBuilderStore.getState().lastError).toBeNull()
+  })
+
+  it('loadDraft keeps an error that belongs to the plan being reloaded', async () => {
+    await createShell()
+    const planId = usePlanBuilderStore.getState().plan!.id
+    usePlanBuilderStore.setState({ lastError: 'aviso de recalibración' })
+
+    await usePlanBuilderStore.getState().loadDraft(planId)
+
+    expect(usePlanBuilderStore.getState().lastError).toBe('aviso de recalibración')
+  })
+
   it('loadDraft keeps a generating draft without synced weeks in generating state', async () => {
     await createShell()
     const plan = usePlanBuilderStore.getState().plan!

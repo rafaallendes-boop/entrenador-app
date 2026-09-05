@@ -160,6 +160,12 @@ export async function fetchPlanGenerationSnapshot(
     )
     : derivePollingSnapshot(plan, weeks, now, options?.stalledAfterMs)
 
+  // El worker no transporta campos locales: el polling debe conservar el
+  // marcador hasta que el calendario se haya reconciliado, incluso al recargar.
+  if (localPlan?.pendingRecalibration) {
+    snapshot.plan = { ...snapshot.plan, pendingRecalibration: localPlan.pendingRecalibration }
+  }
+
   const wrote = await runAthleteWrite(snapshot.plan.athleteId, () =>
     db.transaction('rw', db.trainingPlans, db.trainingPlanWeeks, async () => {
       await db.trainingPlans.put(snapshot.plan)

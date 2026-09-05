@@ -1,4 +1,5 @@
 import { db } from '../../db/db'
+import { toISO } from '../../utils/date'
 import type { AthleteProfile } from '../../types'
 import type { PlanGenerationJob, TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import { generatePlanWeeks } from './generatePlan'
@@ -358,7 +359,11 @@ async function runPlanGenerationJobInternal({ jobId, profile, callbacks }: RunGe
   })
   const startedAt = job.startedAt ?? now()
   const generationMode = resolveConfiguredGenerationMode()
-  const recentContext = await buildPlanBuilderRecentContext(plan).catch(() => undefined)
+  const recentContext = await (plan.pendingRecalibration
+    ? buildPlanBuilderRecentContext(plan, undefined, {
+      asOfDate: toISO(new Date(plan.pendingRecalibration.requestedAt)),
+    })
+    : buildPlanBuilderRecentContext(plan)).catch(() => undefined)
   job = buildJobUpdate(job, weeks, {
     status: 'running',
     startedAt,

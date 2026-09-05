@@ -1344,6 +1344,7 @@ function parseAthleteProfile(value: unknown, index: number): AthleteProfile {
     sportContext: optionalSportContext(row.sportContext, `athleteProfiles[${index}].sportContext`),
     mainGoal: optionalString(row.mainGoal, `athleteProfiles[${index}].mainGoal`),
     secondaryGoal: optionalString(row.secondaryGoal, `athleteProfiles[${index}].secondaryGoal`),
+    performanceLimiter: optionalString(row.performanceLimiter, `athleteProfiles[${index}].performanceLimiter`),
     runningProfile: optionalRunningProfile(row.runningProfile, `athleteProfiles[${index}].runningProfile`),
     strengthProfile: optionalStrengthProfile(row.strengthProfile, `athleteProfiles[${index}].strengthProfile`),
     recoveryProfile: optionalRecoveryProfile(row.recoveryProfile, `athleteProfiles[${index}].recoveryProfile`),
