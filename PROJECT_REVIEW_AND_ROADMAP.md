@@ -21,8 +21,8 @@ migración tampoco si no se verificó su efecto.
 ## Estado en una frase
 
 El core no es el cuello de botella: motor de planificación, Coach Workspace,
-Whoop, consentimiento, entitlements, cuotas y observabilidad están en producción
-y verificados. Lo que separa el producto de un piloto pagado es **legal**, y lo
+Whoop, consentimiento, entitlements, cuotas, observabilidad y la RLS por
+membresía están en producción y verificados. Lo que separa el producto de un piloto pagado es **legal**, y lo
 que lo separa de una beta de 10–20 es **una auditoría de aislamiento con una
 segunda cuenta**.
 
@@ -86,44 +86,47 @@ checklist con evidencia por ítem.
 
 ## Separación del rol de cuenta (Entrega 1b y siguientes)
 
-### 4. Aplicar el corte de policies
+### 4. ✅ Corte de policies aplicado (2026-09-06)
 
-Las tres migraciones están **escritas y sin aplicar**. Diseño y alternativas
-descartadas en
-[`specs/2026-09-06-migration-031-cut-design.md`](docs/superpowers/specs/2026-09-06-migration-031-cut-design.md).
+`034_athlete_id_not_null.sql` y `031_retire_legacy_policies.sql` están
+**aplicadas en producción**, en ese orden, y verificadas contra los valores que
+el runbook predecía antes de ejecutarlas:
 
-Orden obligatorio —el número mayor va primero, porque `031`/`032` estaban
-reservadas por nombre desde 1a:
+| Chequeo | Esperado | Medido |
+|---|---:|---:|
+| `policies_totales` | 31 | **31** |
+| `athletes_policies` | 5 | **5** |
+| `legacy_restantes` (el bootstrap de INSERT) | 1 | **1** |
+| `columnas_aun_nullable` | 0 | **0** |
+| `filas_sin_scope` | 0 | **0** |
+| `auth_deletable_athlete_ids` instalado | sí | **true** |
 
-1. `034_athlete_id_not_null.sql` — precondición. Hoy es DDL puro: la medición
-   del 2026-09-06 dio cero filas sin `athlete_id` en las nueve tablas. Aplicar
-   en ventana de bajo tráfico (toma ACCESS EXCLUSIVE breve por tabla).
-2. `031_retire_legacy_policies.sql` — retira 48 de 49 legacy, conserva y
-   renombra el INSERT de `athletes`, reemplaza su DELETE por policy de
-   membresía con helper `security definer`, y endurece
-   `enforce_athlete_role_invariants` contra altas con forma de reclamo.
-3. `032_restore_legacy_policies.sql` queda como rollback, fiel al dump.
+`athletes` quedó con `athletes_delete_membership/DELETE`,
+`athletes_insert_bootstrap_owner/INSERT`, `athletes_select_membership/SELECT`,
+`athletes_update_self/UPDATE` y `athletes_write_coach/UPDATE`. La membresía es
+ahora la única autoridad de RLS, salvo el bootstrap de INSERT de `athletes`, que
+se conserva a propósito porque la membresía se siembra desde ese mismo insert.
 
-El lado cliente ya está cerrado (2026-09-06): `withAthleteId` cae al atleta
-self antes de rendirse, `upsertRow` rechaza una fila scoped sin `athlete_id`
-antes de tocar la red —clasificada como `validation_error` no reintentable, así
-que no encola ni agota reintentos—, la cola **repara** una operación vieja en
-vez de descartarla, y `pushTrainingPlan` se estampa igual que sus semanas.
-Guard en `src/services/__tests__/athleteScopeWriteGuard.test.ts`.
+Antes iba el bundle con el guard de scope (`58e4e38`), desplegado y verificado:
+sync en «Al día · Última: recién», cola vacía, cero errores de consola y cero
+filas sin `athlete_id` tras dos sync. El cliente fue primero a propósito —sólo
+dejó de emitir filas que el servidor iba a rechazar igual—.
 
-Orden de despliegue, y acá el cliente va **primero** —al revés que en
-entitlements—: este cambio sólo deja de emitir filas que el servidor va a
-rechazar igual, así que adelantarlo no puede romper nada.
+Detalle del diseño y de las alternativas descartadas en
+[`specs/2026-09-06-migration-031-cut-design.md`](docs/superpowers/specs/2026-09-06-migration-031-cut-design.md);
+pasos, criterios y rollback en
+[`smokes/2026-09-06-031-cut-runbook.md`](docs/superpowers/smokes/2026-09-06-031-cut-runbook.md).
 
-1. Desplegar el bundle con el guard de scope.
-2. **Dry run**: correr `031` dentro de `begin … rollback` en el SQL Editor. El
-   script está listo; Supabase pide confirmar un diálogo de operación
-   destructiva, así que lo ejecuta el owner.
-3. Aplicar `034`, después `031`.
+**Queda vivo el rollback:** `032_restore_legacy_policies.sql` recrea las 48
+policies con el texto exacto del dump del 2026-09-05. No revierte `034` a
+propósito.
 
-**Momento óptimo: pronto.** Con las 88 direcciones de equivalencia en cero, hoy
-el corte es *demostrablemente* un no-op sobre el acceso real. Si se espera al
-primer atleta reclamado deja de serlo y hay que razonarlo caso por caso.
+**Salvedad abierta.** En la primera carga tras el deploy del bundle apareció un
+`upsertRow:non_retriable` que no se pudo atribuir: el objeto de consola ya no
+era recuperable y no volvió a ocurrir ni en el sync manual, ni en una recarga
+con captura instalada, ni después del corte. No dejó residuo (cola vacía,
+estado «Al día»). Si reaparece, la captura de eventos `[sync]` en consola lo
+nombra.
 
 ### 5. `COACH_AUTHZ_MODE=enforce` — después de la Entrega 2
 
@@ -380,7 +383,7 @@ respalda.
 | # | Trabajo | Por qué acá |
 |---|---|---|
 | 1 | Legal (§1) | El plazo lo controla un tercero: arranca el día 1 y corre en paralelo con todo |
-| 2 | Dry run y aplicación de `034` → `031` (§4) | La ventana barata es ahora, mientras el corte es un no-op demostrable |
+| 2 | ~~Aplicación de `034` → `031`~~ — **hecho el 2026-09-06** (§4) | Se hizo mientras el corte era un no-op demostrable |
 | 3 | Verificación posdeploy de tiers y cuota (§12, §13) | Barato, y condiciona cualquier ampliación |
 | 4 | Piloto de 1–3 personas (§2) | Con legal cerrado; el resto se aprende con un cliente real |
 | 5 | Observación del motor en la primera corrida larga real (§7, §8) | Sin comprar una generación sólo para esto |

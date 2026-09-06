@@ -179,6 +179,11 @@ sites del cliente. Y `admin_create_managed_athlete` exige
 arrastra la regla «gestionado sólo bajo cuenta coach» que `030` postergó — es
 Entrega 2, no 1b.
 
+**Cerrado el 2026-09-06:** `034` y `031` fueron aplicadas y verificadas
+—`policies_totales = 31`, `athletes_policies = 5`, `legacy_restantes = 1`,
+`columnas_aun_nullable = 0`, helper instalado—. Evidencia en
+[`smokes/2026-09-06-031-cut-runbook.md`](2026-09-06-031-cut-runbook.md).
+
 La decisión resultante está en
 [`specs/2026-09-06-migration-031-cut-design.md`](../specs/2026-09-06-migration-031-cut-design.md):
 `031` retira **48** policies, conserva y re-declara sólo la de INSERT de

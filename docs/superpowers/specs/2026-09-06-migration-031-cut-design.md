@@ -1,6 +1,6 @@
 # `031` — qué retira el corte de policies legacy
 
-Fecha: 2026-09-06. Estado: **escrita, sin aplicar.**
+Fecha: 2026-09-06. Estado: **aplicada en producción el 2026-09-06.**
 Evidencia de producción incorporada el mismo día: §3.2 y §6 pasos 1–2.
 
 Implementación:
