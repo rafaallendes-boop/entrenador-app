@@ -1127,20 +1127,27 @@ async function drainQueue(): Promise<boolean> {
         } else if (op.table === 'sessions' && op.sessionTarget) {
           await executeSessionTargetReplay(op)
         } else if (op.action === 'upsert') {
-          if (op.table !== 'athletes' && op.payload.athlete_id != null) {
+          // Una operación encolada antes de que el scope estuviera resuelto
+          // puede no traer `athlete_id`. Repararla es preferible a descartarla:
+          // sin scope la fila sería inalcanzable tras 031, y con scope se envía
+          // igual que cualquier otra. Si tampoco ahora resuelve, el guard de
+          // `assertAthleteScopedPayload` la corta como no reintentable.
+          const upsertPayload = withAthleteId(op.payload)
+          assertAthleteScopedPayload(op.table, upsertPayload)
+          if (op.table !== 'athletes' && upsertPayload.athlete_id != null) {
             await withRequestTimeout(
               ensureRemoteAthlete(
                 op.userId,
-                typeof op.payload.athlete_id === 'string' ? op.payload.athlete_id : undefined,
+                typeof upsertPayload.athlete_id === 'string' ? upsertPayload.athlete_id : undefined,
               ),
               'athletes.ensure',
             )
           }
           if (op.table === 'athlete_profiles') {
-            await withRequestTimeout(upsertAthleteProfileRow(op.payload, op.userId), `${op.table}.upsert`)
+            await withRequestTimeout(upsertAthleteProfileRow(upsertPayload, op.userId), `${op.table}.upsert`)
           } else {
             const { error } = await withRequestTimeout(
-              getSupabase().from(op.table).upsert(op.payload as never),
+              getSupabase().from(op.table).upsert(upsertPayload as never),
               `${op.table}.upsert`,
             )
             if (error) throw error
@@ -1415,6 +1422,7 @@ async function upsertRow(
     startSyncAttempt()
     const upsertStartedAt = Date.now()
     try {
+      assertAthleteScopedPayload(table, payload)
       if (table !== 'athletes' && payload.athlete_id != null) {
         await withRequestTimeout(
           ensureRemoteAthlete(
@@ -2259,15 +2267,49 @@ async function upsertAthleteProfileRow(row: Record<string, unknown>, userId: str
 /**
  * Dual-write helper (Athlete Scope Foundation, Fase D): attach the top-level
  * `athlete_id` column to a remote row, preferring the entity's own scope, else
- * the hydrated active athlete. Independent of the read flag — writing both ids is
- * always safe once the Supabase column exists (deploy gate: apply migration 007
- * before shipping this). When no athlete is resolved yet, the column is omitted
- * (the row stays legacy/null and is recovered by legacy-aware reads).
+ * the hydrated active athlete, else the self athlete.
+ *
+ * The self fallback is not cosmetic. Before `031` an unresolved scope produced a
+ * row with `athlete_id` null, which the legacy `auth.uid() = user_id` policies
+ * still accepted; once membership is the only RLS authority that same row is
+ * unreachable, because every v2 predicate is `athlete_id in (…)` and that is
+ * FALSE for null. Anchoring the last resort to the self athlete matches the
+ * project rule that legacy/unscoped rows belong to the self and nobody else.
+ *
+ * If not even the self athlete resolves, the column is still omitted — and
+ * `upsertRow` refuses to send the row. Failing here beats writing a row that
+ * nobody will be able to read.
  */
 function withAthleteId(row: Record<string, unknown>, entityAthleteId?: string): Record<string, unknown> {
   if (row.athlete_id != null) return row
-  const athleteId = entityAthleteId ?? getActiveAthleteId() ?? undefined
+  const athleteId = entityAthleteId ?? getActiveAthleteId() ?? getSelfAthleteId() ?? undefined
   return athleteId ? { ...row, athlete_id: athleteId } : row
+}
+
+/**
+ * Tables whose RLS becomes membership-only with `031`. A row without
+ * `athlete_id` in any of them is unreachable after the cut, so it is refused
+ * before it reaches the network instead of being stored as a permanent orphan.
+ * `athletes` is excluded: its scope is the `id` column itself.
+ */
+const ATHLETE_SCOPED_WRITE_TABLES: ReadonlySet<SupabaseTable> = new Set<SupabaseTable>([
+  'sessions',
+  'day_logs',
+  'week_summaries',
+  'chat_messages',
+  'coach_proposals',
+  'athlete_profiles',
+  'training_plans',
+  'training_plan_weeks',
+])
+
+function assertAthleteScopedPayload(table: SupabaseTable, payload: Record<string, unknown>): void {
+  if (!ATHLETE_SCOPED_WRITE_TABLES.has(table)) return
+  if (payload.athlete_id != null) return
+  // `classifySyncError` reconoce este mensaje y lo marca no reintentable: la
+  // fila local se conserva y un sync posterior la reintenta cuando el atleta
+  // resuelva; encolarla sólo gastaría intentos contra un dato irreparable.
+  throw new Error(`missing athlete scope on ${table}: refusing to write an unscoped row`)
 }
 
 async function ensureRemoteAthleteOnce(userId: string): Promise<void> {
@@ -3050,7 +3092,10 @@ export async function pushTrainingPlan(plan: TrainingPlan): Promise<SyncPushOutc
   const userId = getUserId()
   if (!userId) return isEnabled() ? 'failed' : 'no_remote'
   if (!isSyncablePlanStatus(plan.status)) return 'no_remote'
-  return upsertRow('training_plans', trainingPlanToRow(plan, userId))
+  return upsertRow(
+    'training_plans',
+    withAthleteId(trainingPlanToRow(plan, userId) as unknown as Record<string, unknown>, plan.athleteId),
+  )
 }
 
 export async function pushTrainingPlanWeeks(plan: TrainingPlan, weeks: TrainingPlanWeek[]): Promise<void> {

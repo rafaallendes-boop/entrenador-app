@@ -175,6 +175,13 @@ describe('Athlete Profile Sync - Hardening Fixes', () => {
     vi.stubGlobal('navigator', { onLine: true })
   })
 
+  // Ver el comentario equivalente en syncService.test.ts: sin atleta self, una
+  // escritura scoped se rechaza por diseño.
+  beforeEach(async () => {
+    const { setSelfAthleteId } = await import('../athlete/activeAthlete')
+    setSelfAthleteId('ath_user-1')
+  })
+
   afterEach(() => {
     vi.resetModules()
   })

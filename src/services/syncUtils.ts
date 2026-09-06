@@ -69,6 +69,21 @@ export function classifySyncError(error: unknown, table?: SupabaseTable): SyncEr
   const normalized = message.toLowerCase()
   const statusCode = extractStatusCode(error)
 
+  // 034/031: una fila de tabla scoped sin `athlete_id` queda inalcanzable en
+  // cuanto la RLS v2 sea la única autoridad, porque todo predicado v2 es
+  // `athlete_id in (…)` y eso es FALSE con null. El cliente la rechaza antes de
+  // enviarla; reintentar no puede repararla.
+  if (isMissingAthleteScopeMessage(normalized)) {
+    return {
+      category: 'validation_error',
+      retriable: false,
+      autoRepairable: false,
+      userMessage: 'No se pudo determinar a qué atleta pertenece este dato. Vuelve a abrir la app e inténtalo de nuevo.',
+      technicalMessage: `Missing athlete scope on ${table ?? 'unknown'}: ${message}`,
+      originalError: error,
+    }
+  }
+
   if (isMissingManagedAthleteMessage(normalized)) {
     return {
       category: 'validation_error',
@@ -248,6 +263,10 @@ function isNetworkErrorMessage(normalized: string): boolean {
     normalized.includes('timed out') ||
     normalized.includes('timeout')
   )
+}
+
+function isMissingAthleteScopeMessage(normalized: string): boolean {
+  return normalized.includes('missing athlete scope')
 }
 
 function isMissingManagedAthleteMessage(normalized: string): boolean {

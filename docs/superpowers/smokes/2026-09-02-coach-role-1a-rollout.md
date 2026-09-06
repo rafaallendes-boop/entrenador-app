@@ -324,7 +324,7 @@ la rama que 1b va a hacer efectiva sigue sin ejercitarse con tráfico real.
 
 No habilitar `enforce`. El plan de 1b se escribe con esta evidencia completa.
 
-## Paso 7 — Plan Builder con `advanced`: **FALLA REPRODUCIBLE**
+## Paso 7 — Plan Builder con `advanced`: **FALLÓ, LUEGO PASÓ**
 
 Ejecutado el 2026-09-05 con autorización explícita del owner para gastar API.
 El gasto real fue **US$0**: nunca se llegó al proveedor.
@@ -380,10 +380,61 @@ Acotado por eliminación, sin poder nombrarlo todavía:
 **Siguiente paso, barato:** desplegar el arreglo de logging y repetir. La
 próxima línea trae mensaje, `code` y operación exacta.
 
-**Consecuencia de rollout:** el check 3 queda **FALLIDO**, no pendiente.
-`enqueue-plan-generation` y `generate-plan-background` son las dos únicas
-funciones del gate que esta ronda no pudo ejercitar, y hoy Plan Builder está
-caído en producción para una cuenta `advanced`.
+**Consecuencia de rollout (superada por el cierre de abajo):** el check 3 quedó
+FALLIDO en esta primera corrida, con `enqueue-plan-generation` y
+`generate-plan-background` sin ejercitar.
+
+### Cierre — segunda corrida sobre `411aac3` (2026-09-06 02:13 UTC)
+
+El owner commiteó y desplegó el arreglo de logging y **reseteó el navegador con
+caché**. La corrida siguiente pasó de punta a punta:
+
+```
+02:13:33Z INFO [enqueue-plan] enqueued planId=1f8e9f83-… weeks=2 jobId=plan-bg-1b87d55a-…
+02:13:33Z INFO [generate-plan] week checkpoint … week=0 status=pending
+02:13:33Z INFO [generate-plan] week checkpoint … week=1 status=pending
+```
+
+| Verificación | Resultado |
+|---|---|
+| Semanas escritas | 2 / 2 |
+| `outcome` del job | `succeeded` |
+| `estimated_cost_usd` | **0,053079** (~US$0,027 por semana, contra la línea base de US$0,029) |
+| Semanas de este plan sin `athlete_id` | **0** |
+| Filas sin `athlete_id` en toda `training_plan_weeks` | **0** |
+| Contenido | 2 semanas (taper + competencia) con la restricción lumbar aplicada en la prescripción |
+
+El borrador se **descartó**: aceptarlo habría supersedido el plan activo del
+owner y borrado sesiones planificadas a 6 días de su torneo.
+
+**Esto cierra el check 3** y, de paso, **verifica en producción el arreglo del
+productor** (`asyncGenerationLoop.ts`): antes de `411aac3` la Function de fondo
+escribía `athlete_id` nulo en cada semana que generaba —ése fue el origen de las
+12 filas que bloqueaban `031`—, y esta corrida real no dejó ninguna. La
+migración `033` sola no lo habría demostrado; hacía falta una generación nueva.
+
+### La causa del fallo original queda sin nombre, y eso es un riesgo abierto
+
+La segunda corrida usó un `planId` **distinto** (`1f8e9f83-…` contra
+`dfe73b77-…`) porque el reset de caché reconstruyó Dexie desde Supabase y con él
+el borrador. **La evidencia del fallo se destruyó antes de que el logging
+arreglado pudiera capturarla.** No se puede afirmar que esté corregido: se puede
+afirmar que no se reproduce con un borrador nuevo.
+
+Hipótesis principal, **no demostrada**: el borrador anterior arrastraba un
+`athlete_id` que no existía en `athletes` remoto, y `putPlan` moría con
+violación de FK (`training_plans_athlete_fk`, clase 23503). Encaja con todo lo
+observado —falla en la primera escritura, sin fila persistida, base sana ante
+valores válidos, y desaparición tras rehidratar `athletes` desde el servidor— y
+`goal_event_id` queda descartado como alternativa porque **no tiene FK**.
+
+Riesgo residual, para vigilar: un borrador local con una referencia inválida
+produce hoy un **500 opaco** cuyo copy invita a reintentar, y reintentar no
+puede funcionar nunca. La única salida que encontró el owner fue limpiar la
+caché. Si vuelve a ocurrir, el log ya nombra operación, mensaje y `code` en una
+línea; recién ahí conviene decidir si se clasifica como no reintentable en el
+cliente. No se cambió el cliente ahora para no escribir código contra una causa
+sin confirmar.
 
 ## Pendientes que 1a no cierra
 

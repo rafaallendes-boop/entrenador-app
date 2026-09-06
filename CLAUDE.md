@@ -27,7 +27,9 @@ Etapa: preparando piloto premium acompañado (1-3 clientes fundadores). Coach Mo
 - `supabase/00X_*.sql` — migraciones remotas numeradas, de aplicación manual
 
 ## Estado actual del producto
-Ver `PROJECT_REVIEW_AND_ROADMAP.md` para el estado completo. Actualizado: 2026-08-30.
+`PROJECT_REVIEW_AND_ROADMAP.md` contiene **sólo el trabajo pendiente** desde el
+2026-09-06. El estado histórico completo —y las secciones numeradas §1–§35 que
+este archivo cita— viven en `git show 6a02d32:PROJECT_REVIEW_AND_ROADMAP.md`.
 Suite completa verificada: **4062/4062 tests** en 504 archivos, build, `tsc -b`, lint y `git diff --check` OK.
 Las migraciones remotas `023`, `024` y `025` están confirmadas en producción; escribir el SQL no equivale a aplicarlo. El working tree contiene `026_fix_athlete_profiles_sync_contract.sql`, todavía pendiente de aplicación y smoke. Dexie local en **v20**.
 Deploy del 2026-08-03: un solo bundle llevó a producción el consentimiento, la rotación coordinada, los roles de partido de squash, la identidad `libraryRef` y el copy de fuerza. El smoke del consentimiento quedó cerrado; sigue pendiente registrar la verificación post-deploy de las tandas de motor.
@@ -93,6 +95,7 @@ Saldo Anthropic al 2026-07-30: **~US$0,60**. Una corrida de `npm run loadtest:pl
   - Toda lectura de `sessions`/`dayLogs`/`weekSummaries`/`coachProposals`/`chatMessages` fuera de sync/export pasa por `filterRowsToActiveScope`/`isRowInActiveScope`. **Filas legacy/unscoped pertenecen SOLO al self** — un atleta gestionado nunca las ve ni las adopta.
   - Toda creación local de esas filas se estampa con `withActiveAthleteStamp`.
   - En sync, el fallback legacy se ancla a `getSelfAthleteId()`, nunca al atleta activo.
+  - **Ninguna escritura remota de una tabla scoped sale sin `athlete_id`.** `withAthleteId` resuelve entidad → activo → self, y `assertAthleteScopedPayload` corta dentro de `upsertRow` antes de la red; el error es `validation_error` no reintentable, así que no se encola. El drenaje de cola repara una op vieja con `withAthleteId` en vez de descartarla. Una fila sin scope es inalcanzable en cuanto la RLS v2 sea la única autoridad (`031`).
   - `isInAthleteScope` (effectiveAthleteKey) es para delete-scoping de sync; para lecturas usar `activeScopeFilter`.
 - El modelo local es Dexie (**v20**) — cualquier cambio de schema requiere migración + test de upgrade real (fake-indexeddb ya instalado; el upgrade de consentimiento abre primero una base legacy v18 con datos, la cierra y luego abre `EntrenadorDB`).
 - **Entitlements: `entitlementPolicy.ts` es la única autoridad de acceso por plan.** Tres tiers `free < weekly < advanced`; ausencia de fila, vencimiento, vencimiento ilegible o fallo de lectura resuelven a `free`; clase desconocida se deniega para todos. El gate va en las **tres** funciones (`coach.ts`, `enqueue-plan-generation`, `generate-plan-background`) porque la última acepta llamadas directas y acuña su propio `jobId`. **El chequeo de entitlement va siempre antes que el de cuota** y una clase no permitida **nunca** se representa como cuota `0`, o se reporta como límite diario en vez de oferta. El filtro de `create_week` en `chat_action` (`responseNormalizer.ts`) es una **barrera de negocio**, no una regla de calidad.

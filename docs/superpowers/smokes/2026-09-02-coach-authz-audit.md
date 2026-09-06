@@ -7,14 +7,33 @@ alguna sección siga pendiente o contenga diferencias sin explicar.
 
 ## 1. Precondición 013b (`pg_policies`)
 
-- Fecha/hora: 2026-09-05
+- Fecha/hora: 2026-09-05 (dump), 2026-09-06 (comparación nominal).
 - Ejecutado por: sesión asistida (SQL Editor, proyecto `entrenador-app`, rama
-  `main PRODUCTION`).
-- Resultado: **no se ejecutó el `LEFT JOIN` nominal de las 25 policies
-  esperadas.** En su lugar se corrió una clasificación por predicado sobre las
-  13 tablas del alcance, que responde la misma pregunta de fondo pero **no**
-  acredita nombre por nombre. Completar el `LEFT JOIN` nominal antes de 1b.
-- Policies faltantes o con predicado legacy: ver §2.
+  `main PRODUCTION`) para el dump; comparación nominal resuelta offline contra
+  el CSV archivado, que es el mismo objeto que produciría el `LEFT JOIN`.
+- Resultado: **APROBADO — 25/25 policies de 013b instaladas.** La comparación es
+  nombre por nombre y además compara `cmd`, `qual`, `with_check`, `permissive` y
+  `roles` contra el texto que crea `013b`, normalizando sólo lo que agrega
+  `pg_get_expr` (alias de sublink, prefijo `public.`, espaciado). **Cero
+  faltantes, cero diferencias de predicado.** `readiness_daily_select` tiene el
+  predicado v2 `athlete_id in (select auth_athlete_ids())`, que es la fila que
+  esta sección existía para verificar.
+- Las 25 esperadas se derivan del texto de `013b`: 3 de las tablas nuevas (§7),
+  8 `*_select_membership` (§8a), 3 de `athletes` (§8b), 4 `*_write_membership`
+  (§8c), 3 `*_write_coach` (§8d), 3 de `sessions` (§8e) y
+  `readiness_daily_select` (§8f).
+- Conciliación con §2: 78 policies instaladas = 25 de `013b` + 4 de `030`
+  (`coach_proposals`/`training_plans`/`training_plan_weeks` `_write_member` y
+  `whoop_workouts_select_membership`) + 49 legacy. El conteo V2 de §2 da 28 y no
+  29 porque clasifica `athlete_memberships_select_own` como `OTRO`; es la misma
+  población, contada distinto. **No hay ninguna policy instalada que no provenga
+  de una migración del repo.**
+- **Confirmado contra producción viva el 2026-09-06**, no sólo contra el dump,
+  con el §1 de
+  [`supabase/queries/2026-09-06-policy-equivalence-per-command.sql`](../../../supabase/queries/2026-09-06-policy-equivalence-per-command.sql):
+  `esperadas = 29`, `instaladas = 29`, `cmd_distinto = 0`, `forma_rara = 0`,
+  `faltantes = ninguna`, y `readiness_qual =
+  (athlete_id IN ( SELECT auth_athlete_ids() AS auth_athlete_ids))`.
 
 ## 2. Inventario completo de policies
 
@@ -121,7 +140,53 @@ de esta tabla, derivado del CSV.
 | `whoop_workouts` | SELECT | `whoop_workouts_select_membership` | V2 | `(athlete_id IN (auth_athlete_ids()))` |
 
 Para cada policy legacy, la pareja de consultas de equivalencia por
-`(tabla, comando)` sigue **pendiente**; §6 sólo tiene el diagnóstico agrupado.
+`(tabla, comando)` quedó **derivada del dump el 2026-09-06** y sigue pendiente
+de **ejecución**; §6 y §6bis registran el alcance exacto.
+
+### 2bis-pre. Comandos que el corte dejaría sin ninguna policy
+
+Expandiendo cada policy `ALL` a sus cuatro comandos, la matriz
+`(tabla, comando)` sobre las 13 tablas tiene **dos celdas cubiertas sólo por
+legacy**:
+
+| Tabla | Cmd | Policy legacy | Reemplazo v2 |
+|---|---|---|---|
+| `athletes` | INSERT | `athletes_insert` (`auth.uid() = owner_account_id`) | **ninguno** |
+| `athletes` | DELETE | `athletes_delete` (`auth.uid() = owner_account_id`) | **ninguno** |
+
+Confirmado en producción el 2026-09-06: `pg_policies` sobre `athletes` devuelve
+exactamente `INSERT = 1` y `DELETE = 1`, y por el dump se sabe que esas dos son
+las legacy.
+
+**HALLAZGO — bloquea el diseño de `031`.** Ninguna migración crea *policy* de
+membresía para INSERT o DELETE sobre `athletes`: `013b` §8b sólo cubre SELECT y
+UPDATE, y `030` no agrega policies a la tabla. Los dos comandos se usan desde el
+cliente autenticado —`ensureRemoteAthlete` (`src/services/syncService.ts:2296`),
+`ensureRemoteManagedAthleteOnce` (`:2313`) y `pushAthlete` (`:2605`) hacen
+`upsert(…, { onConflict: 'id' })`, y `deleteManagedAthleteRemote` (`:1602`) hace
+`delete().eq('id',…).eq('owner_account_id',…)`—, así que retirar las 49 sin más
+rompería el alta de atletas y el borrado duro del roster. Peor: como
+`ensureRemoteAthlete` es la reparación que corre dentro del drenaje de cola,
+la falla no sería un error puntual sino una cola agotada.
+
+**Matiz que corrige una primera lectura de este hallazgo.** `030` **sí** escribió
+los reemplazos, pero como RPC `security definer` y **sin cablear ninguno**:
+`create_self_athlete(text)` (concedida a `authenticated`),
+`admin_create_managed_athlete(uuid,text,text)` y `admin_delete_athlete(uuid,text)`
+(sólo `service_role`). Lo que falta no es autoridad en la base, son los tres call
+sites del cliente. Y `admin_create_managed_athlete` exige
+`account_role = 'coach'`, que producción no tiene, así que retirar el INSERT
+arrastra la regla «gestionado sólo bajo cuenta coach» que `030` postergó — es
+Entrega 2, no 1b.
+
+La decisión resultante está en
+[`specs/2026-09-06-migration-031-cut-design.md`](../specs/2026-09-06-migration-031-cut-design.md):
+`031` retira **48** policies, conserva y re-declara sólo la de INSERT de
+`athletes` como bootstrap del modelo, y reemplaza la de DELETE por una policy de
+membresía con helper `security definer` propio —conservarla es el único riesgo
+destructivo nuevo que aparece con el primer atleta reclamado—. El corte queda
+además condicionado a que `athlete_id` deje de poder ser null, porque
+`withAthleteId` no es total y tres productores de plan pueden emitirlo vacío.
 
 ## 2bis. Padrón de producción (2026-09-05)
 
@@ -252,10 +317,64 @@ son **idénticos**.
 **Alcance honesto de esta evidencia.** Es el diagnóstico agrupado que el propio
 archivo declara insuficiente para acreditar el corte: prueba que los conjuntos
 coinciden con los datos de HOY (8 atletas, 8 membresías, un solo caso híbrido),
-no que los predicados sean equivalentes en general. Falta, y sigue bloqueando
-031: un par por cada `(tabla, comando)` sobre el dump real de `qual`, y en
-particular `sessions` UPDATE/DELETE modelando `authored_by_role`, que ningún
-bloque de arriba cubre.
+no que los predicados sean equivalentes en general.
+
+### 6bis. Par por `(tabla, comando)` — derivado y EJECUTADO 2026-09-06
+
+El par que faltaba está **generado desde el dump**, no escrito a mano:
+[`supabase/queries/2026-09-06-policy-equivalence-per-command.sql`](../../../supabase/queries/2026-09-06-policy-equivalence-per-command.sql)
+§2 contiene **44 pares = 88 consultas**, una por `(tabla, comando, dirección)`.
+
+Tres decisiones de método, para que el resultado signifique algo:
+
+1. **Los predicados salen del `qual`/`with_check` real**, traducidos uno a uno
+   desde el CSV; el generador falla si aparece una forma que no sabe traducir, así
+   que ninguna policy queda silenciosamente fuera. Las 12 formas distintas del
+   dump están cubiertas.
+2. **Cuantifica sobre `auth.users` en vez de impersonar**: los helpers
+   `auth_*_ids()` quedan inlineados con su cuerpo de `013b` §6. Así una sola
+   corrida cubre las 7 cuentas en vez de 7 sesiones.
+3. **`UPDATE` se parte en `using` y `check`.** Postgres los evalúa por separado y
+   en `sessions` divergen a propósito: el `USING` v2 filtra por
+   `authored_by_role` y el `WITH CHECK` no. Colapsarlos habría vuelto a esconder
+   exactamente el caso que §6 declaraba sin cubrir. El par
+   `sessions / UPDATE/using` es el que modela
+   `coalesce(authored_by_role,'self') = 'self'`, y existe también para DELETE.
+
+**Y el resultado ya se puede anticipar por derivación, no por corrida.**
+Clasificando los 44 pares por la forma de sus dos lados, sólo hay **dos**
+condiciones bajo las cuales cualquiera de ellos puede dar distinto de cero:
+
+| Condición de divergencia | Pares afectados | Estado en producción |
+|---|---:|---|
+| Existe un **atleta reclamado** (`linked_account_id <> owner_account_id`), así que el `user_id` estampado en la fila y la cuenta con membresía `self` sobre su atleta son distintas | 40 | **0 reclamados** (§2bis) |
+| Una **membresía desacoplada** de `owner_account_id`/`linked_account_id` | 12 | **0 divergencias** (§3, verificaciones A/B/C) |
+
+(Los conjuntos se solapan: 8 pares dependen de ambas.) Los dos pares de
+`sessions` UPDATE/DELETE con `authored_by_role` caen en la primera fila: para que
+`legacy_only` sea distinto de cero hace falta una sesión con
+`authored_by_role = 'coach'` cuyo atleta sea alcanzable sólo por membresía
+`self` — otra vez, un atleta reclamado. La cuenta híbrida de hoy no sirve:
+alcanza al gestionado por membresía `coach`, así que las dos ramas conceden.
+
+**Resultado de la corrida (producción, 2026-09-06):** `consultas = 88`,
+`no_cero = 0`, `detalle = TODAS EN CERO`. Las 44 direcciones `legacy_only` y las
+44 `membership_only` dan cero, incluidas `sessions / UPDATE/using` y
+`sessions / DELETE`, que son las que modelan `authored_by_role`.
+
+Los tres hechos que sostienen la derivación se re-midieron en la misma sesión:
+`atletas_reclamados = 0`, `reclamado_sin_membresia_self = 0` y
+`membresias_vs_owner_linked_divergentes = 0`. También se recontaron las filas sin
+`athlete_id` en las nueve tablas: **ninguna tabla tiene una sola**, lo que
+revalida §4 después de `033`.
+
+**Consecuencia para la planificación, y es el punto de esta sección:** la corrida
+confirma el cero que ya se derivaba de §2bis y §3, así que deja evidencia
+directa, pero **no cierra el argumento general** y ninguna consulta adicional
+sobre producción lo va a cerrar mientras no exista un atleta reclamado. Es el
+mismo sujeto ausente que deja a R3 (§7) sin aislar y a la ventana de auditoría
+(§8) sin capacidad de discriminar. Los tres se desbloquean con el mismo hecho
+—el primer atleta reclamado, que produce la Entrega 2— y no con más SQL.
 
 ## 7. Restricciones intencionales de INSERT/DELETE
 
@@ -304,25 +423,38 @@ atleta.
 
 ## 9. Decisión de salida
 
-- [ ] Las 25 policies de 013b esperadas están instaladas y `readiness_daily_select` tiene el predicado v2. — falta el `LEFT JOIN` nominal; sólo hay clasificación agregada (§1, §2).
+- [x] Las 25 policies de 013b esperadas están instaladas y `readiness_daily_select` tiene el predicado v2. — cerrado el 2026-09-06: 25/25 nombre por nombre, con `cmd`/`qual`/`with_check`/`permissive`/`roles` idénticos al texto de `013b`; las 4 policies v2 restantes provienen de `030` (§1).
 - [x] `whoop_workouts_select_membership` de 030 está instalada sin retirar la legacy. — verificado por efecto (§5).
 - [x] Se inventariaron todas las policies efectivas de producción. — dump completo con `qual`/`with_check` archivado en `evidence/2026-09-05-pg-policies-produccion.csv` (78 filas; 49 legacy, 28 V2, 1 otro).
 - [x] El backfill dejó cero pares legacy sin membership. — 0 inserciones, A/B/C en cero (§3).
 - [x] No quedan filas sin `athlete_id` en las nueve tablas medidas. — cerrado el 2026-09-05: migración `033` aplicada (0 restantes, guard fail-closed sin excepción) y corregido el productor en `asyncGenerationLoop.ts`, que era quien las creaba (§4).
 - [ ] `whoop_workouts` tiene policy membership y equivalencia SELECT documentada. — policy sí; equivalencia bidireccional pendiente.
-- [ ] Cada tabla/comando tiene ambas direcciones comparadas. — nueve direcciones agrupadas en cero; falta el par por `(tabla, comando)` y `sessions` UPDATE/DELETE con `authored_by_role` (§6).
+- [x] Cada tabla/comando tiene ambas direcciones comparadas. — ejecutadas en producción el 2026-09-06: **88 consultas, 0 distintas de cero**, incluidas `sessions` UPDATE/DELETE con `authored_by_role` (§6bis). Acredita el cero con los datos de hoy; la equivalencia general sigue dependiendo de que exista un atleta reclamado.
 - [x] Toda diferencia observada coincide con un caso enumerado y firmado. — no se observó ninguna diferencia.
 - [ ] Todo caso enumerado aparece en la evidencia o se justificó como no aplicable. — R1, R2 y R4 verificados en transacciones revertidas; **R3 pendiente**: el borrado se rechazó por el guard anterior (actor sin membresía coach), no por el que R3 nombra, y aislarlo exige un atleta reclamado, que producción no tiene (§7).
 - [ ] La ventana audit cubrió las capacidades objetivo. — leída: 2 requests, cero divergencias, cero `unreadable`. Cobertura **insuficiente** y con el límite de §8: una sola cuenta athlete sin membresías.
 - [x] No se habilitó `COACH_AUTHZ_MODE=enforce`.
 
-Conclusión: **NO APROBADO todavía para 031.** Siete casillas cerradas. El
-bloqueante de datos (`training_plan_weeks`) quedó resuelto en origen y en la
-fila; lo que queda es trabajo de evidencia —el par por `(tabla, comando)`, el
-`LEFT JOIN` nominal de §1 y la ventana de auditoría con tráfico real— más R3,
-que necesita un atleta reclamado.
+Conclusión: **NO APROBADO todavía para 031.** Nueve casillas cerradas.
 
-Fuera del criterio de 031 pero bloqueante de producto: **Plan Builder está
-caído en producción** (enqueue 500 reproducible). No afecta a `031` porque no
-toca policies ni `athlete_id`, pero sí impide cerrar el check 3 del rollout 1a
-y es prioritario sobre 1b.
+El trabajo de evidencia que podía hacerse sin producción y sin API está hecho:
+el `LEFT JOIN` nominal de §1 cerró 25/25 y el par por `(tabla, comando)` de
+§6bis está derivado del dump, listo para pegar. Lo que queda ya no es
+consulta:
+
+1. ✅ **Las 88 consultas de §6bis se ejecutaron** el 2026-09-06: todas en cero.
+2. **Resolver el hallazgo de §2bis-pre**: `athletes` INSERT y DELETE no tienen
+   reemplazo v2, así que `031` no puede ser «retirar las 49 legacy». Es una
+   decisión de diseño de 1b, previa a escribir la migración.
+3. **Conseguir el sujeto que falta.** Un atleta reclamado es lo único que puede
+   volver informativos, a la vez, la equivalencia general de §6bis, el guard R3
+   de §7 y la ventana de auditoría de §8. Lo produce la Entrega 2, no 1b: sin él
+   `enforce` cortaría con una regla que nunca se ejerció contra su caso.
+
+Actualización del 2026-09-06: **Plan Builder volvió a funcionar** sobre
+`411aac3` tras el deploy del arreglo de logging y un reset de caché del
+navegador (2 semanas, `succeeded`, US$0,053). La corrida real dejó **0 semanas
+sin `athlete_id`** y la tabla completa sigue en **0**, lo que verifica en
+producción no sólo la migración `033` sino el arreglo del productor que las
+generaba. La causa del fallo original quedó **sin nombre**: el reset reconstruyó
+el borrador y destruyó la evidencia. Ver el Paso 7 del runbook de rollout.

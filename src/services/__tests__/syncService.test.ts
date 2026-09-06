@@ -614,6 +614,16 @@ describe('syncService', () => {
     })
   })
 
+  // Una cuenta ya bootstrapeada siempre tiene atleta self. Sin él, toda
+  // escritura sobre una tabla scoped se rechaza a propósito: una fila sin
+  // `athlete_id` es inalcanzable en cuanto la membresía sea la única autoridad
+  // de RLS (ver athleteScopeWriteGuard.test.ts). Los tests que quieren
+  // ejercitar el estado sin scope lo ponen en null explícitamente.
+  beforeEach(async () => {
+    const { setSelfAthleteId } = await import('../athlete/activeAthlete')
+    setSelfAthleteId('ath_user-1')
+  })
+
   afterEach(() => {
     vi.unstubAllEnvs()
     vi.resetModules()
@@ -1175,8 +1185,9 @@ describe('syncService', () => {
 
       await expect(draining).resolves.toBe(false)
       expect(queue.loadQueue()).toEqual([newVersion])
-      expect(upsertCalls).toHaveLength(1)
-      expect(upsertCalls[0]?.payload).toMatchObject({ id: 'session-a' })
+      const sessionUpserts = upsertCalls.filter((call) => call.table === 'sessions')
+      expect(sessionUpserts).toHaveLength(1)
+      expect(sessionUpserts[0]?.payload).toMatchObject({ id: 'session-a' })
     })
 
     it('un éxito seguido de retry usa madeProgress del snapshot', async () => {
@@ -3065,10 +3076,19 @@ describe('syncService', () => {
       updatedAt: 20,
     })
 
-    expect(upsertCalls.filter((call) => call.table === 'sessions')).toHaveLength(1)
+    const sessionUpserts = upsertCalls.filter((call) => call.table === 'sessions')
+    expect(sessionUpserts).toHaveLength(1)
     expect(JSON.parse(localStorage.getItem('entrenador_sync_queue_v1') ?? '[]')).toEqual([])
-    expect((upsertCalls[0]?.payload as Record<string, unknown>).updated_at).toBe(20)
+    // `upsertCalls[0]` ya no sirve: `ensureRemoteAthlete` escribe `athletes` antes.
+    expect((sessionUpserts[0]?.payload as Record<string, unknown>).updated_at).toBe(20)
   })
+
+  // `ensureRemoteAthlete` corre antes del upsert scoped, así que un solo
+  // microtask ya no alcanza para observar la primera escritura en vuelo.
+  const flushAsync = async (): Promise<void> => {
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
 
   it('serializes concurrent direct writes for the same entity', async () => {
     const auth = await import('../auth')
@@ -3081,7 +3101,9 @@ describe('syncService', () => {
       return {
         upsert: vi.fn((payload: unknown) => {
           upsertCalls.push({ table, payload })
-          if (upsertCalls.length === 1) {
+          // Sólo la primera escritura de `sessions` queda en vuelo:
+          // `ensureRemoteAthlete` escribe `athletes` antes y también cuenta.
+          if (upsertCalls.filter((call) => call.table === 'sessions').length === 1) {
             return new Promise<SupabaseResult>((resolve) => {
               releaseFirst = () => resolve({ data: null, error: null })
             })
@@ -3105,7 +3127,7 @@ describe('syncService', () => {
       updatedAt: 10,
     })
 
-    await Promise.resolve()
+    await flushAsync()
 
     const secondWrite = syncService.pushSession({
       id: 'session-1',
@@ -3120,7 +3142,7 @@ describe('syncService', () => {
       updatedAt: 20,
     })
 
-    await Promise.resolve()
+    await flushAsync()
 
     expect(upsertCalls.filter((call) => call.table === 'sessions')).toHaveLength(1)
 
