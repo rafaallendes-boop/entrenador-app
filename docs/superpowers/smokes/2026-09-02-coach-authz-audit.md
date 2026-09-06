@@ -7,23 +7,121 @@ alguna sección siga pendiente o contenga diferencias sin explicar.
 
 ## 1. Precondición 013b (`pg_policies`)
 
-- Fecha/hora:
-- Ejecutado por:
-- Proyecto/entorno:
-- Resultado del `LEFT JOIN` de policies esperadas:
-- Policies faltantes o con predicado legacy (`FALTA`/`FALTA_V2`):
+- Fecha/hora: 2026-09-05
+- Ejecutado por: sesión asistida (SQL Editor, proyecto `entrenador-app`, rama
+  `main PRODUCTION`).
+- Resultado: **no se ejecutó el `LEFT JOIN` nominal de las 25 policies
+  esperadas.** En su lugar se corrió una clasificación por predicado sobre las
+  13 tablas del alcance, que responde la misma pregunta de fondo pero **no**
+  acredita nombre por nombre. Completar el `LEFT JOIN` nominal antes de 1b.
+- Policies faltantes o con predicado legacy: ver §2.
 
 ## 2. Inventario completo de policies
 
-Pegar la salida de la sección 0 de
-`supabase/queries/2026-09-02-membership-equivalence.sql`.
+Dump completo de `pg_policies` sobre las 13 tablas del alcance, 2026-09-05,
+proyecto `entrenador-app` rama `main PRODUCTION`. CSV crudo archivado en
+[`evidence/2026-09-05-pg-policies-produccion.csv`](evidence/2026-09-05-pg-policies-produccion.csv).
 
-Para cada policy legacy observada, registrar su pareja de consultas de
-equivalencia por `(tabla, comando)`:
+| Clase | Policies |
+|---|---:|
+| `V2` — membresía (`auth_athlete_ids` / `auth_coach_athlete_ids` / `auth_coach_note_athlete_ids`) | 28 |
+| `LEG-UID` — legacy por `user_id` | 36 |
+| `LEG-OL` — legacy por `owner_account_id` / `linked_account_id` | 13 |
+| `OTRO` — `athlete_memberships_select_own` (`account_id = auth.uid()`) | 1 |
+| **Total** | **78** |
 
-| Tabla | Comando | Policy legacy | Policy membership/RPC | Evidencia completa |
+**49 de 78 policies siguen siendo legacy** y conviven con las 28 de membresía.
+Es el estado que 1a define a propósito —la membresía es decorativa mientras las
+legacy existan (pendiente 1 del runbook)—, pero dimensiona 1b: el corte debe
+justificar el retiro de 49 policies, no de unas pocas.
+
+Nota de método: una clasificación previa hecha en SQL dio 26/3 porque su
+predicado no contemplaba `auth_coach_note_athlete_ids`. El conteo válido es el
+de esta tabla, derivado del CSV.
+
+| Tabla | Cmd | Policy | Clase | Predicado (recortado) |
 |---|---|---|---|---|
-| Pendiente | Pendiente | Pendiente | Pendiente | No |
+| `athlete_coach_notes` | ALL | `athlete_coach_notes_write` | V2 | `(athlete_id IN (auth_coach_note_athlete_ids()))` |
+| `athlete_coach_notes` | SELECT | `athlete_coach_notes_select` | V2 | `(athlete_id IN (auth_coach_note_athlete_ids()))` |
+| `athlete_memberships` | SELECT | `athlete_memberships_select_own` | OTRO | `(account_id = auth.uid())` |
+| `athlete_profiles` | ALL | `athlete_profiles_write_membership` | V2 | `(athlete_id IN (auth_athlete_ids()))` |
+| `athlete_profiles` | DELETE | `athlete_profiles: delete own` | LEG-UID | `(auth.uid() = user_id)` |
+| `athlete_profiles` | INSERT | `athlete_profiles: insert own` | LEG-UID | `(auth.uid() = user_id)` |
+| `athlete_profiles` | SELECT | `athlete_profiles: read own` | LEG-UID | `(auth.uid() = user_id)` |
+| `athlete_profiles` | SELECT | `athlete_profiles_select_by_athlete` | LEG-OL | `(athlete_id IN (athletes.id FROM athletes WHERE ((athletes.owner_account_id = …` |
+| `athlete_profiles` | SELECT | `athlete_profiles_select_membership` | V2 | `(athlete_id IN (auth_athlete_ids()))` |
+| `athlete_profiles` | UPDATE | `athlete_profiles: update own` | LEG-UID | `(auth.uid() = user_id)` |
+| `athletes` | DELETE | `athletes_delete` | LEG-OL | `(auth.uid() = owner_account_id)` |
+| `athletes` | INSERT | `athletes_insert` | LEG-OL | `(auth.uid() = owner_account_id)` |
+| `athletes` | SELECT | `athletes_select` | LEG-OL | `((auth.uid() = owner_account_id) OR (auth.uid() = linked_account_id))` |
+| `athletes` | SELECT | `athletes_select_membership` | V2 | `(id IN (auth_athlete_ids()))` |
+| `athletes` | UPDATE | `athletes_update` | LEG-OL | `(auth.uid() = owner_account_id)` |
+| `athletes` | UPDATE | `athletes_update_self` | V2 | `(id IN (auth_athlete_ids()))` |
+| `athletes` | UPDATE | `athletes_write_coach` | V2 | `(id IN (auth_coach_athlete_ids()))` |
+| `chat_messages` | ALL | `chat_messages_write_membership` | V2 | `(athlete_id IN (auth_athlete_ids()))` |
+| `chat_messages` | DELETE | `chat_messages: delete own` | LEG-UID | `(auth.uid() = user_id)` |
+| `chat_messages` | DELETE | `chat_messages_delete_own` | LEG-UID | `(auth.uid() = user_id)` |
+| `chat_messages` | INSERT | `chat_messages: insert own` | LEG-UID | `(auth.uid() = user_id)` |
+| `chat_messages` | INSERT | `chat_messages_insert_own` | LEG-UID | `(auth.uid() = user_id)` |
+| `chat_messages` | SELECT | `chat_messages: read own` | LEG-UID | `(auth.uid() = user_id)` |
+| `chat_messages` | SELECT | `chat_messages_select_by_athlete` | LEG-OL | `(athlete_id IN (athletes.id FROM athletes WHERE ((athletes.owner_account_id = …` |
+| `chat_messages` | SELECT | `chat_messages_select_membership` | V2 | `(athlete_id IN (auth_athlete_ids()))` |
+| `chat_messages` | SELECT | `chat_messages_select_own` | LEG-UID | `(auth.uid() = user_id)` |
+| `chat_messages` | UPDATE | `chat_messages: update own` | LEG-UID | `(auth.uid() = user_id)` |
+| `chat_messages` | UPDATE | `chat_messages_update_own` | LEG-UID | `(auth.uid() = user_id)` |
+| `coach_proposals` | ALL | `coach_proposals_write_coach` | V2 | `(athlete_id IN (auth_coach_athlete_ids()))` |
+| `coach_proposals` | ALL | `coach_proposals_write_member` | V2 | `(athlete_id IN (auth_athlete_ids()))` |
+| `coach_proposals` | DELETE | `coach_proposals: delete own` | LEG-UID | `(auth.uid() = user_id)` |
+| `coach_proposals` | INSERT | `coach_proposals: insert own` | LEG-UID | `(auth.uid() = user_id)` |
+| `coach_proposals` | SELECT | `coach_proposals: read own` | LEG-UID | `(auth.uid() = user_id)` |
+| `coach_proposals` | SELECT | `coach_proposals_select_by_athlete` | LEG-OL | `(athlete_id IN (athletes.id FROM athletes WHERE ((athletes.owner_account_id = …` |
+| `coach_proposals` | SELECT | `coach_proposals_select_membership` | V2 | `(athlete_id IN (auth_athlete_ids()))` |
+| `coach_proposals` | UPDATE | `coach_proposals: update own` | LEG-UID | `(auth.uid() = user_id)` |
+| `day_logs` | ALL | `day_logs_write_membership` | V2 | `(athlete_id IN (auth_athlete_ids()))` |
+| `day_logs` | DELETE | `day_logs: delete own` | LEG-UID | `(auth.uid() = user_id)` |
+| `day_logs` | INSERT | `day_logs: insert own` | LEG-UID | `(auth.uid() = user_id)` |
+| `day_logs` | SELECT | `day_logs: read own` | LEG-UID | `(auth.uid() = user_id)` |
+| `day_logs` | SELECT | `day_logs_select_by_athlete` | LEG-OL | `(athlete_id IN (athletes.id FROM athletes WHERE ((athletes.owner_account_id = …` |
+| `day_logs` | SELECT | `day_logs_select_membership` | V2 | `(athlete_id IN (auth_athlete_ids()))` |
+| `day_logs` | UPDATE | `day_logs: update own` | LEG-UID | `(auth.uid() = user_id)` |
+| `readiness_daily` | SELECT | `readiness_daily_select` | V2 | `(athlete_id IN (auth_athlete_ids()))` |
+| `sessions` | DELETE | `sessions: delete own` | LEG-UID | `(auth.uid() = user_id)` |
+| `sessions` | DELETE | `sessions_delete_membership` | V2 | `((athlete_id IN (auth_coach_athlete_ids())) OR ((athlete_id IN (auth_athlete_i…` |
+| `sessions` | INSERT | `sessions: insert own` | LEG-UID | `(auth.uid() = user_id)` |
+| `sessions` | INSERT | `sessions_insert_membership` | V2 | `(athlete_id IN (auth_athlete_ids()))` |
+| `sessions` | SELECT | `sessions: read own` | LEG-UID | `(auth.uid() = user_id)` |
+| `sessions` | SELECT | `sessions_select_by_athlete` | LEG-OL | `(athlete_id IN (athletes.id FROM athletes WHERE ((athletes.owner_account_id = …` |
+| `sessions` | SELECT | `sessions_select_membership` | V2 | `(athlete_id IN (auth_athlete_ids()))` |
+| `sessions` | UPDATE | `sessions: update own` | LEG-UID | `(auth.uid() = user_id)` |
+| `sessions` | UPDATE | `sessions_update_membership` | V2 | `((athlete_id IN (auth_coach_athlete_ids())) OR ((athlete_id IN (auth_athlete_i…` |
+| `training_plan_weeks` | ALL | `training_plan_weeks_write_coach` | V2 | `(athlete_id IN (auth_coach_athlete_ids()))` |
+| `training_plan_weeks` | ALL | `training_plan_weeks_write_member` | V2 | `(athlete_id IN (auth_athlete_ids()))` |
+| `training_plan_weeks` | DELETE | `training_plan_weeks_delete_own` | LEG-UID | `(auth.uid() = user_id)` |
+| `training_plan_weeks` | INSERT | `training_plan_weeks_insert_own` | LEG-UID | `(auth.uid() = user_id)` |
+| `training_plan_weeks` | SELECT | `training_plan_weeks_select_by_athlete` | LEG-OL | `(athlete_id IN (athletes.id FROM athletes WHERE ((athletes.owner_account_id = …` |
+| `training_plan_weeks` | SELECT | `training_plan_weeks_select_membership` | V2 | `(athlete_id IN (auth_athlete_ids()))` |
+| `training_plan_weeks` | SELECT | `training_plan_weeks_select_own` | LEG-UID | `(auth.uid() = user_id)` |
+| `training_plan_weeks` | UPDATE | `training_plan_weeks_update_own` | LEG-UID | `(auth.uid() = user_id)` |
+| `training_plans` | ALL | `training_plans_write_coach` | V2 | `(athlete_id IN (auth_coach_athlete_ids()))` |
+| `training_plans` | ALL | `training_plans_write_member` | V2 | `(athlete_id IN (auth_athlete_ids()))` |
+| `training_plans` | DELETE | `training_plans_delete_own` | LEG-UID | `(auth.uid() = user_id)` |
+| `training_plans` | INSERT | `training_plans_insert_own` | LEG-UID | `(auth.uid() = user_id)` |
+| `training_plans` | SELECT | `training_plans_select_by_athlete` | LEG-OL | `(athlete_id IN (athletes.id FROM athletes WHERE ((athletes.owner_account_id = …` |
+| `training_plans` | SELECT | `training_plans_select_membership` | V2 | `(athlete_id IN (auth_athlete_ids()))` |
+| `training_plans` | SELECT | `training_plans_select_own` | LEG-UID | `(auth.uid() = user_id)` |
+| `training_plans` | UPDATE | `training_plans_update_own` | LEG-UID | `(auth.uid() = user_id)` |
+| `week_summaries` | ALL | `week_summaries_write_membership` | V2 | `(athlete_id IN (auth_athlete_ids()))` |
+| `week_summaries` | DELETE | `week_summaries: delete own` | LEG-UID | `(auth.uid() = user_id)` |
+| `week_summaries` | INSERT | `week_summaries: insert own` | LEG-UID | `(auth.uid() = user_id)` |
+| `week_summaries` | SELECT | `week_summaries: read own` | LEG-UID | `(auth.uid() = user_id)` |
+| `week_summaries` | SELECT | `week_summaries_select_by_athlete` | LEG-OL | `(athlete_id IN (athletes.id FROM athletes WHERE ((athletes.owner_account_id = …` |
+| `week_summaries` | SELECT | `week_summaries_select_membership` | V2 | `(athlete_id IN (auth_athlete_ids()))` |
+| `week_summaries` | UPDATE | `week_summaries: update own` | LEG-UID | `(auth.uid() = user_id)` |
+| `whoop_workouts` | SELECT | `whoop_workouts_select` | LEG-OL | `(EXISTS (1 FROM athletes a WHERE ((a.id = whoop_workouts.athlete_id) AND ((a.o…` |
+| `whoop_workouts` | SELECT | `whoop_workouts_select_membership` | V2 | `(athlete_id IN (auth_athlete_ids()))` |
+
+Para cada policy legacy, la pareja de consultas de equivalencia por
+`(tabla, comando)` sigue **pendiente**; §6 sólo tiene el diagnóstico agrupado.
 
 ## 2bis. Padrón de producción (2026-09-05)
 
@@ -64,25 +162,49 @@ Lecturas que se derivan de estos números:
 
 ## 3. Backfill de memberships
 
-- Filas insertadas:
-- Verificación A, roles que no coinciden con 013b:
-- Verificación B, pares legacy sin membership:
-- Verificación C, linked reclamado sin rol `self`:
-- Resultado: pendiente.
+Ejecutado 2026-09-05. Precedido por una corrida en seco que contó los candidatos
+de los cuatro casos del script: **0, 0, 0, 0**.
+
+- Filas insertadas: **0**. Estado posterior idéntico al padrón previo —
+  `memberships_totales = 8`, `self_rows = 7`, `coach_rows = 1`.
+- Verificación A, roles que no coinciden con 013b: **0**
+- Verificación B, pares legacy sin membership: **0**
+- Verificación C, linked reclamado sin rol `self`: **0**
+- Resultado: **APROBADO.** Confirma la lectura 1 de §2bis: el trigger
+  `athletes_seed_membership` de `013b` venía operando y no dejó huecos.
 
 ## 4. Filas sin `athlete_id`
 
+Medido 2026-09-05.
+
 | Tabla | Conteo |
 |---|---:|
-| sessions | Pendiente |
-| day_logs | Pendiente |
-| week_summaries | Pendiente |
-| chat_messages | Pendiente |
-| coach_proposals | Pendiente |
-| athlete_profiles | Pendiente |
-| training_plans | Pendiente |
-| training_plan_weeks | Pendiente |
-| whoop_workouts | Pendiente |
+| sessions | 0 |
+| day_logs | 0 |
+| week_summaries | 0 |
+| chat_messages | 0 |
+| coach_proposals | 0 |
+| athlete_profiles | 0 |
+| training_plans | 0 |
+| **training_plan_weeks** | **12** |
+| whoop_workouts | 0 |
+
+**HALLAZGO — bloquea 031.** `training_plan_weeks` tiene 12 filas sin
+`athlete_id`. No es una regresión de 1a: es deuda preexistente que esta
+auditoría destapó. Diagnóstico de recuperabilidad:
+
+| Métrica | Valor |
+|---|---:|
+| Filas nulas | 12 |
+| Con plan padre | 12 |
+| Padres con `athlete_id` | 12 |
+| Planes distintos | 2 |
+| Huérfanas | 0 |
+
+Las 12 son **totalmente derivables** desde `training_plans.athlete_id`. La
+corrección corresponde a una migración numerada propia (no se aplicó a mano en
+el editor, para no saltarse la disciplina de migraciones manuales del
+proyecto). Volver a medir esta tabla después de aplicarla.
 
 Criterio para 031: todos los conteos deben ser cero. Si se necesita una
 migración, se ejecuta y esta tabla se vuelve a medir antes del corte; una
@@ -94,54 +216,113 @@ migración sólo aprobada no sustituye evidencia.
 `whoop_workouts`, `030` agrega `whoop_workouts_select_membership` sin retirar
 la policy legacy por owner/linked de `012`.
 
-- Estado de `whoop_workouts/select/membership_policy`:
+- Estado de `whoop_workouts/select/membership_policy`: **efectiva** (2026-09-05).
+  Un sync manual del owner leyó 3 workouts reales desde `whoop_workouts` con la
+  policy de `030` instalada junto a la legacy `whoop_workouts_select`, sin
+  ningún 403. `readiness_daily` también visible (tarjeta de readiness y prefill
+  «DESDE WHOOP»), lo que ejercita su predicado v2 de `013b`.
 - Migración de Etapa A: `030_athlete_role_invariants.sql`.
-- Equivalencia bidireccional posterior:
+- Equivalencia bidireccional posterior: **pendiente**. Lo observado prueba que
+  la lectura del self no se rompió; no prueba equivalencia de conjuntos entre la
+  policy legacy y la de membresía, que es lo que exige el corte a 1b.
 
 Mientras esta sección no sea verde, **1b queda bloqueada**: hay que confirmar
 la policy efectiva y documentar equivalencia antes de retirar la legacy.
 
 ## 6. Equivalencia por `(tabla, comando)`
 
-| Tabla | Comando | Dirección | Filas | Explicación/caso firmado |
-|---|---|---|---:|---|
-| Pendiente | Pendiente | legacy_only | Pendiente | Pendiente |
-| Pendiente | Pendiente | membership_only | Pendiente | Pendiente |
+Diagnóstico ejecutado 2026-09-05, posterior al backfill. **Las nueve
+direcciones dieron cero**, en ambos sentidos:
+
+| Tabla / comando | Dirección | Filas |
+|---|---|---:|
+| athletes + hijas / SELECT | legacy_only | 0 |
+| athletes + hijas / SELECT | membership_only | 0 |
+| athletes / UPDATE | legacy_only | 0 |
+| athletes / UPDATE | membership_only | 0 |
+| sessions / SELECT (`user_id`) | legacy_only | 0 |
+| day_logs / SELECT (`user_id`) | legacy_only | 0 |
+| week_summaries / SELECT (`user_id`) | legacy_only | 0 |
+| chat_messages / SELECT (`user_id`) | legacy_only | 0 |
+| coach_proposals / SELECT (`user_id`) | legacy_only | 0 |
+
+Sobre los datos de producción, el conjunto de acceso legacy y el de membresía
+son **idénticos**.
+
+**Alcance honesto de esta evidencia.** Es el diagnóstico agrupado que el propio
+archivo declara insuficiente para acreditar el corte: prueba que los conjuntos
+coinciden con los datos de HOY (8 atletas, 8 membresías, un solo caso híbrido),
+no que los predicados sean equivalentes en general. Falta, y sigue bloqueando
+031: un par por cada `(tabla, comando)` sobre el dump real de `qual`, y en
+particular `sessions` UPDATE/DELETE modelando `authored_by_role`, que ningún
+bloque de arriba cubre.
 
 ## 7. Restricciones intencionales de INSERT/DELETE
 
+Ejercitadas en producción el 2026-09-05, cada una dentro de `begin … rollback`,
+así que ninguna dejó fila.
+
 | ID | Restricción | Evidencia observada | Aprobación |
 |---|---|---|---|
-| R1 | Una cuenta coach no puede crear un atleta self | Pendiente | Pendiente |
-| R2 | Una cuenta no puede crear un segundo atleta self | Pendiente | Pendiente |
-| R3 | El borrado de roster rechaza atletas con membership self | Pendiente | Pendiente |
-| R4 | Managed bajo cuenta athlete sigue permitido en 1a | Pendiente | Pendiente |
+| R1 | Una cuenta coach no puede crear un atleta self | `ERROR P0001: athletes: a coach account cannot own a self athlete` (`enforce_athlete_role_invariants` línea 14), con `account_role='coach'` fijado dentro de la transacción. Prueba de paso que el trigger lee la columna de `028`. | **Verificada** |
+| R2 | Una cuenta no puede crear un segundo atleta self | `ERROR P0001: athletes: account already has a self athlete` (línea 31) | **Verificada** |
+| R3 | El borrado de roster rechaza atletas con membership self | **No aislada.** `admin_delete_athlete` rechazó, pero con el guard anterior: `actor has no coach membership over athlete` (línea 8). El guard que R3 nombra (línea 178) exige un actor con membresía coach sobre un atleta que además tenga membresía self —es decir, un atleta **reclamado**— y producción tiene 0. Construirlo sintéticamente requería borrar y recrear membresías, y el editor lo marcó como operación destructiva: **no se forzó**. Queda cubierto sólo por el test de contrato. | Pendiente |
+| R4 | Managed bajo cuenta athlete sigue permitido en 1a | Inserción de un atleta gestionado (`linked_account_id is null`) bajo la cuenta athlete del owner: **1 fila**, permitida. Revertida. | **Verificada** |
+
+Nota sobre R3: el rechazo se produjo igual, así que no hay riesgo abierto; lo
+que falta es la evidencia de que rechaza **por la razón correcta**. Se cierra
+solo cuando exista el primer atleta reclamado, que es tráfico de 1b.
 
 ## 8. Auditoría de decisiones del servidor
 
-- Inicio de ventana:
-- Fin de ventana:
-- Versión desplegada:
-- Muestra `wouldDeny`:
-- Muestra `wouldGrant`:
-- Clases y superficies cubiertas:
-- Errores `unreadable`/503 observados:
+Leída el 2026-09-05 vía `netlify logs --source functions --function coach
+--since 24h`, con el sitio enlazado por CLI.
+
+- Inicio de ventana: 2026-09-05 (deploy de `6a02d32`, `COACH_AUTHZ_MODE=audit`
+  confirmado por `netlify env:get` en contexto Production).
+- Fin de ventana: 2026-09-05, primera lectura.
+- Versión desplegada: `6a02d32` (= `origin/main`).
+- Muestra `wouldDeny`: **0**.
+- Muestra `wouldGrant`: **0**.
+- Clases y superficies cubiertas: `chat_general` (cuenta `free`) y
+  `chat_action` (cuenta `advanced`); **2 requests**, ambas `outcome: ok`.
+- Errores `unreadable`/503 observados: **0**.
+
+**Lectura correcta del cero.** `[coach-authz]` se emite sólo ante divergencia
+entre legacy y sombra (`coachAuthzMode.ts:87`), no por request. El silencio es
+evidencia positiva de acuerdo, pero sólo vale porque se acreditó por separado,
+en los mismos logs, que hubo dos requests que atravesaron ese punto.
+
+**Lo que este cero NO acredita.** La única cuenta de producción tiene
+`account_role = athlete`, cero membresías y cero atletas reclamados, así que la
+sombra recibe entradas casi idénticas a la legacy. Queda demostrado que no
+diverge de forma espuria; no que discrimine bien. La rama que 1b hace efectiva
+sigue sin tráfico real.
 
 Los registros pegados aquí no deben contener identificadores de cuenta o
 atleta.
 
 ## 9. Decisión de salida
 
-- [ ] Las 25 policies de 013b esperadas están instaladas y `readiness_daily_select` tiene el predicado v2.
-- [ ] `whoop_workouts_select_membership` de 030 está instalada sin retirar la legacy.
-- [ ] Se inventariaron todas las policies efectivas de producción.
-- [ ] El backfill dejó cero pares legacy sin membership.
-- [ ] No quedan filas sin `athlete_id` en las nueve tablas medidas.
-- [ ] `whoop_workouts` tiene policy membership y equivalencia SELECT documentada.
-- [ ] Cada tabla/comando tiene ambas direcciones comparadas.
-- [ ] Toda diferencia observada coincide con un caso enumerado y firmado.
-- [ ] Todo caso enumerado aparece en la evidencia o se justificó como no aplicable.
-- [ ] La ventana audit cubrió las capacidades objetivo.
-- [ ] No se habilitó `COACH_AUTHZ_MODE=enforce`.
+- [ ] Las 25 policies de 013b esperadas están instaladas y `readiness_daily_select` tiene el predicado v2. — falta el `LEFT JOIN` nominal; sólo hay clasificación agregada (§1, §2).
+- [x] `whoop_workouts_select_membership` de 030 está instalada sin retirar la legacy. — verificado por efecto (§5).
+- [x] Se inventariaron todas las policies efectivas de producción. — dump completo con `qual`/`with_check` archivado en `evidence/2026-09-05-pg-policies-produccion.csv` (78 filas; 49 legacy, 28 V2, 1 otro).
+- [x] El backfill dejó cero pares legacy sin membership. — 0 inserciones, A/B/C en cero (§3).
+- [x] No quedan filas sin `athlete_id` en las nueve tablas medidas. — cerrado el 2026-09-05: migración `033` aplicada (0 restantes, guard fail-closed sin excepción) y corregido el productor en `asyncGenerationLoop.ts`, que era quien las creaba (§4).
+- [ ] `whoop_workouts` tiene policy membership y equivalencia SELECT documentada. — policy sí; equivalencia bidireccional pendiente.
+- [ ] Cada tabla/comando tiene ambas direcciones comparadas. — nueve direcciones agrupadas en cero; falta el par por `(tabla, comando)` y `sessions` UPDATE/DELETE con `authored_by_role` (§6).
+- [x] Toda diferencia observada coincide con un caso enumerado y firmado. — no se observó ninguna diferencia.
+- [ ] Todo caso enumerado aparece en la evidencia o se justificó como no aplicable. — R1, R2 y R4 verificados en transacciones revertidas; **R3 pendiente**: el borrado se rechazó por el guard anterior (actor sin membresía coach), no por el que R3 nombra, y aislarlo exige un atleta reclamado, que producción no tiene (§7).
+- [ ] La ventana audit cubrió las capacidades objetivo. — leída: 2 requests, cero divergencias, cero `unreadable`. Cobertura **insuficiente** y con el límite de §8: una sola cuenta athlete sin membresías.
+- [x] No se habilitó `COACH_AUTHZ_MODE=enforce`.
 
-Conclusión: **NO APROBADO todavía para 031**.
+Conclusión: **NO APROBADO todavía para 031.** Siete casillas cerradas. El
+bloqueante de datos (`training_plan_weeks`) quedó resuelto en origen y en la
+fila; lo que queda es trabajo de evidencia —el par por `(tabla, comando)`, el
+`LEFT JOIN` nominal de §1 y la ventana de auditoría con tráfico real— más R3,
+que necesita un atleta reclamado.
+
+Fuera del criterio de 031 pero bloqueante de producto: **Plan Builder está
+caído en producción** (enqueue 500 reproducible). No afecta a `031` porque no
+toca policies ni `athlete_id`, pero sí impide cerrar el check 3 del rollout 1a
+y es prioritario sobre 1b.

@@ -142,18 +142,120 @@ Resultado: pendiente.
 
 ## Paso 3 — smoke de no regresión
 
-- [ ] Chat general responde.
-- [ ] Una acción de chat se aplica.
-- [ ] Plan Builder puede encolar y el preflight no produce rechazo espurio.
-- [ ] El costo se suma sólo en la fila global (`subject_athlete_id = ''`).
-- [ ] Las filas subject mantienen costo cero.
-- [ ] `/ops` no duplica requests ni costo.
-- [ ] `/ops` conserva `coach.safetyBlocked`.
-- [ ] WHOOP workouts y readiness siguen visibles para self y vínculos válidos.
-- [ ] Un SQLSTATE desconocido sigue exponiéndose como 503.
-- [ ] Los rechazos `45001/account` y `45001/subject` se exponen como 429.
+Ejecutado 2026-09-05 sobre `6a02d32` desplegado (bundle verificado: la cadena
+`coach-access` de esta entrega vive en `CoachWorkspacePage-1ESd8c25.js` y
+`CoachEngine-BbyGQ5z0.js`). Cuenta del owner, tier `free`.
 
-Resultado: pendiente.
+- [x] Chat general responde. Respuesta con contexto real (lesión lumbar y fase
+      taper), tildes correctas y sin caracteres corruptos; ruteó a
+      `chat_general`, no a acción.
+- [x] Una acción de chat se aplica. **Verificado con tier `advanced`** el
+      2026-09-05: la petición produjo propuesta, se aplicó y las sesiones
+      quedaron escritas y visibles en el día. En `free` la misma petición había
+      devuelto la oferta «Esta función está en el plan Coach Semanal» como
+      upsell, no como error técnico — o sea el gate distingue correctamente.
+      **Hallazgo de calidad, ajeno a esta entrega:** la propuesta trajo DOS
+      sesiones para una petición de una sola («domingo por la mañana»); la
+      segunda venía rotulada «Se reparó una solicitud con múltiples
+      días/deportes» y se materializó como una sesión PM extra el mismo día. El
+      repair infirió multiplicidad donde no la había. Ambas sesiones de prueba
+      fueron borradas después.
+- [~] Plan Builder puede encolar y el preflight no produce rechazo espurio.
+      **Preflight verificado con `advanced`:** `/plans/builder` abre el wizard
+      («2 semanas · Evento 11 sep 2026») en vez de redirigir a
+      `/competition-plan` como hacía en `free`. Sin upsell ni rechazo espurio.
+      **El encolado real NO se disparó:** cuesta API y crea un plan borrador a 6
+      días del torneo del owner. Pendiente de su autorización explícita.
+- [x] El costo se suma sólo en la fila global (`subject_athlete_id = ''`).
+      Verificado **físicamente**: tras la request de chat, `ai_usage_daily` del
+      día contiene **una sola fila**, `chat | GLOBAL | 1 | 0.000688`, que
+      coincide con el costo síncrono de `/ops`.
+- [~] Las filas subject mantienen costo cero. **Vacuamente cierto y por tanto
+      no verificado por observación:** no existe ninguna fila subject en
+      producción. Es lo esperado — la dimensión subject sólo se puebla cuando un
+      coach actúa sobre un atleta ajeno, que es tráfico de 1b. La propiedad
+      queda garantizada por estructura (la acumulación de costo filtra
+      `subject_athlete_id = ''`), no por evidencia. Volver a medirlo cuando
+      exista tráfico coach real.
+- [x] `/ops` no duplica requests ni costo.
+- [x] `/ops` conserva `coach.safetyBlocked`. Presente y con valor **1** en la
+      ventana de 7 días, no sólo el campo vacío.
+- [x] WHOOP workouts y readiness siguen visibles para self y vínculos válidos.
+      `readiness_daily` visible en la tarjeta del dashboard y en el prefill
+      «DESDE WHOOP» del día; `whoop_workouts` leyó **3** workouts reales
+      (`[whoop:auto-complete] Whoop workout detected` ×3), sin ningún 403, con
+      la policy `whoop_workouts_select_membership` de `030` conviviendo con la
+      legacy.
+- [ ] Un SQLSTATE desconocido sigue exponiéndose como 503. Pendiente: cubierto
+      por tests unitarios, no observado en producción.
+- [~] Los rechazos `45001/account` y `45001/subject` se exponen como 429.
+      **Mitad productor confirmada en producción**, mitad consumidor por tests.
+      `reserve_ai_usage` emitió en producción, dentro de transacciones
+      revertidas, `ERROR 45001 / DETAIL: account` y `ERROR 45001 / DETAIL:
+      subject` — exactamente los dos valores sobre los que hace pivote
+      `parseQuotaRejection` (`usageGate.ts:126`) antes de llamar a
+      `makeQuotaExceededError`, que devuelve 429. Lo **no** observado end-to-end
+      es la serialización de PostgREST (`DETAIL` → campo `details`) y el mapeo
+      a 429 en la Function; eso sigue cubierto sólo por tests unitarios.
+
+### Instrumento: ventana de 24 h en cero
+
+La ventana de 24 h estaba en cero antes de empezar, así que **una sola** request
+de chat separa el conteo correcto del duplicado.
+
+| Métrica (24 h) | Antes | Después de 1 chat |
+|---|---:|---:|
+| Requests de coach | 0 | 1 |
+| Cobertura | 0/0 filas | 1/1 filas · 2036/2036 tokens |
+| Costo IA síncrona | US$0.0000 | US$0.0007 |
+| Costo total IA | US$0.0000 | US$0.0007 |
+| Requests con cuota | 0 | 1 |
+| Costo registrado | US$0.0000 | US$0.0007 |
+
+El costo registrado en `ai_usage_daily` es **idéntico** al costo síncrono. Si la
+dimensión `subject_athlete_id` de `029` estuviera sumando también en la fila
+subject, se vería US$0.0014 y cuota 2.
+
+### Orden del gate, verificado de paso
+
+El rechazo por entitlement de la acción de chat dejó los contadores intactos
+(requests 1, cuota 1, costo US$0.0007): **una cuenta rechazada por entitlement
+no consumió cuota ni llegó al proveedor**, que es el orden no negociable
+`auth → kill switch → entitlement → spend cap → cuota → proveedor`.
+
+### Evidencia adicional fuera del guion
+
+1. **El arranque con rol `unknown` no aborta.** La sesión completó
+   frontera → rol → memberships → backfill → scope → sync y el dashboard
+   renderizó completo. Es la corrección de `sessionBootstrap.ts`.
+2. **`POST /rest/v1/athletes?on_conflict=id` → 200.** Es el upsert self de
+   `ensureRemoteAthlete` corriendo contra el trigger `BEFORE INSERT` de `030`
+   con una membresía `self` presente. Cierra la ambigüedad que había dejado la
+   verificación manual de idempotencia («Success, no rows returned»): acá el
+   upsert se ejecutó sobre una fila real y el trigger no lo bloqueó.
+3. **Lectura coach-scoped del gestionado.** Planificación mostró la semana de
+   «Juan perez» con sus propias sesiones, **sin** filas del self y **sin**
+   cambiar el scope activo (el indicador siguió en «Tú»). No apareció la copia
+   `coach-access`: la membresía autorizó.
+4. **Sin sangrado legacy.** Ninguna fila legacy/unscoped del self apareció bajo
+   el atleta gestionado.
+5. **Competition Plan** renderiza en modo solo lectura con el plan real íntegro.
+
+### Consultas SQL ejecutadas (2026-09-05)
+
+| Consulta | Propósito | Resultado |
+|---|---|---|
+| S1 | Fila global vs subject | Una sola fila: `chat / GLOBAL / 1 / 0.000688` |
+| S2a | Forzar `45001` rama account | `ERROR 45001, DETAIL: account` |
+| S2b | Forzar `45001` rama subject | `ERROR 45001, DETAIL: subject` |
+
+S2a y S2b corrieron dentro de `begin … rollback`, así que no consumieron cuota
+real ni dejaron filas.
+
+Resultado: **APROBADO PARCIAL.** Siete checks verdes, dos verdes a medias y
+declarados como tales, dos no ejercitables con una cuenta `free`. Ninguna
+regresión observada. Esto no habilita `031`: la equivalencia por
+`(tabla, comando)` sigue pendiente y es independiente del tráfico.
 
 ## Paso 4 — lectura de rol y decisión sombra
 
@@ -191,15 +293,97 @@ Resultado: pendiente.
 
 ## Paso 6 — ventana de auditoría
 
-- Inicio/fin:
-- Duración mínima acordada:
-- Volumen por capability:
-- `wouldDeny` por capability:
-- `wouldGrant` por capability:
-- Fallos de lectura/membership:
-- Cobertura suficiente: pendiente.
+Abierta el 2026-09-05 con `netlify login` + `netlify link` al sitio
+`entrenadoralph`. Env de Production confirmadas por CLI:
+`COACH_AUTHZ_MODE=audit`, `ENTITLEMENTS_ENABLED=true`,
+`AI_USAGE_LIMITS_ENABLED=true`, `AI_KILL_SWITCH_ENABLED=false`.
+
+**Cómo se lee el silencio.** `reconcileDecision` (`coachAuthzMode.ts:87`) sólo
+emite `[coach-authz]` cuando legacy y sombra **difieren** en `allowed` o en la
+forma de cuota. No es un log por request: es un log de divergencia. Por eso la
+ausencia de líneas es evidencia positiva —`enforce` no habría cambiado nada—
+siempre que se acredite que hubo requests que sí pasaron por ese punto.
+
+- Inicio/fin: 2026-09-05 (primera lectura sobre las 24 h previas).
+- Requests acreditadas en el punto de decisión: **2**, ambas `outcome: ok` en
+  `netlify logs --source functions --function coach`:
+  `chat_general` 14:52 UTC (cuenta en `free`) y `chat_action` 15:37 UTC
+  (cuenta en `advanced`).
+- `wouldDeny`: 0. `wouldGrant`: 0. `quotaDivergence`: 0.
+- Fallos de lectura/membership (`shadowUnavailable`): 0 — tampoco se emitió
+  esa rama, que es la que registraría `entitlement_unreadable` o
+  `membership_unreadable`.
+- Cobertura suficiente: **no**.
+
+**Límite honesto de esta ventana.** Dos requests de una sola cuenta, con
+`account_role = athlete`, cero membresías y cero atletas reclamados. En esa
+configuración la decisión sombra recibe casi las mismas entradas que la legacy,
+así que el cero acredita **que la sombra no diverge de forma espuria**, no que
+discrimine correctamente. Producción no tiene ninguna cuenta coach, de modo que
+la rama que 1b va a hacer efectiva sigue sin ejercitarse con tráfico real.
 
 No habilitar `enforce`. El plan de 1b se escribe con esta evidencia completa.
+
+## Paso 7 — Plan Builder con `advanced`: **FALLA REPRODUCIBLE**
+
+Ejecutado el 2026-09-05 con autorización explícita del owner para gastar API.
+El gasto real fue **US$0**: nunca se llegó al proveedor.
+
+`/plans/builder` abrió el wizard (preflight `advanced` correcto) y `CREAR PLAN`
+falló dos veces seguidas con **HTTP 500** sobre
+`POST /.netlify/functions/enqueue-plan-generation`, mostrando
+«No pudimos preparar tu plan ahora».
+
+```
+17:42:46Z ERROR [enqueue-plan] error planId=dfe73b77-…-c44a04b99377: [object Object]
+17:43:54Z ERROR [enqueue-plan] error planId=dfe73b77-…-c44a04b99377: [object Object]
+```
+
+### Defecto 1 — el log destruye el diagnóstico (corregido)
+
+`postgrest-js` sólo construye un `PostgrestError` (que extiende `Error`) cuando
+se pidió `throwOnError`. En el camino que usa el proyecto devuelve el cuerpo de
+PostgREST **parseado como objeto plano**, así que los cuatro
+`if (error) throw error` de `planGenerationShared.ts` propagan algo que no es
+`Error`, y el `catch` del enqueue lo formatea con
+`error instanceof Error ? error.message : String(error)` → `[object Object]`.
+
+Corregido con `_shared/supabaseError.ts` (`supabaseOperationError`), cableado en
+los cuatro puntos (`checkCancelled`, `getPlan`, `putPlan`, `putWeek`). Conserva
+`code`/`details`/`hint`, nombra la operación y nunca puede degradar a
+`[object Object]`. Cinco tests escritos en RED antes de la implementación.
+**Afecta también al worker de fondo**, que comparte el mismo writer.
+
+### Defecto 2 — la causa raíz sigue abierta
+
+Acotado por eliminación, sin poder nombrarlo todavía:
+
+- Falla **antes de cualquier escritura durable**: no hay log
+  `[enqueue-plan] enqueued`, `durableWrite` sigue en `null` (por eso la
+  respuesta es 500 y no 502) y **no existe fila** para ese `planId` en
+  `training_plans` tras los dos intentos.
+- Por tanto está en `writer.getPlan` o en `writer.putPlan`. Auth pasó
+  (un fallo ahí daría 401 con mensaje legible) y el gate de cuota/entitlement
+  también (sus errores son `Error` con `statusCode`, y darían 403/503).
+- **La base de datos queda excluida.** Reproducidas a mano bajo RLS con
+  `set local role authenticated` y las claims del owner, dentro de
+  transacciones revertidas: el `select` sobre `training_plans` devuelve 0 filas
+  sin error, y tanto el `insert` en `training_plans` como el de
+  `training_plan_weeks` se aceptan. Schema verificado columna por columna
+  contra `planRows.ts`: ninguna falta y ninguna obligatoria queda sin escribir.
+  Triggers y constraints de ambas tablas revisados
+  (`reject_athlete_reparent`, `enforce_plan_week_athlete`,
+  `preserve_active_plan_cancel_requested`): ninguno aplica a este insert.
+- El writer **sí** manda el token del usuario
+  (`global.headers.Authorization`), así que tampoco es una degradación a anon.
+
+**Siguiente paso, barato:** desplegar el arreglo de logging y repetir. La
+próxima línea trae mensaje, `code` y operación exacta.
+
+**Consecuencia de rollout:** el check 3 queda **FALLIDO**, no pendiente.
+`enqueue-plan-generation` y `generate-plan-background` son las dos únicas
+funciones del gate que esta ronda no pudo ejercitar, y hoy Plan Builder está
+caído en producción para una cuenta `advanced`.
 
 ## Pendientes que 1a no cierra
 

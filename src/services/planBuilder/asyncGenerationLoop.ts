@@ -816,6 +816,21 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
   })
   let weeks = sortWeeks(input.weeks)
 
+  // `TrainingPlanWeek.athleteId` es opcional y su tipo lo declara «derived from
+  // the parent plan». El camino de sync del cliente lo deriva; el writer de la
+  // Function de fondo llama a `trainingPlanWeekToRow` sin ese fallback y el
+  // mapper emite `athlete_id: week.athleteId ?? null`, así que una semana sin
+  // estampar persiste NULL. En producción eso dejó 12 filas de
+  // `training_plan_weeks` sin `athlete_id` —las únicas de las nueve tablas del
+  // criterio de corte de 031— corregidas por la migración 033.
+  //
+  // Se estampa acá, no en un writer concreto, porque es el único punto por el
+  // que pasan los siete call sites: así quedan cubiertos a la vez el writer de
+  // Supabase, el de la Function de fondo y el en memoria del loadtest, y un
+  // octavo call site futuro no puede olvidarlo.
+  const putWeek = (week: TrainingPlanWeek): Promise<void> =>
+    input.writer.putWeek(week.athleteId ? week : { ...week, athleteId: input.plan.athleteId })
+
   // Ordering es load-bearing: todo lo que lee `finalizeJob` debe existir ANTES
   // del primer await (el `putPlan` inicial), para que aun un fallo de ese
   // checkpoint emita el job. Este bloque solo depende de `weeks`, `input` y
@@ -973,7 +988,7 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
         if (!input.targetWeekIndexes?.length && isReadyWeek(remainingWeek)) continue
         const erroredWeek = makeErroredWeek(remainingWeek, WORKER_BUDGET_EXHAUSTED_MESSAGE, getNow(), 'timeout', 0)
         weeks = replaceWeek(weeks, erroredWeek)
-        await input.writer.putWeek(erroredWeek)
+        await putWeek(erroredWeek)
         observeWeekWrite(erroredWeek)
         budgetExhausted = true
       }
@@ -994,7 +1009,7 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
         if (!input.targetWeekIndexes?.length && isReadyWeek(remainingWeek)) continue
         const erroredWeek = makeErroredWeek(remainingWeek, message, getNow(), error.code, 0)
         weeks = replaceWeek(weeks, erroredWeek)
-        await input.writer.putWeek(erroredWeek)
+        await putWeek(erroredWeek)
         observeWeekWrite(erroredWeek)
       }
     }
@@ -1037,7 +1052,7 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
 
       const generatingWeek = makeGeneratingWeek(target, getNow())
       weeks = replaceWeek(weeks, generatingWeek)
-      await input.writer.putWeek(generatingWeek)
+      await putWeek(generatingWeek)
       observeWeekWrite(generatingWeek)
       plan = buildPlanCheckpoint(plan, weeks, {
         generationState: 'generating',
@@ -1296,7 +1311,7 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
               'local_plan_fallback_failed',
             )
             weeks = replaceWeek(weeks, erroredWeek)
-            await input.writer.putWeek(erroredWeek)
+            await putWeek(erroredWeek)
             observeWeekWrite(erroredWeek)
             await flushAttemptTelemetry()
             return
@@ -1337,7 +1352,7 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
           }
         }
         weeks = replaceWeek(weeks, resolvedWeek)
-        await input.writer.putWeek(resolvedWeek)
+        await putWeek(resolvedWeek)
         observeWeekWrite(resolvedWeek)
         plan = buildPlanCheckpoint(plan, weeks, {
           generationState: 'generating',
@@ -1376,7 +1391,7 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
           // telemetría sobrevive igual si una escritura lanza —el caso que
           // esta instrumentación existe para observar— sin mover el orden.
           try {
-            await input.writer.putWeek(erroredWeek)
+            await putWeek(erroredWeek)
             observeWeekWrite(erroredWeek)
             if (shouldMarkRemaining) {
               await markRemainingWeeksAsUsageGateRejected(targetPosition, error)
@@ -1415,7 +1430,7 @@ export async function runAsyncPlanGeneration(input: RunAsyncPlanGenerationInput)
         // anterior no las perdía y esta instrumentación no puede empeorar
         // justo el caso que existe para observar.
         try {
-          await input.writer.putWeek(erroredWeek)
+          await putWeek(erroredWeek)
           observeWeekWrite(erroredWeek)
           plan = buildPlanCheckpoint(plan, weeks, {
             generationState: 'generating',

@@ -1,0 +1,97 @@
+tablename,policyname,cmd,permissive,roles,qual,with_check
+athlete_coach_notes,athlete_coach_notes_write,ALL,PERMISSIVE,public,(athlete_id IN ( SELECT auth_coach_note_athlete_ids() AS auth_coach_note_athlete_ids)),(athlete_id IN ( SELECT auth_coach_note_athlete_ids() AS auth_coach_note_athlete_ids))
+athlete_coach_notes,athlete_coach_notes_select,SELECT,PERMISSIVE,public,(athlete_id IN ( SELECT auth_coach_note_athlete_ids() AS auth_coach_note_athlete_ids)),
+athlete_memberships,athlete_memberships_select_own,SELECT,PERMISSIVE,public,(account_id = auth.uid()),
+athlete_profiles,athlete_profiles_write_membership,ALL,PERMISSIVE,public,(athlete_id IN ( SELECT auth_athlete_ids() AS auth_athlete_ids)),(athlete_id IN ( SELECT auth_athlete_ids() AS auth_athlete_ids))
+athlete_profiles,athlete_profiles: delete own,DELETE,PERMISSIVE,public,(auth.uid() = user_id),
+athlete_profiles,athlete_profiles: insert own,INSERT,PERMISSIVE,public,,(auth.uid() = user_id)
+athlete_profiles,athlete_profiles: read own,SELECT,PERMISSIVE,public,(auth.uid() = user_id),
+athlete_profiles,athlete_profiles_select_by_athlete,SELECT,PERMISSIVE,public,"(athlete_id IN ( SELECT athletes.id
+   FROM athletes
+  WHERE ((athletes.owner_account_id = auth.uid()) OR (athletes.linked_account_id = auth.uid()))))",
+athlete_profiles,athlete_profiles_select_membership,SELECT,PERMISSIVE,public,(athlete_id IN ( SELECT auth_athlete_ids() AS auth_athlete_ids)),
+athlete_profiles,athlete_profiles: update own,UPDATE,PERMISSIVE,public,(auth.uid() = user_id),(auth.uid() = user_id)
+athletes,athletes_delete,DELETE,PERMISSIVE,public,(auth.uid() = owner_account_id),
+athletes,athletes_insert,INSERT,PERMISSIVE,public,,(auth.uid() = owner_account_id)
+athletes,athletes_select,SELECT,PERMISSIVE,public,((auth.uid() = owner_account_id) OR (auth.uid() = linked_account_id)),
+athletes,athletes_select_membership,SELECT,PERMISSIVE,public,(id IN ( SELECT auth_athlete_ids() AS auth_athlete_ids)),
+athletes,athletes_update,UPDATE,PERMISSIVE,public,(auth.uid() = owner_account_id),(auth.uid() = owner_account_id)
+athletes,athletes_update_self,UPDATE,PERMISSIVE,public,(id IN ( SELECT auth_athlete_ids() AS auth_athlete_ids)),(id IN ( SELECT auth_athlete_ids() AS auth_athlete_ids))
+athletes,athletes_write_coach,UPDATE,PERMISSIVE,public,(id IN ( SELECT auth_coach_athlete_ids() AS auth_coach_athlete_ids)),(id IN ( SELECT auth_coach_athlete_ids() AS auth_coach_athlete_ids))
+chat_messages,chat_messages_write_membership,ALL,PERMISSIVE,public,(athlete_id IN ( SELECT auth_athlete_ids() AS auth_athlete_ids)),(athlete_id IN ( SELECT auth_athlete_ids() AS auth_athlete_ids))
+chat_messages,chat_messages: delete own,DELETE,PERMISSIVE,public,(auth.uid() = user_id),
+chat_messages,chat_messages_delete_own,DELETE,PERMISSIVE,public,(auth.uid() = user_id),
+chat_messages,chat_messages: insert own,INSERT,PERMISSIVE,public,,(auth.uid() = user_id)
+chat_messages,chat_messages_insert_own,INSERT,PERMISSIVE,public,,(auth.uid() = user_id)
+chat_messages,chat_messages: read own,SELECT,PERMISSIVE,public,(auth.uid() = user_id),
+chat_messages,chat_messages_select_by_athlete,SELECT,PERMISSIVE,public,"(athlete_id IN ( SELECT athletes.id
+   FROM athletes
+  WHERE ((athletes.owner_account_id = auth.uid()) OR (athletes.linked_account_id = auth.uid()))))",
+chat_messages,chat_messages_select_membership,SELECT,PERMISSIVE,public,(athlete_id IN ( SELECT auth_athlete_ids() AS auth_athlete_ids)),
+chat_messages,chat_messages_select_own,SELECT,PERMISSIVE,public,(auth.uid() = user_id),
+chat_messages,chat_messages: update own,UPDATE,PERMISSIVE,public,(auth.uid() = user_id),(auth.uid() = user_id)
+chat_messages,chat_messages_update_own,UPDATE,PERMISSIVE,public,(auth.uid() = user_id),(auth.uid() = user_id)
+coach_proposals,coach_proposals_write_coach,ALL,PERMISSIVE,public,(athlete_id IN ( SELECT auth_coach_athlete_ids() AS auth_coach_athlete_ids)),(athlete_id IN ( SELECT auth_coach_athlete_ids() AS auth_coach_athlete_ids))
+coach_proposals,coach_proposals_write_member,ALL,PERMISSIVE,public,(athlete_id IN ( SELECT auth_athlete_ids() AS auth_athlete_ids)),(athlete_id IN ( SELECT auth_athlete_ids() AS auth_athlete_ids))
+coach_proposals,coach_proposals: delete own,DELETE,PERMISSIVE,public,(auth.uid() = user_id),
+coach_proposals,coach_proposals: insert own,INSERT,PERMISSIVE,public,,(auth.uid() = user_id)
+coach_proposals,coach_proposals: read own,SELECT,PERMISSIVE,public,(auth.uid() = user_id),
+coach_proposals,coach_proposals_select_by_athlete,SELECT,PERMISSIVE,public,"(athlete_id IN ( SELECT athletes.id
+   FROM athletes
+  WHERE ((athletes.owner_account_id = auth.uid()) OR (athletes.linked_account_id = auth.uid()))))",
+coach_proposals,coach_proposals_select_membership,SELECT,PERMISSIVE,public,(athlete_id IN ( SELECT auth_athlete_ids() AS auth_athlete_ids)),
+coach_proposals,coach_proposals: update own,UPDATE,PERMISSIVE,public,(auth.uid() = user_id),(auth.uid() = user_id)
+day_logs,day_logs_write_membership,ALL,PERMISSIVE,public,(athlete_id IN ( SELECT auth_athlete_ids() AS auth_athlete_ids)),(athlete_id IN ( SELECT auth_athlete_ids() AS auth_athlete_ids))
+day_logs,day_logs: delete own,DELETE,PERMISSIVE,public,(auth.uid() = user_id),
+day_logs,day_logs: insert own,INSERT,PERMISSIVE,public,,(auth.uid() = user_id)
+day_logs,day_logs: read own,SELECT,PERMISSIVE,public,(auth.uid() = user_id),
+day_logs,day_logs_select_by_athlete,SELECT,PERMISSIVE,public,"(athlete_id IN ( SELECT athletes.id
+   FROM athletes
+  WHERE ((athletes.owner_account_id = auth.uid()) OR (athletes.linked_account_id = auth.uid()))))",
+day_logs,day_logs_select_membership,SELECT,PERMISSIVE,public,(athlete_id IN ( SELECT auth_athlete_ids() AS auth_athlete_ids)),
+day_logs,day_logs: update own,UPDATE,PERMISSIVE,public,(auth.uid() = user_id),(auth.uid() = user_id)
+readiness_daily,readiness_daily_select,SELECT,PERMISSIVE,public,(athlete_id IN ( SELECT auth_athlete_ids() AS auth_athlete_ids)),
+sessions,sessions: delete own,DELETE,PERMISSIVE,public,(auth.uid() = user_id),
+sessions,sessions_delete_membership,DELETE,PERMISSIVE,public,"((athlete_id IN ( SELECT auth_coach_athlete_ids() AS auth_coach_athlete_ids)) OR ((athlete_id IN ( SELECT auth_athlete_ids() AS auth_athlete_ids)) AND (COALESCE(authored_by_role, 'self'::text) = 'self'::text)))",
+sessions,sessions: insert own,INSERT,PERMISSIVE,public,,(auth.uid() = user_id)
+sessions,sessions_insert_membership,INSERT,PERMISSIVE,public,,(athlete_id IN ( SELECT auth_athlete_ids() AS auth_athlete_ids))
+sessions,sessions: read own,SELECT,PERMISSIVE,public,(auth.uid() = user_id),
+sessions,sessions_select_by_athlete,SELECT,PERMISSIVE,public,"(athlete_id IN ( SELECT athletes.id
+   FROM athletes
+  WHERE ((athletes.owner_account_id = auth.uid()) OR (athletes.linked_account_id = auth.uid()))))",
+sessions,sessions_select_membership,SELECT,PERMISSIVE,public,(athlete_id IN ( SELECT auth_athlete_ids() AS auth_athlete_ids)),
+sessions,sessions: update own,UPDATE,PERMISSIVE,public,(auth.uid() = user_id),(auth.uid() = user_id)
+sessions,sessions_update_membership,UPDATE,PERMISSIVE,public,"((athlete_id IN ( SELECT auth_coach_athlete_ids() AS auth_coach_athlete_ids)) OR ((athlete_id IN ( SELECT auth_athlete_ids() AS auth_athlete_ids)) AND (COALESCE(authored_by_role, 'self'::text) = 'self'::text)))",(athlete_id IN ( SELECT auth_athlete_ids() AS auth_athlete_ids))
+training_plan_weeks,training_plan_weeks_write_coach,ALL,PERMISSIVE,public,(athlete_id IN ( SELECT auth_coach_athlete_ids() AS auth_coach_athlete_ids)),(athlete_id IN ( SELECT auth_coach_athlete_ids() AS auth_coach_athlete_ids))
+training_plan_weeks,training_plan_weeks_write_member,ALL,PERMISSIVE,public,(athlete_id IN ( SELECT auth_athlete_ids() AS auth_athlete_ids)),(athlete_id IN ( SELECT auth_athlete_ids() AS auth_athlete_ids))
+training_plan_weeks,training_plan_weeks_delete_own,DELETE,PERMISSIVE,public,(auth.uid() = user_id),
+training_plan_weeks,training_plan_weeks_insert_own,INSERT,PERMISSIVE,public,,(auth.uid() = user_id)
+training_plan_weeks,training_plan_weeks_select_by_athlete,SELECT,PERMISSIVE,public,"(athlete_id IN ( SELECT athletes.id
+   FROM athletes
+  WHERE ((athletes.owner_account_id = auth.uid()) OR (athletes.linked_account_id = auth.uid()))))",
+training_plan_weeks,training_plan_weeks_select_membership,SELECT,PERMISSIVE,public,(athlete_id IN ( SELECT auth_athlete_ids() AS auth_athlete_ids)),
+training_plan_weeks,training_plan_weeks_select_own,SELECT,PERMISSIVE,public,(auth.uid() = user_id),
+training_plan_weeks,training_plan_weeks_update_own,UPDATE,PERMISSIVE,public,(auth.uid() = user_id),(auth.uid() = user_id)
+training_plans,training_plans_write_coach,ALL,PERMISSIVE,public,(athlete_id IN ( SELECT auth_coach_athlete_ids() AS auth_coach_athlete_ids)),(athlete_id IN ( SELECT auth_coach_athlete_ids() AS auth_coach_athlete_ids))
+training_plans,training_plans_write_member,ALL,PERMISSIVE,public,(athlete_id IN ( SELECT auth_athlete_ids() AS auth_athlete_ids)),(athlete_id IN ( SELECT auth_athlete_ids() AS auth_athlete_ids))
+training_plans,training_plans_delete_own,DELETE,PERMISSIVE,public,(auth.uid() = user_id),
+training_plans,training_plans_insert_own,INSERT,PERMISSIVE,public,,(auth.uid() = user_id)
+training_plans,training_plans_select_by_athlete,SELECT,PERMISSIVE,public,"(athlete_id IN ( SELECT athletes.id
+   FROM athletes
+  WHERE ((athletes.owner_account_id = auth.uid()) OR (athletes.linked_account_id = auth.uid()))))",
+training_plans,training_plans_select_membership,SELECT,PERMISSIVE,public,(athlete_id IN ( SELECT auth_athlete_ids() AS auth_athlete_ids)),
+training_plans,training_plans_select_own,SELECT,PERMISSIVE,public,(auth.uid() = user_id),
+training_plans,training_plans_update_own,UPDATE,PERMISSIVE,public,(auth.uid() = user_id),(auth.uid() = user_id)
+week_summaries,week_summaries_write_membership,ALL,PERMISSIVE,public,(athlete_id IN ( SELECT auth_athlete_ids() AS auth_athlete_ids)),(athlete_id IN ( SELECT auth_athlete_ids() AS auth_athlete_ids))
+week_summaries,week_summaries: delete own,DELETE,PERMISSIVE,public,(auth.uid() = user_id),
+week_summaries,week_summaries: insert own,INSERT,PERMISSIVE,public,,(auth.uid() = user_id)
+week_summaries,week_summaries: read own,SELECT,PERMISSIVE,public,(auth.uid() = user_id),
+week_summaries,week_summaries_select_by_athlete,SELECT,PERMISSIVE,public,"(athlete_id IN ( SELECT athletes.id
+   FROM athletes
+  WHERE ((athletes.owner_account_id = auth.uid()) OR (athletes.linked_account_id = auth.uid()))))",
+week_summaries,week_summaries_select_membership,SELECT,PERMISSIVE,public,(athlete_id IN ( SELECT auth_athlete_ids() AS auth_athlete_ids)),
+week_summaries,week_summaries: update own,UPDATE,PERMISSIVE,public,(auth.uid() = user_id),(auth.uid() = user_id)
+whoop_workouts,whoop_workouts_select,SELECT,PERMISSIVE,public,"(EXISTS ( SELECT 1
+   FROM athletes a
+  WHERE ((a.id = whoop_workouts.athlete_id) AND ((a.owner_account_id = auth.uid()) OR (a.linked_account_id = auth.uid())))))",
+whoop_workouts,whoop_workouts_select_membership,SELECT,PERMISSIVE,public,(athlete_id IN ( SELECT auth_athlete_ids() AS auth_athlete_ids)),

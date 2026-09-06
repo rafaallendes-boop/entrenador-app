@@ -7,6 +7,7 @@ import { rowToTrainingPlan, trainingPlanToRow, trainingPlanWeekToRow } from '../
 import { insertPlanGenerationAttempt } from './planGenerationTelemetry'
 import { upsertPlanGenerationJob } from './planGenerationJobTelemetry'
 import { withTimeout } from './promiseTimeout'
+import { supabaseOperationError } from './supabaseError'
 import { CORS_HEADERS } from './cors'
 
 export { withTimeout } from './promiseTimeout'
@@ -141,7 +142,7 @@ export function createSupabaseWriter(userId: string, token: string): AsyncPlanGe
         SUPABASE_OP_TIMEOUT_MS,
         'checkCancelled',
       )
-      if (error) throw error
+      if (error) throw supabaseOperationError('checkCancelled', error)
       return Boolean(
         (data?.generation_summary as { cancelRequested?: boolean } | null)?.cancelRequested,
       )
@@ -152,7 +153,7 @@ export function createSupabaseWriter(userId: string, token: string): AsyncPlanGe
         SUPABASE_OP_TIMEOUT_MS,
         'getPlan',
       )
-      if (error) throw error
+      if (error) throw supabaseOperationError('getPlan', error)
       return data ? rowToTrainingPlan(data as Record<string, unknown>) : null
     },
     async putPlan(plan) {
@@ -161,7 +162,7 @@ export function createSupabaseWriter(userId: string, token: string): AsyncPlanGe
         SUPABASE_OP_TIMEOUT_MS,
         'putPlan',
       )
-      if (error) throw error
+      if (error) throw supabaseOperationError('putPlan', error)
     },
     async putWeek(week) {
       const { error } = await withTimeout(
@@ -169,7 +170,7 @@ export function createSupabaseWriter(userId: string, token: string): AsyncPlanGe
         SUPABASE_OP_TIMEOUT_MS,
         'putWeek',
       )
-      if (error) throw error
+      if (error) throw supabaseOperationError('putWeek', error)
       console.log(`[generate-plan] week checkpoint planId=${week.planId} week=${week.weekIndex} status=${week.status} sessions=${week.sessions.length} attempts=${week.generationMeta.attempts ?? 0} errorClass=${week.generationMeta.errorClass ?? 'none'}`)
     },
     ...(telemetrySupabase

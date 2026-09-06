@@ -908,3 +908,47 @@ describe('getCriticalWeekQualityIssueMessages', () => {
     ])).toEqual(['week.sessions.collision: Hay una colisión'])
   })
 })
+
+/**
+ * `TrainingPlanWeek.athleteId` es opcional y su propio tipo lo declara
+ * «derived from the parent plan». El camino de sync del cliente lo deriva
+ * (`syncService.ts`, `week.athleteId ?? plan.athleteId`); el writer de la
+ * Function de fondo escribe `trainingPlanWeekToRow(week, userId)` sin ese
+ * fallback, y el mapper emite `athlete_id: week.athleteId ?? null`.
+ *
+ * Resultado observado en producción el 2026-09-05: 12 filas de
+ * `training_plan_weeks` con `athlete_id` nulo —las únicas de las nueve tablas
+ * del criterio de corte de 031—, todas derivables de su plan padre.
+ *
+ * Estampar en el loop, y no en un writer concreto, arregla a la vez el writer
+ * de Supabase, el de la Function de fondo y el en memoria del loadtest.
+ */
+describe('identidad de atleta en las semanas escritas', () => {
+  it('estampa athleteId desde el plan padre en toda semana entregada al writer', async () => {
+    const plan = makePlan()
+    const weeks = [makeWeek(0, '2026-06-01'), makeWeek(1, '2026-06-08')]
+    expect(weeks.every((week) => week.athleteId === undefined)).toBe(true)
+
+    const writer = makeWriter(plan)
+    const callLLM = vi.fn(async (request) => makeRaw(request.traceId.endsWith('1') ? '2026-06-08' : '2026-06-01'))
+
+    await runAsyncPlanGeneration({
+      plan,
+      weeks,
+      profile: makeProfile(),
+      wizardConfig: makeWizardConfig(),
+      jobId: 'job-athlete-id',
+      writer,
+      callLLM,
+      now: (() => {
+        let ts = 10
+        return () => ++ts
+      })(),
+    })
+
+    expect(writer.weeks.length).toBeGreaterThan(0)
+    for (const week of writer.weeks) {
+      expect(week.athleteId).toBe(plan.athleteId)
+    }
+  })
+})
