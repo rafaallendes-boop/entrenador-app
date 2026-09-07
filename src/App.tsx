@@ -60,6 +60,11 @@ const HealthDisclaimerPage = lazy(() => import('./pages/HealthDisclaimerPage'))
 const WhoopDisclaimerPage = lazy(() => import('./pages/WhoopDisclaimerPage'))
 const CoachesLandingPage = lazy(() => import('./pages/CoachesLandingPage'))
 
+// La instalación vive en `main.tsx`, antes de `createRoot`: un efecto corre
+// después del primer commit y perdería los errores de arranque.
+import { captureClientError } from './services/observability/installClientErrorReporter'
+import type { ClientErrorComponent } from './services/observability/clientErrorContract'
+
 const AUTO_SYNC_RETRY_COOLDOWN_MS = 15_000
 
 function RouteFallback() {
@@ -71,7 +76,7 @@ function RouteFallback() {
 }
 
 class AppRouteBoundary extends Component<
-  { children: ReactNode; resetKey: string },
+  { children: ReactNode; resetKey: string; area?: ClientErrorComponent },
   { hasError: boolean; message: string | null }
 > {
   state: { hasError: boolean; message: string | null } = { hasError: false, message: null }
@@ -85,6 +90,13 @@ class AppRouteBoundary extends Component<
 
   componentDidCatch(error: unknown, info: ErrorInfo) {
     console.error('[router] route render failed', error, info.componentStack)
+    // Se envía la etiqueta estática del área, nunca `info.componentStack`, que
+    // arrastraría nombres de archivo y estructura interna del árbol.
+    captureClientError({
+      source: 'react_boundary',
+      error,
+      component: this.props.area ?? null,
+    })
   }
 
   componentDidUpdate(prevProps: { resetKey: string }) {
@@ -100,7 +112,11 @@ class AppRouteBoundary extends Component<
       <div className="mx-auto flex min-h-[55vh] w-full max-w-lg flex-col items-center justify-center gap-4 px-4 text-center">
         <div className="rounded-2xl border border-rose-500/25 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
           No se pudo cargar esta vista.
-          {this.state.message && <span className="mt-1 block text-xs text-rose-200/80">{this.state.message}</span>}
+          {/* El mensaje crudo interpola ids y fragmentos de fila: en producción
+              no se le muestra al usuario. En dev se conserva para depurar. */}
+          {!import.meta.env.PROD && this.state.message && (
+            <span className="mt-1 block text-xs text-rose-200/80">{this.state.message}</span>
+          )}
         </div>
         <a
           href={ROUTES.HOME}
@@ -113,9 +129,13 @@ class AppRouteBoundary extends Component<
   }
 }
 
-function RouteBoundary({ children }: { children: ReactNode }) {
+function RouteBoundary({ children, area }: { children: ReactNode; area?: ClientErrorComponent }) {
   const location = useLocation()
-  return <AppRouteBoundary resetKey={location.pathname}>{children}</AppRouteBoundary>
+  return (
+    <AppRouteBoundary resetKey={location.pathname} area={area}>
+      {children}
+    </AppRouteBoundary>
+  )
 }
 
 /**
@@ -460,21 +480,21 @@ export default function App() {
                   <Routes>
                   <Route path={ROUTES.ONBOARDING} element={<OnboardingPage />} />
                   <Route element={<AppShell />}>
-                    <Route path={ROUTES.HOME} element={<RouteBoundary><Dashboard /></RouteBoundary>} />
-                    <Route path={ROUTES.WEEK} element={<RouteBoundary><WeeklyView /></RouteBoundary>} />
-                    <Route path="/day/:date" element={<RouteBoundary><DayDetail /></RouteBoundary>} />
-                    <Route path={ROUTES.CHAT} element={<RouteBoundary><ChatCoach /></RouteBoundary>} />
-                    <Route path={ROUTES.PLAN_BUILDER} element={<RouteBoundary><PlanBuilderPage /></RouteBoundary>} />
-                    <Route path={ROUTES.COMPETITION_PLAN} element={<RouteBoundary><CompetitionPlanPage /></RouteBoundary>} />
-                    <Route path={ROUTES.PLAN_BUILDER_V2} element={<RouteBoundary><PlanBuilderV2Page /></RouteBoundary>} />
+                    <Route path={ROUTES.HOME} element={<RouteBoundary area="Dashboard"><Dashboard /></RouteBoundary>} />
+                    <Route path={ROUTES.WEEK} element={<RouteBoundary area="WeeklyView"><WeeklyView /></RouteBoundary>} />
+                    <Route path="/day/:date" element={<RouteBoundary area="DayDetail"><DayDetail /></RouteBoundary>} />
+                    <Route path={ROUTES.CHAT} element={<RouteBoundary area="ChatCoach"><ChatCoach /></RouteBoundary>} />
+                    <Route path={ROUTES.PLAN_BUILDER} element={<RouteBoundary area="PlanBuilder"><PlanBuilderPage /></RouteBoundary>} />
+                    <Route path={ROUTES.COMPETITION_PLAN} element={<RouteBoundary area="CompetitionPlan"><CompetitionPlanPage /></RouteBoundary>} />
+                    <Route path={ROUTES.PLAN_BUILDER_V2} element={<RouteBoundary area="PlanBuilderV2"><PlanBuilderV2Page /></RouteBoundary>} />
                     <Route path="/history" element={<Navigate to={ROUTES.COMPETITION_PLAN} replace />} />
-                    <Route path={ROUTES.COACH} element={<RouteBoundary><CoachWorkspacePage /></RouteBoundary>} />
-                    <Route path={ROUTES.OPS} element={<RouteBoundary><OperationsPage /></RouteBoundary>} />
+                    <Route path={ROUTES.COACH} element={<RouteBoundary area="CoachWorkspace"><CoachWorkspacePage /></RouteBoundary>} />
+                    <Route path={ROUTES.OPS} element={<RouteBoundary area="Operations"><OperationsPage /></RouteBoundary>} />
                     <Route path="/dashboard" element={<Navigate to={ROUTES.HOME} replace />} />
                     <Route path="/plan" element={<Navigate to={ROUTES.COMPETITION_PLAN} replace />} />
                     <Route path="/plan/dashboard" element={<Navigate to={ROUTES.COMPETITION_PLAN} replace />} />
-                    <Route path={ROUTES.SETTINGS} element={<RouteBoundary><SettingsPage /></RouteBoundary>} />
-                    <Route path={ROUTES.IMPORT} element={<RouteBoundary><ImportPDF /></RouteBoundary>} />
+                    <Route path={ROUTES.SETTINGS} element={<RouteBoundary area="Settings"><SettingsPage /></RouteBoundary>} />
+                    <Route path={ROUTES.IMPORT} element={<RouteBoundary area="ImportPDF"><ImportPDF /></RouteBoundary>} />
                     <Route path="*" element={<Navigate to={ROUTES.HOME} replace />} />
                   </Route>
                   </Routes>

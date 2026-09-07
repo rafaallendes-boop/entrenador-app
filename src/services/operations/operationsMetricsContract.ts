@@ -1,3 +1,4 @@
+import type { ClientErrorMetrics } from '../observability/clientErrorMetricsContract'
 /**
  * Forma del JSON que devuelve el RPC `read_operations_metrics`.
  *
@@ -96,6 +97,13 @@ export interface OperationsMetrics {
   last24h: OperationsWindow
   last7d: OperationsWindow
   generatedAt: string
+  /**
+   * Tarjeta de errores de cliente. **Opcional a propósito**: un servidor sin
+   * `036` responde sin ella y el panel tiene que seguir siendo válido. Su
+   * validación es aparte (`isClientErrorMetrics`) para que una tarjeta
+   * malformada no invalide el resto del dashboard.
+   */
+  clientErrors?: ClientErrorMetrics
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

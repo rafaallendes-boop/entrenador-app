@@ -96,9 +96,21 @@ describe('operations-dashboard', () => {
     const response = await invoke()
 
     expect(response.statusCode).toBe(200)
-    expect(JSON.parse(response.body)).toEqual({
+    expect(JSON.parse(response.body)).toMatchObject({
       last24h: { marker: '24h' }, last7d: { marker: '7d' }, generatedAt: 'now',
     })
+  })
+
+  // La tarjeta de errores de cliente se lee aparte y no puede tumbar el panel:
+  // sin configuración de Supabase degrada a `unavailable`, que es un estado
+  // distinto de «cero eventos» y de «sin instalar».
+  it('degrada la tarjeta de errores sin romper el resto del panel', async () => {
+    const response = await invoke()
+    const body = JSON.parse(response.body)
+
+    expect(response.statusCode).toBe(200)
+    expect(body.clientErrors).toEqual({ status: 'unavailable' })
+    expect(body.last24h).toEqual({ marker: '24h' })
   })
 
   it('un método no permitido devuelve 405 sin autenticar', async () => {

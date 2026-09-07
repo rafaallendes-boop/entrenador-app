@@ -279,8 +279,20 @@ directamente. Incluirla en el próximo smoke de Whoop.
 
 ### 17. Reporter de errores de frontend
 
-No existe. Sin él no se detectan ni se triagean errores nuevos del cliente.
-Incluye definir una política de alertas y el triaje de `unknown`.
+Implementación pendiente. La
+[definición revisada de Entrega B](docs/superpowers/specs/2026-09-06-client-error-reporting-design.md)
+registra las decisiones confirmadas: identidad de cuenta con RLS de lectura,
+escritura sólo por endpoint, frames normalizados sin mensaje, severidad derivada,
+30 días de retención, triage de `unknown` en v1 y sourcemaps privados por release.
+Incluye política inicial de revisión manual y secuencia B1–B5 con criterios de
+aceptación. Los seis hallazgos de revisión están incorporados en la definición.
+Los manifiestos actual e históricos se
+empaquetan con la función; sin manifiesto disponible se conservan categorías sin
+frames. El archivo privado de mapas permite resolver esos frames en triage.
+Siguiente paso: B1, contrato y normalizadores. B2 incluye SQL de verificación RLS
+y runner manual de concurrencia sobre un proyecto de pruebas por provisionar.
+`/ops` mostrará filas vencidas sin depender del reporte del cron. La activación depende
+de revisión jurídica y verificación del archivo privado de builds.
 
 ### 18. Costo real del chat
 

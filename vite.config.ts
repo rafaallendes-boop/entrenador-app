@@ -2,6 +2,8 @@ import { loadEnv } from 'vite'
 import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import { devCoachProxyPlugin } from './dev/coachProxyMiddleware'
+import { resolveReleaseId } from './scripts/generate-release-manifest.mjs'
+import { isSourcemapArchiveEnabled } from './scripts/archive-sourcemaps.mjs'
 
 function isAppModule(id: string, path: string): boolean {
   return id.includes(path)
@@ -12,6 +14,19 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react(), devCoachProxyPlugin(env)],
+    // Identificador del build para la telemetría de errores de cliente. Sin
+    // esto el campo `release` sería constante y se perdería lo único que
+    // importa en una beta: distinguir «esto lo rompió el deploy de ayer».
+    //
+    // Usa **la misma función** que `scripts/generate-release-manifest.mjs` y
+    // `scripts/archive-sourcemaps.mjs`. Con dos implementaciones divergía en
+    // dos formas silenciosas: un `APP_RELEASE` con espacios se horneaba en el
+    // cliente y el servidor lo rechazaba con 400 en cada evento, y un
+    // `COMMIT_REF` leído sólo por `loadEnv` bakeaba un release que el script
+    // nunca escribía al catálogo, dejando `stack_frames` permanentemente null.
+    define: {
+      __APP_RELEASE__: JSON.stringify(resolveReleaseId(process.env)),
+    },
     test: {
       setupFiles: ['./vitest.setup.ts'],
       // La suite completa transforma varios grafos pesados (sync/plan builder)
@@ -72,6 +87,12 @@ export default defineConfig(({ mode }) => {
       host: true,
     },
     build: {
+      // Sólo cuando hay dónde archivarlos. `build-archive/` vive en el
+      // contenedor efímero de Netlify: generarlos sin un paso de subida los
+      // destruye con el contenedor y deja la simbolización rota, no pendiente.
+      // `hidden` quita el comentario `sourceMappingURL`, pero eso no los hace
+      // privados — de eso se encarga `scripts/archive-sourcemaps.mjs`.
+      sourcemap: isSourcemapArchiveEnabled(process.env) ? 'hidden' : false,
       rollupOptions: {
         output: {
           manualChunks(id) {

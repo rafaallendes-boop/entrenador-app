@@ -9,6 +9,8 @@
  */
 
 import { db } from '../db/db'
+import { captureSyncFailure } from './observability/syncErrorCapture'
+import { captureClientError } from './observability/installClientErrorReporter'
 import { getAllAthleteScopedTables, purgeAthleteScopedRows } from '../db/athleteScopedTables'
 import { useAuthStore } from '../store/useAuthStore'
 import type {
@@ -621,6 +623,12 @@ function syncLog(
   if (level === 'error') console.error('[sync]', event, entry)
   else if (level === 'warn') console.warn('[sync]', event, entry)
   else console.info('[sync]', event, entry)
+
+  // Los fallos terminales de sync no llegan a ningún error boundary: se atrapan
+  // y se tragan acá. Sin este puente son invisibles para el reporter. Filtra a
+  // los tres eventos `:non_retriable` y transmite **sólo** la categoría tipada,
+  // nunca `details`, que trae tabla e ids.
+  captureSyncFailure(event, entry, captureClientError)
 }
 
 interface QueueSummary {

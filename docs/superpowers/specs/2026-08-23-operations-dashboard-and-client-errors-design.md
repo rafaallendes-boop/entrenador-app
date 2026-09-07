@@ -2,6 +2,11 @@
 
 Fecha: 2026-08-23
 Estado: **decisiones cerradas** (§3) — listo para plan de implementación
+> Actualización 2026-09-06: la **Entrega B** se rige por
+> [la definición revisada del reporter](2026-09-06-client-error-reporting-design.md),
+> que modifica identidad, frames y captura de sync. Este documento conserva
+> el diseño original y el contrato de Entrega A.
+
 Roadmap: §Pre-Lanzamiento, punto 10 (P1, necesario durante beta). Solapa
 parcialmente con el punto 12 (funnel), que queda fuera de alcance.
 

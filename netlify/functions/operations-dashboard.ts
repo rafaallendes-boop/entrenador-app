@@ -2,6 +2,10 @@ import type { Handler } from '@netlify/functions'
 import { corsPreflight } from './_shared/cors'
 import { isOperationsAdmin } from './_shared/operationsAdmins'
 import { readOperationsMetrics } from './_shared/operationsMetrics'
+import {
+  createServiceRoleRpcCaller,
+  readClientErrorMetrics,
+} from './_shared/clientErrorMetrics'
 import { json, resolveAuthContext } from './_shared/planGenerationShared'
 
 /**
@@ -30,7 +34,16 @@ export const handler: Handler = async (event) => {
   }
 
   try {
-    return json(200, await readOperationsMetrics())
+    // La tarjeta de errores de cliente se lee aparte y **no puede tumbar el
+    // resto del panel**: si `035`/`036` no están aplicadas, o su consulta
+    // falla, viaja con su propio estado y lo demás sigue disponible.
+    const [metrics, clientErrors] = await Promise.all([
+      readOperationsMetrics(),
+      readClientErrorMetrics({ callRpc: createServiceRoleRpcCaller() }).catch(
+        () => ({ status: 'unavailable' as const }),
+      ),
+    ])
+    return json(200, { ...metrics, clientErrors })
   } catch (error) {
     // El detalle se registra para operar el servicio, pero no cruza al browser:
     // podría contener hosts, puertos o respuestas de infraestructura.

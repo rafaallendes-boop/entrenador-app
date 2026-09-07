@@ -139,3 +139,43 @@ describe('operationsMetricsContract', () => {
     expect(isOperationsWindow(rest)).toBe(false)
   })
 })
+
+describe('tarjeta de errores de cliente en el contrato del dashboard', () => {
+  const base = {
+    last24h: VALID,
+    last7d: VALID,
+    generatedAt: '2026-09-07T00:00:00.000Z',
+  }
+
+  // La tarjeta es opcional: un servidor sin `036` responde sin ella y el panel
+  // tiene que seguir siendo válido.
+  it('acepta una respuesta sin la tarjeta', () => {
+    expect(isOperationsMetrics(base)).toBe(true)
+  })
+
+  it.each(['ready', 'not_installed', 'unavailable'])(
+    'acepta la tarjeta en estado %s',
+    (status) => {
+      const conTarjeta = {
+        ...base,
+        clientErrors:
+          status === 'ready'
+            ? {
+                status,
+                windows: {
+                  day: { groups: [], total: 0, unknown: { total: 0, share: 0, breakdown: [] } },
+                  week: { groups: [], total: 0, unknown: { total: 0, share: 0, breakdown: [] } },
+                },
+                retention: { status: 'ok', expiredRemaining: 0, oldestExpiredAt: null, checkedAt: null },
+              }
+            : { status },
+      }
+      expect(isOperationsMetrics(conTarjeta)).toBe(true)
+    },
+  )
+
+  // Una tarjeta malformada no puede tumbar el resto del panel: se ignora.
+  it('sigue siendo válido con una tarjeta malformada', () => {
+    expect(isOperationsMetrics({ ...base, clientErrors: { status: 'inventado' } })).toBe(true)
+  })
+})
