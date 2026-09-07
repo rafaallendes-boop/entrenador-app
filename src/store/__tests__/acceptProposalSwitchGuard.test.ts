@@ -162,6 +162,29 @@ describe('acceptProposal - switch guard', () => {
     expect((await db.coachProposals.get('future-move'))?.status).toBe('accepted')
   })
 
+  it('persists the main structure when accepting a recovery session', async () => {
+    const mobilityDetails = {
+      context: 'recovery' as const,
+      focusAreas: ['espalda'],
+      targetStructure: 'Respiración controlada: 3 series de 5 respiraciones',
+    }
+    await db.coachProposals.put({
+      id: 'recovery-details', athleteId: 'ath_user-1', createdAt: Date.now(),
+      status: 'pending', message: 'Recuperación',
+      actions: [{
+        type: 'add_session', targetDate: '2026-08-07', timeBlock: 'PM',
+        sessionType: 'recovery', title: 'Recuperación activa', durationMin: 20,
+        mobilityDetails,
+      }],
+    })
+    await useCoachActionsStore.getState().loadProposals()
+    const result = await useCoachActionsStore.getState().acceptProposal('recovery-details')
+    expect(result.errors).toEqual([])
+    const sessions = await db.sessions.toArray()
+    expect(sessions).toHaveLength(1)
+    expect(sessions[0].mobilityDetails).toEqual(mobilityDetails)
+  })
+
   it('rejects an add_session that targets an occupied calendar slot', async () => {
     await db.sessions.put({
       id: 'friday-strength',

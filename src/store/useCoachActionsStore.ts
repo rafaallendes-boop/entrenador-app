@@ -896,7 +896,9 @@ async function applyCoachAction(
             }
           : undefined,
         cyclingDetails: action.sessionType === 'cycling' ? action.cyclingDetails : undefined,
-        mobilityDetails: action.sessionType === 'mobility' ? action.mobilityDetails : undefined,
+        mobilityDetails: action.sessionType === 'mobility' || action.sessionType === 'recovery'
+          ? action.mobilityDetails
+          : undefined,
         squashDetails: action.squashDetails,
         warmup: action.warmup,
         cooldown: action.cooldown,

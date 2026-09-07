@@ -1,4 +1,4 @@
-import type { ChatContext, CoachAction, CoachExerciseProposal, CoachSessionProposal, Session, SessionType, SquashSessionBlockKind, TimeBlock } from '../../types'
+import type { ChatContext, CoachAction, CoachExerciseProposal, CoachSessionProposal, MobilityDetails, Session, SessionType, SquashSessionBlockKind, TimeBlock } from '../../types'
 import type { StrengthConstraint } from '../../types/strengthSafety'
 import { currentWeekStartISO, todayISO } from '../../utils/date'
 import { toStrengthProposalForEnhancement } from '../training/strengthExerciseProposal'
@@ -6,6 +6,11 @@ import { selectStrengthSession, type StrengthContext, type StrengthPhase, type S
 import { prepareStrengthSession, type BlockedReason, type RemovedExercise, type ReplacedExercise } from '../training/strengthSafetyFinalizer'
 import { resolveStrengthSafetyConstraints } from '../training/strengthSafetyConstraints'
 import { BLOCKED_STRENGTH_COPY } from '../training/strengthSafetyCopy'
+import {
+  selectMobilitySessionForContext,
+  type MobilityFocus,
+  type MobilitySportContext,
+} from '../training/mobilitySessionLibrary'
 import { detectSupersetIntent, shouldApplySupersetPolicy, type SupersetPolicyMode } from '../training/supersetPolicy'
 import { findSquashDrillByName, normalizeSquashDrillKey, resolveSquashDrillKind } from '../training/drillLibrary'
 import {
@@ -127,7 +132,7 @@ export function postProcessCoachActions(
     : reconcileRequestedMoveActions(baseSourceActions, requestedMoveActions)
   const sourceActions = repairedReplacementAction
     ? moveReconciledActions
-    : mergeMissingRequestedSessionActions(moveReconciledActions, requestedSessionActions)
+    : mergeMissingRequestedSessionActions(moveReconciledActions, requestedSessionActions, normalizedMessage)
   const repairedRequestedMoves = Boolean(
     requestedMoveActions?.length &&
     !moveActionsMatch(baseSourceActions, requestedMoveActions),
@@ -201,8 +206,15 @@ export function postProcessCoachActions(
     constraints: safetyConstraints,
     userMessageConstraints,
   })
+  const completeActions = safetyResult.actions.filter(action => !(
+    action.type === 'add_session'
+    && (action.sessionType === 'mobility' || action.sessionType === 'recovery')
+    && !action.exercises?.length
+    && !action.mobilityDetails?.targetStructure?.trim()
+  ))
+  const removedEmptySessions = completeActions.length < safetyResult.actions.length
   const { actions, removedCollidingAddSessionCount } = removeCollidingAddSessionActions(
-    safetyResult.actions,
+    completeActions,
     sessions,
   )
   // Un bloqueo TOTAL es una respuesta segura sin propuesta y su copy es todo el
@@ -212,15 +224,20 @@ export function postProcessCoachActions(
   const partiallyBlocked = safetyResult.blockedReasons.length > 0 && actions.length > 0
   const baseMessage = fullyBlocked
     ? BLOCKED_STRENGTH_COPY
+    : removedEmptySessions && actions.length === 0
+    ? 'No pude generar una sesión con ejercicios y dosis concretas. La propuesta quedó incompleta, así que no hay una sesión para aplicar.'
     : repairedReplacementAction
     ? buildRunningReplacementMessage(repairedReplacementAction)
     : response.actions?.length && !repairedMissingRequestedActions
       && !repairedRequestedMoves
       ? response.message
       : buildFallbackActionMessage(actions, response.message)
-  const messageWithSafetyNotice = partiallyBlocked
-    ? `${baseMessage}\n\n${BLOCKED_STRENGTH_COPY}`
+  const completeMessage = removedEmptySessions && actions.length > 0
+    ? `${baseMessage}\n\nOmití una propuesta de recuperación o movilidad porque no incluía ejercicios ni una estructura concreta.`
     : baseMessage
+  const messageWithSafetyNotice = partiallyBlocked
+    ? `${completeMessage}\n\n${BLOCKED_STRENGTH_COPY}`
+    : completeMessage
   const actionMessage = removedCollidingAddSessionCount > 0
     ? `${messageWithSafetyNotice}\n\nNo agregué ${removedCollidingAddSessionCount === 1 ? 'una sesión' : `${removedCollidingAddSessionCount} sesiones`} porque el bloque ya estaba ocupado.`
     : messageWithSafetyNotice
@@ -237,8 +254,8 @@ export function postProcessCoachActions(
     ...response,
     actions,
     message,
-    fallbackUsed: response.fallbackUsed || !response.actions?.length || Boolean(repairedReplacementAction) || repairedMissingRequestedActions || repairedRequestedMoves || removedCollidingAddSessionCount > 0 || hydratedMissingStrengthExercises || correctedMessageWeekday || safetyResult.blockedReasons.length > 0 || safetyResult.repaired,
-    meta: response.actions?.length && !repairedReplacementAction && !repairedMissingRequestedActions && !repairedRequestedMoves && removedCollidingAddSessionCount === 0 && squashActionWarnings.length === 0 && !hydratedMissingStrengthExercises && !correctedMessageWeekday && safetyResult.blockedReasons.length === 0 && !safetyResult.repaired
+    fallbackUsed: removedEmptySessions || response.fallbackUsed || !response.actions?.length || Boolean(repairedReplacementAction) || repairedMissingRequestedActions || repairedRequestedMoves || removedCollidingAddSessionCount > 0 || hydratedMissingStrengthExercises || correctedMessageWeekday || safetyResult.blockedReasons.length > 0 || safetyResult.repaired,
+    meta: !removedEmptySessions && response.actions?.length && !repairedReplacementAction && !repairedMissingRequestedActions && !repairedRequestedMoves && removedCollidingAddSessionCount === 0 && squashActionWarnings.length === 0 && !hydratedMissingStrengthExercises && !correctedMessageWeekday && safetyResult.blockedReasons.length === 0 && !safetyResult.repaired
       ? response.meta
       : {
           ...response.meta,
@@ -258,6 +275,7 @@ export function postProcessCoachActions(
                     : !response.actions?.length
                       ? ['chat_action_without_actions_repaired']
                       : []),
+            ...(removedEmptySessions ? ['chat_action_empty_recovery_sessions_removed'] : []),
             ...(hydratedMissingStrengthExercises ? ['chat_action_missing_strength_exercises_hydrated'] : []),
             ...(correctedMessageWeekday ? ['chat_action_message_weekday_aligned'] : []),
             ...(fullyBlocked ? ['chat_action_strength_safety_blocked'] : []),
@@ -510,9 +528,15 @@ function buildFallbackRequestedSessionActions(
 function mergeMissingRequestedSessionActions(
   sourceActions: CoachAction[] | undefined,
   requestedActions: CoachAction[] | undefined,
+  normalizedMessage: string,
 ): CoachAction[] | undefined {
   if (!requestedActions?.length) return sourceActions
   if (!sourceActions?.length) return requestedActions
+
+  // A single proposal is aligned below. A sport/date mismatch is not a
+  // missing second session: appending a fallback here duplicates the request.
+  if (isClearSingleSessionCreationRequest(normalizedMessage)
+    && sourceActions.some(action => action.type === 'add_session')) return sourceActions
 
   const requestedTypeCounts = requestedActions.reduce<Record<string, number>>((counts, action) => {
     const key = action.sessionType ?? 'unknown'
@@ -726,6 +750,16 @@ function buildFallbackAddSessionAction(options: {
     action.exercises = selectStrengthProposalsForAction(options.context, durationMin, objective, [])
   }
 
+  if (options.sessionType === 'mobility' || options.sessionType === 'recovery') {
+    // Misma razón que en la conversión: una sesión de movilidad sin estructura
+    // no es entregable, y el filtro de sesiones incompletas la borraría.
+    action.mobilityDetails = buildDeterministicMobilityDetails(
+      options.context,
+      options.sessionType,
+      options.normalizedMessage,
+    )
+  }
+
   return completeRunningZone2Details(action, intentText)
 }
 
@@ -764,6 +798,7 @@ function isClearSingleSessionCreationRequest(
     && hasSessionTarget
     && (hasRelativeDate || actionableWeekdayCount === 1 || (Boolean(options.allowResolvedDateOnly) && !hasDay))
     && !hasMultipleTemporalTargets
+    && !/\b(sesiones|entrenamientos|doble)\b/.test(normalizedMessage)
     && !broadWeekTarget
     && !explicitWeekCreation
 }
@@ -1572,6 +1607,44 @@ function resolveSupersetMode(
   })
 }
 
+/**
+ * Construye contenido real para una sesión de movilidad o recuperación
+ * producida de forma determinista.
+ *
+ * Sin esto, una conversión a `mobility`/`recovery` sale con título y objetivo
+ * pero **sin estructura**, que es justo la propuesta inútil que el filtro de
+ * sesiones incompletas está para no entregar. El resultado era que pedir
+ * movilidad explícitamente no devolvía nada.
+ *
+ * No es consciente de lesiones a propósito: el contrato de restricciones de
+ * seguridad del proyecto cubre fuerza, y adivinar criterio clínico para
+ * movilidad sería inventarlo.
+ */
+function buildDeterministicMobilityDetails(
+  context: ChatContext,
+  sessionType: SessionType,
+  normalizedMessage: string,
+): MobilityDetails {
+  const primarySport = context.athleteProfile?.sportContext?.primarySport
+  const sport: MobilitySportContext =
+    primarySport === 'squash' || primarySport === 'running' || primarySport === 'cycling'
+      ? primarySport
+      : 'general'
+
+  const focus: MobilityFocus[] = []
+  if (/\b(cadera|hip)\b/.test(normalizedMessage)) focus.push('hip')
+  if (/\b(tobillo|ankle)\b/.test(normalizedMessage)) focus.push('ankle_foot')
+  if (/\b(hombro|toracic|thoracic|espalda alta)\b/.test(normalizedMessage)) focus.push('shoulder_thoracic')
+
+  const definition = selectMobilitySessionForContext({ sport, focus })
+
+  return {
+    focusAreas: definition.focus,
+    context: sessionType === 'recovery' ? 'recovery' : 'sport_specific',
+    targetStructure: definition.typicalStructure,
+  }
+}
+
 function alignSingleSessionSportToRequest(
   action: CoachAction,
   normalizedMessage: string,
@@ -1582,6 +1655,8 @@ function alignSingleSessionSportToRequest(
 
   const requestedSessionType = inferRequestedSessionType(normalizedMessage)
   if (!requestedSessionType || action.sessionType === requestedSessionType) return action
+  // Recovery can be the goal of a complete mobility session, not a sport change.
+  if (requestedSessionType === 'recovery' && action.sessionType === 'mobility') return action
 
   const next: CoachAction = {
     ...action,
@@ -1599,7 +1674,19 @@ function alignSingleSessionSportToRequest(
     cyclingDetails: undefined,
     mobilityDetails: undefined,
     squashDetails: undefined,
+    warmup: undefined,
+    cooldown: undefined,
     exercises: undefined,
+  }
+
+  if (requestedSessionType === 'mobility' || requestedSessionType === 'recovery') {
+    // La conversión anula `mobilityDetails` arriba; repoblarla es lo que evita
+    // entregar una sesión sin contenido.
+    next.mobilityDetails = buildDeterministicMobilityDetails(
+      context,
+      requestedSessionType,
+      normalizedMessage,
+    )
   }
 
   if (requestedSessionType === 'strength') {

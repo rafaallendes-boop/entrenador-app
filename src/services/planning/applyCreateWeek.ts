@@ -150,7 +150,12 @@ export async function applyCreateWeek({
           }
         : undefined,
       cyclingDetails: session.sessionType === 'cycling' ? session.cyclingDetails : undefined,
-      mobilityDetails: session.sessionType === 'mobility' ? session.mobilityDetails : undefined,
+      // `recovery` también puede llevar estructura de movilidad, igual que en
+      // la ruta de `add_session`. Aceptar sólo `mobility` hacía que la misma
+      // sesión mostrara contenido suelta y nada dentro de una semana.
+      mobilityDetails: session.sessionType === 'mobility' || session.sessionType === 'recovery'
+        ? session.mobilityDetails
+        : undefined,
       squashDetails: session.squashDetails,
       warmup: session.warmup,
       cooldown: session.cooldown,

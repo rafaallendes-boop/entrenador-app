@@ -929,8 +929,69 @@ describe('actionPostProcessor', () => {
       sessionType: 'strength',
       title: 'Fuerza estructurada',
     })
+    expect(response.actions).toHaveLength(1)
     expect(response.actions?.[0].squashDetails).toBeUndefined()
     expect(response.actions?.[0].exercises?.length).toBeGreaterThan(0)
+  })
+
+  it('does not append recovery when the screenshot request already has a mobility proposal', () => {
+    vi.setSystemTime(new Date('2026-06-07T12:00:00.000Z'))
+    const mobilityDetails = {
+      context: 'recovery' as const,
+      focusAreas: ['espalda'],
+      targetStructure: 'Respiración diafragmática 3 series de 5 respiraciones',
+    }
+    const response = postProcessCoachActions(makeResponse([{
+      type: 'add_session',
+      targetDate: '2026-06-08',
+      timeBlock: 'AM',
+      sessionType: 'mobility',
+      durationMin: 30,
+      mobilityDetails,
+    }]), makeContext(), 'creame un entrenamiento físico para mañana lunes con foco en mi recuperación de espalda')
+
+    expect(response.actions).toHaveLength(1)
+    expect(response.actions?.[0]).toMatchObject({ sessionType: 'mobility', mobilityDetails })
+  })
+
+  it('rejects recovery proposals containing only warmup and cooldown', () => {
+    vi.setSystemTime(new Date('2026-06-07T12:00:00.000Z'))
+    const response = postProcessCoachActions(makeResponse([{
+      type: 'add_session',
+      targetDate: '2026-06-08',
+      timeBlock: 'AM',
+      sessionType: 'recovery',
+      durationMin: 30,
+    }]), makeContext(), 'creame un entrenamiento físico para mañana lunes con foco en mi recuperación de espalda')
+
+    expect(response.actions).toEqual([])
+    expect(response.message).toContain('propuesta quedó incompleta')
+    expect(response.message).not.toContain('Te propongo este cambio')
+    expect(response.meta?.warnings).toContain('chat_action_empty_recovery_sessions_removed')
+  })
+
+  it('keeps weights as one strength session when recovery is the requested goal', () => {
+    vi.setSystemTime(new Date('2026-06-07T12:00:00.000Z'))
+    const response = postProcessCoachActions(makeResponse([{
+      type: 'add_session',
+      targetDate: '2026-06-08',
+      timeBlock: 'AM',
+      sessionType: 'mobility',
+      durationMin: 45,
+    }]), makeContext(), 'Créame una sesión de pesas para mañana lunes con foco en recuperación de espalda baja, sin carga axial')
+
+    expect(response.actions).toHaveLength(1)
+    expect(response.actions?.[0].sessionType).toBe('strength')
+    expect(response.actions?.[0].exercises?.length).toBeGreaterThan(0)
+  })
+
+  it('preserves explicitly requested sessions on different days', () => {
+    vi.setSystemTime(new Date('2026-06-07T12:00:00.000Z'))
+    const response = postProcessCoachActions(makeResponse([{
+      type: 'add_session', targetDate: '2026-06-08', timeBlock: 'AM', sessionType: 'strength', durationMin: 45,
+    }]), makeContext(), 'Créame pesas para el lunes y agrega running para el martes')
+    expect(response.actions).toHaveLength(2)
+    expect(response.actions?.map(action => action.sessionType)).toEqual(['strength', 'running'])
   })
 
   it('repairs a truncated single-session action response with a local proposal', () => {
@@ -1266,5 +1327,100 @@ describe('actionPostProcessor', () => {
       expect(action?.squashKind).toBe('control')
       expect(action?.squashDetails?.sessionKind).toBe('control')
     })
+  })
+})
+
+describe('sesiones de movilidad y recuperación sin contenido', () => {
+  // El caso que motivó el filtro: el modelo responde con sesiones de movilidad
+  // sin contenido. Cuando el pedido no permite inferir otro tipo de sesión, no
+  // hay conversión que las rescate y **no se entregan**.
+  it('descarta las sesiones de movilidad vacías que el modelo propone como sustituto', () => {
+    vi.setSystemTime(new Date('2026-05-24T12:00:00.000Z'))
+
+    const response = postProcessCoachActions(makeResponse([
+      {
+        type: 'add_session', targetDate: '2026-05-25', timeBlock: 'AM',
+        sessionType: 'mobility', title: 'Movilidad', durationMin: 30,
+      },
+      {
+        type: 'add_session', targetDate: '2026-05-25', timeBlock: 'PM',
+        sessionType: 'mobility', title: 'Movilidad 2', durationMin: 30,
+      },
+    ] as CoachAction[]), makeContext([], {
+      athleteProfile: {
+        id: 'athlete-1', updatedAt: 1,
+        sportContext: { primarySport: 'squash' },
+        recoveryProfile: { currentInjuries: 'lumbago, dolor lumbar' },
+      },
+    }), 'agrégame algo para mañana')
+
+    expect(response.actions ?? []).toHaveLength(0)
+    expect(response.message).toContain('No pude generar una sesión')
+    expect(response.meta?.warnings).toContain('chat_action_empty_recovery_sessions_removed')
+  })
+
+  // Y el caso literal del reporte: se pidió fuerza con lesión de espalda
+  // declarada. La conversión determinista las lleva a fuerza y el finalizador
+  // de seguridad filtra los ejercicios; no queda ninguna movilidad vacía.
+  it('convierte a fuerza, respetando la lesión, cuando se pidió fuerza', () => {
+    vi.setSystemTime(new Date('2026-05-24T12:00:00.000Z'))
+
+    const response = postProcessCoachActions(makeResponse([
+      {
+        type: 'add_session', targetDate: '2026-05-25', timeBlock: 'AM',
+        sessionType: 'mobility', title: 'Movilidad', durationMin: 30,
+      },
+    ] as CoachAction[]), makeContext([], {
+      athleteProfile: {
+        id: 'athlete-1', updatedAt: 1,
+        sportContext: { primarySport: 'squash' },
+        recoveryProfile: { currentInjuries: 'lumbago, dolor lumbar' },
+      },
+    }), 'agrégame una sesión de pesas para hoy')
+
+    const action = response.actions?.[0]
+    expect(action?.sessionType).toBe('strength')
+    expect(action?.exercises?.length ?? 0).toBeGreaterThan(0)
+  })
+
+  // Pero una sesión de movilidad que el usuario pidió explícitamente sí se
+  // entrega, y con estructura real: antes salía vacía y el filtro la borraba,
+  // dejando al usuario sin nada.
+  it('entrega con estructura la movilidad que el usuario pidió explícitamente', () => {
+    vi.setSystemTime(new Date('2026-05-24T12:00:00.000Z'))
+
+    const response = postProcessCoachActions(makeResponse([{
+      type: 'add_session', targetDate: '2026-05-25', timeBlock: 'PM',
+      sessionType: 'running', title: 'Rodaje suave', durationMin: 30,
+    } as CoachAction]), makeContext([], {
+      athleteProfile: {
+        id: 'athlete-1', updatedAt: 1,
+        sportContext: { primarySport: 'squash' },
+      },
+    }), 'crea una sesion de movilidad para manana')
+
+    const action = response.actions?.[0]
+    expect(action).toMatchObject({ type: 'add_session', sessionType: 'mobility' })
+    expect(action?.mobilityDetails?.targetStructure?.trim().length ?? 0).toBeGreaterThan(20)
+    expect(action?.mobilityDetails?.focusAreas?.length ?? 0).toBeGreaterThan(0)
+    expect(response.message).not.toContain('No pude generar')
+  })
+
+  it('hace lo mismo para una sesión de recuperación pedida explícitamente', () => {
+    vi.setSystemTime(new Date('2026-05-24T12:00:00.000Z'))
+
+    const response = postProcessCoachActions(makeResponse([{
+      type: 'add_session', targetDate: '2026-05-25', timeBlock: 'PM',
+      sessionType: 'running', title: 'Rodaje', durationMin: 30,
+    } as CoachAction]), makeContext([], {
+      athleteProfile: {
+        id: 'athlete-1', updatedAt: 1,
+        sportContext: { primarySport: 'squash' },
+      },
+    }), 'crea una sesion de recuperacion para manana')
+
+    const action = response.actions?.[0]
+    expect(action?.sessionType).toBe('recovery')
+    expect(action?.mobilityDetails?.targetStructure?.trim().length ?? 0).toBeGreaterThan(20)
   })
 })

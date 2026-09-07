@@ -99,12 +99,12 @@ export default function SessionCard({ session, compact = false, onDelete, whoopW
   )
 
   const hasExercises =
-    (session.type === 'squash' || session.type === 'strength' || session.type === 'mobility') &&
+    (session.type === 'squash' || session.type === 'strength' || (session.type === 'mobility' || session.type === 'recovery')) &&
     session.exercises &&
     session.exercises.length > 0
   const hasRunningDetails = (session.type === 'running' || session.type === 'cycling') && session.runningDetails
   const hasCyclingDetails = session.type === 'cycling' && session.cyclingDetails
-  const hasMobilityDetails = session.type === 'mobility' && session.mobilityDetails
+  const hasMobilityDetails = (session.type === 'mobility' || session.type === 'recovery') && session.mobilityDetails
   const squashDrills = session.squashDetails?.drills ?? []
   const squashBlocks = session.squashDetails?.blocks ?? []
   const hasSquashDetails = session.type === 'squash' && Boolean(session.squashDetails)
@@ -214,7 +214,7 @@ export default function SessionCard({ session, compact = false, onDelete, whoopW
                 {session.cyclingDetails.sessionCategory}
               </span>
             )}
-            {session.type === 'mobility' && session.mobilityDetails && (
+            {(session.type === 'mobility' || session.type === 'recovery') && session.mobilityDetails && (
               <span className="rounded-full border border-pink-500/20 bg-pink-500/10 px-1.5 py-0.5 text-xs font-medium text-pink-300 flex-shrink-0">
                 {MOBILITY_CONTEXT_LABELS[session.mobilityDetails.context] ?? session.mobilityDetails.context}
               </span>
@@ -246,7 +246,7 @@ export default function SessionCard({ session, compact = false, onDelete, whoopW
             {session.type === 'cycling' && session.cyclingDetails?.intensityReference && (
               <span className="font-mono text-xs tabular-nums text-sky-300">{session.cyclingDetails.intensityReference}</span>
             )}
-            {session.type === 'mobility' && (session.mobilityDetails?.focusAreas?.length ?? 0) > 0 && (
+            {(session.type === 'mobility' || session.type === 'recovery') && (session.mobilityDetails?.focusAreas?.length ?? 0) > 0 && (
               <span className="text-xs text-pink-300">{formatMobilityFocusAreas(session.mobilityDetails?.focusAreas)}</span>
             )}
             {session.opponent && <span className="text-xs text-ink-faint">vs {session.opponent}</span>}
@@ -375,7 +375,7 @@ export default function SessionCard({ session, compact = false, onDelete, whoopW
               )}
             </div>
           )}
-          {session.type === 'mobility' && session.mobilityDetails && (
+          {(session.type === 'mobility' || session.type === 'recovery') && session.mobilityDetails && (
             <div className="mt-2 space-y-2">
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <div className="rounded-lg bg-pink-500/10 p-2">

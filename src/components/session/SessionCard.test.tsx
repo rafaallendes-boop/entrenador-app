@@ -36,6 +36,22 @@ function makeSession(overrides: Partial<Session> = {}): Session {
 }
 
 describe('SessionCard exercises', () => {
+  it('muestra estructura y ejercicios de recuperación al expandir la sesión', () => {
+    render(<SessionCard session={makeSession({
+      type: 'recovery',
+      title: 'Recuperación activa',
+      mobilityDetails: {
+        context: 'recovery',
+        focusAreas: ['espalda'],
+        targetStructure: 'Respiración controlada: 3 series de 5 respiraciones',
+      },
+      exercises: [{ id: 'r1', name: 'Respiración controlada', sets: 3, reps: '5', completed: false }],
+    })} />)
+    fireEvent.click(screen.getByText('Recuperación activa'))
+    expect(screen.getByText('Respiración controlada: 3 series de 5 respiraciones')).toBeTruthy()
+    expect(screen.getByText('Respiración controlada')).toBeTruthy()
+  })
+
   it('muestra ejercicios en una sesión de squash', () => {
     render(
       <SessionCard

@@ -256,3 +256,36 @@ export function findMobilitySessionById(id: string): MobilitySessionDefinition |
 export function getMobilitySessionsForSport(sport: MobilitySportContext): MobilitySessionDefinition[] {
   return MOBILITY_SESSION_LIBRARY.filter((s) => s.suitableSportContext.includes(sport))
 }
+
+/**
+ * Selector determinista de sesión de movilidad.
+ *
+ * Existe para que **ninguna sesión de movilidad o recuperación salga sin
+ * contenido**. Una propuesta con título y objetivo pero sin estructura no le
+ * sirve a nadie: es exactamente la que hay que evitar entregar, venga del
+ * modelo o de una conversión determinista.
+ *
+ * El orden de la librería es la fuente del desempate, así que el mismo contexto
+ * devuelve siempre la misma sesión. **No intenta ser consciente de lesiones**:
+ * el contrato de restricciones de seguridad del proyecto cubre fuerza, no
+ * movilidad, y adivinar acá sería inventar criterio clínico.
+ */
+export function selectMobilitySessionForContext(options: {
+  sport: MobilitySportContext
+  focus?: readonly MobilityFocus[]
+}): MobilitySessionDefinition {
+  const forSport = getMobilitySessionsForSport(options.sport)
+  const pool = forSport.length > 0 ? forSport : MOBILITY_SESSION_LIBRARY
+
+  if (options.focus && options.focus.length > 0) {
+    const matching = pool.find((session) =>
+      session.focus.some((focus) => options.focus?.includes(focus)),
+    )
+    if (matching) return matching
+  }
+
+  // `full_body` es el fallback más útil cuando no hay foco declarado: cubre más
+  // que una sesión regional y no compromete una zona concreta.
+  const fullBody = pool.find((session) => session.focus.includes('full_body'))
+  return fullBody ?? pool[0]!
+}
