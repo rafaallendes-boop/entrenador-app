@@ -47,3 +47,7 @@ Api Whoop
 
 # Loadtest artifacts (may contain paid-run metrics; keep out of git)
 loadtest-results/
+
+# Sourcemaps y bundles archivados por release (§9.2 del spec del reporter de
+# errores). Contenido privado: reconstruyen el código fuente completo.
+build-archive/
