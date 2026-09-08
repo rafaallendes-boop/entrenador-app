@@ -1,0 +1,93 @@
+{
+  "exercises": 93,
+  "node": "v24.14.1",
+  "rows": [
+    {
+      "name": "selectors_192",
+      "exerciseCount": 1174,
+      "milliseconds": [
+        14,
+        11,
+        11
+      ],
+      "medianMs": 11,
+      "signature": "4d90828e546da418e283c1eff052decac5a5800c13b3f7c677495ecbcec7a113",
+      "returnedSessions": 192
+    },
+    {
+      "name": "repair_6weeks_4inventories",
+      "exerciseCount": 131,
+      "milliseconds": [
+        366,
+        353,
+        350
+      ],
+      "medianMs": 353,
+      "signature": "fa603a578ae5d36092dc903da21c201b51391df012a8626b0cc9a32a9d4ada5c",
+      "returnedSessions": 65
+    }
+  ],
+  "hotspots": [
+    {
+      "function": "normalizeStrengthExerciseKey",
+      "file": "",
+      "samples": 15
+    },
+    {
+      "function": "selectBlockStrengthSession",
+      "file": "training/strengthSelector.ts",
+      "samples": 11
+    },
+    {
+      "function": "pickBlockFillers",
+      "file": "training/strengthSelector.ts",
+      "samples": 10
+    },
+    {
+      "function": "selectExerciseForBlockSlot",
+      "file": "training/strengthSelector.ts",
+      "samples": 8
+    },
+    {
+      "function": "canStillImproveBest",
+      "file": "planBuilder/strengthBlockAllocator.ts",
+      "samples": 8
+    },
+    {
+      "function": "canStillImproveBest",
+      "file": "planBuilder/strengthBlockAllocator.ts",
+      "samples": 6
+    },
+    {
+      "function": "normalizeStrengthExerciseKey",
+      "file": "",
+      "samples": 5
+    },
+    {
+      "function": "canStillImproveBest",
+      "file": "planBuilder/strengthBlockAllocator.ts",
+      "samples": 5
+    },
+    {
+      "function": "buildRecentStrengthKeySet",
+      "file": "",
+      "samples": 4
+    },
+    {
+      "function": "normalizeStrengthExerciseKey",
+      "file": "",
+      "samples": 4
+    },
+    {
+      "function": "selectBlockStrengthSession",
+      "file": "training/strengthSelector.ts",
+      "samples": 4
+    },
+    {
+      "function": "search",
+      "file": "planBuilder/strengthBlockAllocator.ts",
+      "samples": 4
+    }
+  ],
+  "telemetryEvents": 255
+}

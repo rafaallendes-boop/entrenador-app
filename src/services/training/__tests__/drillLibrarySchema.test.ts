@@ -37,9 +37,9 @@ describe('SquashDrillDefinition schema Fase 2', () => {
     }
   })
 
-  it('shadows and ghosting drills do not require a partner', () => {
+  it('solo drills do not require a partner; reactive partner cues are explicit', () => {
     const soloDrills = SQUASH_DRILL_LIBRARY.filter((drill) =>
-      /ghosting|sombras|shadows/i.test(drill.name) || drill.tags.includes('ghosting')
+      drill.executionMode === 'solo'
     )
 
     for (const drill of soloDrills) {

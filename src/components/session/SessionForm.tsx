@@ -1,7 +1,14 @@
+import SquashTrainingFields from './SquashTrainingFields'
+import { resolveSquashAvailability, type SquashTrainingContext } from '../../types/squashTrainingContext'
+import RunningTemplatePicker from './RunningTemplatePicker'
+import { materializeRunningTemplate } from '../../services/training/runningTemplateMaterializer'
+import { runningProfileWithRestrictions } from '../../services/training/runningPolicy'
 import { useMemo, useRef, useState, type FormEvent } from 'react'
 import { BookOpen, ChevronDown, ChevronUp, Link2, Plus, Trash2, X } from 'lucide-react'
 import { SESSION_TYPE_CONFIG } from '../../constants/sessionTypes'
 import type {
+  AthleteProfile,
+  RunningDetails,
   MatchResult,
   RunningType,
   SessionType,
@@ -25,6 +32,7 @@ import { v4 as uuid } from '../../utils/uuid'
 import { normalizeSupersetGroups } from '../../services/training/supersetGroups'
 import {
   findSquashDrillByName,
+  isSquashDrillAvailable,
   resolveSquashDrillKind,
 } from '../../services/training/drillLibrary'
 import {
@@ -35,6 +43,7 @@ import ExerciseLibraryBrowser from './ExerciseLibraryBrowser'
 import ExerciseNameInput from './ExerciseNameInput'
 
 export interface SessionFormProps {
+  athleteProfile?: AthleteProfile | null
   initialValues?: CoachSessionDraft
   defaultSport: SessionType
   defaultDate?: string
@@ -197,6 +206,7 @@ export default function SessionForm({
   allowMatchResult = true,
   onSubmit,
   onCancel,
+  athleteProfile,
 }: SessionFormProps) {
   const initialType = initialValues?.type ?? defaultSport
   const initialSquashKind = initialValues?.squashKind
@@ -218,6 +228,7 @@ export default function SessionForm({
   const [runningType, setRunningType] = useState<RunningType>(
     initialValues?.runningTargets?.runningType ?? 'z2',
   )
+  const [runningRecipe, setRunningRecipe] = useState<RunningDetails | undefined>(initialValues?.runningTargets)
   const [paceMin, setPaceMin] = useState(initialValues?.runningTargets?.targetPaceMin ?? '')
   const [paceMax, setPaceMax] = useState(initialValues?.runningTargets?.targetPaceMax ?? '')
   const [hrMin, setHrMin] = useState(String(initialValues?.runningTargets?.targetHrMin ?? ''))
@@ -226,6 +237,7 @@ export default function SessionForm({
     initialValues?.subtype ?? projectSquashSubtype(initialSquashKind),
   )
   const [squashKind, setSquashKind] = useState<SquashSessionBlockKind>(initialSquashKind)
+  const [squashTraining, setSquashTraining] = useState<SquashTrainingContext>(initialValues?.squashTraining ?? {})
   const [opponent, setOpponent] = useState(initialValues?.opponent ?? '')
   const [matchResult, setMatchResult] = useState<MatchResult | ''>(initialValues?.matchResult ?? '')
   const [gamesWon, setGamesWon] = useState(String(initialValues?.gamesWon ?? ''))
@@ -423,6 +435,23 @@ export default function SessionForm({
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
     if (!title.trim() || submittingRef.current) return
+    if (type === 'squash' && squashTraining.technicalResult && (squashTraining.technicalResult.attempts <= 0 || squashTraining.technicalResult.successes > squashTraining.technicalResult.attempts)) { setError('Los aciertos deben estar entre cero y el total de intentos.'); return }
+    if (type === 'squash') {
+      const availability = resolveSquashAvailability(squashTraining.availability, athleteProfile?.planWizardConfig?.partnerAvailability)
+      const changedContent = !initialValues || JSON.stringify(squashTraining.availability) !== JSON.stringify(initialValues.squashTraining?.availability)
+        || JSON.stringify(exercises.map(e => e.name)) !== JSON.stringify(initialValues.exercises?.map(e => e.name) ?? [])
+      if (changedContent && exercises.some(e => { const d = findSquashDrillByName(e.name); return d && !isSquashDrillAvailable(d, availability) })) {
+        setError('Un drill requiere compañero, cancha o material que no está disponible. Ajusta el contenido o la disponibilidad.'); return
+      }
+    }
+    let submittedRunning = runningRecipe
+    if (type === 'running' && runningRecipe?.templateRef) {
+      const profile = runningProfileWithRestrictions(athleteProfile)
+      if (profile.impactRestriction === 'no_running' || profile.impactRestriction === 'no_fast_running' && ['tempo', 'intervals'].includes(runningType)) { setError('Plantilla incompatible con las restricciones activas.'); return }
+      const dose = materializeRunningTemplate({ template: runningRecipe.templateRef.id, durationMin: Number(duration), profile })
+      if (!dose.ok) { setError(dose.message); return }
+      submittedRunning = { ...runningRecipe, intervalStructure: dose.structure }
+    }
     const values: CoachSessionDraft = {
       date,
       timeBlock,
@@ -435,12 +464,15 @@ export default function SessionForm({
       notes: notes.trim() || undefined,
       subtype: type === 'squash' ? squashSubtype : undefined,
       squashKind: type === 'squash' ? squashKind : undefined,
+      squashTraining: type === 'squash' ? { ...squashTraining, technicalResult: isTemplate ? undefined : squashTraining.technicalResult } : undefined,
       opponent: isSquashMatch ? opponent.trim() || undefined : undefined,
       matchResult: isSquashMatch && matchResult ? matchResult : undefined,
       gamesWon: isSquashMatch ? optionalNumber(gamesWon) : undefined,
       gamesLost: isSquashMatch ? optionalNumber(gamesLost) : undefined,
       runningTargets: showRunningFields
         ? {
+            ...submittedRunning,
+            templateRef: submittedRunning?.templateRef, intervalStructure: submittedRunning?.intervalStructure, selectionReason: submittedRunning?.selectionReason,
             runningType,
             targetPaceMin: paceMin.trim() || undefined,
             targetPaceMax: paceMax.trim() || undefined,
@@ -575,6 +607,7 @@ export default function SessionForm({
             </div>
           )}
 
+          {type === 'squash' && <SquashTrainingFields value={squashTraining} onChange={setSquashTraining} results={!isTemplate} />}
           {showRunningFields && (
             <div>
               <span className="mb-2 block text-xs font-medium uppercase tracking-wider text-ink-muted">
@@ -585,7 +618,7 @@ export default function SessionForm({
                   <button
                     type="button"
                     key={run.value}
-                    onClick={() => setRunningType(run.value)}
+                    onClick={() => { setRunningType(run.value); setRunningRecipe(undefined) }}
                     aria-pressed={runningType === run.value}
                     className="rounded-full border border-surface-border px-3 py-1.5 text-xs font-medium"
                   >{run.label}</button>
@@ -593,6 +626,11 @@ export default function SessionForm({
               </div>
             </div>
           )}
+
+          {type === 'running' && <RunningTemplatePicker durationMin={Number(duration)} athleteProfile={athleteProfile} value={runningRecipe} onChange={value => {
+            setRunningRecipe(value)
+            if (value) setRunningType(value.runningType)
+          }} />}
 
           {isTemplate && (
             <label className="block text-xs font-medium uppercase tracking-wider text-ink-muted">

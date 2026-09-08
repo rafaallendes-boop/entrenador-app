@@ -425,8 +425,8 @@ describe('actionPostProcessor', () => {
       runningType: 'z2',
       title: 'Running Z2 suave',
       rpe: 4,
-      targetHrMin: 62,
-      targetHrMax: 72,
+      targetHrMin: undefined,
+      targetHrMax: undefined,
     })
     expect(response.meta?.warnings).toContain('chat_action_without_actions_repaired')
   })
@@ -677,8 +677,8 @@ describe('actionPostProcessor', () => {
       runningType: 'z2',
       newTitle: 'Running Z2 suave',
       newRpe: 4,
-      targetHrMin: 62,
-      targetHrMax: 72,
+      targetHrMin: undefined,
+      targetHrMax: undefined,
     })
     expect(response.message).toContain('Running Z2')
     expect(response.meta?.warnings).toContain('chat_action_delete_only_repaired_to_running_replacement')
@@ -1199,7 +1199,8 @@ describe('actionPostProcessor', () => {
       }]), makeContext([current]), 'Deja la sesión de sombras del miércoles en 30 minutos')
 
       expect(response.actions?.[0]).not.toMatchObject({ squashKind: 'technical' })
-      expect(response.actions?.[0]?.squashDetails).toBeUndefined()
+      expect(response.actions?.[0]?.squashDetails?.sessionKind).toBe('shadows')
+      expect(response.actions?.[0]?.squashDetails?.drills.reduce((total, drill) => total + (drill.durationMin ?? 0), 0)).toBe(30)
     })
 
     it('aplica la modalidad nueva cuando subtype sí contradice la persistida', () => {

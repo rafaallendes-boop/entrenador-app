@@ -1,0 +1,1272 @@
+{
+  "date": "2026-09-07",
+  "scope": "Local function probes, not end-to-end AI generation",
+  "runningContext": {
+    "fatigueLevel": 4,
+    "phase": "build",
+    "recentSessions": [],
+    "goal": "base aeróbica para squash",
+    "sportProfile": "sport_support",
+    "primarySport": "squash"
+  },
+  "squashContext": {
+    "fatigueLevel": 4,
+    "phase": "build",
+    "recentDrills": [],
+    "goal": "mejorar squash",
+    "competitionSoon": false,
+    "partnerAvailability": "partner"
+  },
+  "squashInventory": [
+    {
+      "id": "drive_parallel_depth",
+      "name": "Drives paralelos profundos",
+      "sessionKind": "technical",
+      "executionMode": "partner",
+      "intensity": "moderate",
+      "focus": [
+        "drive",
+        "length",
+        "control"
+      ]
+    },
+    {
+      "id": "drive_crosscourt_length",
+      "name": "Drives cruzados profundos",
+      "sessionKind": "technical",
+      "executionMode": "partner",
+      "intensity": "moderate",
+      "focus": [
+        "drive",
+        "crosscourt",
+        "length"
+      ]
+    },
+    {
+      "id": "drive_switch_parallel_cross",
+      "name": "Alternar drive paralelo y cruzado",
+      "sessionKind": "technical",
+      "executionMode": "partner",
+      "intensity": "moderate",
+      "focus": [
+        "drive",
+        "transition",
+        "precision"
+      ]
+    },
+    {
+      "id": "boast_to_straight_drive",
+      "name": "Boast y salida con drive paralelo",
+      "sessionKind": "technical",
+      "executionMode": "partner",
+      "intensity": "moderate",
+      "focus": [
+        "boast",
+        "drive",
+        "recovery"
+      ]
+    },
+    {
+      "id": "drop_and_counter_drop",
+      "name": "Drop y contra-drop por ambos lados",
+      "sessionKind": "technical",
+      "executionMode": "partner",
+      "intensity": "low",
+      "focus": [
+        "drop",
+        "touch",
+        "front_court"
+      ]
+    },
+    {
+      "id": "solo_100_drops",
+      "name": "Drops en solitario — 100 (50 por lado)",
+      "sessionKind": "control",
+      "executionMode": "solo",
+      "intensity": "low",
+      "focus": [
+        "drop",
+        "touch",
+        "front_court"
+      ]
+    },
+    {
+      "id": "solo_100_mid_court_shots",
+      "name": "Drives desde media cancha — 100",
+      "sessionKind": "control",
+      "executionMode": "solo",
+      "intensity": "low",
+      "focus": [
+        "midcourt",
+        "length",
+        "precision"
+      ]
+    },
+    {
+      "id": "solo_100_service_box",
+      "name": "Drives al cuadro de saque — 100",
+      "sessionKind": "control",
+      "executionMode": "solo",
+      "intensity": "low",
+      "focus": [
+        "target",
+        "length",
+        "precision"
+      ]
+    },
+    {
+      "id": "solo_100_parallels_back",
+      "name": "Drives paralelos desde el fondo — 100",
+      "sessionKind": "control",
+      "executionMode": "solo",
+      "intensity": "moderate",
+      "focus": [
+        "drive",
+        "parallel",
+        "length"
+      ]
+    },
+    {
+      "id": "solo_100_serve_lob_targets",
+      "name": "Saque lob a objetivo — 100 (50 por lado)",
+      "sessionKind": "control",
+      "executionMode": "solo",
+      "intensity": "low",
+      "focus": [
+        "serve",
+        "lob",
+        "precision"
+      ]
+    },
+    {
+      "id": "solo_100_serve_hard_low",
+      "name": "Saque duro y bajo — 100 (50 por lado)",
+      "sessionKind": "control",
+      "executionMode": "solo",
+      "intensity": "low",
+      "focus": [
+        "serve",
+        "target",
+        "precision"
+      ]
+    },
+    {
+      "id": "mid_court_drops",
+      "name": "Drops desde media cancha",
+      "sessionKind": "technical",
+      "executionMode": "partner",
+      "intensity": "low",
+      "focus": [
+        "drop",
+        "transition",
+        "touch"
+      ]
+    },
+    {
+      "id": "return_of_serve_depth_control",
+      "name": "Resto de saque en profundidad",
+      "sessionKind": "technical",
+      "executionMode": "partner",
+      "intensity": "moderate",
+      "focus": [
+        "serve",
+        "return",
+        "depth"
+      ]
+    },
+    {
+      "id": "serve_return_first_three_shots",
+      "name": "Patrón de saque, resto y tercera pelota",
+      "sessionKind": "technical",
+      "executionMode": "partner",
+      "intensity": "moderate",
+      "focus": [
+        "serve",
+        "return",
+        "t_control"
+      ]
+    },
+    {
+      "id": "solo_volleys_only",
+      "name": "Voleas en solitario",
+      "sessionKind": "control",
+      "executionMode": "solo",
+      "intensity": "low",
+      "focus": [
+        "volley",
+        "control",
+        "timing"
+      ]
+    },
+    {
+      "id": "solo_100_backhand_parallels",
+      "name": "Paralelas de revés — 100",
+      "sessionKind": "control",
+      "executionMode": "solo",
+      "intensity": "low",
+      "focus": [
+        "drive",
+        "parallel",
+        "backhand",
+        "length"
+      ]
+    },
+    {
+      "id": "solo_100_forehand_parallels",
+      "name": "Paralelas de derecha — 100",
+      "sessionKind": "control",
+      "executionMode": "solo",
+      "intensity": "low",
+      "focus": [
+        "drive",
+        "parallel",
+        "forehand",
+        "length"
+      ]
+    },
+    {
+      "id": "solo_parallel_crosscourt_cycles",
+      "name": "Paralela de fondo y cruzada — 100 ciclos",
+      "sessionKind": "control",
+      "executionMode": "solo",
+      "intensity": "moderate",
+      "focus": [
+        "drive",
+        "parallel",
+        "crosscourt",
+        "length"
+      ]
+    },
+    {
+      "id": "solo_volleys_straight_cross",
+      "name": "Volea paralela y volea cruzada — 100",
+      "sessionKind": "control",
+      "executionMode": "solo",
+      "intensity": "moderate",
+      "focus": [
+        "volley",
+        "parallel",
+        "crosscourt",
+        "timing"
+      ]
+    },
+    {
+      "id": "solo_boast_straight_drive_cycles",
+      "name": "Boast y paralela en solitario — 50 ciclos",
+      "sessionKind": "control",
+      "executionMode": "solo",
+      "intensity": "high",
+      "focus": [
+        "boast",
+        "drive",
+        "parallel",
+        "movement"
+      ]
+    },
+    {
+      "id": "solo_three_length_one_kill",
+      "name": "3 paralelas de fondo + kill paralelo — 25 ciclos",
+      "sessionKind": "control",
+      "executionMode": "solo",
+      "intensity": "moderate",
+      "focus": [
+        "drive",
+        "parallel",
+        "length",
+        "finish"
+      ]
+    },
+    {
+      "id": "volley_control_midcourt",
+      "name": "Volea de control desde media cancha",
+      "sessionKind": "technical",
+      "executionMode": "partner",
+      "intensity": "moderate",
+      "focus": [
+        "volley",
+        "control",
+        "midcourt"
+      ]
+    },
+    {
+      "id": "volley_pressure_front_wall",
+      "name": "Volea ofensiva desde media cancha",
+      "sessionKind": "technical",
+      "executionMode": "partner",
+      "intensity": "moderate",
+      "focus": [
+        "volley",
+        "pressure",
+        "attack"
+      ]
+    },
+    {
+      "id": "volley_t_recover",
+      "name": "Volea y vuelta a la T",
+      "sessionKind": "technical",
+      "executionMode": "partner",
+      "intensity": "moderate",
+      "focus": [
+        "volley",
+        "t_control",
+        "recovery"
+      ]
+    },
+    {
+      "id": "high_volley_control",
+      "name": "Volea alta de control",
+      "sessionKind": "technical",
+      "executionMode": "partner",
+      "intensity": "moderate",
+      "focus": [
+        "volley",
+        "high_volley",
+        "control"
+      ]
+    },
+    {
+      "id": "volley_drop_finish",
+      "name": "Volea drop de definición",
+      "sessionKind": "technical",
+      "executionMode": "partner",
+      "intensity": "moderate",
+      "focus": [
+        "volley",
+        "drop",
+        "finish"
+      ]
+    },
+    {
+      "id": "t_control_long_short",
+      "name": "Patrón largo-corto desde la T",
+      "sessionKind": "technical",
+      "executionMode": "partner",
+      "intensity": "moderate",
+      "focus": [
+        "t_control",
+        "long_short",
+        "pressure"
+      ]
+    },
+    {
+      "id": "attack_from_t_first_ball",
+      "name": "Atacar la primera pelota cómoda desde la T",
+      "sessionKind": "technical",
+      "executionMode": "partner",
+      "intensity": "high",
+      "focus": [
+        "t_control",
+        "attack",
+        "initiative"
+      ]
+    },
+    {
+      "id": "pressure_back_corners",
+      "name": "Presión a esquinas de fondo",
+      "sessionKind": "technical",
+      "executionMode": "partner",
+      "intensity": "moderate",
+      "focus": [
+        "pressure",
+        "back_court",
+        "length"
+      ]
+    },
+    {
+      "id": "pressure_back_court",
+      "name": "Juego condicionado solo al fondo (intenso)",
+      "sessionKind": "technical",
+      "executionMode": "partner",
+      "intensity": "high",
+      "focus": [
+        "conditioned_game",
+        "pressure",
+        "back_court"
+      ]
+    },
+    {
+      "id": "pressure_three_quarters_court",
+      "name": "Ataque antes del fondo",
+      "sessionKind": "technical",
+      "executionMode": "partner",
+      "intensity": "high",
+      "focus": [
+        "transition",
+        "pressure",
+        "mid_court"
+      ]
+    },
+    {
+      "id": "conditioned_parallel_only",
+      "name": "Juego condicionado solo paralelo",
+      "sessionKind": "technical",
+      "executionMode": "partner",
+      "intensity": "moderate",
+      "focus": [
+        "conditioned_game",
+        "parallel",
+        "order"
+      ]
+    },
+    {
+      "id": "conditioned_full_lane_per_side",
+      "name": "Juego condicionado: pasillo completo por lado",
+      "sessionKind": "technical",
+      "executionMode": "partner",
+      "intensity": "moderate",
+      "focus": [
+        "conditioned_game",
+        "parallel",
+        "court_coverage"
+      ]
+    },
+    {
+      "id": "back_court_parallel_cross_on_volley",
+      "name": "Paralelas de fondo: cruce solo con volea",
+      "sessionKind": "technical",
+      "executionMode": "partner",
+      "intensity": "moderate",
+      "focus": [
+        "drive",
+        "parallel",
+        "volley",
+        "decision_making"
+      ]
+    },
+    {
+      "id": "two_wall_volley_cross_straight_reply",
+      "name": "Cruce de volea a dos paredes y respuesta paralela",
+      "sessionKind": "technical",
+      "executionMode": "partner",
+      "intensity": "moderate",
+      "focus": [
+        "volley",
+        "crosscourt",
+        "parallel",
+        "transition"
+      ]
+    },
+    {
+      "id": "two_wall_volley_cross_drop_option",
+      "name": "Cruce de volea a dos paredes con opción de drop",
+      "sessionKind": "technical",
+      "executionMode": "partner",
+      "intensity": "high",
+      "focus": [
+        "volley",
+        "crosscourt",
+        "drop",
+        "decision_making"
+      ]
+    },
+    {
+      "id": "two_wall_volley_cross_front_direction_choice",
+      "name": "Cruce de volea a dos paredes: adelante elige dirección",
+      "sessionKind": "technical",
+      "executionMode": "partner",
+      "intensity": "high",
+      "focus": [
+        "volley",
+        "crosscourt",
+        "drop",
+        "decision_making"
+      ]
+    },
+    {
+      "id": "conditioned_long_only",
+      "name": "Juego condicionado solo al fondo",
+      "sessionKind": "technical",
+      "executionMode": "partner",
+      "intensity": "moderate",
+      "focus": [
+        "conditioned_game",
+        "length",
+        "pressure"
+      ]
+    },
+    {
+      "id": "conditioned_no_two_bounces",
+      "name": "Juego condicionado en media cancha",
+      "sessionKind": "technical",
+      "executionMode": "partner",
+      "intensity": "high",
+      "focus": [
+        "conditioned_game",
+        "intensity",
+        "speed"
+      ]
+    },
+    {
+      "id": "conditioned_forbidden_zone",
+      "name": "Juego condicionado con zona prohibida",
+      "sessionKind": "technical",
+      "executionMode": "partner",
+      "intensity": "moderate",
+      "focus": [
+        "conditioned_game",
+        "targets",
+        "decision_making"
+      ]
+    },
+    {
+      "id": "conditioned_boast_start",
+      "name": "Juego condicionado: el punto abre con boast",
+      "sessionKind": "technical",
+      "executionMode": "partner",
+      "intensity": "moderate",
+      "focus": [
+        "conditioned_game",
+        "boast",
+        "transition"
+      ]
+    },
+    {
+      "id": "front_back_transition",
+      "name": "Transición frente-fondo con vuelta a la T",
+      "sessionKind": "technical",
+      "executionMode": "partner",
+      "intensity": "moderate",
+      "focus": [
+        "transition",
+        "recovery",
+        "court_coverage"
+      ]
+    },
+    {
+      "id": "ghosting_4_corners",
+      "name": "Ghosting a cuatro esquinas",
+      "sessionKind": "shadows",
+      "executionMode": "solo",
+      "intensity": "moderate",
+      "focus": [
+        "ghosting",
+        "movement",
+        "conditioning"
+      ]
+    },
+    {
+      "id": "ghosting_6_points",
+      "name": "Ghosting a seis puntos",
+      "sessionKind": "shadows",
+      "executionMode": "solo",
+      "intensity": "high",
+      "focus": [
+        "ghosting",
+        "movement",
+        "speed"
+      ]
+    },
+    {
+      "id": "split_step_t_recovery",
+      "name": "Split-step y vuelta a la T",
+      "sessionKind": "shadows",
+      "executionMode": "solo",
+      "intensity": "moderate",
+      "focus": [
+        "footwork",
+        "t_control",
+        "reaction"
+      ]
+    },
+    {
+      "id": "rsa_short_bursts",
+      "name": "Series cortas de velocidad en cancha (10-15 s)",
+      "sessionKind": "shadows",
+      "executionMode": "solo",
+      "intensity": "high",
+      "focus": [
+        "rsa",
+        "conditioning",
+        "repeat_sprint"
+      ]
+    },
+    {
+      "id": "multiball_pressure_finishes",
+      "name": "Multibola para presionar y cerrar",
+      "sessionKind": "technical",
+      "executionMode": "partner",
+      "intensity": "high",
+      "focus": [
+        "multiball",
+        "pressure",
+        "finish"
+      ]
+    },
+    {
+      "id": "defensive_high_lob_recovery",
+      "name": "Lob defensivo alto y recuperación",
+      "sessionKind": "technical",
+      "executionMode": "partner",
+      "intensity": "low",
+      "focus": [
+        "lob",
+        "recovery",
+        "back_court"
+      ]
+    },
+    {
+      "id": "attacking_lob_change_of_pace",
+      "name": "Lob ofensivo como cambio de ritmo",
+      "sessionKind": "technical",
+      "executionMode": "partner",
+      "intensity": "moderate",
+      "focus": [
+        "lob",
+        "attack",
+        "variation"
+      ]
+    },
+    {
+      "id": "attacking_boast_from_mid_court",
+      "name": "Boast ofensivo desde media cancha",
+      "sessionKind": "technical",
+      "executionMode": "partner",
+      "intensity": "moderate",
+      "focus": [
+        "boast",
+        "attack",
+        "mid_court"
+      ]
+    },
+    {
+      "id": "attacking_boast_from_back_court",
+      "name": "Boast ofensivo desde el fondo",
+      "sessionKind": "technical",
+      "executionMode": "partner",
+      "intensity": "high",
+      "focus": [
+        "boast",
+        "attack",
+        "back_court"
+      ]
+    },
+    {
+      "id": "front_court_angle_finish",
+      "name": "Definición con ángulo en zona delantera",
+      "sessionKind": "technical",
+      "executionMode": "partner",
+      "intensity": "moderate",
+      "focus": [
+        "angle",
+        "front_court",
+        "finish"
+      ]
+    },
+    {
+      "id": "nick_pressure_closure",
+      "name": "Nick: cierre a la unión baja",
+      "sessionKind": "technical",
+      "executionMode": "partner",
+      "intensity": "moderate",
+      "focus": [
+        "nick",
+        "finish",
+        "precision"
+      ]
+    },
+    {
+      "id": "continuous_squash_movement_base",
+      "name": "Movimiento continuo en cancha a ritmo sostenido",
+      "sessionKind": "shadows",
+      "executionMode": "solo",
+      "intensity": "low",
+      "focus": [
+        "movement",
+        "aerobic_base",
+        "conditioning"
+      ]
+    },
+    {
+      "id": "extensive_aerobic_movement_intervals",
+      "name": "Intervalos largos de movimiento en cancha",
+      "sessionKind": "shadows",
+      "executionMode": "solo",
+      "intensity": "moderate",
+      "focus": [
+        "movement",
+        "aerobic_base",
+        "tempo"
+      ]
+    },
+    {
+      "id": "technical_recovery_length",
+      "name": "Peloteo profundo suave de recuperación",
+      "sessionKind": "technical",
+      "executionMode": "partner",
+      "intensity": "low",
+      "focus": [
+        "recovery_technical",
+        "length",
+        "rhythm"
+      ]
+    },
+    {
+      "id": "pre_match_activation_timing",
+      "name": "Activación pre-partido de manos y pies",
+      "sessionKind": "control",
+      "executionMode": "solo",
+      "intensity": "low",
+      "focus": [
+        "activation",
+        "timing",
+        "confidence"
+      ]
+    },
+    {
+      "id": "match_sim_points_short_sets",
+      "name": "Game a 11 con marcador real",
+      "sessionKind": "match",
+      "executionMode": "match",
+      "intensity": "high",
+      "focus": [
+        "match_play",
+        "decision_making",
+        "pressure"
+      ]
+    },
+    {
+      "id": "practice_match_five_games",
+      "name": "Partido de entrenamiento al mejor de 5 juegos",
+      "sessionKind": "match",
+      "executionMode": "match",
+      "intensity": "high",
+      "focus": [
+        "match_play",
+        "decision_making",
+        "tactical_application"
+      ]
+    },
+    {
+      "id": "practice_match_best_of_3",
+      "name": "Partido de entrenamiento al mejor de 3 juegos",
+      "sessionKind": "match",
+      "executionMode": "match",
+      "intensity": "moderate",
+      "focus": [
+        "match_play",
+        "pressure",
+        "competitive_rhythm"
+      ]
+    }
+  ],
+  "runningInventory": [
+    {
+      "id": "easy_z2_base",
+      "name": "Easy Z2 base",
+      "family": "easy_aerobic",
+      "intensity": "low",
+      "typicalStructure": "30-50 min a ritmo Z2 constante. Nariz cerrada o conversación cómoda como referencia de intensidad."
+    },
+    {
+      "id": "easy_z2_strides",
+      "name": "Easy Z2 + strides",
+      "family": "easy_aerobic",
+      "intensity": "low",
+      "typicalStructure": "25-40 min Z2 fácil + 4-6 strides de 20-25s a ritmo de 1K con recuperación completa."
+    },
+    {
+      "id": "aerobic_steady",
+      "name": "Aerobic steady run",
+      "family": "easy_aerobic",
+      "intensity": "moderate",
+      "typicalStructure": "35-50 min a ritmo aeróbico sostenido. Esfuerzo perceptible pero sin superar umbral de confort."
+    },
+    {
+      "id": "easy_longer",
+      "name": "Easy aerobic longer block",
+      "family": "easy_aerobic",
+      "intensity": "low",
+      "typicalStructure": "55-70 min a ritmo Z2 fácil constante. Sin acelerar al final."
+    },
+    {
+      "id": "long_easy",
+      "name": "Long run fácil",
+      "family": "long_run",
+      "intensity": "low",
+      "typicalStructure": "60-90 min a ritmo Z2 fácil constante. Hidratación en ruta si supera 60 min."
+    },
+    {
+      "id": "progressive_long",
+      "name": "Progressive long run",
+      "family": "long_run",
+      "intensity": "moderate",
+      "typicalStructure": "Primeros 50% del tiempo a ritmo fácil Z2. Últimos 30-40% con progresión gradual hasta maratón-pace o ritmo Z3."
+    },
+    {
+      "id": "long_fast_finish",
+      "name": "Long run con cierre rápido",
+      "family": "long_run",
+      "intensity": "moderate-high",
+      "typicalStructure": "60-80 min total. Primeros 50-60 min fácil Z2 + últimos 15-20 min a ritmo de carrera (HM-pace o MP)."
+    },
+    {
+      "id": "tempo_continuo",
+      "name": "Tempo continuo",
+      "family": "tempo_threshold",
+      "intensity": "moderate-high",
+      "typicalStructure": "10 min calentamiento fácil + 20-35 min a ritmo umbral sostenido + 10 min enfriamiento Z2."
+    },
+    {
+      "id": "cruise_intervals",
+      "name": "Cruise intervals",
+      "family": "tempo_threshold",
+      "intensity": "moderate-high",
+      "typicalStructure": "10 min Z2 + 4 × 6-8 min a ritmo umbral con 2 min trote suave entre bloques + 10 min Z2."
+    },
+    {
+      "id": "threshold_blocks",
+      "name": "Threshold blocks",
+      "family": "tempo_threshold",
+      "intensity": "moderate-high",
+      "typicalStructure": "10 min Z2 + 5-6 × 4 min a ritmo umbral con 2-3 min recuperación activa + 10 min Z2."
+    },
+    {
+      "id": "lactate_clearance",
+      "name": "Lactate clearance run",
+      "family": "tempo_threshold",
+      "intensity": "moderate",
+      "typicalStructure": "10 min Z2 + 25-35 min a esfuerzo comfortably hard (RPE 6.5-7.5) + 10 min Z2."
+    },
+    {
+      "id": "repeats_400",
+      "name": "Repeticiones 400m",
+      "family": "intervals_vo2",
+      "intensity": "high",
+      "typicalStructure": "10 min Z2 + 8-12 × 400m a ritmo 5K con 90s-2min recuperación trotando + 10 min Z2."
+    },
+    {
+      "id": "repeats_800",
+      "name": "Repeticiones 800m",
+      "family": "intervals_vo2",
+      "intensity": "high",
+      "typicalStructure": "10 min Z2 + 4-6 × 800m a ritmo 5K-10K con 2-3 min recuperación trotando + 10 min Z2."
+    },
+    {
+      "id": "repeats_1k",
+      "name": "Repeticiones 1K",
+      "family": "intervals_vo2",
+      "intensity": "high",
+      "typicalStructure": "10 min Z2 + 4-5 × 1K a ritmo 10K con 2-3 min recuperación trotando + 10 min Z2."
+    },
+    {
+      "id": "fartlek_controlado",
+      "name": "Fartlek controlado",
+      "family": "intervals_vo2",
+      "intensity": "moderate-high",
+      "typicalStructure": "10 min Z2 + 20-25 min alternando 2 min rápido (ritmo 5-10K) y 2 min suave (Z2) + 10 min Z2."
+    },
+    {
+      "id": "strides_session",
+      "name": "Strides session",
+      "family": "speed_economy",
+      "intensity": "low",
+      "typicalStructure": "20-30 min Z2 fácil + 5-8 strides de 20-25s a ritmo fluido (RPE 8 percibido sin forzar) con recuperación completa."
+    },
+    {
+      "id": "short_hill_sprints",
+      "name": "Short hill sprints",
+      "family": "speed_economy",
+      "intensity": "high",
+      "typicalStructure": "15 min Z2 fácil + 6-10 × 8-10s sprint en cuesta empinada con recuperación completa caminando + 10 min Z2."
+    },
+    {
+      "id": "speed_support",
+      "name": "Speed support session",
+      "family": "speed_economy",
+      "intensity": "low",
+      "typicalStructure": "20 min Z2 + drills de técnica (A, B, skipping) + 4 strides de 20s + 10 min Z2."
+    },
+    {
+      "id": "hill_repeats",
+      "name": "Hill repeats",
+      "family": "hill",
+      "intensity": "high",
+      "typicalStructure": "10 min Z2 + 6-10 × 60-90s en cuesta moderada a máximo esfuerzo con trote de bajada como recuperación + 10 min Z2."
+    },
+    {
+      "id": "uphill_tempo",
+      "name": "Uphill tempo blocks",
+      "family": "hill",
+      "intensity": "moderate-high",
+      "typicalStructure": "10 min Z2 + 3-4 × 4-5 min a ritmo umbral en cuesta suave-moderada con 3 min recuperación + 10 min Z2."
+    },
+    {
+      "id": "hm_pace_blocks",
+      "name": "Half marathon pace blocks",
+      "family": "race_specific",
+      "intensity": "moderate-high",
+      "typicalStructure": "10 min Z2 + 3 × 10-12 min a ritmo HM con 3-4 min recuperación activa + 10 min Z2."
+    },
+    {
+      "id": "pace_10k_reps",
+      "name": "10K pace reps",
+      "family": "race_specific",
+      "intensity": "high",
+      "typicalStructure": "10 min Z2 + 4-5 × 1 milla o 6-8 × 800m a ritmo 10K con 2-3 min recuperación + 10 min Z2."
+    },
+    {
+      "id": "marathon_pace_steady",
+      "name": "Marathon pace steady block",
+      "family": "race_specific",
+      "intensity": "moderate",
+      "typicalStructure": "10 min Z2 + 20-30 min a ritmo de maratón + 10 min Z2. Sin acelerar ni frenar."
+    },
+    {
+      "id": "race_activation",
+      "name": "Race day activation",
+      "family": "race_specific",
+      "intensity": "low",
+      "typicalStructure": "15-20 min muy suave Z2 + 4-6 strides de 20s a ritmo de carrera + drills opcionales. Total 20-30 min."
+    },
+    {
+      "id": "recovery_jog",
+      "name": "Recovery jog",
+      "family": "recovery",
+      "intensity": "low",
+      "typicalStructure": "20-35 min muy suave. Ritmo de conversación fácil. Si hay dolor, caminar."
+    },
+    {
+      "id": "run_walk_return",
+      "name": "Run-walk return",
+      "family": "recovery",
+      "intensity": "low",
+      "typicalStructure": "20-30 min total alternando 2-3 min trote suave con 1-2 min caminata. Sin acelerar en ningún bloque."
+    },
+    {
+      "id": "low_impact_return",
+      "name": "Low impact return session",
+      "family": "recovery",
+      "intensity": "low",
+      "typicalStructure": "15-25 min muy suave. Puede incluir caminata si se necesita. Solo seguir moviéndose sin presión."
+    }
+  ],
+  "runningProbes": [
+    {
+      "overrides": {
+        "sessionDurationMin": 15
+      },
+      "result": {
+        "focus": "aerobic conditioning — Easy aerobic longer block",
+        "session": {
+          "name": "Easy aerobic longer block",
+          "category": "easy",
+          "family": "easy_aerobic",
+          "runningType": "z2",
+          "structure": "55-70 min a ritmo Z2 fácil constante. Sin acelerar al final.",
+          "intensity": "low",
+          "notes": "Bloque aeróbico fácil de mayor duración. Buen estímulo de fondo sin acumular fatiga de calidad."
+        },
+        "progressionSummary": "Sin historial suficiente: usar variacion contextual limpia."
+      }
+    },
+    {
+      "overrides": {
+        "sessionDurationMin": 60
+      },
+      "result": {
+        "focus": "aerobic conditioning — Easy aerobic longer block",
+        "session": {
+          "name": "Easy aerobic longer block",
+          "category": "easy",
+          "family": "easy_aerobic",
+          "runningType": "z2",
+          "structure": "55-70 min a ritmo Z2 fácil constante. Sin acelerar al final.",
+          "intensity": "low",
+          "notes": "Bloque aeróbico fácil de mayor duración. Buen estímulo de fondo sin acumular fatiga de calidad."
+        },
+        "progressionSummary": "Sin historial suficiente: usar variacion contextual limpia."
+      }
+    },
+    {
+      "overrides": {
+        "experienceLevel": "beginner"
+      },
+      "result": {
+        "focus": "aerobic conditioning — Easy aerobic longer block",
+        "session": {
+          "name": "Easy aerobic longer block",
+          "category": "easy",
+          "family": "easy_aerobic",
+          "runningType": "z2",
+          "structure": "55-70 min a ritmo Z2 fácil constante. Sin acelerar al final.",
+          "intensity": "low",
+          "notes": "Bloque aeróbico fácil de mayor duración. Buen estímulo de fondo sin acumular fatiga de calidad."
+        },
+        "progressionSummary": "Sin historial suficiente: usar variacion contextual limpia."
+      }
+    },
+    {
+      "overrides": {
+        "experienceLevel": "advanced"
+      },
+      "result": {
+        "focus": "aerobic conditioning — Easy aerobic longer block",
+        "session": {
+          "name": "Easy aerobic longer block",
+          "category": "easy",
+          "family": "easy_aerobic",
+          "runningType": "z2",
+          "structure": "55-70 min a ritmo Z2 fácil constante. Sin acelerar al final.",
+          "intensity": "low",
+          "notes": "Bloque aeróbico fácil de mayor duración. Buen estímulo de fondo sin acumular fatiga de calidad."
+        },
+        "progressionSummary": "Sin historial suficiente: usar variacion contextual limpia."
+      }
+    }
+  ],
+  "squashDurationProbes": [
+    {
+      "durationMin": 20,
+      "result": {
+        "subtype": "training",
+        "details": {
+          "trainingFocus": "technical",
+          "sessionMode": "drill_session",
+          "sessionKind": "technical",
+          "drills": [
+            {
+              "name": "Boast ofensivo desde el fondo",
+              "durationMin": 20,
+              "notes": "Desde el fondo, juega un boast —el golpe que va primero a la pared lateral— con intención ofensiva para llevar la pelota al frente. Objetivo: transformar una defensa larga en una oportunidad de ataque. Clave: úsalo solo si llegas con espacio suficiente; si estás muy tarde, mejor lob alto y recupera.",
+              "executionMode": "partner"
+            },
+            {
+              "name": "Boast ofensivo desde media cancha",
+              "durationMin": 16,
+              "notes": "Desde media cancha, juega un boast —el golpe que va primero a la pared lateral— para que la pelota llegue baja al frente. Objetivo: abrir la cancha y obligar al rival a correr hacia adelante. Clave: después del golpe avanza; la ventaja está en tomar temprano la siguiente pelota.",
+              "executionMode": "partner"
+            },
+            {
+              "name": "Lob ofensivo como cambio de ritmo",
+              "durationMin": 16,
+              "notes": "Desde media cancha o el frente, juega un lob —pelota alta y profunda— cuando el rival espera una pelota rápida. Objetivo: cambiar el ritmo y sacarlo de la T. Clave: usa la misma preparación que para una pelota corta y prepárate para atacar la respuesta.",
+              "executionMode": "partner"
+            }
+          ],
+          "blocks": [
+            {
+              "kind": "technical",
+              "drills": [
+                {
+                  "name": "Boast ofensivo desde el fondo",
+                  "durationMin": 20,
+                  "notes": "Desde el fondo, juega un boast —el golpe que va primero a la pared lateral— con intención ofensiva para llevar la pelota al frente. Objetivo: transformar una defensa larga en una oportunidad de ataque. Clave: úsalo solo si llegas con espacio suficiente; si estás muy tarde, mejor lob alto y recupera.",
+                  "executionMode": "partner"
+                },
+                {
+                  "name": "Boast ofensivo desde media cancha",
+                  "durationMin": 16,
+                  "notes": "Desde media cancha, juega un boast —el golpe que va primero a la pared lateral— para que la pelota llegue baja al frente. Objetivo: abrir la cancha y obligar al rival a correr hacia adelante. Clave: después del golpe avanza; la ventaja está en tomar temprano la siguiente pelota.",
+                  "executionMode": "partner"
+                },
+                {
+                  "name": "Lob ofensivo como cambio de ritmo",
+                  "durationMin": 16,
+                  "notes": "Desde media cancha o el frente, juega un lob —pelota alta y profunda— cuando el rival espera una pelota rápida. Objetivo: cambiar el ritmo y sacarlo de la T. Clave: usa la misma preparación que para una pelota corta y prepárate para atacar la respuesta.",
+                  "executionMode": "partner"
+                }
+              ],
+              "durationMin": 52
+            }
+          ]
+        },
+        "warnings": []
+      }
+    },
+    {
+      "durationMin": 45,
+      "result": {
+        "subtype": "training",
+        "details": {
+          "trainingFocus": "technical",
+          "sessionMode": "drill_session",
+          "sessionKind": "technical",
+          "drills": [
+            {
+              "name": "Boast ofensivo desde el fondo",
+              "durationMin": 20,
+              "notes": "Desde el fondo, juega un boast —el golpe que va primero a la pared lateral— con intención ofensiva para llevar la pelota al frente. Objetivo: transformar una defensa larga en una oportunidad de ataque. Clave: úsalo solo si llegas con espacio suficiente; si estás muy tarde, mejor lob alto y recupera.",
+              "executionMode": "partner"
+            },
+            {
+              "name": "Boast ofensivo desde media cancha",
+              "durationMin": 16,
+              "notes": "Desde media cancha, juega un boast —el golpe que va primero a la pared lateral— para que la pelota llegue baja al frente. Objetivo: abrir la cancha y obligar al rival a correr hacia adelante. Clave: después del golpe avanza; la ventaja está en tomar temprano la siguiente pelota.",
+              "executionMode": "partner"
+            },
+            {
+              "name": "Lob ofensivo como cambio de ritmo",
+              "durationMin": 16,
+              "notes": "Desde media cancha o el frente, juega un lob —pelota alta y profunda— cuando el rival espera una pelota rápida. Objetivo: cambiar el ritmo y sacarlo de la T. Clave: usa la misma preparación que para una pelota corta y prepárate para atacar la respuesta.",
+              "executionMode": "partner"
+            }
+          ],
+          "blocks": [
+            {
+              "kind": "technical",
+              "drills": [
+                {
+                  "name": "Boast ofensivo desde el fondo",
+                  "durationMin": 20,
+                  "notes": "Desde el fondo, juega un boast —el golpe que va primero a la pared lateral— con intención ofensiva para llevar la pelota al frente. Objetivo: transformar una defensa larga en una oportunidad de ataque. Clave: úsalo solo si llegas con espacio suficiente; si estás muy tarde, mejor lob alto y recupera.",
+                  "executionMode": "partner"
+                },
+                {
+                  "name": "Boast ofensivo desde media cancha",
+                  "durationMin": 16,
+                  "notes": "Desde media cancha, juega un boast —el golpe que va primero a la pared lateral— para que la pelota llegue baja al frente. Objetivo: abrir la cancha y obligar al rival a correr hacia adelante. Clave: después del golpe avanza; la ventaja está en tomar temprano la siguiente pelota.",
+                  "executionMode": "partner"
+                },
+                {
+                  "name": "Lob ofensivo como cambio de ritmo",
+                  "durationMin": 16,
+                  "notes": "Desde media cancha o el frente, juega un lob —pelota alta y profunda— cuando el rival espera una pelota rápida. Objetivo: cambiar el ritmo y sacarlo de la T. Clave: usa la misma preparación que para una pelota corta y prepárate para atacar la respuesta.",
+                  "executionMode": "partner"
+                }
+              ],
+              "durationMin": 52
+            }
+          ]
+        },
+        "warnings": []
+      }
+    },
+    {
+      "durationMin": 60,
+      "result": {
+        "subtype": "training",
+        "details": {
+          "trainingFocus": "technical",
+          "sessionMode": "drill_session",
+          "sessionKind": "technical",
+          "drills": [
+            {
+              "name": "Boast ofensivo desde el fondo",
+              "durationMin": 20,
+              "notes": "Desde el fondo, juega un boast —el golpe que va primero a la pared lateral— con intención ofensiva para llevar la pelota al frente. Objetivo: transformar una defensa larga en una oportunidad de ataque. Clave: úsalo solo si llegas con espacio suficiente; si estás muy tarde, mejor lob alto y recupera.",
+              "executionMode": "partner"
+            },
+            {
+              "name": "Boast ofensivo desde media cancha",
+              "durationMin": 16,
+              "notes": "Desde media cancha, juega un boast —el golpe que va primero a la pared lateral— para que la pelota llegue baja al frente. Objetivo: abrir la cancha y obligar al rival a correr hacia adelante. Clave: después del golpe avanza; la ventaja está en tomar temprano la siguiente pelota.",
+              "executionMode": "partner"
+            },
+            {
+              "name": "Lob ofensivo como cambio de ritmo",
+              "durationMin": 16,
+              "notes": "Desde media cancha o el frente, juega un lob —pelota alta y profunda— cuando el rival espera una pelota rápida. Objetivo: cambiar el ritmo y sacarlo de la T. Clave: usa la misma preparación que para una pelota corta y prepárate para atacar la respuesta.",
+              "executionMode": "partner"
+            }
+          ],
+          "blocks": [
+            {
+              "kind": "technical",
+              "drills": [
+                {
+                  "name": "Boast ofensivo desde el fondo",
+                  "durationMin": 20,
+                  "notes": "Desde el fondo, juega un boast —el golpe que va primero a la pared lateral— con intención ofensiva para llevar la pelota al frente. Objetivo: transformar una defensa larga en una oportunidad de ataque. Clave: úsalo solo si llegas con espacio suficiente; si estás muy tarde, mejor lob alto y recupera.",
+                  "executionMode": "partner"
+                },
+                {
+                  "name": "Boast ofensivo desde media cancha",
+                  "durationMin": 16,
+                  "notes": "Desde media cancha, juega un boast —el golpe que va primero a la pared lateral— para que la pelota llegue baja al frente. Objetivo: abrir la cancha y obligar al rival a correr hacia adelante. Clave: después del golpe avanza; la ventaja está en tomar temprano la siguiente pelota.",
+                  "executionMode": "partner"
+                },
+                {
+                  "name": "Lob ofensivo como cambio de ritmo",
+                  "durationMin": 16,
+                  "notes": "Desde media cancha o el frente, juega un lob —pelota alta y profunda— cuando el rival espera una pelota rápida. Objetivo: cambiar el ritmo y sacarlo de la T. Clave: usa la misma preparación que para una pelota corta y prepárate para atacar la respuesta.",
+                  "executionMode": "partner"
+                }
+              ],
+              "durationMin": 52
+            }
+          ]
+        },
+        "warnings": [
+          {
+            "code": "pool_insufficient",
+            "message": "No hay suficientes drills de technical para 60 min: se entregan 3 de 4. No se completa con otra modalidad."
+          }
+        ]
+      }
+    }
+  ],
+  "squashHistoryProbes": [
+    {
+      "status": "completed",
+      "result": {
+        "recommendation": "progress",
+        "targetFamily": "drive_patterns",
+        "targetFocus": "control",
+        "families": {
+          "drive_patterns": {
+            "family": "drive_patterns",
+            "lastDrillId": "drive_parallel_depth",
+            "lastLevel": 1,
+            "frequency": 1,
+            "lastDate": "2026-09-06",
+            "recentFocuses": [
+              "drive",
+              "length",
+              "control"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "status": "planned",
+      "result": {
+        "recommendation": "progress",
+        "targetFamily": "drive_patterns",
+        "targetFocus": "control",
+        "families": {
+          "drive_patterns": {
+            "family": "drive_patterns",
+            "lastDrillId": "drive_parallel_depth",
+            "lastLevel": 1,
+            "frequency": 1,
+            "lastDate": "2026-09-06",
+            "recentFocuses": [
+              "drive",
+              "length",
+              "control"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "status": "skipped",
+      "result": {
+        "recommendation": "progress",
+        "targetFamily": "drive_patterns",
+        "targetFocus": "control",
+        "families": {
+          "drive_patterns": {
+            "family": "drive_patterns",
+            "lastDrillId": "drive_parallel_depth",
+            "lastLevel": 1,
+            "frequency": 1,
+            "lastDate": "2026-09-06",
+            "recentFocuses": [
+              "drive",
+              "length",
+              "control"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "supportHigherIntensityEligible": [
+    "tempo_continuo",
+    "cruise_intervals",
+    "threshold_blocks",
+    "short_hill_sprints"
+  ]
+}

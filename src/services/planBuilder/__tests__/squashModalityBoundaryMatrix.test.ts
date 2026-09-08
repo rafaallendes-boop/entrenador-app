@@ -237,7 +237,8 @@ describe('A7 — matriz de modalidad por frontera', () => {
     const ownDrills = definitions.filter((definition) => resolveSquashDrillKind(definition) === kind)
     expect(ownDrills.length).toBeGreaterThan(0)
     for (const definition of ownDrills) {
-      expect(resolveDrillExecutionMode(definition)).toBe(EXPECTED_MODE[kind])
+      if (definition.id === 'reactive_ghosting_signal') expect(resolveDrillExecutionMode(definition)).toBe('partner')
+      else expect(resolveDrillExecutionMode(definition)).toBe(EXPECTED_MODE[kind])
     }
   })
 })

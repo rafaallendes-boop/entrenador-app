@@ -1,0 +1,4816 @@
+{
+  "chat": [
+    {
+      "blocks": [
+        {
+          "durationMin": 5,
+          "label": "Calentamiento Z2",
+          "targetPace": null
+        },
+        {
+          "durationMin": 10,
+          "label": "Trote Z2 continuo",
+          "targetPace": null
+        },
+        {
+          "durationMin": 5,
+          "label": "Enfriamiento Z2",
+          "targetPace": null
+        }
+      ],
+      "covers": [
+        "R8"
+      ],
+      "drills": [],
+      "duration": {
+        "deltaMin": 0,
+        "itemCount": 3,
+        "knownMin": 20,
+        "requestedMin": 20,
+        "unknownBlocks": 0,
+        "verdict": "exact"
+      },
+      "name": "chat add_session running Z2 20min",
+      "pace": {
+        "distinctPaces": 1,
+        "rows": [
+          {
+            "label": "Calentamiento Z2",
+            "role": "warmup",
+            "targetPace": null
+          },
+          {
+            "label": "Trote Z2 continuo",
+            "role": "work",
+            "targetPace": null
+          },
+          {
+            "label": "Enfriamiento Z2",
+            "role": "cooldown",
+            "targetPace": null
+          }
+        ],
+        "sharedPaceWithWork": false
+      },
+      "requestedDurationMin": 20,
+      "resolvedDurationMin": 20,
+      "resolvedRunningType": "z2",
+      "resolvedSquashKind": null
+    },
+    {
+      "blocks": [
+        {
+          "durationMin": 6,
+          "label": "Calentamiento Z2",
+          "targetPace": null
+        },
+        {
+          "durationMin": 18,
+          "label": "Trote Z2 continuo",
+          "targetPace": null
+        },
+        {
+          "durationMin": 6,
+          "label": "Enfriamiento Z2",
+          "targetPace": null
+        }
+      ],
+      "covers": [
+        "R8"
+      ],
+      "drills": [],
+      "duration": {
+        "deltaMin": 0,
+        "itemCount": 3,
+        "knownMin": 30,
+        "requestedMin": 30,
+        "unknownBlocks": 0,
+        "verdict": "exact"
+      },
+      "name": "chat add_session running Z2 30min",
+      "pace": {
+        "distinctPaces": 1,
+        "rows": [
+          {
+            "label": "Calentamiento Z2",
+            "role": "warmup",
+            "targetPace": null
+          },
+          {
+            "label": "Trote Z2 continuo",
+            "role": "work",
+            "targetPace": null
+          },
+          {
+            "label": "Enfriamiento Z2",
+            "role": "cooldown",
+            "targetPace": null
+          }
+        ],
+        "sharedPaceWithWork": false
+      },
+      "requestedDurationMin": 30,
+      "resolvedDurationMin": 30,
+      "resolvedRunningType": "z2",
+      "resolvedSquashKind": null
+    },
+    {
+      "blocks": [
+        {
+          "durationMin": 9,
+          "label": "Calentamiento Z2",
+          "targetPace": null
+        },
+        {
+          "durationMin": 27,
+          "label": "Trote Z2 continuo",
+          "targetPace": null
+        },
+        {
+          "durationMin": 9,
+          "label": "Enfriamiento Z2",
+          "targetPace": null
+        }
+      ],
+      "covers": [
+        "R8"
+      ],
+      "drills": [],
+      "duration": {
+        "deltaMin": 0,
+        "itemCount": 3,
+        "knownMin": 45,
+        "requestedMin": 45,
+        "unknownBlocks": 0,
+        "verdict": "exact"
+      },
+      "name": "chat add_session running Z2 45min",
+      "pace": {
+        "distinctPaces": 1,
+        "rows": [
+          {
+            "label": "Calentamiento Z2",
+            "role": "warmup",
+            "targetPace": null
+          },
+          {
+            "label": "Trote Z2 continuo",
+            "role": "work",
+            "targetPace": null
+          },
+          {
+            "label": "Enfriamiento Z2",
+            "role": "cooldown",
+            "targetPace": null
+          }
+        ],
+        "sharedPaceWithWork": false
+      },
+      "requestedDurationMin": 45,
+      "resolvedDurationMin": 45,
+      "resolvedRunningType": "z2",
+      "resolvedSquashKind": null
+    },
+    {
+      "blocks": [
+        {
+          "durationMin": 10,
+          "label": "Calentamiento Z2",
+          "targetPace": null
+        },
+        {
+          "durationMin": 40,
+          "label": "Trote Z2 continuo",
+          "targetPace": null
+        },
+        {
+          "durationMin": 10,
+          "label": "Enfriamiento Z2",
+          "targetPace": null
+        }
+      ],
+      "covers": [
+        "R8"
+      ],
+      "drills": [],
+      "duration": {
+        "deltaMin": 0,
+        "itemCount": 3,
+        "knownMin": 60,
+        "requestedMin": 60,
+        "unknownBlocks": 0,
+        "verdict": "exact"
+      },
+      "name": "chat add_session running Z2 60min",
+      "pace": {
+        "distinctPaces": 1,
+        "rows": [
+          {
+            "label": "Calentamiento Z2",
+            "role": "warmup",
+            "targetPace": null
+          },
+          {
+            "label": "Trote Z2 continuo",
+            "role": "work",
+            "targetPace": null
+          },
+          {
+            "label": "Enfriamiento Z2",
+            "role": "cooldown",
+            "targetPace": null
+          }
+        ],
+        "sharedPaceWithWork": false
+      },
+      "requestedDurationMin": 60,
+      "resolvedDurationMin": 60,
+      "resolvedRunningType": "z2",
+      "resolvedSquashKind": null
+    },
+    {
+      "blocks": [],
+      "covers": [
+        "S1"
+      ],
+      "drills": [
+        {
+          "durationMin": 12,
+          "name": "Atacar la primera pelota cómoda desde la T"
+        },
+        {
+          "durationMin": 6,
+          "name": "Patrón de saque, resto y tercera pelota"
+        },
+        {
+          "durationMin": 12,
+          "name": "Patrón largo-corto desde la T"
+        }
+      ],
+      "duration": {
+        "deltaMin": 0,
+        "itemCount": 3,
+        "knownMin": 30,
+        "requestedMin": 30,
+        "unknownBlocks": 0,
+        "verdict": "exact"
+      },
+      "name": "chat add_session squash technical 30min",
+      "pace": {
+        "distinctPaces": 0,
+        "rows": [],
+        "sharedPaceWithWork": false
+      },
+      "requestedDurationMin": 30,
+      "resolvedDurationMin": 30,
+      "resolvedRunningType": null,
+      "resolvedSquashKind": "technical"
+    },
+    {
+      "blocks": [],
+      "covers": [
+        "S1"
+      ],
+      "drills": [
+        {
+          "durationMin": 18,
+          "name": "Atacar la primera pelota cómoda desde la T"
+        },
+        {
+          "durationMin": 9,
+          "name": "Patrón de saque, resto y tercera pelota"
+        },
+        {
+          "durationMin": 18,
+          "name": "Patrón largo-corto desde la T"
+        }
+      ],
+      "duration": {
+        "deltaMin": 0,
+        "itemCount": 3,
+        "knownMin": 45,
+        "requestedMin": 45,
+        "unknownBlocks": 0,
+        "verdict": "exact"
+      },
+      "name": "chat add_session squash technical 45min",
+      "pace": {
+        "distinctPaces": 0,
+        "rows": [],
+        "sharedPaceWithWork": false
+      },
+      "requestedDurationMin": 45,
+      "resolvedDurationMin": 45,
+      "resolvedRunningType": null,
+      "resolvedSquashKind": "technical"
+    },
+    {
+      "blocks": [],
+      "covers": [
+        "S1"
+      ],
+      "drills": [
+        {
+          "durationMin": 23.333333333333332,
+          "name": "Atacar la primera pelota cómoda desde la T"
+        },
+        {
+          "durationMin": 13.333333333333334,
+          "name": "Patrón de saque, resto y tercera pelota"
+        },
+        {
+          "durationMin": 23.333333333333332,
+          "name": "Patrón largo-corto desde la T"
+        }
+      ],
+      "duration": {
+        "deltaMin": 0,
+        "itemCount": 3,
+        "knownMin": 60,
+        "requestedMin": 60,
+        "unknownBlocks": 0,
+        "verdict": "exact"
+      },
+      "name": "chat add_session squash technical 60min",
+      "pace": {
+        "distinctPaces": 0,
+        "rows": [],
+        "sharedPaceWithWork": false
+      },
+      "requestedDurationMin": 60,
+      "resolvedDurationMin": 60,
+      "resolvedRunningType": null,
+      "resolvedSquashKind": "technical"
+    }
+  ],
+  "coverage": [
+    {
+      "caseCount": 11,
+      "finding": "R1",
+      "sections": [
+        "runningSelection"
+      ]
+    },
+    {
+      "caseCount": 1,
+      "finding": "R2",
+      "sections": [
+        "runningSelection"
+      ]
+    },
+    {
+      "caseCount": 7,
+      "finding": "R3",
+      "sections": [
+        "runningSelection"
+      ]
+    },
+    {
+      "caseCount": 7,
+      "finding": "R4",
+      "sections": [
+        "runningSelection"
+      ]
+    },
+    {
+      "caseCount": 2,
+      "finding": "R5",
+      "sections": [
+        "runningHistory"
+      ]
+    },
+    {
+      "caseCount": 14,
+      "finding": "R6",
+      "sections": [
+        "repairRunning"
+      ]
+    },
+    {
+      "caseCount": 16,
+      "finding": "R7",
+      "sections": [
+        "repairRunning"
+      ]
+    },
+    {
+      "caseCount": 16,
+      "finding": "R8",
+      "sections": [
+        "chat",
+        "repairRunning"
+      ]
+    },
+    {
+      "caseCount": 18,
+      "finding": "S1",
+      "sections": [
+        "chat",
+        "repairSquash",
+        "squashHydration"
+      ]
+    },
+    {
+      "caseCount": 9,
+      "finding": "S2",
+      "sections": [
+        "runningHistory",
+        "squashHistory"
+      ]
+    },
+    {
+      "caseCount": 3,
+      "finding": "S3",
+      "sections": [
+        "squashHistory"
+      ]
+    },
+    {
+      "caseCount": 5,
+      "finding": "S5",
+      "sections": [
+        "repairSquash",
+        "squashHydration",
+        "squashSelection"
+      ]
+    },
+    {
+      "caseCount": 5,
+      "finding": "S6",
+      "sections": [
+        "squashHydration",
+        "squashSelection"
+      ]
+    },
+    {
+      "caseCount": 8,
+      "finding": "S7",
+      "sections": [
+        "squashWeekPlan"
+      ]
+    }
+  ],
+  "inventory": {
+    "runningByFamily": {
+      "easy_aerobic": 4,
+      "hill": 2,
+      "intervals_vo2": 4,
+      "long_run": 3,
+      "race_specific": 4,
+      "recovery": 3,
+      "speed_economy": 3,
+      "tempo_threshold": 4
+    },
+    "runningByIntensity": {
+      "high": 6,
+      "low": 10,
+      "moderate": 4,
+      "moderate-high": 7
+    },
+    "runningTemplateCount": 27,
+    "squashByExecution": {
+      "match": 3,
+      "partner": 37,
+      "solo": 20
+    },
+    "squashByFamily": {
+      "conditioned_boast": [
+        "conditioned_boast_start"
+      ],
+      "conditioned_general": [
+        "conditioned_no_two_bounces",
+        "pressure_back_court",
+        "pressure_three_quarters_court",
+        "t_control_long_short",
+        "two_wall_volley_cross_front_direction_choice"
+      ],
+      "conditioned_length": [
+        "conditioned_long_only"
+      ],
+      "conditioned_parallel": [
+        "back_court_parallel_cross_on_volley",
+        "conditioned_full_lane_per_side",
+        "conditioned_parallel_only",
+        "two_wall_volley_cross_straight_reply"
+      ],
+      "conditioned_targets": [
+        "conditioned_forbidden_zone"
+      ],
+      "drive_patterns": [
+        "boast_to_straight_drive",
+        "drive_crosscourt_length",
+        "drive_parallel_depth",
+        "drive_switch_parallel_cross"
+      ],
+      "finishing": [
+        "front_court_angle_finish",
+        "nick_pressure_closure",
+        "two_wall_volley_cross_drop_option",
+        "volley_drop_finish"
+      ],
+      "footwork": [
+        "split_step_t_recovery"
+      ],
+      "front_court_touch": [
+        "drop_and_counter_drop",
+        "mid_court_drops"
+      ],
+      "ghosting": [
+        "ghosting_4_corners",
+        "ghosting_6_points"
+      ],
+      "match_play_practice": [
+        "match_sim_points_short_sets",
+        "practice_match_best_of_3",
+        "practice_match_five_games"
+      ],
+      "multiball_pressure": [
+        "multiball_pressure_finishes"
+      ],
+      "physical_general": [
+        "continuous_squash_movement_base",
+        "extensive_aerobic_movement_intervals"
+      ],
+      "pre_match_activation": [
+        "pre_match_activation_timing"
+      ],
+      "pressure_back_court": [
+        "attacking_boast_from_back_court",
+        "attacking_boast_from_mid_court",
+        "pressure_back_corners"
+      ],
+      "recovery_length": [
+        "defensive_high_lob_recovery",
+        "technical_recovery_length"
+      ],
+      "rsa": [
+        "rsa_short_bursts"
+      ],
+      "solo_control_volume": [
+        "solo_100_backhand_parallels",
+        "solo_100_drops",
+        "solo_100_forehand_parallels",
+        "solo_100_mid_court_shots",
+        "solo_100_parallels_back",
+        "solo_100_serve_hard_low",
+        "solo_100_serve_lob_targets",
+        "solo_100_service_box",
+        "solo_boast_straight_drive_cycles",
+        "solo_parallel_crosscourt_cycles",
+        "solo_three_length_one_kill",
+        "solo_volleys_only",
+        "solo_volleys_straight_cross"
+      ],
+      "t_control_patterns": [
+        "attack_from_t_first_ball",
+        "serve_return_first_three_shots"
+      ],
+      "technical_general": [
+        "attacking_lob_change_of_pace",
+        "return_of_serve_depth_control"
+      ],
+      "transition_patterns": [
+        "front_back_transition"
+      ],
+      "volley_patterns": [
+        "high_volley_control",
+        "volley_control_midcourt",
+        "volley_pressure_front_wall",
+        "volley_t_recover"
+      ]
+    },
+    "squashByIntensity": {
+      "high": 13,
+      "low": 14,
+      "moderate": 33
+    },
+    "squashByKind": {
+      "control": 14,
+      "match": 3,
+      "shadows": 6,
+      "technical": 37
+    },
+    "squashDrillCount": 60
+  },
+  "probeToday": "2026-09-07",
+  "repairRunning": [
+    {
+      "addedByRepair": [
+        {
+          "date": "2026-06-01",
+          "durationMin": 60,
+          "sessionType": "squash",
+          "squashKind": "match",
+          "timeBlock": "PM"
+        },
+        {
+          "date": "2026-06-02",
+          "durationMin": 60,
+          "sessionType": "squash",
+          "squashKind": "technical",
+          "timeBlock": "AM"
+        },
+        {
+          "date": "2026-06-06",
+          "durationMin": 45,
+          "sessionType": "squash",
+          "squashKind": "control",
+          "timeBlock": "AM"
+        }
+      ],
+      "blocks": [
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 5,
+          "label": "Calentamiento Z2",
+          "notes": "Comenzar caminando o trotando suave y aumentar gradualmente. Incluido en el tiempo total.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 10,
+          "label": "Tempo umbral controlado",
+          "notes": "Esfuerzo sostenido y controlado, sin terminar a tope.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 5,
+          "label": "Enfriamiento Z2",
+          "notes": "Reducir gradualmente hasta caminar. Incluido en el tiempo total.",
+          "repetitions": null,
+          "targetPace": null
+        }
+      ],
+      "covers": [
+        "R6",
+        "R7",
+        "R8"
+      ],
+      "declaredRunningType": "tempo",
+      "duration": {
+        "deltaMin": 0,
+        "itemCount": 3,
+        "knownMin": 20,
+        "requestedMin": 20,
+        "unknownBlocks": 0,
+        "verdict": "exact"
+      },
+      "name": "tempo 20min · fase base",
+      "pace": {
+        "distinctPaces": 1,
+        "rows": [
+          {
+            "label": "Calentamiento Z2",
+            "role": "warmup",
+            "targetPace": null
+          },
+          {
+            "label": "Tempo umbral controlado",
+            "role": "work",
+            "targetPace": null
+          },
+          {
+            "label": "Enfriamiento Z2",
+            "role": "cooldown",
+            "targetPace": null
+          }
+        ],
+        "sharedPaceWithWork": false
+      },
+      "phase": "base",
+      "requestedDurationMin": 20,
+      "resolvedDurationMin": 20,
+      "resolvedRunningType": "tempo",
+      "returnedSessionCount": 4,
+      "targetPresent": true,
+      "textualRecoveries": [
+        "Calentamiento Z2"
+      ],
+      "warnings": [
+        "squash_title_aligned"
+      ]
+    },
+    {
+      "addedByRepair": [
+        {
+          "date": "2026-06-01",
+          "durationMin": 60,
+          "sessionType": "squash",
+          "squashKind": "match",
+          "timeBlock": "PM"
+        },
+        {
+          "date": "2026-06-02",
+          "durationMin": 60,
+          "sessionType": "squash",
+          "squashKind": "technical",
+          "timeBlock": "AM"
+        },
+        {
+          "date": "2026-06-06",
+          "durationMin": 45,
+          "sessionType": "squash",
+          "squashKind": "control",
+          "timeBlock": "AM"
+        }
+      ],
+      "blocks": [
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 5,
+          "label": "Calentamiento Z2",
+          "notes": "Comenzar caminando o trotando suave y aumentar gradualmente. Incluido en el tiempo total.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 10,
+          "label": "Trote Z2 continuo",
+          "notes": "Esfuerzo conversacional; bajar el ritmo si no puedes hablar cómodamente.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 5,
+          "label": "Enfriamiento Z2",
+          "notes": "Reducir gradualmente hasta caminar. Incluido en el tiempo total.",
+          "repetitions": null,
+          "targetPace": null
+        }
+      ],
+      "covers": [
+        "R6",
+        "R7",
+        "R8"
+      ],
+      "declaredRunningType": "tempo",
+      "duration": {
+        "deltaMin": 0,
+        "itemCount": 3,
+        "knownMin": 20,
+        "requestedMin": 20,
+        "unknownBlocks": 0,
+        "verdict": "exact"
+      },
+      "name": "tempo 20min · fase build",
+      "pace": {
+        "distinctPaces": 1,
+        "rows": [
+          {
+            "label": "Calentamiento Z2",
+            "role": "warmup",
+            "targetPace": null
+          },
+          {
+            "label": "Trote Z2 continuo",
+            "role": "work",
+            "targetPace": null
+          },
+          {
+            "label": "Enfriamiento Z2",
+            "role": "cooldown",
+            "targetPace": null
+          }
+        ],
+        "sharedPaceWithWork": false
+      },
+      "phase": "build",
+      "requestedDurationMin": 20,
+      "resolvedDurationMin": 20,
+      "resolvedRunningType": "z2",
+      "returnedSessionCount": 4,
+      "targetPresent": true,
+      "textualRecoveries": [
+        "Calentamiento Z2"
+      ],
+      "warnings": [
+        "squash_support_running_softened",
+        "squash_title_aligned"
+      ]
+    },
+    {
+      "addedByRepair": [
+        {
+          "date": "2026-06-01",
+          "durationMin": 60,
+          "sessionType": "squash",
+          "squashKind": "match",
+          "timeBlock": "PM"
+        },
+        {
+          "date": "2026-06-02",
+          "durationMin": 60,
+          "sessionType": "squash",
+          "squashKind": "technical",
+          "timeBlock": "AM"
+        },
+        {
+          "date": "2026-06-06",
+          "durationMin": 45,
+          "sessionType": "squash",
+          "squashKind": "control",
+          "timeBlock": "AM"
+        }
+      ],
+      "blocks": [
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 6,
+          "label": "Calentamiento Z2",
+          "notes": "Comenzar caminando o trotando suave y aumentar gradualmente. Incluido en el tiempo total.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 18,
+          "label": "Tempo umbral controlado",
+          "notes": "Esfuerzo sostenido y controlado, sin terminar a tope.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 6,
+          "label": "Enfriamiento Z2",
+          "notes": "Reducir gradualmente hasta caminar. Incluido en el tiempo total.",
+          "repetitions": null,
+          "targetPace": null
+        }
+      ],
+      "covers": [
+        "R6",
+        "R7",
+        "R8"
+      ],
+      "declaredRunningType": "tempo",
+      "duration": {
+        "deltaMin": 0,
+        "itemCount": 3,
+        "knownMin": 30,
+        "requestedMin": 30,
+        "unknownBlocks": 0,
+        "verdict": "exact"
+      },
+      "name": "tempo 30min · fase base",
+      "pace": {
+        "distinctPaces": 1,
+        "rows": [
+          {
+            "label": "Calentamiento Z2",
+            "role": "warmup",
+            "targetPace": null
+          },
+          {
+            "label": "Tempo umbral controlado",
+            "role": "work",
+            "targetPace": null
+          },
+          {
+            "label": "Enfriamiento Z2",
+            "role": "cooldown",
+            "targetPace": null
+          }
+        ],
+        "sharedPaceWithWork": false
+      },
+      "phase": "base",
+      "requestedDurationMin": 30,
+      "resolvedDurationMin": 30,
+      "resolvedRunningType": "tempo",
+      "returnedSessionCount": 4,
+      "targetPresent": true,
+      "textualRecoveries": [
+        "Calentamiento Z2"
+      ],
+      "warnings": [
+        "squash_title_aligned"
+      ]
+    },
+    {
+      "addedByRepair": [
+        {
+          "date": "2026-06-01",
+          "durationMin": 60,
+          "sessionType": "squash",
+          "squashKind": "match",
+          "timeBlock": "PM"
+        },
+        {
+          "date": "2026-06-02",
+          "durationMin": 60,
+          "sessionType": "squash",
+          "squashKind": "technical",
+          "timeBlock": "AM"
+        },
+        {
+          "date": "2026-06-06",
+          "durationMin": 45,
+          "sessionType": "squash",
+          "squashKind": "control",
+          "timeBlock": "AM"
+        }
+      ],
+      "blocks": [
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 6,
+          "label": "Calentamiento Z2",
+          "notes": "Comenzar caminando o trotando suave y aumentar gradualmente. Incluido en el tiempo total.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 18,
+          "label": "Trote Z2 continuo",
+          "notes": "Esfuerzo conversacional; bajar el ritmo si no puedes hablar cómodamente.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 6,
+          "label": "Enfriamiento Z2",
+          "notes": "Reducir gradualmente hasta caminar. Incluido en el tiempo total.",
+          "repetitions": null,
+          "targetPace": null
+        }
+      ],
+      "covers": [
+        "R6",
+        "R7",
+        "R8"
+      ],
+      "declaredRunningType": "tempo",
+      "duration": {
+        "deltaMin": 0,
+        "itemCount": 3,
+        "knownMin": 30,
+        "requestedMin": 30,
+        "unknownBlocks": 0,
+        "verdict": "exact"
+      },
+      "name": "tempo 30min · fase build",
+      "pace": {
+        "distinctPaces": 1,
+        "rows": [
+          {
+            "label": "Calentamiento Z2",
+            "role": "warmup",
+            "targetPace": null
+          },
+          {
+            "label": "Trote Z2 continuo",
+            "role": "work",
+            "targetPace": null
+          },
+          {
+            "label": "Enfriamiento Z2",
+            "role": "cooldown",
+            "targetPace": null
+          }
+        ],
+        "sharedPaceWithWork": false
+      },
+      "phase": "build",
+      "requestedDurationMin": 30,
+      "resolvedDurationMin": 30,
+      "resolvedRunningType": "z2",
+      "returnedSessionCount": 4,
+      "targetPresent": true,
+      "textualRecoveries": [
+        "Calentamiento Z2"
+      ],
+      "warnings": [
+        "squash_support_running_softened",
+        "squash_title_aligned"
+      ]
+    },
+    {
+      "addedByRepair": [
+        {
+          "date": "2026-06-01",
+          "durationMin": 60,
+          "sessionType": "squash",
+          "squashKind": "match",
+          "timeBlock": "PM"
+        },
+        {
+          "date": "2026-06-02",
+          "durationMin": 60,
+          "sessionType": "squash",
+          "squashKind": "technical",
+          "timeBlock": "AM"
+        },
+        {
+          "date": "2026-06-06",
+          "durationMin": 45,
+          "sessionType": "squash",
+          "squashKind": "control",
+          "timeBlock": "AM"
+        }
+      ],
+      "blocks": [
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 9,
+          "label": "Calentamiento Z2",
+          "notes": "Comenzar caminando o trotando suave y aumentar gradualmente. Incluido en el tiempo total.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 27,
+          "label": "Tempo umbral controlado",
+          "notes": "Esfuerzo sostenido y controlado, sin terminar a tope.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 9,
+          "label": "Enfriamiento Z2",
+          "notes": "Reducir gradualmente hasta caminar. Incluido en el tiempo total.",
+          "repetitions": null,
+          "targetPace": null
+        }
+      ],
+      "covers": [
+        "R6",
+        "R7",
+        "R8"
+      ],
+      "declaredRunningType": "tempo",
+      "duration": {
+        "deltaMin": 0,
+        "itemCount": 3,
+        "knownMin": 45,
+        "requestedMin": 45,
+        "unknownBlocks": 0,
+        "verdict": "exact"
+      },
+      "name": "tempo 45min · fase base",
+      "pace": {
+        "distinctPaces": 1,
+        "rows": [
+          {
+            "label": "Calentamiento Z2",
+            "role": "warmup",
+            "targetPace": null
+          },
+          {
+            "label": "Tempo umbral controlado",
+            "role": "work",
+            "targetPace": null
+          },
+          {
+            "label": "Enfriamiento Z2",
+            "role": "cooldown",
+            "targetPace": null
+          }
+        ],
+        "sharedPaceWithWork": false
+      },
+      "phase": "base",
+      "requestedDurationMin": 45,
+      "resolvedDurationMin": 45,
+      "resolvedRunningType": "tempo",
+      "returnedSessionCount": 4,
+      "targetPresent": true,
+      "textualRecoveries": [
+        "Calentamiento Z2"
+      ],
+      "warnings": [
+        "squash_title_aligned"
+      ]
+    },
+    {
+      "addedByRepair": [
+        {
+          "date": "2026-06-01",
+          "durationMin": 60,
+          "sessionType": "squash",
+          "squashKind": "match",
+          "timeBlock": "PM"
+        },
+        {
+          "date": "2026-06-02",
+          "durationMin": 60,
+          "sessionType": "squash",
+          "squashKind": "technical",
+          "timeBlock": "AM"
+        },
+        {
+          "date": "2026-06-06",
+          "durationMin": 45,
+          "sessionType": "squash",
+          "squashKind": "control",
+          "timeBlock": "AM"
+        }
+      ],
+      "blocks": [
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 8,
+          "label": "Calentamiento Z2",
+          "notes": "Comenzar caminando o trotando suave y aumentar gradualmente. Incluido en el tiempo total.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 24,
+          "label": "Trote Z2 continuo",
+          "notes": "Esfuerzo conversacional; bajar el ritmo si no puedes hablar cómodamente.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 8,
+          "label": "Enfriamiento Z2",
+          "notes": "Reducir gradualmente hasta caminar. Incluido en el tiempo total.",
+          "repetitions": null,
+          "targetPace": null
+        }
+      ],
+      "covers": [
+        "R6",
+        "R7",
+        "R8"
+      ],
+      "declaredRunningType": "tempo",
+      "duration": {
+        "deltaMin": -5,
+        "itemCount": 3,
+        "knownMin": 40,
+        "requestedMin": 45,
+        "unknownBlocks": 0,
+        "verdict": "under"
+      },
+      "name": "tempo 45min · fase build",
+      "pace": {
+        "distinctPaces": 1,
+        "rows": [
+          {
+            "label": "Calentamiento Z2",
+            "role": "warmup",
+            "targetPace": null
+          },
+          {
+            "label": "Trote Z2 continuo",
+            "role": "work",
+            "targetPace": null
+          },
+          {
+            "label": "Enfriamiento Z2",
+            "role": "cooldown",
+            "targetPace": null
+          }
+        ],
+        "sharedPaceWithWork": false
+      },
+      "phase": "build",
+      "requestedDurationMin": 45,
+      "resolvedDurationMin": 40,
+      "resolvedRunningType": "z2",
+      "returnedSessionCount": 4,
+      "targetPresent": true,
+      "textualRecoveries": [
+        "Calentamiento Z2"
+      ],
+      "warnings": [
+        "squash_support_running_softened",
+        "squash_title_aligned"
+      ]
+    },
+    {
+      "addedByRepair": [
+        {
+          "date": "2026-06-01",
+          "durationMin": 60,
+          "sessionType": "squash",
+          "squashKind": "match",
+          "timeBlock": "PM"
+        },
+        {
+          "date": "2026-06-02",
+          "durationMin": 60,
+          "sessionType": "squash",
+          "squashKind": "technical",
+          "timeBlock": "AM"
+        },
+        {
+          "date": "2026-06-06",
+          "durationMin": 45,
+          "sessionType": "squash",
+          "squashKind": "control",
+          "timeBlock": "AM"
+        }
+      ],
+      "blocks": [
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 10,
+          "label": "Calentamiento Z2",
+          "notes": "Comenzar caminando o trotando suave y aumentar gradualmente. Incluido en el tiempo total.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 35,
+          "label": "Tempo umbral controlado",
+          "notes": "Esfuerzo sostenido y controlado, sin terminar a tope.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 5,
+          "label": "Rodaje suave después del tempo",
+          "notes": "Esfuerzo conversacional; no prolongar el trabajo de umbral.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 10,
+          "label": "Enfriamiento Z2",
+          "notes": "Reducir gradualmente hasta caminar. Incluido en el tiempo total.",
+          "repetitions": null,
+          "targetPace": null
+        }
+      ],
+      "covers": [
+        "R6",
+        "R7",
+        "R8"
+      ],
+      "declaredRunningType": "tempo",
+      "duration": {
+        "deltaMin": 0,
+        "itemCount": 4,
+        "knownMin": 60,
+        "requestedMin": 60,
+        "unknownBlocks": 0,
+        "verdict": "exact"
+      },
+      "name": "tempo 60min · fase base",
+      "pace": {
+        "distinctPaces": 1,
+        "rows": [
+          {
+            "label": "Calentamiento Z2",
+            "role": "warmup",
+            "targetPace": null
+          },
+          {
+            "label": "Tempo umbral controlado",
+            "role": "work",
+            "targetPace": null
+          },
+          {
+            "label": "Rodaje suave después del tempo",
+            "role": "work",
+            "targetPace": null
+          },
+          {
+            "label": "Enfriamiento Z2",
+            "role": "cooldown",
+            "targetPace": null
+          }
+        ],
+        "sharedPaceWithWork": false
+      },
+      "phase": "base",
+      "requestedDurationMin": 60,
+      "resolvedDurationMin": 60,
+      "resolvedRunningType": "tempo",
+      "returnedSessionCount": 4,
+      "targetPresent": true,
+      "textualRecoveries": [
+        "Calentamiento Z2"
+      ],
+      "warnings": [
+        "squash_title_aligned"
+      ]
+    },
+    {
+      "addedByRepair": [
+        {
+          "date": "2026-06-01",
+          "durationMin": 60,
+          "sessionType": "squash",
+          "squashKind": "match",
+          "timeBlock": "PM"
+        },
+        {
+          "date": "2026-06-02",
+          "durationMin": 60,
+          "sessionType": "squash",
+          "squashKind": "technical",
+          "timeBlock": "AM"
+        },
+        {
+          "date": "2026-06-06",
+          "durationMin": 45,
+          "sessionType": "squash",
+          "squashKind": "control",
+          "timeBlock": "AM"
+        }
+      ],
+      "blocks": [
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 8,
+          "label": "Calentamiento Z2",
+          "notes": "Comenzar caminando o trotando suave y aumentar gradualmente. Incluido en el tiempo total.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 24,
+          "label": "Trote Z2 continuo",
+          "notes": "Esfuerzo conversacional; bajar el ritmo si no puedes hablar cómodamente.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 8,
+          "label": "Enfriamiento Z2",
+          "notes": "Reducir gradualmente hasta caminar. Incluido en el tiempo total.",
+          "repetitions": null,
+          "targetPace": null
+        }
+      ],
+      "covers": [
+        "R6",
+        "R7",
+        "R8"
+      ],
+      "declaredRunningType": "tempo",
+      "duration": {
+        "deltaMin": -20,
+        "itemCount": 3,
+        "knownMin": 40,
+        "requestedMin": 60,
+        "unknownBlocks": 0,
+        "verdict": "under"
+      },
+      "name": "tempo 60min · fase build",
+      "pace": {
+        "distinctPaces": 1,
+        "rows": [
+          {
+            "label": "Calentamiento Z2",
+            "role": "warmup",
+            "targetPace": null
+          },
+          {
+            "label": "Trote Z2 continuo",
+            "role": "work",
+            "targetPace": null
+          },
+          {
+            "label": "Enfriamiento Z2",
+            "role": "cooldown",
+            "targetPace": null
+          }
+        ],
+        "sharedPaceWithWork": false
+      },
+      "phase": "build",
+      "requestedDurationMin": 60,
+      "resolvedDurationMin": 40,
+      "resolvedRunningType": "z2",
+      "returnedSessionCount": 4,
+      "targetPresent": true,
+      "textualRecoveries": [
+        "Calentamiento Z2"
+      ],
+      "warnings": [
+        "squash_support_running_softened",
+        "squash_title_aligned"
+      ]
+    },
+    {
+      "addedByRepair": [
+        {
+          "date": "2026-06-01",
+          "durationMin": 60,
+          "sessionType": "squash",
+          "squashKind": "match",
+          "timeBlock": "PM"
+        },
+        {
+          "date": "2026-06-02",
+          "durationMin": 60,
+          "sessionType": "squash",
+          "squashKind": "technical",
+          "timeBlock": "AM"
+        },
+        {
+          "date": "2026-06-06",
+          "durationMin": 45,
+          "sessionType": "squash",
+          "squashKind": "control",
+          "timeBlock": "AM"
+        }
+      ],
+      "blocks": [
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 8,
+          "label": "Calentamiento Z2",
+          "notes": "Comenzar caminando o trotando suave y aumentar gradualmente. Incluido en el tiempo total.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 5,
+          "label": "Rodaje suave previo a las series",
+          "notes": "Esfuerzo conversacional; estos minutos no aumentan la dosis de series.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 3,
+          "label": "Serie por tiempo 1",
+          "notes": "Esfuerzo exigente controlado; sin sprint. Composición por tiempo, no plantilla de distancia.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": true,
+          "distanceKm": null,
+          "durationMin": 1,
+          "label": "Recuperación suave",
+          "notes": "Caminar o trotar suavemente entre series.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 3,
+          "label": "Serie por tiempo 2",
+          "notes": "Esfuerzo exigente controlado; sin sprint. Composición por tiempo, no plantilla de distancia.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": true,
+          "distanceKm": null,
+          "durationMin": 1,
+          "label": "Recuperación suave",
+          "notes": "Caminar o trotar suavemente entre series.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 3,
+          "label": "Serie por tiempo 3",
+          "notes": "Esfuerzo exigente controlado; sin sprint. Composición por tiempo, no plantilla de distancia.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": true,
+          "distanceKm": null,
+          "durationMin": 1,
+          "label": "Recuperación suave",
+          "notes": "Caminar o trotar suavemente entre series.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 3,
+          "label": "Serie por tiempo 4",
+          "notes": "Esfuerzo exigente controlado; sin sprint. Composición por tiempo, no plantilla de distancia.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": true,
+          "distanceKm": null,
+          "durationMin": 1,
+          "label": "Recuperación suave",
+          "notes": "Caminar o trotar suavemente entre series.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 3,
+          "label": "Serie por tiempo 5",
+          "notes": "Esfuerzo exigente controlado; sin sprint. Composición por tiempo, no plantilla de distancia.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 8,
+          "label": "Enfriamiento Z2",
+          "notes": "Reducir gradualmente hasta caminar. Incluido en el tiempo total.",
+          "repetitions": null,
+          "targetPace": null
+        }
+      ],
+      "covers": [
+        "R6",
+        "R7"
+      ],
+      "declaredRunningType": "intervals",
+      "duration": {
+        "deltaMin": 0,
+        "itemCount": 12,
+        "knownMin": 40,
+        "requestedMin": 40,
+        "unknownBlocks": 0,
+        "verdict": "exact"
+      },
+      "name": "intervals 40min · fase base",
+      "pace": {
+        "distinctPaces": 1,
+        "rows": [
+          {
+            "label": "Calentamiento Z2",
+            "role": "warmup",
+            "targetPace": null
+          },
+          {
+            "label": "Rodaje suave previo a las series",
+            "role": "work",
+            "targetPace": null
+          },
+          {
+            "label": "Serie por tiempo 1",
+            "role": "work",
+            "targetPace": null
+          },
+          {
+            "label": "Recuperación suave",
+            "role": "work",
+            "targetPace": null
+          },
+          {
+            "label": "Serie por tiempo 2",
+            "role": "work",
+            "targetPace": null
+          },
+          {
+            "label": "Recuperación suave",
+            "role": "work",
+            "targetPace": null
+          },
+          {
+            "label": "Serie por tiempo 3",
+            "role": "work",
+            "targetPace": null
+          },
+          {
+            "label": "Recuperación suave",
+            "role": "work",
+            "targetPace": null
+          },
+          {
+            "label": "Serie por tiempo 4",
+            "role": "work",
+            "targetPace": null
+          },
+          {
+            "label": "Recuperación suave",
+            "role": "work",
+            "targetPace": null
+          },
+          {
+            "label": "Serie por tiempo 5",
+            "role": "work",
+            "targetPace": null
+          },
+          {
+            "label": "Enfriamiento Z2",
+            "role": "cooldown",
+            "targetPace": null
+          }
+        ],
+        "sharedPaceWithWork": false
+      },
+      "phase": "base",
+      "requestedDurationMin": 40,
+      "resolvedDurationMin": 40,
+      "resolvedRunningType": "intervals",
+      "returnedSessionCount": 4,
+      "targetPresent": true,
+      "textualRecoveries": [
+        "Calentamiento Z2"
+      ],
+      "warnings": [
+        "squash_title_aligned"
+      ]
+    },
+    {
+      "addedByRepair": [
+        {
+          "date": "2026-06-01",
+          "durationMin": 60,
+          "sessionType": "squash",
+          "squashKind": "match",
+          "timeBlock": "PM"
+        },
+        {
+          "date": "2026-06-02",
+          "durationMin": 60,
+          "sessionType": "squash",
+          "squashKind": "technical",
+          "timeBlock": "AM"
+        },
+        {
+          "date": "2026-06-06",
+          "durationMin": 45,
+          "sessionType": "squash",
+          "squashKind": "control",
+          "timeBlock": "AM"
+        }
+      ],
+      "blocks": [
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 8,
+          "label": "Calentamiento Z2",
+          "notes": "Comenzar caminando o trotando suave y aumentar gradualmente. Incluido en el tiempo total.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 24,
+          "label": "Trote Z2 continuo",
+          "notes": "Esfuerzo conversacional; bajar el ritmo si no puedes hablar cómodamente.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 8,
+          "label": "Enfriamiento Z2",
+          "notes": "Reducir gradualmente hasta caminar. Incluido en el tiempo total.",
+          "repetitions": null,
+          "targetPace": null
+        }
+      ],
+      "covers": [
+        "R6",
+        "R7"
+      ],
+      "declaredRunningType": "intervals",
+      "duration": {
+        "deltaMin": 0,
+        "itemCount": 3,
+        "knownMin": 40,
+        "requestedMin": 40,
+        "unknownBlocks": 0,
+        "verdict": "exact"
+      },
+      "name": "intervals 40min · fase build",
+      "pace": {
+        "distinctPaces": 1,
+        "rows": [
+          {
+            "label": "Calentamiento Z2",
+            "role": "warmup",
+            "targetPace": null
+          },
+          {
+            "label": "Trote Z2 continuo",
+            "role": "work",
+            "targetPace": null
+          },
+          {
+            "label": "Enfriamiento Z2",
+            "role": "cooldown",
+            "targetPace": null
+          }
+        ],
+        "sharedPaceWithWork": false
+      },
+      "phase": "build",
+      "requestedDurationMin": 40,
+      "resolvedDurationMin": 40,
+      "resolvedRunningType": "z2",
+      "returnedSessionCount": 4,
+      "targetPresent": true,
+      "textualRecoveries": [
+        "Calentamiento Z2"
+      ],
+      "warnings": [
+        "squash_support_running_softened",
+        "squash_title_aligned"
+      ]
+    },
+    {
+      "addedByRepair": [
+        {
+          "date": "2026-06-01",
+          "durationMin": 60,
+          "sessionType": "squash",
+          "squashKind": "match",
+          "timeBlock": "PM"
+        },
+        {
+          "date": "2026-06-02",
+          "durationMin": 60,
+          "sessionType": "squash",
+          "squashKind": "technical",
+          "timeBlock": "AM"
+        },
+        {
+          "date": "2026-06-06",
+          "durationMin": 45,
+          "sessionType": "squash",
+          "squashKind": "control",
+          "timeBlock": "AM"
+        }
+      ],
+      "blocks": [
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 10,
+          "label": "Calentamiento Z2",
+          "notes": "Comenzar caminando o trotando suave y aumentar gradualmente. Incluido en el tiempo total.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 21,
+          "label": "Rodaje suave previo a las series",
+          "notes": "Esfuerzo conversacional; estos minutos no aumentan la dosis de series.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 3,
+          "label": "Serie por tiempo 1",
+          "notes": "Esfuerzo exigente controlado; sin sprint. Composición por tiempo, no plantilla de distancia.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": true,
+          "distanceKm": null,
+          "durationMin": 1,
+          "label": "Recuperación suave",
+          "notes": "Caminar o trotar suavemente entre series.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 3,
+          "label": "Serie por tiempo 2",
+          "notes": "Esfuerzo exigente controlado; sin sprint. Composición por tiempo, no plantilla de distancia.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": true,
+          "distanceKm": null,
+          "durationMin": 1,
+          "label": "Recuperación suave",
+          "notes": "Caminar o trotar suavemente entre series.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 3,
+          "label": "Serie por tiempo 3",
+          "notes": "Esfuerzo exigente controlado; sin sprint. Composición por tiempo, no plantilla de distancia.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": true,
+          "distanceKm": null,
+          "durationMin": 1,
+          "label": "Recuperación suave",
+          "notes": "Caminar o trotar suavemente entre series.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 3,
+          "label": "Serie por tiempo 4",
+          "notes": "Esfuerzo exigente controlado; sin sprint. Composición por tiempo, no plantilla de distancia.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": true,
+          "distanceKm": null,
+          "durationMin": 1,
+          "label": "Recuperación suave",
+          "notes": "Caminar o trotar suavemente entre series.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 3,
+          "label": "Serie por tiempo 5",
+          "notes": "Esfuerzo exigente controlado; sin sprint. Composición por tiempo, no plantilla de distancia.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 10,
+          "label": "Enfriamiento Z2",
+          "notes": "Reducir gradualmente hasta caminar. Incluido en el tiempo total.",
+          "repetitions": null,
+          "targetPace": null
+        }
+      ],
+      "covers": [
+        "R6",
+        "R7"
+      ],
+      "declaredRunningType": "intervals",
+      "duration": {
+        "deltaMin": 0,
+        "itemCount": 12,
+        "knownMin": 60,
+        "requestedMin": 60,
+        "unknownBlocks": 0,
+        "verdict": "exact"
+      },
+      "name": "intervals 60min · fase base",
+      "pace": {
+        "distinctPaces": 1,
+        "rows": [
+          {
+            "label": "Calentamiento Z2",
+            "role": "warmup",
+            "targetPace": null
+          },
+          {
+            "label": "Rodaje suave previo a las series",
+            "role": "work",
+            "targetPace": null
+          },
+          {
+            "label": "Serie por tiempo 1",
+            "role": "work",
+            "targetPace": null
+          },
+          {
+            "label": "Recuperación suave",
+            "role": "work",
+            "targetPace": null
+          },
+          {
+            "label": "Serie por tiempo 2",
+            "role": "work",
+            "targetPace": null
+          },
+          {
+            "label": "Recuperación suave",
+            "role": "work",
+            "targetPace": null
+          },
+          {
+            "label": "Serie por tiempo 3",
+            "role": "work",
+            "targetPace": null
+          },
+          {
+            "label": "Recuperación suave",
+            "role": "work",
+            "targetPace": null
+          },
+          {
+            "label": "Serie por tiempo 4",
+            "role": "work",
+            "targetPace": null
+          },
+          {
+            "label": "Recuperación suave",
+            "role": "work",
+            "targetPace": null
+          },
+          {
+            "label": "Serie por tiempo 5",
+            "role": "work",
+            "targetPace": null
+          },
+          {
+            "label": "Enfriamiento Z2",
+            "role": "cooldown",
+            "targetPace": null
+          }
+        ],
+        "sharedPaceWithWork": false
+      },
+      "phase": "base",
+      "requestedDurationMin": 60,
+      "resolvedDurationMin": 60,
+      "resolvedRunningType": "intervals",
+      "returnedSessionCount": 4,
+      "targetPresent": true,
+      "textualRecoveries": [
+        "Calentamiento Z2"
+      ],
+      "warnings": [
+        "squash_title_aligned"
+      ]
+    },
+    {
+      "addedByRepair": [
+        {
+          "date": "2026-06-01",
+          "durationMin": 60,
+          "sessionType": "squash",
+          "squashKind": "match",
+          "timeBlock": "PM"
+        },
+        {
+          "date": "2026-06-02",
+          "durationMin": 60,
+          "sessionType": "squash",
+          "squashKind": "technical",
+          "timeBlock": "AM"
+        },
+        {
+          "date": "2026-06-06",
+          "durationMin": 45,
+          "sessionType": "squash",
+          "squashKind": "control",
+          "timeBlock": "AM"
+        }
+      ],
+      "blocks": [
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 8,
+          "label": "Calentamiento Z2",
+          "notes": "Comenzar caminando o trotando suave y aumentar gradualmente. Incluido en el tiempo total.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 24,
+          "label": "Trote Z2 continuo",
+          "notes": "Esfuerzo conversacional; bajar el ritmo si no puedes hablar cómodamente.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 8,
+          "label": "Enfriamiento Z2",
+          "notes": "Reducir gradualmente hasta caminar. Incluido en el tiempo total.",
+          "repetitions": null,
+          "targetPace": null
+        }
+      ],
+      "covers": [
+        "R6",
+        "R7"
+      ],
+      "declaredRunningType": "intervals",
+      "duration": {
+        "deltaMin": -20,
+        "itemCount": 3,
+        "knownMin": 40,
+        "requestedMin": 60,
+        "unknownBlocks": 0,
+        "verdict": "under"
+      },
+      "name": "intervals 60min · fase build",
+      "pace": {
+        "distinctPaces": 1,
+        "rows": [
+          {
+            "label": "Calentamiento Z2",
+            "role": "warmup",
+            "targetPace": null
+          },
+          {
+            "label": "Trote Z2 continuo",
+            "role": "work",
+            "targetPace": null
+          },
+          {
+            "label": "Enfriamiento Z2",
+            "role": "cooldown",
+            "targetPace": null
+          }
+        ],
+        "sharedPaceWithWork": false
+      },
+      "phase": "build",
+      "requestedDurationMin": 60,
+      "resolvedDurationMin": 40,
+      "resolvedRunningType": "z2",
+      "returnedSessionCount": 4,
+      "targetPresent": true,
+      "textualRecoveries": [
+        "Calentamiento Z2"
+      ],
+      "warnings": [
+        "squash_support_running_softened",
+        "squash_title_aligned"
+      ]
+    },
+    {
+      "addedByRepair": [
+        {
+          "date": "2026-06-01",
+          "durationMin": 60,
+          "sessionType": "squash",
+          "squashKind": "match",
+          "timeBlock": "PM"
+        },
+        {
+          "date": "2026-06-02",
+          "durationMin": 60,
+          "sessionType": "squash",
+          "squashKind": "technical",
+          "timeBlock": "AM"
+        },
+        {
+          "date": "2026-06-06",
+          "durationMin": 45,
+          "sessionType": "squash",
+          "squashKind": "control",
+          "timeBlock": "AM"
+        }
+      ],
+      "blocks": [
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 10,
+          "label": "Calentamiento Z2",
+          "notes": "Comenzar caminando o trotando suave y aumentar gradualmente. Incluido en el tiempo total.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 30,
+          "label": "Trote Z2 continuo",
+          "notes": "Esfuerzo conversacional; bajar el ritmo si no puedes hablar cómodamente.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 10,
+          "label": "Enfriamiento Z2",
+          "notes": "Reducir gradualmente hasta caminar. Incluido en el tiempo total.",
+          "repetitions": null,
+          "targetPace": null
+        }
+      ],
+      "covers": [
+        "R6"
+      ],
+      "declaredRunningType": null,
+      "duration": {
+        "deltaMin": 0,
+        "itemCount": 3,
+        "knownMin": 50,
+        "requestedMin": 50,
+        "unknownBlocks": 0,
+        "verdict": "exact"
+      },
+      "name": "intervals sin runningType declarado · fase base",
+      "pace": {
+        "distinctPaces": 1,
+        "rows": [
+          {
+            "label": "Calentamiento Z2",
+            "role": "warmup",
+            "targetPace": null
+          },
+          {
+            "label": "Trote Z2 continuo",
+            "role": "work",
+            "targetPace": null
+          },
+          {
+            "label": "Enfriamiento Z2",
+            "role": "cooldown",
+            "targetPace": null
+          }
+        ],
+        "sharedPaceWithWork": false
+      },
+      "phase": "base",
+      "requestedDurationMin": 50,
+      "resolvedDurationMin": 50,
+      "resolvedRunningType": "z2",
+      "returnedSessionCount": 4,
+      "targetPresent": true,
+      "textualRecoveries": [
+        "Calentamiento Z2"
+      ],
+      "warnings": [
+        "squash_title_aligned"
+      ]
+    },
+    {
+      "addedByRepair": [
+        {
+          "date": "2026-06-01",
+          "durationMin": 60,
+          "sessionType": "squash",
+          "squashKind": "match",
+          "timeBlock": "PM"
+        },
+        {
+          "date": "2026-06-02",
+          "durationMin": 60,
+          "sessionType": "squash",
+          "squashKind": "technical",
+          "timeBlock": "AM"
+        },
+        {
+          "date": "2026-06-06",
+          "durationMin": 45,
+          "sessionType": "squash",
+          "squashKind": "control",
+          "timeBlock": "AM"
+        }
+      ],
+      "blocks": [
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 8,
+          "label": "Calentamiento Z2",
+          "notes": "Comenzar caminando o trotando suave y aumentar gradualmente. Incluido en el tiempo total.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 24,
+          "label": "Trote Z2 continuo",
+          "notes": "Esfuerzo conversacional; bajar el ritmo si no puedes hablar cómodamente.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 8,
+          "label": "Enfriamiento Z2",
+          "notes": "Reducir gradualmente hasta caminar. Incluido en el tiempo total.",
+          "repetitions": null,
+          "targetPace": null
+        }
+      ],
+      "covers": [
+        "R6"
+      ],
+      "declaredRunningType": null,
+      "duration": {
+        "deltaMin": -10,
+        "itemCount": 3,
+        "knownMin": 40,
+        "requestedMin": 50,
+        "unknownBlocks": 0,
+        "verdict": "under"
+      },
+      "name": "intervals sin runningType declarado · fase build",
+      "pace": {
+        "distinctPaces": 1,
+        "rows": [
+          {
+            "label": "Calentamiento Z2",
+            "role": "warmup",
+            "targetPace": null
+          },
+          {
+            "label": "Trote Z2 continuo",
+            "role": "work",
+            "targetPace": null
+          },
+          {
+            "label": "Enfriamiento Z2",
+            "role": "cooldown",
+            "targetPace": null
+          }
+        ],
+        "sharedPaceWithWork": false
+      },
+      "phase": "build",
+      "requestedDurationMin": 50,
+      "resolvedDurationMin": 40,
+      "resolvedRunningType": "z2",
+      "returnedSessionCount": 4,
+      "targetPresent": true,
+      "textualRecoveries": [
+        "Calentamiento Z2"
+      ],
+      "warnings": [
+        "squash_support_running_softened",
+        "squash_title_aligned"
+      ]
+    },
+    {
+      "addedByRepair": [
+        {
+          "date": "2026-06-01",
+          "durationMin": 60,
+          "sessionType": "squash",
+          "squashKind": "match",
+          "timeBlock": "PM"
+        },
+        {
+          "date": "2026-06-02",
+          "durationMin": 60,
+          "sessionType": "squash",
+          "squashKind": "technical",
+          "timeBlock": "AM"
+        },
+        {
+          "date": "2026-06-06",
+          "durationMin": 45,
+          "sessionType": "squash",
+          "squashKind": "control",
+          "timeBlock": "AM"
+        }
+      ],
+      "blocks": [
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 9,
+          "label": "Calentamiento Z2",
+          "notes": "Comenzar caminando o trotando suave y aumentar gradualmente. Incluido en el tiempo total.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 27,
+          "label": "Trote Z2 continuo",
+          "notes": "Esfuerzo conversacional; bajar el ritmo si no puedes hablar cómodamente.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 9,
+          "label": "Enfriamiento Z2",
+          "notes": "Reducir gradualmente hasta caminar. Incluido en el tiempo total.",
+          "repetitions": null,
+          "targetPace": null
+        }
+      ],
+      "covers": [
+        "R7",
+        "R8"
+      ],
+      "declaredRunningType": "z2",
+      "duration": {
+        "deltaMin": 0,
+        "itemCount": 3,
+        "knownMin": 45,
+        "requestedMin": 45,
+        "unknownBlocks": 0,
+        "verdict": "exact"
+      },
+      "name": "z2 45min · fase base",
+      "pace": {
+        "distinctPaces": 1,
+        "rows": [
+          {
+            "label": "Calentamiento Z2",
+            "role": "warmup",
+            "targetPace": null
+          },
+          {
+            "label": "Trote Z2 continuo",
+            "role": "work",
+            "targetPace": null
+          },
+          {
+            "label": "Enfriamiento Z2",
+            "role": "cooldown",
+            "targetPace": null
+          }
+        ],
+        "sharedPaceWithWork": false
+      },
+      "phase": "base",
+      "requestedDurationMin": 45,
+      "resolvedDurationMin": 45,
+      "resolvedRunningType": "z2",
+      "returnedSessionCount": 4,
+      "targetPresent": true,
+      "textualRecoveries": [
+        "Calentamiento Z2"
+      ],
+      "warnings": [
+        "squash_title_aligned"
+      ]
+    },
+    {
+      "addedByRepair": [
+        {
+          "date": "2026-06-01",
+          "durationMin": 60,
+          "sessionType": "squash",
+          "squashKind": "match",
+          "timeBlock": "PM"
+        },
+        {
+          "date": "2026-06-02",
+          "durationMin": 60,
+          "sessionType": "squash",
+          "squashKind": "technical",
+          "timeBlock": "AM"
+        },
+        {
+          "date": "2026-06-06",
+          "durationMin": 45,
+          "sessionType": "squash",
+          "squashKind": "control",
+          "timeBlock": "AM"
+        }
+      ],
+      "blocks": [
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 8,
+          "label": "Calentamiento Z2",
+          "notes": "Comenzar caminando o trotando suave y aumentar gradualmente. Incluido en el tiempo total.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 24,
+          "label": "Trote Z2 continuo",
+          "notes": "Esfuerzo conversacional; bajar el ritmo si no puedes hablar cómodamente.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 8,
+          "label": "Enfriamiento Z2",
+          "notes": "Reducir gradualmente hasta caminar. Incluido en el tiempo total.",
+          "repetitions": null,
+          "targetPace": null
+        }
+      ],
+      "covers": [
+        "R7",
+        "R8"
+      ],
+      "declaredRunningType": "z2",
+      "duration": {
+        "deltaMin": -5,
+        "itemCount": 3,
+        "knownMin": 40,
+        "requestedMin": 45,
+        "unknownBlocks": 0,
+        "verdict": "under"
+      },
+      "name": "z2 45min · fase build",
+      "pace": {
+        "distinctPaces": 1,
+        "rows": [
+          {
+            "label": "Calentamiento Z2",
+            "role": "warmup",
+            "targetPace": null
+          },
+          {
+            "label": "Trote Z2 continuo",
+            "role": "work",
+            "targetPace": null
+          },
+          {
+            "label": "Enfriamiento Z2",
+            "role": "cooldown",
+            "targetPace": null
+          }
+        ],
+        "sharedPaceWithWork": false
+      },
+      "phase": "build",
+      "requestedDurationMin": 45,
+      "resolvedDurationMin": 40,
+      "resolvedRunningType": "z2",
+      "returnedSessionCount": 4,
+      "targetPresent": true,
+      "textualRecoveries": [
+        "Calentamiento Z2"
+      ],
+      "warnings": [
+        "squash_support_running_softened",
+        "squash_title_aligned"
+      ]
+    },
+    {
+      "addedByRepair": [
+        {
+          "date": "2026-06-01",
+          "durationMin": 60,
+          "sessionType": "squash",
+          "squashKind": "match",
+          "timeBlock": "PM"
+        },
+        {
+          "date": "2026-06-02",
+          "durationMin": 60,
+          "sessionType": "squash",
+          "squashKind": "technical",
+          "timeBlock": "AM"
+        },
+        {
+          "date": "2026-06-06",
+          "durationMin": 45,
+          "sessionType": "squash",
+          "squashKind": "control",
+          "timeBlock": "AM"
+        }
+      ],
+      "blocks": [
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 10,
+          "label": "Calentamiento Z2",
+          "notes": "Comenzar caminando o trotando suave y aumentar gradualmente. Incluido en el tiempo total.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 50,
+          "label": "Rodaje aeróbico por tiempo",
+          "notes": "Esfuerzo conversacional; bajar el ritmo si no puedes hablar cómodamente.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 10,
+          "label": "Enfriamiento Z2",
+          "notes": "Reducir gradualmente hasta caminar. Incluido en el tiempo total.",
+          "repetitions": null,
+          "targetPace": null
+        }
+      ],
+      "covers": [
+        "R7",
+        "R8"
+      ],
+      "declaredRunningType": "long",
+      "duration": {
+        "deltaMin": 0,
+        "itemCount": 3,
+        "knownMin": 70,
+        "requestedMin": 70,
+        "unknownBlocks": 0,
+        "verdict": "exact"
+      },
+      "name": "long 70min · fase base",
+      "pace": {
+        "distinctPaces": 1,
+        "rows": [
+          {
+            "label": "Calentamiento Z2",
+            "role": "warmup",
+            "targetPace": null
+          },
+          {
+            "label": "Rodaje aeróbico por tiempo",
+            "role": "work",
+            "targetPace": null
+          },
+          {
+            "label": "Enfriamiento Z2",
+            "role": "cooldown",
+            "targetPace": null
+          }
+        ],
+        "sharedPaceWithWork": false
+      },
+      "phase": "base",
+      "requestedDurationMin": 70,
+      "resolvedDurationMin": 70,
+      "resolvedRunningType": "long",
+      "returnedSessionCount": 4,
+      "targetPresent": true,
+      "textualRecoveries": [
+        "Calentamiento Z2"
+      ],
+      "warnings": [
+        "squash_title_aligned"
+      ]
+    },
+    {
+      "addedByRepair": [
+        {
+          "date": "2026-06-01",
+          "durationMin": 60,
+          "sessionType": "squash",
+          "squashKind": "match",
+          "timeBlock": "PM"
+        },
+        {
+          "date": "2026-06-02",
+          "durationMin": 60,
+          "sessionType": "squash",
+          "squashKind": "technical",
+          "timeBlock": "AM"
+        },
+        {
+          "date": "2026-06-06",
+          "durationMin": 45,
+          "sessionType": "squash",
+          "squashKind": "control",
+          "timeBlock": "AM"
+        }
+      ],
+      "blocks": [
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 8,
+          "label": "Calentamiento Z2",
+          "notes": "Comenzar caminando o trotando suave y aumentar gradualmente. Incluido en el tiempo total.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 24,
+          "label": "Trote Z2 continuo",
+          "notes": "Esfuerzo conversacional; bajar el ritmo si no puedes hablar cómodamente.",
+          "repetitions": null,
+          "targetPace": null
+        },
+        {
+          "declaresRecovery": false,
+          "distanceKm": null,
+          "durationMin": 8,
+          "label": "Enfriamiento Z2",
+          "notes": "Reducir gradualmente hasta caminar. Incluido en el tiempo total.",
+          "repetitions": null,
+          "targetPace": null
+        }
+      ],
+      "covers": [
+        "R7",
+        "R8"
+      ],
+      "declaredRunningType": "long",
+      "duration": {
+        "deltaMin": -30,
+        "itemCount": 3,
+        "knownMin": 40,
+        "requestedMin": 70,
+        "unknownBlocks": 0,
+        "verdict": "under"
+      },
+      "name": "long 70min · fase build",
+      "pace": {
+        "distinctPaces": 1,
+        "rows": [
+          {
+            "label": "Calentamiento Z2",
+            "role": "warmup",
+            "targetPace": null
+          },
+          {
+            "label": "Trote Z2 continuo",
+            "role": "work",
+            "targetPace": null
+          },
+          {
+            "label": "Enfriamiento Z2",
+            "role": "cooldown",
+            "targetPace": null
+          }
+        ],
+        "sharedPaceWithWork": false
+      },
+      "phase": "build",
+      "requestedDurationMin": 70,
+      "resolvedDurationMin": 40,
+      "resolvedRunningType": "z2",
+      "returnedSessionCount": 4,
+      "targetPresent": true,
+      "textualRecoveries": [
+        "Calentamiento Z2"
+      ],
+      "warnings": [
+        "squash_support_running_softened",
+        "squash_title_aligned"
+      ]
+    }
+  ],
+  "repairSquash": [
+    {
+      "addedByRepair": [
+        {
+          "date": "2026-06-01",
+          "durationMin": 60,
+          "sessionType": "squash",
+          "squashKind": "match",
+          "timeBlock": "PM"
+        },
+        {
+          "date": "2026-06-04",
+          "durationMin": 40,
+          "sessionType": "running",
+          "squashKind": null,
+          "timeBlock": "AM"
+        },
+        {
+          "date": "2026-06-06",
+          "durationMin": 45,
+          "sessionType": "squash",
+          "squashKind": "control",
+          "timeBlock": "AM"
+        }
+      ],
+      "covers": [
+        "S1"
+      ],
+      "declaredKind": "technical",
+      "drills": [
+        {
+          "durationMin": 12,
+          "executionMode": "partner",
+          "name": "Atacar la primera pelota cómoda desde la T"
+        },
+        {
+          "durationMin": 6,
+          "executionMode": "partner",
+          "name": "Patrón de saque, resto y tercera pelota"
+        },
+        {
+          "durationMin": 12,
+          "executionMode": "partner",
+          "name": "Patrón largo-corto desde la T"
+        }
+      ],
+      "duration": {
+        "deltaMin": 0,
+        "itemCount": 3,
+        "knownMin": 30,
+        "requestedMin": 30,
+        "unknownBlocks": 0,
+        "verdict": "exact"
+      },
+      "name": "squash technical 30min",
+      "partnerAvailability": null,
+      "requestedDurationMin": 30,
+      "resolvedKind": "technical",
+      "returnedSessionCount": 4,
+      "targetPresent": true,
+      "warnings": [
+        "squash_support_running_softened",
+        "squash_title_aligned"
+      ]
+    },
+    {
+      "addedByRepair": [
+        {
+          "date": "2026-06-01",
+          "durationMin": 60,
+          "sessionType": "squash",
+          "squashKind": "match",
+          "timeBlock": "PM"
+        },
+        {
+          "date": "2026-06-04",
+          "durationMin": 40,
+          "sessionType": "running",
+          "squashKind": null,
+          "timeBlock": "AM"
+        },
+        {
+          "date": "2026-06-06",
+          "durationMin": 45,
+          "sessionType": "squash",
+          "squashKind": "control",
+          "timeBlock": "AM"
+        }
+      ],
+      "covers": [
+        "S1"
+      ],
+      "declaredKind": "technical",
+      "drills": [
+        {
+          "durationMin": 18,
+          "executionMode": "partner",
+          "name": "Atacar la primera pelota cómoda desde la T"
+        },
+        {
+          "durationMin": 9,
+          "executionMode": "partner",
+          "name": "Patrón de saque, resto y tercera pelota"
+        },
+        {
+          "durationMin": 18,
+          "executionMode": "partner",
+          "name": "Patrón largo-corto desde la T"
+        }
+      ],
+      "duration": {
+        "deltaMin": 0,
+        "itemCount": 3,
+        "knownMin": 45,
+        "requestedMin": 45,
+        "unknownBlocks": 0,
+        "verdict": "exact"
+      },
+      "name": "squash technical 45min",
+      "partnerAvailability": null,
+      "requestedDurationMin": 45,
+      "resolvedKind": "technical",
+      "returnedSessionCount": 4,
+      "targetPresent": true,
+      "warnings": [
+        "squash_support_running_softened",
+        "squash_title_aligned"
+      ]
+    },
+    {
+      "addedByRepair": [
+        {
+          "date": "2026-06-01",
+          "durationMin": 60,
+          "sessionType": "squash",
+          "squashKind": "match",
+          "timeBlock": "PM"
+        },
+        {
+          "date": "2026-06-04",
+          "durationMin": 40,
+          "sessionType": "running",
+          "squashKind": null,
+          "timeBlock": "AM"
+        },
+        {
+          "date": "2026-06-06",
+          "durationMin": 45,
+          "sessionType": "squash",
+          "squashKind": "control",
+          "timeBlock": "AM"
+        }
+      ],
+      "covers": [
+        "S1"
+      ],
+      "declaredKind": "technical",
+      "drills": [
+        {
+          "durationMin": 23.333333333333332,
+          "executionMode": "partner",
+          "name": "Atacar la primera pelota cómoda desde la T"
+        },
+        {
+          "durationMin": 13.333333333333334,
+          "executionMode": "partner",
+          "name": "Patrón de saque, resto y tercera pelota"
+        },
+        {
+          "durationMin": 23.333333333333332,
+          "executionMode": "partner",
+          "name": "Patrón largo-corto desde la T"
+        }
+      ],
+      "duration": {
+        "deltaMin": 0,
+        "itemCount": 3,
+        "knownMin": 60,
+        "requestedMin": 60,
+        "unknownBlocks": 0,
+        "verdict": "exact"
+      },
+      "name": "squash technical 60min",
+      "partnerAvailability": null,
+      "requestedDurationMin": 60,
+      "resolvedKind": "technical",
+      "returnedSessionCount": 4,
+      "targetPresent": true,
+      "warnings": [
+        "squash_support_running_softened",
+        "squash_title_aligned"
+      ]
+    },
+    {
+      "addedByRepair": [
+        {
+          "date": "2026-06-01",
+          "durationMin": 60,
+          "sessionType": "squash",
+          "squashKind": "match",
+          "timeBlock": "PM"
+        },
+        {
+          "date": "2026-06-04",
+          "durationMin": 40,
+          "sessionType": "running",
+          "squashKind": null,
+          "timeBlock": "AM"
+        },
+        {
+          "date": "2026-06-06",
+          "durationMin": 45,
+          "sessionType": "squash",
+          "squashKind": "control",
+          "timeBlock": "AM"
+        }
+      ],
+      "covers": [
+        "S5"
+      ],
+      "declaredKind": "match",
+      "drills": [
+        {
+          "durationMin": 23.333333333333332,
+          "executionMode": "solo",
+          "name": "Drives paralelos desde el fondo — 100"
+        },
+        {
+          "durationMin": 13.333333333333334,
+          "executionMode": "solo",
+          "name": "Saque duro y bajo — 100 (50 por lado)"
+        },
+        {
+          "durationMin": 23.333333333333332,
+          "executionMode": "solo",
+          "name": "Saque lob a objetivo — 100 (50 por lado)"
+        }
+      ],
+      "duration": {
+        "deltaMin": 0,
+        "itemCount": 3,
+        "knownMin": 60,
+        "requestedMin": 60,
+        "unknownBlocks": 0,
+        "verdict": "exact"
+      },
+      "name": "squash match 60min con wizard solo",
+      "partnerAvailability": "solo",
+      "requestedDurationMin": 60,
+      "resolvedKind": "control",
+      "returnedSessionCount": 4,
+      "targetPresent": true,
+      "warnings": [
+        "squash_support_running_softened",
+        "squash_title_aligned",
+        "squash_title_aligned"
+      ]
+    },
+    {
+      "addedByRepair": [
+        {
+          "date": "2026-06-01",
+          "durationMin": 60,
+          "sessionType": "squash",
+          "squashKind": "match",
+          "timeBlock": "PM"
+        },
+        {
+          "date": "2026-06-04",
+          "durationMin": 40,
+          "sessionType": "running",
+          "squashKind": null,
+          "timeBlock": "AM"
+        },
+        {
+          "date": "2026-06-06",
+          "durationMin": 45,
+          "sessionType": "squash",
+          "squashKind": "control",
+          "timeBlock": "AM"
+        }
+      ],
+      "covers": [
+        "S5"
+      ],
+      "declaredKind": "match",
+      "drills": [
+        {
+          "durationMin": 60,
+          "executionMode": "match",
+          "name": "Partido de entrenamiento al mejor de 5 juegos"
+        }
+      ],
+      "duration": {
+        "deltaMin": 0,
+        "itemCount": 1,
+        "knownMin": 60,
+        "requestedMin": 60,
+        "unknownBlocks": 0,
+        "verdict": "exact"
+      },
+      "name": "squash match 60min con wizard ausente (default)",
+      "partnerAvailability": null,
+      "requestedDurationMin": 60,
+      "resolvedKind": "match",
+      "returnedSessionCount": 4,
+      "targetPresent": true,
+      "warnings": [
+        "squash_support_running_softened",
+        "squash_title_aligned",
+        "squash_title_aligned"
+      ]
+    }
+  ],
+  "runningEligibility": {
+    "covers": [
+      "R3"
+    ],
+    "eligibleAboveModerate": [
+      {
+        "family": "tempo_threshold",
+        "id": "cruise_intervals",
+        "intensity": "moderate-high"
+      },
+      {
+        "family": "speed_economy",
+        "id": "short_hill_sprints",
+        "intensity": "high"
+      },
+      {
+        "family": "tempo_threshold",
+        "id": "tempo_continuo",
+        "intensity": "moderate-high"
+      },
+      {
+        "family": "tempo_threshold",
+        "id": "threshold_blocks",
+        "intensity": "moderate-high"
+      }
+    ],
+    "eligibleIds": [
+      "aerobic_steady",
+      "cruise_intervals",
+      "easy_longer",
+      "easy_z2_base",
+      "easy_z2_strides",
+      "lactate_clearance",
+      "low_impact_return",
+      "race_activation",
+      "recovery_jog",
+      "run_walk_return",
+      "short_hill_sprints",
+      "speed_support",
+      "strides_session",
+      "tempo_continuo",
+      "threshold_blocks"
+    ],
+    "profile": "sport_support"
+  },
+  "runningHistory": [
+    {
+      "covers": [
+        "S2"
+      ],
+      "derivedFamilies": [
+        "easy_aerobic",
+        "easy_aerobic"
+      ],
+      "inputStatuses": [
+        "completed",
+        "completed"
+      ],
+      "inputTitles": [
+        "Rodaje fácil",
+        "Rodaje fácil"
+      ],
+      "name": "historial running estado=completed"
+    },
+    {
+      "covers": [
+        "S2"
+      ],
+      "derivedFamilies": [
+        "easy_aerobic",
+        "easy_aerobic"
+      ],
+      "inputStatuses": [
+        "adjusted",
+        "adjusted"
+      ],
+      "inputTitles": [
+        "Rodaje fácil",
+        "Rodaje fácil"
+      ],
+      "name": "historial running estado=adjusted"
+    },
+    {
+      "covers": [
+        "S2"
+      ],
+      "derivedFamilies": [],
+      "inputStatuses": [
+        "planned",
+        "planned"
+      ],
+      "inputTitles": [
+        "Rodaje fácil",
+        "Rodaje fácil"
+      ],
+      "name": "historial running estado=planned"
+    },
+    {
+      "covers": [
+        "S2"
+      ],
+      "derivedFamilies": [],
+      "inputStatuses": [
+        "skipped",
+        "skipped"
+      ],
+      "inputTitles": [
+        "Rodaje fácil",
+        "Rodaje fácil"
+      ],
+      "name": "historial running estado=skipped"
+    },
+    {
+      "covers": [
+        "R5"
+      ],
+      "derivedFamilies": [
+        "hill"
+      ],
+      "inputStatuses": [
+        "completed"
+      ],
+      "inputTitles": [
+        "Short hill sprints"
+      ],
+      "name": "sprint en cuesta clasificado por título"
+    },
+    {
+      "covers": [
+        "R5"
+      ],
+      "derivedFamilies": [
+        "intervals_vo2"
+      ],
+      "inputStatuses": [
+        "completed"
+      ],
+      "inputTitles": [
+        "10K pace reps"
+      ],
+      "name": "sesión específica de 10K clasificada por runningType"
+    }
+  ],
+  "runningSelection": [
+    {
+      "covers": [
+        "R1"
+      ],
+      "declaredInputs": {
+        "experienceLevel": null,
+        "primarySport": "squash",
+        "recentSessions": [],
+        "sessionDurationMin": null,
+        "weeklyRunCount": null
+      },
+      "exposesTemplateId": false,
+      "focus": "aerobic conditioning — Easy aerobic longer block",
+      "name": "base sport_support/build/f4",
+      "progressionIntent": "hold",
+      "progressionSummary": "Sin historial suficiente: usar variacion contextual limpia.",
+      "runningType": "z2",
+      "selectedFamily": "easy_aerobic",
+      "selectedIntensity": "low",
+      "selectedName": "Easy aerobic longer block",
+      "structure": "55-70 min a ritmo Z2 fácil constante. Sin acelerar al final."
+    },
+    {
+      "covers": [
+        "R1"
+      ],
+      "declaredInputs": {
+        "experienceLevel": null,
+        "primarySport": "squash",
+        "recentSessions": [],
+        "sessionDurationMin": 15,
+        "weeklyRunCount": null
+      },
+      "exposesTemplateId": false,
+      "focus": "aerobic conditioning — Easy aerobic longer block",
+      "name": "sessionDurationMin=15",
+      "progressionIntent": "hold",
+      "progressionSummary": "Sin historial suficiente: usar variacion contextual limpia.",
+      "runningType": "z2",
+      "selectedFamily": "easy_aerobic",
+      "selectedIntensity": "low",
+      "selectedName": "Easy aerobic longer block",
+      "structure": "55-70 min a ritmo Z2 fácil constante. Sin acelerar al final."
+    },
+    {
+      "covers": [
+        "R1"
+      ],
+      "declaredInputs": {
+        "experienceLevel": null,
+        "primarySport": "squash",
+        "recentSessions": [],
+        "sessionDurationMin": 20,
+        "weeklyRunCount": null
+      },
+      "exposesTemplateId": false,
+      "focus": "aerobic conditioning — Easy aerobic longer block",
+      "name": "sessionDurationMin=20",
+      "progressionIntent": "hold",
+      "progressionSummary": "Sin historial suficiente: usar variacion contextual limpia.",
+      "runningType": "z2",
+      "selectedFamily": "easy_aerobic",
+      "selectedIntensity": "low",
+      "selectedName": "Easy aerobic longer block",
+      "structure": "55-70 min a ritmo Z2 fácil constante. Sin acelerar al final."
+    },
+    {
+      "covers": [
+        "R1"
+      ],
+      "declaredInputs": {
+        "experienceLevel": null,
+        "primarySport": "squash",
+        "recentSessions": [],
+        "sessionDurationMin": 30,
+        "weeklyRunCount": null
+      },
+      "exposesTemplateId": false,
+      "focus": "aerobic conditioning — Easy aerobic longer block",
+      "name": "sessionDurationMin=30",
+      "progressionIntent": "hold",
+      "progressionSummary": "Sin historial suficiente: usar variacion contextual limpia.",
+      "runningType": "z2",
+      "selectedFamily": "easy_aerobic",
+      "selectedIntensity": "low",
+      "selectedName": "Easy aerobic longer block",
+      "structure": "55-70 min a ritmo Z2 fácil constante. Sin acelerar al final."
+    },
+    {
+      "covers": [
+        "R1"
+      ],
+      "declaredInputs": {
+        "experienceLevel": null,
+        "primarySport": "squash",
+        "recentSessions": [],
+        "sessionDurationMin": 45,
+        "weeklyRunCount": null
+      },
+      "exposesTemplateId": false,
+      "focus": "aerobic conditioning — Easy aerobic longer block",
+      "name": "sessionDurationMin=45",
+      "progressionIntent": "hold",
+      "progressionSummary": "Sin historial suficiente: usar variacion contextual limpia.",
+      "runningType": "z2",
+      "selectedFamily": "easy_aerobic",
+      "selectedIntensity": "low",
+      "selectedName": "Easy aerobic longer block",
+      "structure": "55-70 min a ritmo Z2 fácil constante. Sin acelerar al final."
+    },
+    {
+      "covers": [
+        "R1"
+      ],
+      "declaredInputs": {
+        "experienceLevel": null,
+        "primarySport": "squash",
+        "recentSessions": [],
+        "sessionDurationMin": 60,
+        "weeklyRunCount": null
+      },
+      "exposesTemplateId": false,
+      "focus": "aerobic conditioning — Easy aerobic longer block",
+      "name": "sessionDurationMin=60",
+      "progressionIntent": "hold",
+      "progressionSummary": "Sin historial suficiente: usar variacion contextual limpia.",
+      "runningType": "z2",
+      "selectedFamily": "easy_aerobic",
+      "selectedIntensity": "low",
+      "selectedName": "Easy aerobic longer block",
+      "structure": "55-70 min a ritmo Z2 fácil constante. Sin acelerar al final."
+    },
+    {
+      "covers": [
+        "R1"
+      ],
+      "declaredInputs": {
+        "experienceLevel": "beginner",
+        "primarySport": "squash",
+        "recentSessions": [],
+        "sessionDurationMin": null,
+        "weeklyRunCount": null
+      },
+      "exposesTemplateId": false,
+      "focus": "aerobic conditioning — Easy aerobic longer block",
+      "name": "experienceLevel=beginner",
+      "progressionIntent": "hold",
+      "progressionSummary": "Sin historial suficiente: usar variacion contextual limpia.",
+      "runningType": "z2",
+      "selectedFamily": "easy_aerobic",
+      "selectedIntensity": "low",
+      "selectedName": "Easy aerobic longer block",
+      "structure": "55-70 min a ritmo Z2 fácil constante. Sin acelerar al final."
+    },
+    {
+      "covers": [
+        "R1"
+      ],
+      "declaredInputs": {
+        "experienceLevel": "intermediate",
+        "primarySport": "squash",
+        "recentSessions": [],
+        "sessionDurationMin": null,
+        "weeklyRunCount": null
+      },
+      "exposesTemplateId": false,
+      "focus": "aerobic conditioning — Easy aerobic longer block",
+      "name": "experienceLevel=intermediate",
+      "progressionIntent": "hold",
+      "progressionSummary": "Sin historial suficiente: usar variacion contextual limpia.",
+      "runningType": "z2",
+      "selectedFamily": "easy_aerobic",
+      "selectedIntensity": "low",
+      "selectedName": "Easy aerobic longer block",
+      "structure": "55-70 min a ritmo Z2 fácil constante. Sin acelerar al final."
+    },
+    {
+      "covers": [
+        "R1"
+      ],
+      "declaredInputs": {
+        "experienceLevel": "advanced",
+        "primarySport": "squash",
+        "recentSessions": [],
+        "sessionDurationMin": null,
+        "weeklyRunCount": null
+      },
+      "exposesTemplateId": false,
+      "focus": "aerobic conditioning — Easy aerobic longer block",
+      "name": "experienceLevel=advanced",
+      "progressionIntent": "hold",
+      "progressionSummary": "Sin historial suficiente: usar variacion contextual limpia.",
+      "runningType": "z2",
+      "selectedFamily": "easy_aerobic",
+      "selectedIntensity": "low",
+      "selectedName": "Easy aerobic longer block",
+      "structure": "55-70 min a ritmo Z2 fácil constante. Sin acelerar al final."
+    },
+    {
+      "covers": [
+        "R1"
+      ],
+      "declaredInputs": {
+        "experienceLevel": null,
+        "primarySport": "squash",
+        "recentSessions": [],
+        "sessionDurationMin": null,
+        "weeklyRunCount": 2
+      },
+      "exposesTemplateId": false,
+      "focus": "aerobic conditioning — Easy aerobic longer block",
+      "name": "weeklyRunCount=2",
+      "progressionIntent": "hold",
+      "progressionSummary": "Sin historial suficiente: usar variacion contextual limpia.",
+      "runningType": "z2",
+      "selectedFamily": "easy_aerobic",
+      "selectedIntensity": "low",
+      "selectedName": "Easy aerobic longer block",
+      "structure": "55-70 min a ritmo Z2 fácil constante. Sin acelerar al final."
+    },
+    {
+      "covers": [
+        "R1"
+      ],
+      "declaredInputs": {
+        "experienceLevel": null,
+        "primarySport": "squash",
+        "recentSessions": [],
+        "sessionDurationMin": null,
+        "weeklyRunCount": 6
+      },
+      "exposesTemplateId": false,
+      "focus": "aerobic conditioning — Easy aerobic longer block",
+      "name": "weeklyRunCount=6",
+      "progressionIntent": "hold",
+      "progressionSummary": "Sin historial suficiente: usar variacion contextual limpia.",
+      "runningType": "z2",
+      "selectedFamily": "easy_aerobic",
+      "selectedIntensity": "low",
+      "selectedName": "Easy aerobic longer block",
+      "structure": "55-70 min a ritmo Z2 fácil constante. Sin acelerar al final."
+    },
+    {
+      "covers": [
+        "R2"
+      ],
+      "declaredInputs": {
+        "experienceLevel": null,
+        "primarySport": null,
+        "recentSessions": [],
+        "sessionDurationMin": null,
+        "weeklyRunCount": null
+      },
+      "exposesTemplateId": false,
+      "focus": "aerobic conditioning — Easy aerobic longer block",
+      "name": "primarySport=squash vs ausente",
+      "progressionIntent": "hold",
+      "progressionSummary": "Sin historial suficiente: usar variacion contextual limpia.",
+      "runningType": "z2",
+      "selectedFamily": "easy_aerobic",
+      "selectedIntensity": "low",
+      "selectedName": "Easy aerobic longer block",
+      "structure": "55-70 min a ritmo Z2 fácil constante. Sin acelerar al final."
+    },
+    {
+      "covers": [
+        "R3",
+        "R4"
+      ],
+      "declaredInputs": {
+        "experienceLevel": null,
+        "primarySport": "squash",
+        "recentSessions": [
+          "easy_aerobic",
+          "easy_aerobic"
+        ],
+        "sessionDurationMin": null,
+        "weeklyRunCount": null
+      },
+      "exposesTemplateId": false,
+      "focus": "aerobic conditioning — Recovery jog",
+      "name": "sport_support con dos rodajes fáciles recientes",
+      "progressionIntent": "hold",
+      "progressionSummary": "Sin historial suficiente: usar variacion contextual limpia.",
+      "runningType": "z2",
+      "selectedFamily": "recovery",
+      "selectedIntensity": "low",
+      "selectedName": "Recovery jog",
+      "structure": "20-35 min muy suave. Ritmo de conversación fácil. Si hay dolor, caminar."
+    },
+    {
+      "covers": [
+        "R4"
+      ],
+      "declaredInputs": {
+        "experienceLevel": null,
+        "primarySport": "squash",
+        "recentSessions": [
+          "easy_aerobic",
+          "recovery"
+        ],
+        "sessionDurationMin": null,
+        "weeklyRunCount": null
+      },
+      "exposesTemplateId": false,
+      "focus": "aerobic conditioning — Speed support session",
+      "name": "sport_support con easy + recovery recientes",
+      "progressionIntent": "hold",
+      "progressionSummary": "Sin historial suficiente: usar variacion contextual limpia.",
+      "runningType": "z2",
+      "selectedFamily": "speed_economy",
+      "selectedIntensity": "low",
+      "selectedName": "Speed support session",
+      "structure": "20 min Z2 + drills de técnica (A, B, skipping) + 4 strides de 20s + 10 min Z2."
+    },
+    {
+      "covers": [
+        "R3",
+        "R4"
+      ],
+      "declaredInputs": {
+        "experienceLevel": null,
+        "primarySport": "squash",
+        "recentSessions": [
+          "easy_aerobic",
+          "easy_aerobic"
+        ],
+        "sessionDurationMin": null,
+        "weeklyRunCount": null
+      },
+      "exposesTemplateId": false,
+      "focus": "aerobic conditioning — Speed support session",
+      "name": "sport_support/base con dos rodajes fáciles recientes",
+      "progressionIntent": "hold",
+      "progressionSummary": "Sin historial suficiente: usar variacion contextual limpia.",
+      "runningType": "z2",
+      "selectedFamily": "speed_economy",
+      "selectedIntensity": "low",
+      "selectedName": "Speed support session",
+      "structure": "20 min Z2 + drills de técnica (A, B, skipping) + 4 strides de 20s + 10 min Z2."
+    },
+    {
+      "covers": [
+        "R3"
+      ],
+      "declaredInputs": {
+        "experienceLevel": null,
+        "primarySport": "squash",
+        "recentSessions": [],
+        "sessionDurationMin": null,
+        "weeklyRunCount": null
+      },
+      "exposesTemplateId": false,
+      "focus": "aerobic conditioning — Recovery jog",
+      "name": "sport_support/f8 — fatiga alta",
+      "progressionIntent": "deload",
+      "progressionSummary": "Sin historial suficiente: usar variacion contextual limpia.",
+      "runningType": "z2",
+      "selectedFamily": "recovery",
+      "selectedIntensity": "low",
+      "selectedName": "Recovery jog",
+      "structure": "20-35 min muy suave. Ritmo de conversación fácil. Si hay dolor, caminar."
+    },
+    {
+      "covers": [
+        "R3",
+        "R4"
+      ],
+      "declaredInputs": {
+        "experienceLevel": null,
+        "primarySport": "squash",
+        "recentSessions": [
+          "easy_aerobic",
+          "easy_aerobic"
+        ],
+        "sessionDurationMin": null,
+        "weeklyRunCount": null
+      },
+      "exposesTemplateId": false,
+      "focus": "aerobic conditioning — Recovery jog",
+      "name": "sport_support/f8 con dos rodajes fáciles recientes",
+      "progressionIntent": "deload",
+      "progressionSummary": "Sin historial suficiente: usar variacion contextual limpia.",
+      "runningType": "z2",
+      "selectedFamily": "recovery",
+      "selectedIntensity": "low",
+      "selectedName": "Recovery jog",
+      "structure": "20-35 min muy suave. Ritmo de conversación fácil. Si hay dolor, caminar."
+    },
+    {
+      "covers": [
+        "R3"
+      ],
+      "declaredInputs": {
+        "experienceLevel": null,
+        "primarySport": "squash",
+        "recentSessions": [],
+        "sessionDurationMin": null,
+        "weeklyRunCount": null
+      },
+      "exposesTemplateId": false,
+      "focus": "activación pre-competencia — Recovery jog",
+      "name": "sport_support/taper con competencia próxima",
+      "progressionIntent": "deload",
+      "progressionSummary": "Sin historial suficiente: usar variacion contextual limpia.",
+      "runningType": "z2",
+      "selectedFamily": "recovery",
+      "selectedIntensity": "low",
+      "selectedName": "Recovery jog",
+      "structure": "20-35 min muy suave. Ritmo de conversación fácil. Si hay dolor, caminar."
+    },
+    {
+      "covers": [
+        "R4"
+      ],
+      "declaredInputs": {
+        "experienceLevel": null,
+        "primarySport": "squash",
+        "recentSessions": [],
+        "sessionDurationMin": null,
+        "weeklyRunCount": null
+      },
+      "exposesTemplateId": false,
+      "focus": "aerobic conditioning — Recovery jog",
+      "name": "dos rodajes fáciles sólo en historicalSessions",
+      "progressionIntent": "rotate",
+      "progressionSummary": "Rotar desde familia easy_aerobic - cambiar estimulo para evitar estancamiento.",
+      "runningType": "z2",
+      "selectedFamily": "recovery",
+      "selectedIntensity": "low",
+      "selectedName": "Recovery jog",
+      "structure": "20-35 min muy suave. Ritmo de conversación fácil. Si hay dolor, caminar."
+    },
+    {
+      "covers": [
+        "R3",
+        "R4"
+      ],
+      "declaredInputs": {
+        "experienceLevel": null,
+        "primarySport": "squash",
+        "recentSessions": [
+          "easy_aerobic",
+          "easy_aerobic"
+        ],
+        "sessionDurationMin": null,
+        "weeklyRunCount": null
+      },
+      "exposesTemplateId": false,
+      "focus": "aerobic conditioning — Recovery jog",
+      "name": "dos rodajes fáciles en ambas fuentes",
+      "progressionIntent": "rotate",
+      "progressionSummary": "Rotar desde familia easy_aerobic - cambiar estimulo para evitar estancamiento.",
+      "runningType": "z2",
+      "selectedFamily": "recovery",
+      "selectedIntensity": "low",
+      "selectedName": "Recovery jog",
+      "structure": "20-35 min muy suave. Ritmo de conversación fácil. Si hay dolor, caminar."
+    },
+    {
+      "covers": [
+        "R3",
+        "R4"
+      ],
+      "declaredInputs": {
+        "experienceLevel": null,
+        "primarySport": "squash",
+        "recentSessions": [
+          "easy_aerobic",
+          "easy_aerobic"
+        ],
+        "sessionDurationMin": null,
+        "weeklyRunCount": null
+      },
+      "exposesTemplateId": false,
+      "focus": "aerobic conditioning — Recovery jog",
+      "name": "dos rodajes fáciles en ambas fuentes, fatiga 2",
+      "progressionIntent": "rotate",
+      "progressionSummary": "Rotar desde familia easy_aerobic - cambiar estimulo para evitar estancamiento.",
+      "runningType": "z2",
+      "selectedFamily": "recovery",
+      "selectedIntensity": "low",
+      "selectedName": "Recovery jog",
+      "structure": "20-35 min muy suave. Ritmo de conversación fácil. Si hay dolor, caminar."
+    }
+  ],
+  "squashHistory": [
+    {
+      "covers": [
+        "S2"
+      ],
+      "families": [
+        {
+          "family": "drive_patterns",
+          "frequency": 1,
+          "lastDate": "2026-09-06",
+          "lastLevel": 1
+        }
+      ],
+      "inputDates": [
+        "2026-09-06"
+      ],
+      "inputStatuses": [
+        "completed"
+      ],
+      "name": "historial estado=completed",
+      "recentDrills": [
+        "drive_parallel_depth"
+      ],
+      "recentKinds": [
+        "technical"
+      ],
+      "recommendation": "progress",
+      "targetFamily": "drive_patterns",
+      "targetFocus": "control"
+    },
+    {
+      "covers": [
+        "S2"
+      ],
+      "families": [
+        {
+          "family": "drive_patterns",
+          "frequency": 1,
+          "lastDate": "2026-09-06",
+          "lastLevel": 1
+        }
+      ],
+      "inputDates": [
+        "2026-09-06"
+      ],
+      "inputStatuses": [
+        "adjusted"
+      ],
+      "name": "historial estado=adjusted",
+      "recentDrills": [
+        "drive_parallel_depth"
+      ],
+      "recentKinds": [
+        "technical"
+      ],
+      "recommendation": "progress",
+      "targetFamily": "drive_patterns",
+      "targetFocus": "control"
+    },
+    {
+      "covers": [
+        "S2"
+      ],
+      "families": [
+        {
+          "family": "drive_patterns",
+          "frequency": 1,
+          "lastDate": "2026-09-06",
+          "lastLevel": 1
+        }
+      ],
+      "inputDates": [
+        "2026-09-06"
+      ],
+      "inputStatuses": [
+        "planned"
+      ],
+      "name": "historial estado=planned",
+      "recentDrills": [
+        "drive_parallel_depth"
+      ],
+      "recentKinds": [
+        "technical"
+      ],
+      "recommendation": "progress",
+      "targetFamily": "drive_patterns",
+      "targetFocus": "control"
+    },
+    {
+      "covers": [
+        "S2"
+      ],
+      "families": [
+        {
+          "family": "drive_patterns",
+          "frequency": 1,
+          "lastDate": "2026-09-06",
+          "lastLevel": 1
+        }
+      ],
+      "inputDates": [
+        "2026-09-06"
+      ],
+      "inputStatuses": [
+        "skipped"
+      ],
+      "name": "historial estado=skipped",
+      "recentDrills": [
+        "drive_parallel_depth"
+      ],
+      "recentKinds": [
+        "technical"
+      ],
+      "recommendation": "progress",
+      "targetFamily": "drive_patterns",
+      "targetFocus": "control"
+    },
+    {
+      "covers": [
+        "S2"
+      ],
+      "families": [
+        {
+          "family": "drive_patterns",
+          "frequency": 1,
+          "lastDate": "2026-09-20",
+          "lastLevel": 1
+        }
+      ],
+      "inputDates": [
+        "2026-09-20"
+      ],
+      "inputStatuses": [
+        "planned"
+      ],
+      "name": "historial con fecha futura (planned 2026-09-20)",
+      "recentDrills": [
+        "drive_parallel_depth"
+      ],
+      "recentKinds": [
+        "technical"
+      ],
+      "recommendation": "progress",
+      "targetFamily": "drive_patterns",
+      "targetFocus": "control"
+    },
+    {
+      "covers": [
+        "S3"
+      ],
+      "families": [
+        {
+          "family": "drive_patterns",
+          "frequency": 3,
+          "lastDate": "2026-09-06",
+          "lastLevel": 2
+        }
+      ],
+      "inputDates": [
+        "2026-09-06"
+      ],
+      "inputStatuses": [
+        "completed"
+      ],
+      "name": "una sesión con tres drills de la misma familia",
+      "recentDrills": [
+        "drive_parallel_depth",
+        "drive_crosscourt_length",
+        "drive_switch_parallel_cross"
+      ],
+      "recentKinds": [
+        "technical"
+      ],
+      "recommendation": "rotate",
+      "targetFamily": "drive_patterns",
+      "targetFocus": "drive"
+    },
+    {
+      "covers": [
+        "S3"
+      ],
+      "families": [
+        {
+          "family": "drive_patterns",
+          "frequency": 2,
+          "lastDate": "2026-09-06",
+          "lastLevel": 1
+        }
+      ],
+      "inputDates": [
+        "2026-09-06",
+        "2026-09-04"
+      ],
+      "inputStatuses": [
+        "completed",
+        "completed"
+      ],
+      "name": "dos sesiones completadas de la misma familia",
+      "recentDrills": [
+        "drive_parallel_depth",
+        "drive_crosscourt_length"
+      ],
+      "recentKinds": [
+        "technical",
+        "technical"
+      ],
+      "recommendation": "rotate",
+      "targetFamily": "drive_patterns",
+      "targetFocus": "control"
+    },
+    {
+      "covers": [
+        "S3"
+      ],
+      "families": [
+        {
+          "family": "solo_control_volume",
+          "frequency": 2,
+          "lastDate": "2026-09-06",
+          "lastLevel": 1
+        }
+      ],
+      "inputDates": [
+        "2026-09-06",
+        "2026-09-04"
+      ],
+      "inputStatuses": [
+        "completed",
+        "completed"
+      ],
+      "name": "familias solo/volume_reps distintas colapsadas",
+      "recentDrills": [
+        "solo_100_serve_lob_targets",
+        "solo_100_drops"
+      ],
+      "recentKinds": [
+        "technical",
+        "technical"
+      ],
+      "recommendation": "rotate",
+      "targetFamily": "solo_control_volume",
+      "targetFocus": "lob"
+    }
+  ],
+  "squashHydration": [
+    {
+      "blocks": [
+        {
+          "drillCount": 1,
+          "durationMin": 15,
+          "kind": "technical"
+        }
+      ],
+      "covers": [
+        "S1"
+      ],
+      "drills": [
+        {
+          "durationMin": 15,
+          "executionMode": "partner",
+          "name": "Boast ofensivo desde el fondo"
+        }
+      ],
+      "duration": {
+        "deltaMin": 0,
+        "itemCount": 1,
+        "knownMin": 15,
+        "requestedMin": 15,
+        "unknownBlocks": 0,
+        "verdict": "exact"
+      },
+      "fallback": null,
+      "name": "technical/build/f4/partner/15min",
+      "requestedDurationMin": 15,
+      "resolvedKind": "technical",
+      "subtype": "training",
+      "warnings": []
+    },
+    {
+      "blocks": [
+        {
+          "drillCount": 3,
+          "durationMin": 20,
+          "kind": "technical"
+        }
+      ],
+      "covers": [
+        "S1"
+      ],
+      "drills": [
+        {
+          "durationMin": 8.333333333333334,
+          "executionMode": "partner",
+          "name": "Boast ofensivo desde el fondo"
+        },
+        {
+          "durationMin": 3.3333333333333335,
+          "executionMode": "partner",
+          "name": "Boast ofensivo desde media cancha"
+        },
+        {
+          "durationMin": 8.333333333333334,
+          "executionMode": "partner",
+          "name": "Lob ofensivo como cambio de ritmo"
+        }
+      ],
+      "duration": {
+        "deltaMin": 0,
+        "itemCount": 3,
+        "knownMin": 20,
+        "requestedMin": 20,
+        "unknownBlocks": 0,
+        "verdict": "exact"
+      },
+      "fallback": null,
+      "name": "technical/build/f4/partner/20min",
+      "requestedDurationMin": 20,
+      "resolvedKind": "technical",
+      "subtype": "training",
+      "warnings": []
+    },
+    {
+      "blocks": [
+        {
+          "drillCount": 3,
+          "durationMin": 30,
+          "kind": "technical"
+        }
+      ],
+      "covers": [
+        "S1"
+      ],
+      "drills": [
+        {
+          "durationMin": 12,
+          "executionMode": "partner",
+          "name": "Boast ofensivo desde el fondo"
+        },
+        {
+          "durationMin": 6,
+          "executionMode": "partner",
+          "name": "Boast ofensivo desde media cancha"
+        },
+        {
+          "durationMin": 12,
+          "executionMode": "partner",
+          "name": "Lob ofensivo como cambio de ritmo"
+        }
+      ],
+      "duration": {
+        "deltaMin": 0,
+        "itemCount": 3,
+        "knownMin": 30,
+        "requestedMin": 30,
+        "unknownBlocks": 0,
+        "verdict": "exact"
+      },
+      "fallback": null,
+      "name": "technical/build/f4/partner/30min",
+      "requestedDurationMin": 30,
+      "resolvedKind": "technical",
+      "subtype": "training",
+      "warnings": []
+    },
+    {
+      "blocks": [
+        {
+          "drillCount": 3,
+          "durationMin": 45,
+          "kind": "technical"
+        }
+      ],
+      "covers": [
+        "S1"
+      ],
+      "drills": [
+        {
+          "durationMin": 18,
+          "executionMode": "partner",
+          "name": "Boast ofensivo desde el fondo"
+        },
+        {
+          "durationMin": 9,
+          "executionMode": "partner",
+          "name": "Boast ofensivo desde media cancha"
+        },
+        {
+          "durationMin": 18,
+          "executionMode": "partner",
+          "name": "Lob ofensivo como cambio de ritmo"
+        }
+      ],
+      "duration": {
+        "deltaMin": 0,
+        "itemCount": 3,
+        "knownMin": 45,
+        "requestedMin": 45,
+        "unknownBlocks": 0,
+        "verdict": "exact"
+      },
+      "fallback": null,
+      "name": "technical/build/f4/partner/45min",
+      "requestedDurationMin": 45,
+      "resolvedKind": "technical",
+      "subtype": "training",
+      "warnings": []
+    },
+    {
+      "blocks": [
+        {
+          "drillCount": 3,
+          "durationMin": 60,
+          "kind": "technical"
+        }
+      ],
+      "covers": [
+        "S1"
+      ],
+      "drills": [
+        {
+          "durationMin": 23.333333333333332,
+          "executionMode": "partner",
+          "name": "Boast ofensivo desde el fondo"
+        },
+        {
+          "durationMin": 13.333333333333334,
+          "executionMode": "partner",
+          "name": "Boast ofensivo desde media cancha"
+        },
+        {
+          "durationMin": 23.333333333333332,
+          "executionMode": "partner",
+          "name": "Lob ofensivo como cambio de ritmo"
+        }
+      ],
+      "duration": {
+        "deltaMin": 0,
+        "itemCount": 3,
+        "knownMin": 60,
+        "requestedMin": 60,
+        "unknownBlocks": 0,
+        "verdict": "exact"
+      },
+      "fallback": null,
+      "name": "technical/build/f4/partner/60min",
+      "requestedDurationMin": 60,
+      "resolvedKind": "technical",
+      "subtype": "training",
+      "warnings": []
+    },
+    {
+      "blocks": [
+        {
+          "drillCount": 3,
+          "durationMin": 45,
+          "kind": "control"
+        }
+      ],
+      "covers": [
+        "S1"
+      ],
+      "drills": [
+        {
+          "durationMin": 18,
+          "executionMode": "solo",
+          "name": "Paralelas de revés — 100"
+        },
+        {
+          "durationMin": 9,
+          "executionMode": "solo",
+          "name": "Drops en solitario — 100 (50 por lado)"
+        },
+        {
+          "durationMin": 18,
+          "executionMode": "solo",
+          "name": "Paralelas de derecha — 100"
+        }
+      ],
+      "duration": {
+        "deltaMin": 0,
+        "itemCount": 3,
+        "knownMin": 45,
+        "requestedMin": 45,
+        "unknownBlocks": 0,
+        "verdict": "exact"
+      },
+      "fallback": null,
+      "name": "control/base/f4/solo/45min",
+      "requestedDurationMin": 45,
+      "resolvedKind": "control",
+      "subtype": "control",
+      "warnings": []
+    },
+    {
+      "blocks": [
+        {
+          "drillCount": 2,
+          "durationMin": 36,
+          "kind": "match"
+        }
+      ],
+      "covers": [
+        "S1"
+      ],
+      "drills": [
+        {
+          "durationMin": 18,
+          "executionMode": "match",
+          "name": "Partido de entrenamiento al mejor de 3 juegos"
+        },
+        {
+          "durationMin": 18,
+          "executionMode": "match",
+          "name": "Partido de entrenamiento al mejor de 5 juegos"
+        }
+      ],
+      "duration": {
+        "deltaMin": -24,
+        "itemCount": 2,
+        "knownMin": 36,
+        "requestedMin": 60,
+        "unknownBlocks": 0,
+        "verdict": "under"
+      },
+      "fallback": null,
+      "name": "match/peak/f3/partner/60min",
+      "requestedDurationMin": 60,
+      "resolvedKind": "match",
+      "subtype": "match",
+      "warnings": []
+    },
+    {
+      "blocks": [
+        {
+          "drillCount": 3,
+          "durationMin": 60,
+          "kind": "control"
+        }
+      ],
+      "covers": [
+        "S1",
+        "S5"
+      ],
+      "drills": [
+        {
+          "durationMin": 23.333333333333332,
+          "executionMode": "solo",
+          "name": "Paralelas de revés — 100"
+        },
+        {
+          "durationMin": 13.333333333333334,
+          "executionMode": "solo",
+          "name": "Paralelas de derecha — 100"
+        },
+        {
+          "durationMin": 23.333333333333332,
+          "executionMode": "solo",
+          "name": "Drives desde media cancha — 100"
+        }
+      ],
+      "duration": {
+        "deltaMin": 0,
+        "itemCount": 3,
+        "knownMin": 60,
+        "requestedMin": 60,
+        "unknownBlocks": 0,
+        "verdict": "exact"
+      },
+      "fallback": {
+        "reason": "match_requires_partner",
+        "requestedKind": "match",
+        "resolvedKind": "control"
+      },
+      "name": "match/peak/f3/solo/60min — redirección declarada",
+      "requestedDurationMin": 60,
+      "resolvedKind": "control",
+      "subtype": "control",
+      "warnings": [
+        "match_requires_partner"
+      ]
+    },
+    {
+      "blocks": [
+        {
+          "drillCount": 1,
+          "durationMin": 30,
+          "kind": "shadows"
+        }
+      ],
+      "covers": [
+        "S1"
+      ],
+      "drills": [
+        {
+          "durationMin": 30,
+          "executionMode": "solo",
+          "name": "Ghosting a cuatro esquinas"
+        }
+      ],
+      "duration": {
+        "deltaMin": 0,
+        "itemCount": 1,
+        "knownMin": 30,
+        "requestedMin": 30,
+        "unknownBlocks": 0,
+        "verdict": "exact"
+      },
+      "fallback": null,
+      "name": "shadows/taper/f7/solo/30min",
+      "requestedDurationMin": 30,
+      "resolvedKind": "shadows",
+      "subtype": "training",
+      "warnings": []
+    },
+    {
+      "blocks": [
+        {
+          "drillCount": 3,
+          "durationMin": 45,
+          "kind": "technical"
+        }
+      ],
+      "covers": [
+        "S1"
+      ],
+      "drills": [
+        {
+          "durationMin": 18,
+          "executionMode": "partner",
+          "name": "Lob defensivo alto y recuperación"
+        },
+        {
+          "durationMin": 9,
+          "executionMode": "partner",
+          "name": "Drop y contra-drop por ambos lados"
+        },
+        {
+          "durationMin": 18,
+          "executionMode": "partner",
+          "name": "Drops desde media cancha"
+        }
+      ],
+      "duration": {
+        "deltaMin": 0,
+        "itemCount": 3,
+        "knownMin": 45,
+        "requestedMin": 45,
+        "unknownBlocks": 0,
+        "verdict": "exact"
+      },
+      "fallback": null,
+      "name": "technical/taper/f8/partner/45min — fatiga alta",
+      "requestedDurationMin": 45,
+      "resolvedKind": "technical",
+      "subtype": "training",
+      "warnings": []
+    },
+    {
+      "blocks": [
+        {
+          "drillCount": 1,
+          "durationMin": 15.75,
+          "kind": "shadows"
+        },
+        {
+          "drillCount": 3,
+          "durationMin": 29.25,
+          "kind": "technical"
+        }
+      ],
+      "covers": [
+        "S1"
+      ],
+      "drills": [
+        {
+          "durationMin": 15.75,
+          "executionMode": "solo",
+          "name": "Movimiento continuo en cancha a ritmo sostenido"
+        },
+        {
+          "durationMin": 6.75,
+          "executionMode": "partner",
+          "name": "Boast ofensivo desde el fondo"
+        },
+        {
+          "durationMin": 6.75,
+          "executionMode": "partner",
+          "name": "Boast ofensivo desde media cancha"
+        },
+        {
+          "durationMin": 15.75,
+          "executionMode": "partner",
+          "name": "Lob ofensivo como cambio de ritmo"
+        }
+      ],
+      "duration": {
+        "deltaMin": 0,
+        "itemCount": 4,
+        "knownMin": 45,
+        "requestedMin": 45,
+        "unknownBlocks": 0,
+        "verdict": "exact"
+      },
+      "fallback": null,
+      "name": "technical/build/f4/partner/45min + sombras accesorias",
+      "requestedDurationMin": 45,
+      "resolvedKind": "technical",
+      "subtype": "training",
+      "warnings": []
+    },
+    {
+      "blocks": [
+        {
+          "drillCount": 3,
+          "durationMin": 45,
+          "kind": "technical"
+        }
+      ],
+      "covers": [
+        "S1",
+        "S6"
+      ],
+      "drills": [
+        {
+          "durationMin": 18,
+          "executionMode": "partner",
+          "name": "Lob defensivo alto y recuperación"
+        },
+        {
+          "durationMin": 9,
+          "executionMode": "partner",
+          "name": "Drop y contra-drop por ambos lados"
+        },
+        {
+          "durationMin": 18,
+          "executionMode": "partner",
+          "name": "Drops desde media cancha"
+        }
+      ],
+      "duration": {
+        "deltaMin": 0,
+        "itemCount": 3,
+        "knownMin": 45,
+        "requestedMin": 45,
+        "unknownBlocks": 0,
+        "verdict": "exact"
+      },
+      "fallback": null,
+      "name": "technical/base/f9/partner/45min — pool exprimido por fatiga",
+      "requestedDurationMin": 45,
+      "resolvedKind": "technical",
+      "subtype": "training",
+      "warnings": []
+    }
+  ],
+  "squashSelection": [
+    {
+      "covers": [
+        "S6"
+      ],
+      "desiredKind": null,
+      "duration": {
+        "deltaMin": 70,
+        "itemCount": 4,
+        "knownMin": 70,
+        "requestedMin": 0,
+        "unknownBlocks": 0,
+        "verdict": "over"
+      },
+      "executionViolations": [],
+      "name": "genérico/base/f2/either — sin desiredKind",
+      "partnerAvailability": null,
+      "phaseViolations": [],
+      "selected": [
+        {
+          "family": "pressure_back_court",
+          "id": "attacking_boast_from_back_court",
+          "intensity": "high",
+          "kind": "technical"
+        },
+        {
+          "family": "t_control_patterns",
+          "id": "attack_from_t_first_ball",
+          "intensity": "high",
+          "kind": "technical"
+        },
+        {
+          "family": "conditioned_parallel",
+          "id": "back_court_parallel_cross_on_volley",
+          "intensity": "moderate",
+          "kind": "technical"
+        },
+        {
+          "family": "conditioned_boast",
+          "id": "conditioned_boast_start",
+          "intensity": "moderate",
+          "kind": "technical"
+        }
+      ],
+      "selectionNote": null,
+      "sessionKind": "technical",
+      "trainingFocus": "conditioned_games"
+    },
+    {
+      "covers": [
+        "S6"
+      ],
+      "desiredKind": null,
+      "duration": {
+        "deltaMin": 40,
+        "itemCount": 3,
+        "knownMin": 40,
+        "requestedMin": 0,
+        "unknownBlocks": 0,
+        "verdict": "over"
+      },
+      "executionViolations": [],
+      "name": "genérico/base/f9/either — sin desiredKind, pool exprimido",
+      "partnerAvailability": null,
+      "phaseViolations": [],
+      "selected": [
+        {
+          "family": "physical_general",
+          "id": "continuous_squash_movement_base",
+          "intensity": "low",
+          "kind": "shadows"
+        },
+        {
+          "family": "recovery_length",
+          "id": "defensive_high_lob_recovery",
+          "intensity": "low",
+          "kind": "technical"
+        },
+        {
+          "family": "drive_patterns",
+          "id": "boast_to_straight_drive",
+          "intensity": "moderate",
+          "kind": "technical"
+        }
+      ],
+      "selectionNote": null,
+      "sessionKind": "mixed",
+      "trainingFocus": "technical"
+    },
+    {
+      "covers": [
+        "S6"
+      ],
+      "desiredKind": null,
+      "duration": {
+        "deltaMin": 38,
+        "itemCount": 3,
+        "knownMin": 38,
+        "requestedMin": 0,
+        "unknownBlocks": 0,
+        "verdict": "over"
+      },
+      "executionViolations": [],
+      "name": "genérico/taper/f8/either — sin desiredKind",
+      "partnerAvailability": null,
+      "phaseViolations": [],
+      "selected": [
+        {
+          "family": "recovery_length",
+          "id": "defensive_high_lob_recovery",
+          "intensity": "low",
+          "kind": "technical"
+        },
+        {
+          "family": "pre_match_activation",
+          "id": "pre_match_activation_timing",
+          "intensity": "low",
+          "kind": "control"
+        },
+        {
+          "family": "solo_control_volume",
+          "id": "solo_100_backhand_parallels",
+          "intensity": "low",
+          "kind": "control"
+        }
+      ],
+      "selectionNote": null,
+      "sessionKind": "mixed",
+      "trainingFocus": "technical"
+    },
+    {
+      "covers": [
+        "S6"
+      ],
+      "desiredKind": "technical",
+      "duration": {
+        "deltaMin": 38,
+        "itemCount": 3,
+        "knownMin": 38,
+        "requestedMin": 0,
+        "unknownBlocks": 0,
+        "verdict": "over"
+      },
+      "executionViolations": [],
+      "name": "desiredKind=technical/base/f9 — modalidad explícita conserva fase",
+      "partnerAvailability": "partner",
+      "phaseViolations": [],
+      "selected": [
+        {
+          "family": "recovery_length",
+          "id": "defensive_high_lob_recovery",
+          "intensity": "low",
+          "kind": "technical"
+        },
+        {
+          "family": "front_court_touch",
+          "id": "drop_and_counter_drop",
+          "intensity": "low",
+          "kind": "technical"
+        },
+        {
+          "family": "front_court_touch",
+          "id": "mid_court_drops",
+          "intensity": "low",
+          "kind": "technical"
+        }
+      ],
+      "selectionNote": null,
+      "sessionKind": "technical",
+      "trainingFocus": "technical"
+    },
+    {
+      "covers": [
+        "S5"
+      ],
+      "desiredKind": null,
+      "duration": {
+        "deltaMin": 62,
+        "itemCount": 4,
+        "knownMin": 62,
+        "requestedMin": 0,
+        "unknownBlocks": 0,
+        "verdict": "over"
+      },
+      "executionViolations": [],
+      "name": "genérico/build/f4/solo — ejecución sin partner",
+      "partnerAvailability": "solo",
+      "phaseViolations": [],
+      "selected": [
+        {
+          "family": "physical_general",
+          "id": "continuous_squash_movement_base",
+          "intensity": "low",
+          "kind": "shadows"
+        },
+        {
+          "family": "physical_general",
+          "id": "extensive_aerobic_movement_intervals",
+          "intensity": "moderate",
+          "kind": "shadows"
+        },
+        {
+          "family": "ghosting",
+          "id": "ghosting_4_corners",
+          "intensity": "moderate",
+          "kind": "shadows"
+        },
+        {
+          "family": "solo_control_volume",
+          "id": "solo_100_backhand_parallels",
+          "intensity": "low",
+          "kind": "control"
+        }
+      ],
+      "selectionNote": null,
+      "sessionKind": "mixed",
+      "trainingFocus": "physical"
+    },
+    {
+      "covers": [
+        "S5"
+      ],
+      "desiredKind": null,
+      "duration": {
+        "deltaMin": 68,
+        "itemCount": 4,
+        "knownMin": 68,
+        "requestedMin": 0,
+        "unknownBlocks": 0,
+        "verdict": "over"
+      },
+      "executionViolations": [],
+      "name": "genérico/build/f4/partnerAvailability ausente — default del selector",
+      "partnerAvailability": null,
+      "phaseViolations": [],
+      "selected": [
+        {
+          "family": "pressure_back_court",
+          "id": "attacking_boast_from_back_court",
+          "intensity": "high",
+          "kind": "technical"
+        },
+        {
+          "family": "conditioned_parallel",
+          "id": "back_court_parallel_cross_on_volley",
+          "intensity": "moderate",
+          "kind": "technical"
+        },
+        {
+          "family": "conditioned_boast",
+          "id": "conditioned_boast_start",
+          "intensity": "moderate",
+          "kind": "technical"
+        },
+        {
+          "family": "conditioned_targets",
+          "id": "conditioned_forbidden_zone",
+          "intensity": "moderate",
+          "kind": "technical"
+        }
+      ],
+      "selectionNote": null,
+      "sessionKind": "technical",
+      "trainingFocus": "conditioned_games"
+    }
+  ],
+  "squashWeekPlan": [
+    {
+      "covers": [
+        "S7"
+      ],
+      "name": "planSquashWeek/base/2",
+      "note": null,
+      "slots": [
+        {
+          "kind": "technical",
+          "reason": null
+        },
+        {
+          "kind": "shadows",
+          "reason": null
+        }
+      ]
+    },
+    {
+      "covers": [
+        "S7"
+      ],
+      "name": "planSquashWeek/base/3",
+      "note": null,
+      "slots": [
+        {
+          "kind": "technical",
+          "reason": null
+        },
+        {
+          "kind": "shadows",
+          "reason": null
+        },
+        {
+          "kind": "control",
+          "reason": null
+        }
+      ]
+    },
+    {
+      "covers": [
+        "S7"
+      ],
+      "name": "planSquashWeek/build/2",
+      "note": null,
+      "slots": [
+        {
+          "kind": "technical",
+          "reason": null
+        },
+        {
+          "kind": "match",
+          "reason": null
+        }
+      ]
+    },
+    {
+      "covers": [
+        "S7"
+      ],
+      "name": "planSquashWeek/build/3",
+      "note": null,
+      "slots": [
+        {
+          "kind": "technical",
+          "reason": null
+        },
+        {
+          "kind": "shadows",
+          "reason": null
+        },
+        {
+          "kind": "match",
+          "reason": null
+        }
+      ]
+    },
+    {
+      "covers": [
+        "S7"
+      ],
+      "name": "planSquashWeek/peak/2",
+      "note": null,
+      "slots": [
+        {
+          "kind": "technical",
+          "reason": null
+        },
+        {
+          "kind": "match",
+          "reason": null
+        }
+      ]
+    },
+    {
+      "covers": [
+        "S7"
+      ],
+      "name": "planSquashWeek/peak/3",
+      "note": null,
+      "slots": [
+        {
+          "kind": "technical",
+          "reason": null
+        },
+        {
+          "kind": "match",
+          "reason": null
+        },
+        {
+          "kind": "control",
+          "reason": null
+        }
+      ]
+    },
+    {
+      "covers": [
+        "S7"
+      ],
+      "name": "planSquashWeek/taper/2",
+      "note": null,
+      "slots": [
+        {
+          "kind": "control",
+          "reason": null
+        },
+        {
+          "kind": "control",
+          "reason": null
+        }
+      ]
+    },
+    {
+      "covers": [
+        "S7"
+      ],
+      "name": "planSquashWeek/taper/3",
+      "note": null,
+      "slots": [
+        {
+          "kind": "control",
+          "reason": null
+        },
+        {
+          "kind": "technical",
+          "reason": null
+        },
+        {
+          "kind": "control",
+          "reason": null
+        }
+      ]
+    }
+  ]
+}

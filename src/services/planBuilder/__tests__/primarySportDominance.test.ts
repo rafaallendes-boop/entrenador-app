@@ -57,6 +57,7 @@ describe('primary sport dominance in build/peak', () => {
 
     const result = repairGeneratedWeek(rawSessions as never, context)
 
+    expect(result.failure).toBeUndefined()
     const primaryCount = result.sessions.filter((s) => s.sessionType === 'squash').length
     const supportCount = result.sessions.filter((s) => s.sessionType !== 'squash').length
     expect(primaryCount).toBeGreaterThan(supportCount)

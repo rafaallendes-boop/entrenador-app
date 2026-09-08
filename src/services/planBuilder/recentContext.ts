@@ -1,3 +1,4 @@
+import { getExecutedSessions } from '../training/executedSessions'
 import { addDays, getDay } from 'date-fns'
 import { db } from '../../db/db'
 import type { DayLog, Session, SessionType, WeekSummary } from '../../types'
@@ -44,6 +45,7 @@ export interface PlanBuilderWeeklyStructureDay {
 }
 
 export interface PlanBuilderRecentContext {
+  executedSessions?: Session[]
   referenceDate: string
   lookbackWeeks: number
   hasHistory: boolean
@@ -383,6 +385,7 @@ export async function buildPlanBuilderRecentContext(
 
   return {
     referenceDate,
+    executedSessions: getExecutedSessions(sessions, referenceDate).filter(s => s.type === 'squash' || s.type === 'running').slice(0, 12),
     lookbackWeeks,
     hasHistory: preWeeks.length > 0,
     weeks: preWeeks,

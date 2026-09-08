@@ -23,7 +23,9 @@ Se contrastó el resumen de implementación con el workspace y se corrigieron oc
 - `tsc -b` pasó durante la primera fase. El intento posterior de build global quedó bloqueado por modificaciones concurrentes en `squashSessionHydrator.ts`: `minimumDrillCount` y `mainDrills` sin uso. No se modificó ese archivo en esta revisión.
 - Un barrido inicial también encontró `sessionDose.test.ts` importando un materializador todavía inexistente. Posteriormente aparecieron esos módulos como parte del trabajo de squash/running. Se excluyó ese test del barrido de esta entrega de fuerza; no se afirma que la suite global del workspace esté verde.
 
-## Límites y pendientes
+## Límites y pendientes de la revisión inicial
+
+Actualización: el perfilado, E7 y la corrección visible del inventario se completan en [Cierre de pendientes](2026-09-07-strength-pending-completion.md). El detalle siguiente conserva el estado de la revisión inicial.
 
 - `machine` continúa siendo disponibilidad por familia, no inventario de máquinas individuales: decisión aceptada para el piloto.
 - El test del allocator pasó en el barrido de revisión, pero esto no constituye un benchmark ni demuestra resuelto el margen de rendimiento descrito en el resumen. Antes de sumar E7 conviene perfilar con entradas fijas y equipo restringido.

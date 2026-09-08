@@ -55,6 +55,7 @@ describe('double session utilization', () => {
     ] as never
 
     const result = repairGeneratedWeek(sessions, context)
+    expect(result.failure).toBeUndefined()
     const countsByDate = result.sessions.reduce<Record<string, number>>((acc, session) => {
       acc[session.date] = (acc[session.date] ?? 0) + 1
       return acc
@@ -119,6 +120,7 @@ describe('double session utilization', () => {
 
     expect(result.meta.warnings.some((w) => w.code === 'double_session_underutilized')).toBe(false)
     // Nothing should be relocated: the distribution is already correct.
+    expect(result.failure).toBeUndefined()
     const countsByDate = result.sessions.reduce<Record<string, number>>((acc, session) => {
       acc[session.date] = (acc[session.date] ?? 0) + 1
       return acc

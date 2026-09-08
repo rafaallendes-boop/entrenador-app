@@ -390,6 +390,16 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave, onDirt
         onToggle={() => toggle('running')}
         filled={!!(running.fiveKTime || running.z2PaceMin)}
       >
+        <Field label="Experiencia en running">
+          <select aria-label="Experiencia en running" value={running.experienceLevel ?? ''} onChange={e => setRunning(r => ({ ...r, experienceLevel: (e.target.value || undefined) as RunningProfile['experienceLevel'] }))} className={inputCls}>
+            <option value="">Sin declarar</option><option value="beginner">Principiante</option><option value="intermediate">Intermedio</option><option value="advanced">Avanzado</option>
+          </select>
+        </Field>
+        <Field label="Restricción de running declarada">
+          <select aria-label="Restricción de running declarada" value={running.impactRestriction ?? ''} onChange={e => setRunning(r => ({ ...r, impactRestriction: (e.target.value || undefined) as RunningProfile['impactRestriction'] }))} className={inputCls}>
+            <option value="">Sin declarar</option><option value="none">Sin restricción</option><option value="no_fast_running">Sin carrera rápida</option><option value="no_running">Sin running</option>
+          </select>
+        </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="5K actual">
             <input

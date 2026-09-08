@@ -21,6 +21,7 @@ export default function AddSessionModal({ defaultDate, onClose }: Props) {
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
       <div className="relative w-full max-h-[92vh] overflow-y-auto rounded-t-2xl border-t border-surface-border bg-surface-card md:max-w-3xl md:rounded-2xl md:border md:max-h-[88vh]">
         <SessionForm
+          athleteProfile={athleteProfile}
           defaultSport={defaultType}
           defaultDate={defaultDate}
           heading="Nueva sesion"

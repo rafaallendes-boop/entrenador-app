@@ -1,4 +1,4 @@
-export const EXERCISE_LIBRARY_SOURCES = ['squash_drill', 'strength_exercise'] as const
+export const EXERCISE_LIBRARY_SOURCES = ['squash_drill', 'strength_exercise', 'running_template'] as const
 
 export type ExerciseLibrarySource = (typeof EXERCISE_LIBRARY_SOURCES)[number]
 

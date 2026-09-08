@@ -1,3 +1,5 @@
+import type { SquashTrainingContext } from './squashTrainingContext'
+import type { RunningTemplateRef } from './runningTemplate'
 import type { ExerciseLibraryRef } from './exerciseLibraryRef'
 import type { StrengthConstraint } from './strengthSafety'
 
@@ -220,6 +222,8 @@ export interface WarmupSet {
 }
 
 export interface RunningDetails {
+  templateRef?: RunningTemplateRef
+  selectionReason?: string
   runningType: RunningType
   targetPaceMin?: string   // e.g. "5:00"
   targetPaceMax?: string   // e.g. "5:30"
@@ -254,6 +258,10 @@ export interface MobilityDetails {
 }
 
 export interface RunningIntervalBlock {
+  role?: 'warmup' | 'work' | 'recovery' | 'cooldown' | 'technique'
+  durationBasis?: 'per_repetition' | 'total'
+  durationKind?: 'prescribed' | 'estimated'
+  recoverySeconds?: number
   label: string
   repetitions?: number
   durationMin?: number
@@ -305,7 +313,7 @@ export interface SquashSessionBlock {
   durationMin?: number
 }
 
-export interface SquashDetails {
+export interface SquashDetails extends SquashTrainingContext {
   trainingFocus: SquashTrainingFocus
   drills: SquashDrill[]
   sessionMode?: SquashSessionMode
@@ -669,6 +677,8 @@ export interface WeeklyActionSummary {
 }
 
 export interface RunningProfile {
+  experienceLevel?: 'beginner' | 'intermediate' | 'advanced'
+  impactRestriction?: 'none' | 'no_fast_running' | 'no_running'
   fiveKTime?: string          // "23:30"
   tenKTime?: string           // "49:00"
   halfMarathonTime?: string   // "1:48:00"
@@ -1141,6 +1151,8 @@ export interface CoachSessionProposal {
    * ausencia cae por la cascada heredada, nunca por el texto de la sesión.
    */
   squashKind?: SquashSessionBlockKind
+  runningTemplateRef?: RunningTemplateRef
+  runningSelectionReason?: string
   runningType?: RunningType
   targetPaceMin?: string   // e.g. "5:00" — for running
   targetPaceMax?: string   // e.g. "5:30" — for running
@@ -1174,6 +1186,8 @@ export interface CoachAction {
   subtype?: SquashSubtype
   /** Modalidad estructurada para add_session/update_session de squash. */
   squashKind?: SquashSessionBlockKind
+  runningTemplateRef?: RunningTemplateRef
+  runningSelectionReason?: string
   runningType?: RunningType
   targetPaceMin?: string
   targetPaceMax?: string

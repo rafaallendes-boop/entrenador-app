@@ -120,7 +120,7 @@ era expresable. Por eso la captura del equipamiento se hizo antes que la ampliac
 | E4 | Patrones de función, campo `isolation` y elegibilidad para principal | hecho |
 | E5 | 16 altas prioritarias | hecho |
 | E6 | Verificación diferencial | hecho |
-| E7 | Los 15 de la segunda tanda | **pendiente** |
+| E7 | Los 15 de la segunda tanda | **implementado**, tras perfilar y corregir el selector; ver [cierre](2026-09-07-strength-pending-completion.md) |
 
 ### Decisiones que se apartan de lo propuesto
 
@@ -187,7 +187,9 @@ Los planes ya guardados no cambian. **Las generaciones nuevas sí pueden cambiar
 y ése es el objetivo del trabajo: un atleta que declare su equipamiento recibirá
 sesiones distintas de las que habría recibido ayer.
 
-### Costo medido y riesgo abierto
+### Costo medido y riesgo abierto en la primera entrega
+
+Actualización: el perfil de CPU posterior identificó normalización repetida como costo dominante. Se corrigió antes de E7; mediciones y límites en el [cierre de pendientes](2026-09-07-strength-pending-completion.md). Las cifras e hipótesis siguientes corresponden a la primera entrega.
 
 El allocator escala con el tamaño del catálogo. `strengthAllocatorDomain.test.ts`
 pasó de **4,84–4,89 s** a **5,60–6,83 s** aislado (+15% a +40%), contra un

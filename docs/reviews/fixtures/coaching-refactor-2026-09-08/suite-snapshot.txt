@@ -1,0 +1,239 @@
+
+> rallyiq@0.1.0 test
+> vitest run --maxWorkers=4 src/services/__tests__/repairWeek.test.ts src/services/planBuilder/__tests__/recentContextIntraPlan.test.ts src/services/weekCreator/__tests__/WeekCreatorEnginePhase3.test.ts src/services/weekCreator/__tests__/WeekCreatorLocalHydrator.test.ts src/services/planBuilder/__tests__/activeGeneration.test.ts src/services/planBuilder/__tests__/asyncGenerationLoop.test.ts src/services/__tests__/chatRouting.test.ts src/services/__tests__/contextOptimizer.test.ts src/services/training/__tests__/sessionDose.test.ts src/services/training/__tests__/runningTemplates.test.ts src/services/training/__tests__/squashTrainingContext.test.ts src/store/__tests__/sessionDosePersistence.test.ts scripts/selector-dose-routes.test.js
+
+
+ RUN  v4.1.3 /private/tmp/entrenador-review-20260907-g9_su5x0
+
+ ❯ src/services/planBuilder/__tests__/recentContextIntraPlan.test.ts (11 tests | 1 failed) 92ms
+     × cuenta la muestra de RPE, no las sesiones completadas 8ms
+ ❯ src/services/__tests__/repairWeek.test.ts (18 tests | 12 failed) 189ms
+     × 2. moves sessions outside the week range to an allowed date 13ms
+     × repairs tempo running sessions with pace targets and interval structure 4ms
+     × materializes target running load as a real running session instead of squash aerobic drills 26ms
+     × aligns squash match metadata when the actual blocks are shadows and control 4ms
+     × keeps mixed technical plus points as drills instead of labeling the whole session match-play 13ms
+     × promotes match-like squash sessions to competition match metadata in peak 27ms
+     × 3. moves sessions on disallowed days to allowed days 2ms
+     × 4. resolves collisions by moving to opposite timeBlock or another date 2ms
+     × 6. completes missing sport details (squash and running) 2ms
+     × deduplicates squash drills by name inside a session 4ms
+     × 7. balances session count by trimming excess 10ms
+     × 7. balances session count by adding fallbacks 1ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 13 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/services/__tests__/repairWeek.test.ts > repairGeneratedWeek > 2. moves sessions outside the week range to an allowed date
+AssertionError: expected undefined to be defined
+ ❯ src/services/__tests__/repairWeek.test.ts:139:19
+    137|     expect(meta.movedSessionCount).toBe(1)
+    138|     const moved = repaired.find((s) => s.title === 'Out of week')
+    139|     expect(moved).toBeDefined()
+       |                   ^
+    140|     expect(moved!.date).not.toBe('2026-05-03') // Should have moved in…
+    141|     const dayName = new Date(`${moved!.date}T00:00:00.000Z`).toLocaleD…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/13]⎯
+
+ FAIL  src/services/__tests__/repairWeek.test.ts > repairGeneratedWeek > repairs tempo running sessions with pace targets and interval structure
+AssertionError: expected undefined to be '4:25' // Object.is equality
+
+- Expected:
+"4:25"
+
++ Received:
+undefined
+
+ ❯ src/services/__tests__/repairWeek.test.ts:171:34
+    169|
+    170|     expect(meta.repairedSessionCount).toBeGreaterThan(0)
+    171|     expect(tempo?.targetPaceMin).toBe('4:25')
+       |                                  ^
+    172|     expect(tempo?.targetPaceMax).toBe('4:35')
+    173|     expect(tempo?.intervalStructure?.blocks.map((block) => block.label…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/13]⎯
+
+ FAIL  src/services/__tests__/repairWeek.test.ts > repairGeneratedWeek > materializes target running load as a real running session instead of squash aerobic drills
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/services/__tests__/repairWeek.test.ts:215:75
+    213|     // El soporte aeróbico objetivo se materializa como running real, …
+    214|     // drill aeróbico genérico colado dentro de squash.
+    215|     expect(repaired.some((session) => session.sessionType === 'running…
+       |                                                                           ^
+    216|     const squashDrillNames = repaired
+    217|       .filter((session) => session.sessionType === 'squash')
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/13]⎯
+
+ FAIL  src/services/__tests__/repairWeek.test.ts > repairGeneratedWeek > aligns squash match metadata when the actual blocks are shadows and control
+AssertionError: expected undefined to be 'drill_session' // Object.is equality
+
+- Expected:
+"drill_session"
+
++ Received:
+undefined
+
+ ❯ src/services/__tests__/repairWeek.test.ts:367:48
+    365|     const squash = repaired.find((session) => session.date === '2026-0…
+    366|
+    367|     expect(squash?.squashDetails?.sessionMode).toBe('drill_session')
+       |                                                ^
+    368|     expect(squash?.squashDetails?.sessionKind).toBe('mixed')
+    369|     expect(squash?.subtype).toBe('training')
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/13]⎯
+
+ FAIL  src/services/__tests__/repairWeek.test.ts > repairGeneratedWeek > keeps mixed technical plus points as drills instead of labeling the whole session match-play
+AssertionError: expected undefined to be 'drill_session' // Object.is equality
+
+- Expected:
+"drill_session"
+
++ Received:
+undefined
+
+ ❯ src/services/__tests__/repairWeek.test.ts:406:48
+    404|     const squash = repaired.find((session) => session.date === '2026-0…
+    405|
+    406|     expect(squash?.squashDetails?.sessionMode).toBe('drill_session')
+       |                                                ^
+    407|     expect(squash?.squashDetails?.sessionKind).toBe('mixed')
+    408|     expect(squash?.subtype).toBe('training')
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/13]⎯
+
+ FAIL  src/services/__tests__/repairWeek.test.ts > repairGeneratedWeek > promotes match-like squash sessions to competition match metadata in peak
+AssertionError: expected undefined to be 'squash' // Object.is equality
+
+- Expected:
+"squash"
+
++ Received:
+undefined
+
+ ❯ src/services/__tests__/repairWeek.test.ts:448:32
+    446|     const match = repaired.find((session) => session.title.includes('M…
+    447|
+    448|     expect(match?.sessionType).toBe('squash')
+       |                                ^
+    449|     expect(match?.subtype).toBe('competitive')
+    450|     expect(match?.squashDetails?.sessionMode).toBe('competition_match')
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/13]⎯
+
+ FAIL  src/services/__tests__/repairWeek.test.ts > repairGeneratedWeek > 3. moves sessions on disallowed days to allowed days
+AssertionError: expected undefined to be defined
+ ❯ src/services/__tests__/repairWeek.test.ts:469:19
+    467|     expect(meta.movedSessionCount).toBe(1)
+    468|     const moved = repaired.find((s) => s.title === 'Disallowed day')
+    469|     expect(moved).toBeDefined()
+       |                   ^
+    470|     expect(moved!.date).not.toBe('2026-05-07')
+    471|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/13]⎯
+
+ FAIL  src/services/__tests__/repairWeek.test.ts > repairGeneratedWeek > 4. resolves collisions by moving to opposite timeBlock or another date
+TypeError: Cannot read properties of undefined (reading 'date')
+ ❯ src/services/__tests__/repairWeek.test.ts:486:18
+    484|     const s2 = repaired.find((s) => s.title === 'Session 2')!
+    485|     // They should not collide anymore
+    486|     expect(`${s1.date}|${s1.timeBlock}`).not.toBe(`${s2.date}|${s2.tim…
+       |                  ^
+    487|     expect(s1.date).not.toBe(s2.date)
+    488|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/13]⎯
+
+ FAIL  src/services/__tests__/repairWeek.test.ts > repairGeneratedWeek > 6. completes missing sport details (squash and running)
+TypeError: Cannot read properties of undefined (reading 'squashDetails')
+ ❯ src/services/__tests__/repairWeek.test.ts:516:15
+    514|
+    515|     const sq = repaired.find((s) => s.sessionType === 'squash')!
+    516|     expect(sq.squashDetails).toBeDefined()
+       |               ^
+    517|     expect(sq.squashDetails!.drills.length).toBeGreaterThan(0)
+    518|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/13]⎯
+
+ FAIL  src/services/__tests__/repairWeek.test.ts > repairGeneratedWeek > deduplicates squash drills by name inside a session
+TypeError: Cannot read properties of undefined (reading 'squashDetails')
+ ❯ src/services/__tests__/repairWeek.test.ts:557:31
+    555|     const { sessions: repaired, meta } = repairGeneratedWeek(sessions,…
+    556|     const squash = repaired.find((session) => session.sessionType === …
+    557|     const drillNames = squash.squashDetails?.drills.map((drill) => dri…
+       |                               ^
+    558|
+    559|     expect(drillNames.filter((name) => name === 'Volea y vuelta a la T…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/13]⎯
+
+ FAIL  src/services/__tests__/repairWeek.test.ts > repairGeneratedWeek > 7. balances session count by trimming excess
+AssertionError: expected +0 to be 4 // Object.is equality
+
+- Expected
++ Received
+
+- 4
++ 0
+
+ ❯ src/services/__tests__/repairWeek.test.ts:646:29
+    644|     const { sessions: repaired, meta } = repairGeneratedWeek(sessions,…
+    645|
+    646|     expect(repaired.length).toBe(4)
+       |                             ^
+    647|     expect(meta.droppedSessionCount).toBeGreaterThanOrEqual(1) // from…
+    648|     expect(repaired.find((s) => s.title === 'Excess Recovery')).toBeUn…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/13]⎯
+
+ FAIL  src/services/__tests__/repairWeek.test.ts > repairGeneratedWeek > 7. balances session count by adding fallbacks
+AssertionError: expected +0 to be 4 // Object.is equality
+
+- Expected
++ Received
+
+- 4
++ 0
+
+ ❯ src/services/__tests__/repairWeek.test.ts:659:29
+    657|     const { sessions: repaired, meta } = repairGeneratedWeek(sessions,…
+    658|
+    659|     expect(repaired.length).toBe(4)
+       |                             ^
+    660|     expect(meta.addedFallbackCount).toBe(2)
+    661|     const newSessions = repaired.filter((s) => s.title !== 'Session 1'…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/13]⎯
+
+ FAIL  src/services/planBuilder/__tests__/recentContextIntraPlan.test.ts > ventana intra-plan del contexto reciente > cuenta la muestra de RPE, no las sesiones completadas
+TypeError: Cannot read properties of undefined (reading 'localeCompare')
+ ❯ src/services/training/executedSessions.ts:13:65
+     11| ): T[] {
+     12|   return sessions.filter(s => isExecutedStatus(s.status) && (!beforeDa…
+     13|     .sort((a, b) => b.date.localeCompare(a.date) || b.timeBlock.locale…
+       |                                                                 ^
+     14| }
+     15|
+ ❯ getExecutedSessions src/services/training/executedSessions.ts:13:6
+ ❯ buildPlanBuilderRecentContext src/services/planBuilder/recentContext.ts:388:23
+ ❯ src/services/planBuilder/__tests__/recentContextIntraPlan.test.ts:104:21
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/13]⎯
+
+
+ Test Files  2 failed | 11 passed (13)
+      Tests  13 failed | 158 passed (171)
+   Start at  22:18:17
+   Duration  8.76s (transform 2.99s, setup 321ms, import 25.53s, tests 5.76s, environment 1ms)
+

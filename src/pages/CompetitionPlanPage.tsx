@@ -42,6 +42,7 @@ import {
 } from '../services/training/strengthSafetyConstraints'
 import { EQUIPMENT_LABELS, EQUIPMENT_PRESETS, matchEquipmentPreset } from '../services/training/equipmentPresets'
 import type { EquipmentType } from '../services/training/exerciseLibrary'
+import { resolveDeclaredEquipment } from '../services/training/equipmentVocabulary'
 import type {
   GoalEventType,
   GoalEventObjective,
@@ -183,6 +184,7 @@ interface WizardState {
   trainingDays: DayOfWeek[]
   doubleSessionDays: DayOfWeek[]
   sessionsPerWeek?: number
+  partnerAvailability?: 'solo' | 'partner' | 'either'
   sessionDurationMins?: number
   allowDoubleSession: boolean
   complementarySports: SupportedSport[]
@@ -239,6 +241,7 @@ function initWizardState(
       doubleSessionDays,
     ),
     sessionDurationMins: existingConfig?.sessionDurationMins,
+    partnerAvailability: existingConfig?.partnerAvailability,
     allowDoubleSession,
     complementarySports: defaultComplementary,
     fitnessLevel: existingConfig?.currentFitnessLevel,
@@ -611,7 +614,7 @@ export default function CompetitionPlanPage() {
       case 2: return goalEventWindowIsValid && planWindow.isFuture && !planWindow.exceedsMax
       case 3: return !!state.objective && !!state.competitiveLevel
       case 4: return state.trainingDays.length > 0 && !!state.sessionsPerWeek && !!state.sessionDurationMins
-        && state.availableEquipment?.length !== 0
+        && resolveDeclaredEquipment(state.availableEquipment).equipment.length > 0
       case 5: return true  // complementary sports optional
       case 6: return !!state.fitnessLevel && !!state.fatigue
       case 7: return true
@@ -740,6 +743,7 @@ export default function CompetitionPlanPage() {
           : undefined,
         sessionsPerWeek: state.sessionsPerWeek!,
         sessionDurationMins: state.sessionDurationMins!,
+        partnerAvailability: state.partnerAvailability,
         allowDoubleSession: state.allowDoubleSession,
         complementarySports: state.complementarySports,
         currentFitnessLevel: state.fitnessLevel!,
@@ -1390,6 +1394,12 @@ function Step4Schedule({
         </>
       )}
 
+      <label className="mb-5 block text-sm">Disponibilidad para squash
+        <select aria-label="Disponibilidad para squash" value={state.partnerAvailability ?? ''} onChange={e => update({ partnerAvailability: (e.target.value || undefined) as WizardState['partnerAvailability'] })} className="mt-2 w-full rounded-xl border bg-surface-raised px-3 py-2">
+          <option value="">Sin declarar</option><option value="solo">Solo</option><option value="partner">Con compañero</option><option value="either">Flexible</option>
+        </select>
+        <span className="text-xs text-ink-muted">Flexible permite ambas modalidades; no confirma un compañero para cada sesión.</span>
+      </label>
       <label className="text-sm font-medium text-ink block mb-2">Duración por sesión</label>
       <div className="flex flex-wrap gap-2 mb-5">
         {SESSION_DURATION_OPTIONS.map(opt => (
@@ -1475,7 +1485,8 @@ function EquipmentPicker({
   update: (p: Partial<WizardState>) => void
 }) {
   const activePreset = matchEquipmentPreset(state.availableEquipment)
-  const selected = new Set(state.availableEquipment ?? [])
+  const declared = resolveDeclaredEquipment(state.availableEquipment)
+  const selected = new Set(state.availableEquipment ? declared.equipment : [])
   const [editingCustom, setEditingCustom] = useState(false)
   const isCustom = editingCustom || activePreset === 'custom'
 
@@ -1515,7 +1526,7 @@ function EquipmentPicker({
           type="button"
           onClick={() => {
             setEditingCustom(true)
-            update({ availableEquipment: state.availableEquipment ?? [] })
+            update({ availableEquipment: state.availableEquipment ? declared.equipment : [] })
           }}
           className={`${chipCls(isCustom)} w-full text-left`}
         >
@@ -1539,7 +1550,13 @@ function EquipmentPicker({
         </div>
       )}
 
-      {state.availableEquipment?.length === 0 && (
+      {declared.unrecognized.length > 0 && (
+        <p role="status" className="text-xs text-danger leading-relaxed mb-2">
+          No pudimos reconocer: {declared.unrecognized.join(', ')}. Elige un preset o usa Personalizado
+          para confirmar el material disponible.
+        </p>
+      )}
+      {declared.declared && declared.equipment.length === 0 && (
         <p className="text-xs text-danger leading-relaxed">
           Sin nada seleccionado no se puede armar una sesión de fuerza. Elige al menos una opción
           o vuelve a un preset.

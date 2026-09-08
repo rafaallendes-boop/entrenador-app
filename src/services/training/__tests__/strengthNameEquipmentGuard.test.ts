@@ -19,13 +19,13 @@ describe('guard de modificador de equipamiento en la resolución por nombre', ()
     ['Press banca en máquina', 'machine'],
     ['Bench press machine', 'machine'],
     ['Bench press with dumbbells', 'dumbbell'],
-    ['Press banca en Smith', 'smith'],
     ['Press banca en polea', 'cable'],
   ] as const)('no resuelve %s: el candidato no declara ese equipamiento', (name) => {
     expect(findStrengthExerciseByName(name)).toBeUndefined()
   })
 
   it.each([
+    ['Press banca en Smith', 'smith_bench_press'],
     ['Hip thrust con barra', 'hip_thrust'],
     ['Búlgaras con mancuernas', 'bulgarian_split_squat'],
     ['Press banca con barra y mancuernas', 'bench_press'],

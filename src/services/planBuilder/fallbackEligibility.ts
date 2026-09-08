@@ -5,6 +5,7 @@
 export const NON_FALLBACK_ELIGIBLE_ERROR_CLASSES = new Set([
   'quality.squash.signature_uniqueness_unresolved',
   'quality.strength.safety_blocked',
+  'quality.session.dose_infeasible',
 ])
 
 /**

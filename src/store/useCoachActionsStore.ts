@@ -1,3 +1,6 @@
+import { todayISO } from '../utils/date'
+import { getExecutedSessionsThrough } from '../services/training/executedSessions'
+import { finalizeCoachActionDose } from '../services/training/coachActionDose'
 import { create } from 'zustand'
 import type { AthleteProfile, CoachAction, CoachProposal, CoachProposalSource, Session, WeekSummary } from '../types'
 import { db } from '../db/db'
@@ -124,7 +127,7 @@ export const useCoachActionsStore = create<CoachActionsState>((set, get) => ({
       existingSessions: useTrainingStore.getState().sessions,
       proposalMessage: message,
     })
-    const historicalSessions = filterRowsToActiveScope(await db.sessions.toArray())
+    const historicalSessions = getExecutedSessionsThrough(filterRowsToActiveScope(await db.sessions.toArray()), todayISO())
     const planSummary = buildPlanGenerationSummary({
       athleteProfile,
       actions: normalized.actions,
@@ -781,19 +784,25 @@ async function applyCoachAction(
       break
     }
 
-    case 'shorten_session': {
-      if (!action.sessionId || action.newDurationMin == null) throw new Error('sessionId + newDurationMin required')
-      const id = resolveSessionId(action.sessionId, store)
-      restoredSessions.push(await getSessionSnapshot(id, store))
-      await store.updateSession(id, { durationMin: action.newDurationMin })
-      break
-    }
-
+    case 'shorten_session':
     case 'lengthen_session': {
       if (!action.sessionId || action.newDurationMin == null) throw new Error('sessionId + newDurationMin required')
       const id = resolveSessionId(action.sessionId, store)
-      restoredSessions.push(await getSessionSnapshot(id, store))
-      await store.updateSession(id, { durationMin: action.newDurationMin })
+      const current = await getSessionSnapshot(id, store)
+      const dose = finalizeCoachActionDose({ ...action, sessionId: id }, { recentSessions: store.sessions, athleteProfile: athleteProfile ?? undefined }, store.sessions)
+      if (!dose.ok) throw new Error(dose.message)
+      // La duración persistida es la que salió del finalizador, no la pedida:
+      // el clamp al tope semanal devuelve una estructura más corta y escribir
+      // los minutos originales dejaba la sesión declarando más de lo que suman
+      // sus bloques, algo que la dosis siguiente rechaza.
+      const patch: Partial<Session> = { durationMin: dose.action.newDurationMin ?? action.newDurationMin }
+      if (dose.action.squashDetails) patch.squashDetails = dose.action.squashDetails
+      if (dose.action.intervalStructure) patch.runningDetails = { ...current.runningDetails,
+        runningType: dose.action.runningType ?? current.runningDetails?.runningType ?? 'z2', intervalStructure: dose.action.intervalStructure, templateRef: dose.action.runningTemplateRef, selectionReason: dose.action.runningSelectionReason }
+      const timed = ensureSessionProtocols({ ...current, ...patch })
+      patch.warmup = timed.warmup; patch.cooldown = timed.cooldown
+      restoredSessions.push(current)
+      await store.updateSession(id, patch)
       break
     }
 
@@ -834,6 +843,9 @@ async function applyCoachAction(
     }
 
     case 'add_session': {
+      const dose = finalizeCoachActionDose(action, { recentSessions: store.sessions, athleteProfile: athleteProfile ?? undefined }, store.sessions)
+      if (!dose.ok) throw new Error(dose.message)
+      action = dose.action
       if (!action.targetDate || !action.sessionType || !action.title || !action.durationMin || !action.timeBlock) {
         throw new Error('add_session requires targetDate, sessionType, title, durationMin, timeBlock')
       }
@@ -893,6 +905,7 @@ async function applyCoachAction(
               targetHrMin: action.targetHrMin,
               targetHrMax: action.targetHrMax,
               intervalStructure: action.intervalStructure,
+              templateRef: action.runningTemplateRef, selectionReason: action.runningSelectionReason,
             }
           : undefined,
         cyclingDetails: action.sessionType === 'cycling' ? action.cyclingDetails : undefined,
@@ -944,6 +957,9 @@ async function applyCoachAction(
       }
       restoredSessions.push({ ...current })
 
+      const dose = finalizeCoachActionDose(action, { recentSessions: store.sessions, athleteProfile: athleteProfile ?? undefined }, store.sessions)
+      if (!dose.ok) throw new Error(dose.message)
+      action = dose.action
       const nextType = action.newType ?? current.type
       if (!isSessionTypeAllowedForPlan(nextType, athleteProfile)) {
         warnings.push(`Se filtro update_session a ${nextType} por no estar permitido en la planificacion actual.`)
@@ -1003,6 +1019,7 @@ async function applyCoachAction(
               targetHrMin: action.targetHrMin ?? current.runningDetails?.targetHrMin,
               targetHrMax: action.targetHrMax ?? current.runningDetails?.targetHrMax,
               intervalStructure: action.intervalStructure ?? current.runningDetails?.intervalStructure,
+              templateRef: action.runningTemplateRef, selectionReason: action.runningSelectionReason,
             }
           : current.runningDetails
         patch.cyclingDetails = undefined
@@ -1039,6 +1056,9 @@ async function applyCoachAction(
       })
       patch.warmup = action.warmup ?? current.warmup ?? defaults.warmup
       patch.cooldown = action.cooldown ?? current.cooldown ?? defaults.cooldown
+      const timed = ensureSessionProtocols({ ...current, ...patch } as Session)
+      patch.warmup = timed.warmup
+      patch.cooldown = timed.cooldown
       await store.updateSession(id, patch)
       break
     }

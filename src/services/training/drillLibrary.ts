@@ -1,3 +1,5 @@
+import { SQUASH_CATALOG_EXPANSION } from './squashCatalogExpansion'
+import type { SquashAvailability } from '../../types/squashTrainingContext'
 import type {
   SquashDrill,
   SquashDrillExecutionMode,
@@ -12,6 +14,13 @@ export type DrillIntent = 'consistency' | 'pressure' | 'finishing' | 'recovery' 
 export type DrillPhase = 'base' | 'build' | 'peak' | 'taper' | 'transition' | 'race'
 
 export interface SquashDrillDefinition {
+  technicalFamily?: string
+  requirements?: Omit<SquashAvailability, 'partnerAvailability'>
+  participants?: number
+  commonErrors?: string[]
+  progressionCriterion?: string
+  successCriterion?: string
+  regression?: string
   id: string
   name: string
   category: DrillCategory
@@ -980,12 +989,18 @@ function inferPartnerRequired(drill: SquashDrillDefinition): boolean {
 function withDrillPhase2Metadata(drill: SquashDrillDefinition): SquashDrillDefinition {
   return {
     ...drill,
-    phaseAppropriate: inferDrillPhaseAppropriate(drill),
+    phaseAppropriate: drill.phaseAppropriate ?? inferDrillPhaseAppropriate(drill),
+    participants: drill.participants ?? (drill.executionMode === 'solo' ? 1 : 2),
+    commonErrors: drill.commonErrors ?? ['Aumentar velocidad antes de mantener precisión.', 'Recuperar posición sin equilibrio.'],
+    progressionCriterion: drill.progressionCriterion ?? 'Cumplir el objetivo de aciertos declarado en dos sesiones realizadas con RPE real ≤6 antes de aumentar dificultad.',
+    requirements: drill.requirements ?? { court: drill.sessionKind !== 'shadows', equipment: drill.sessionKind === 'shadows' ? [] : ['racket', 'ball'], feeder: drill.tags.includes('multiball') },
+    successCriterion: drill.successCriterion ?? 'Registrar aciertos de dirección y recuperación equilibrada respecto del objetivo de la sesión.',
+    regression: drill.regression ?? 'Reducir velocidad, usar una dirección predecible y ampliar la recuperación.',
     partnerRequired: inferPartnerRequired(drill),
   }
 }
 
-export const SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = RAW_SQUASH_DRILL_LIBRARY.map(withDrillPhase2Metadata)
+export const SQUASH_DRILL_LIBRARY: SquashDrillDefinition[] = [...RAW_SQUASH_DRILL_LIBRARY, ...SQUASH_CATALOG_EXPANSION].map(withDrillPhase2Metadata)
 
 export function toSquashDrill(definition: SquashDrillDefinition, durationMin?: number, notes?: string): SquashDrill {
   return {
@@ -1189,9 +1204,9 @@ export function getSuggestedTrainingFocus(category: DrillCategory, tags: string[
 }
 
 export function getSquashDrillFamily(drill: SquashDrillDefinition): string {
+  if (drill.technicalFamily) return drill.technicalFamily
   if (drill.tags.includes('pre_match')) return 'pre_match_activation'
   if (drill.tags.includes('match_play')) return 'match_play_practice'
-  if (drill.tags.includes('solo') || drill.tags.includes('volume_reps')) return 'solo_control_volume'
   if (drill.tags.includes('ghosting')) return 'ghosting'
   if (drill.tags.includes('footwork') || drill.focus.includes('footwork')) return 'footwork'
   if (drill.tags.includes('rsa')) return 'rsa'
@@ -1218,5 +1233,18 @@ export function getSquashDrillFamily(drill: SquashDrillDefinition): string {
   if (drill.tags.includes('recovery_technical')) return 'recovery_length'
   if (drill.tags.includes('transition')) return 'transition_patterns'
   if (drill.tags.includes('pressure')) return 'pressure_back_court'
+  if (drill.focus.includes('boast')) return 'boast_patterns'
+  if (drill.focus.includes('return')) return 'serve_return'
+  if (drill.focus.includes('serve')) return 'serve_patterns'
   return `${drill.category}_general`
+}
+
+/** Declared constraints apply equally to selection, replacement and manual validation. */
+export function isSquashDrillAvailable(drill: SquashDrillDefinition, availability?: SquashAvailability): boolean {
+  if (!availability) return true
+  if (availability.partnerAvailability === 'solo' && drill.executionMode !== 'solo') return false
+  const r = drill.requirements
+  if (!r) return true
+  if (r.court && availability.court === false || r.coach && availability.coach === false || r.feeder && availability.feeder === false) return false
+  return !availability.equipment || (r.equipment ?? []).every(item => availability.equipment!.includes(item))
 }

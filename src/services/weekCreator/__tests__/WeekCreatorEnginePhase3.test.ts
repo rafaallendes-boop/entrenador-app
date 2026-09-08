@@ -65,17 +65,17 @@ describe('WeekCreatorEngine phase 3 compact contract', () => {
     expect(debugRequest?.responseSchemaCharCount).toBe(JSON.stringify(WEEK_CREATOR_SKELETON_RESPONSE_SCHEMA).length)
     expect(debugRequest?.weekCreatorContract).toBe('skeleton_v2')
     expect(debugRequest?.repairStats).toMatchObject({
-      repairedSessionCount: 6,
+      repairedSessionCount: 0,
       movedSessionCount: 0,
       addedFallbackCount: 0,
       droppedSessionCount: 0,
       filteredSportCount: 0,
       repairTaxonomyVersion: 2,
       hydrationActionCount: 0,
-      correctiveActionCount: 6,
+      correctiveActionCount: 0,
       structuralActionCount: 0,
       hydratedSessionsAffected: 0,
-      correctedSessionsAffected: 3,
+      correctedSessionsAffected: 0,
       structurallyRepairedSessionsAffected: 0,
       hydration: {
         repairedSessionCount: 7,
@@ -139,7 +139,9 @@ describe('WeekCreatorEngine phase 3 compact contract', () => {
     expect(debugRequest?.activeRestrictionsPresent).toBe(true)
     expect(debugRequest?.weekCreatorContract).toBe('detailed')
     expect(debugRequest?.stageTimings?.some((stage) => stage.stage === 'hydrate')).toBe(false)
-    expect(response.actions?.[0]?.sessions).toHaveLength(3)
+    expect(response.actions ?? []).toHaveLength(0)
+    expect(call).toHaveBeenCalledTimes(1)
+    expect(response.message).toContain('restricciones')
   })
 
   it('hydrates eight sessions and keeps doubles only on explicitly available days', async () => {

@@ -726,7 +726,7 @@ async function generateWeekCoreWithRetry(input: {
     lastResult = failedResult
     lastError = failedResult.meta.lastError
 
-    if (failedResult.meta.errorClass === 'rate_limit') break
+    if (failedResult.meta.errorClass === 'rate_limit' || failedResult.meta.errorClass === 'quality.session.dose_infeasible') break
   }
 
   if (!lastResult) {

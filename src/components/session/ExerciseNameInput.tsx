@@ -15,6 +15,7 @@ interface ExerciseNameInputProps {
 }
 
 const SOURCE_BADGE: Record<CatalogEntry['source'], string> = {
+  running_template: 'Running',
   squash_drill: 'Drill squash',
   strength_exercise: 'Fuerza',
 }

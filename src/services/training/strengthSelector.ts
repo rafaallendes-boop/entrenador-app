@@ -282,6 +282,7 @@ function selectExerciseForBlockSlot({
     // El slot `lunge` acepta cualquier unilateral, así que el patrón no basta
     // para impedir que un aislamiento sea el levantamiento estrella.
     .filter((exercise) => !slot.isStarLiftCandidate || isMainLiftEligible(exercise))
+    .filter((exercise) => !exercise.isolation || countSelectedIsolations(selectedIds) < MAX_ISOLATION_PER_SESSION)
 
   const scored = scoreBlockCandidates(pool, {
     slot,
@@ -343,6 +344,17 @@ function capIsolationFillers(
     budget -= 1
     return true
   })
+}
+
+/**
+ * El cupo también protege el selector sin bloques: al ampliar accesorios, los
+ * pases discrecionales podían producir hasta cinco aislamientos. Se aplica al
+ * elegir —para que el slot se llene con otra cosa— y no podando después, que
+ * dejaba la sesión por debajo de sus objetivos de bloque y borraba core
+ * elegido a propósito.
+ */
+function withinIsolationBudget(exercise: ExerciseDefinition, selectedIds: Set<string>): boolean {
+  return !exercise.isolation || countSelectedIsolations(selectedIds) < MAX_ISOLATION_PER_SESSION
 }
 
 function countSelectedIsolations(selectedIds: Set<string>): number {
@@ -686,12 +698,14 @@ export function pickStrengthStructure(
       exercise.category !== 'core' &&
       !isSpecificCardioExercise(exercise) &&
       exercise.intensityType !== 'recovery' &&
+      withinIsolationBudget(exercise, selectedIds) &&
       (!selectedMovements.has(exercise.movement) || context.sportProfile === 'strength_primary'),
     (exercise) =>
       !selectedIds.has(exercise.id) &&
       exercise.category !== 'core' &&
       !isSpecificCardioExercise(exercise) &&
-      exercise.intensityType !== 'recovery',
+      exercise.intensityType !== 'recovery' &&
+      withinIsolationBudget(exercise, selectedIds),
     )
     if (accessory) {
       selected.push(accessory)
@@ -705,11 +719,13 @@ export function pickStrengthStructure(
       !selectedIds.has(exercise.id) &&
       !isSpecificCardioExercise(exercise) &&
       (exercise.unilateral || exercise.intensityType === 'stability') &&
-      exercise.category !== 'core',
+      exercise.category !== 'core' &&
+      withinIsolationBudget(exercise, selectedIds),
     (exercise) =>
       !selectedIds.has(exercise.id) &&
       !isSpecificCardioExercise(exercise) &&
-      exercise.category !== 'core',
+      exercise.category !== 'core' &&
+      withinIsolationBudget(exercise, selectedIds),
     )
     if (unilateralOrStability) {
       selected.push(unilateralOrStability)
@@ -736,11 +752,13 @@ export function pickStrengthStructure(
     !selectedIds.has(exercise.id) &&
     !isSpecificCardioExercise(exercise) &&
     exercise.category === 'upper' &&
+    withinIsolationBudget(exercise, selectedIds) &&
     (context.sportProfile !== 'sport_support' || context.competitionSoon || context.primarySport === 'running'),
   (exercise) =>
     !selectedIds.has(exercise.id) &&
     !isSpecificCardioExercise(exercise) &&
-    exercise.category === 'upper',
+    exercise.category === 'upper' &&
+    withinIsolationBudget(exercise, selectedIds),
   )
   if (upperOptional && selected.length < targetCount) {
     selected.push(upperOptional)
@@ -749,6 +767,7 @@ export function pickStrengthStructure(
 
   for (const { exercise } of scored) {
     if (selected.length >= targetCount) break
+    if (exercise.isolation && countSelectedIsolations(selectedIds) >= MAX_ISOLATION_PER_SESSION) continue
     if (selectedIds.has(exercise.id)) continue
     if (isSpecificCardioExercise(exercise)) continue
     selected.push(exercise)

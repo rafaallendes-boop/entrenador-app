@@ -31,7 +31,7 @@ function proposalFor(name: string): CoachExerciseProposal {
 }
 
 describe('contrato de comportamiento de fuerza', () => {
-  it('los 93 ejercicios producen el mismo grupo, unidad, carga y referencias', async () => {
+  it('los 108 ejercicios producen el mismo grupo, unidad, carga y referencias', async () => {
     const rows = STRENGTH_EXERCISE_LIBRARY
       .map((definition) => {
         // `durationMin: 30` es obligatorio. Con 45 o más,
@@ -65,7 +65,7 @@ describe('contrato de comportamiento de fuerza', () => {
       })
       .sort((left, right) => left.id.localeCompare(right.id))
 
-    expect(rows).toHaveLength(93)
+    expect(rows).toHaveLength(108)
     // Guard de que el contrato mide algo: si nadie recibe peso, el snapshot no
     // protegería la prescripción de carga, que es lo que más importa.
     expect(rows.filter((row) => row.weight != null).length).toBeGreaterThan(10)

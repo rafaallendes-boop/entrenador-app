@@ -596,6 +596,68 @@
     "stableDescription": "Sentadilla a una pierna con el pie de atrás elevado. Fuerza unilateral, equilibrio y control de tronco."
   },
   {
+    "id": "cable_biceps_curl",
+    "category": "upper",
+    "movement": "elbow_flexion",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "cable"
+    ],
+    "tags": [
+      "upper_strength",
+      "hypertrophy",
+      "gym",
+      "cable_based",
+      "accessory"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "general_fitness"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "low",
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak",
+      "taper"
+    ],
+    "stableName": "Curl de bíceps en polea",
+    "stableDescription": "Flexiona los codos desde la polea baja manteniendo los brazos cerca del tronco. Regresa sin balancearte ni soltar la tensión de golpe."
+  },
+  {
+    "id": "cable_chest_fly",
+    "category": "upper",
+    "movement": "push",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "cable"
+    ],
+    "tags": [
+      "upper_strength",
+      "hypertrophy",
+      "gym",
+      "cable_based",
+      "accessory"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "general_fitness"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "low",
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak",
+      "taper"
+    ],
+    "stableName": "Aperturas de pecho en poleas",
+    "stableDescription": "Acerca las manos al frente desde dos poleas con los codos ligeramente flexionados. Controla la apertura sin llevar el hombro más atrás de lo que puedas sostener."
+  },
+  {
     "id": "cable_chop",
     "category": "core",
     "movement": "rotation",
@@ -626,6 +688,68 @@
     ],
     "stableName": "Corte diagonal en polea",
     "stableDescription": "Corte diagonal en polea de arriba hacia abajo. Transferencia rotacional controlada entre caderas y hombros."
+  },
+  {
+    "id": "cable_face_pull",
+    "category": "upper",
+    "movement": "pull",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "cable"
+    ],
+    "tags": [
+      "upper_strength",
+      "hypertrophy",
+      "gym",
+      "cable_based",
+      "accessory"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "general_fitness"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "low",
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak",
+      "taper"
+    ],
+    "stableName": "Face pull en polea",
+    "stableDescription": "Lleva la cuerda hacia la cara separando las manos y manteniendo el tronco estable. Usa una carga que permita controlar la posición de hombros y codos."
+  },
+  {
+    "id": "cable_straight_arm_pulldown",
+    "category": "upper",
+    "movement": "pull",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "cable"
+    ],
+    "tags": [
+      "upper_strength",
+      "hypertrophy",
+      "gym",
+      "cable_based",
+      "accessory"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "general_fitness"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "low",
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak",
+      "taper"
+    ],
+    "stableName": "Jalón de brazos rectos en polea",
+    "stableDescription": "Lleva el agarre de la polea alta hacia los muslos manteniendo los codos casi fijos y el tronco estable. Evita convertir el movimiento en un balanceo."
   },
   {
     "id": "cable_triceps_pushdown",
@@ -1888,6 +2012,67 @@
     "stableDescription": "Flexionar la rodilla boca abajo, con la cadera extendida. Misma articulación que el curl sentado pero con el isquiotibial en otra longitud, así que se registran aparte."
   },
   {
+    "id": "machine_assisted_dip",
+    "category": "upper",
+    "movement": "push",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "machine"
+    ],
+    "tags": [
+      "upper_strength",
+      "hypertrophy",
+      "gym",
+      "machine_based"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "general_fitness"
+    ],
+    "riskLevel": "medium",
+    "fatigueCost": "medium",
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak",
+      "taper"
+    ],
+    "stableName": "Fondos asistidos en máquina",
+    "stableDescription": "Baja y empuja sobre las barras con ayuda de la plataforma. Más asistencia reduce la dificultad: ajusta la ayuda al RPE objetivo y registra la asistencia usada."
+  },
+  {
+    "id": "machine_biceps_curl",
+    "category": "upper",
+    "movement": "elbow_flexion",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "machine"
+    ],
+    "tags": [
+      "upper_strength",
+      "hypertrophy",
+      "gym",
+      "machine_based",
+      "accessory"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "general_fitness"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "low",
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak",
+      "taper"
+    ],
+    "stableName": "Curl de bíceps en máquina",
+    "stableDescription": "Flexiona los codos con los brazos apoyados, sin levantar los hombros. Ajusta el asiento para alinear el codo con el eje de la máquina."
+  },
+  {
     "id": "machine_chest_press",
     "category": "upper",
     "movement": "push",
@@ -1915,6 +2100,98 @@
     ],
     "stableName": "Press de pecho en máquina",
     "stableDescription": "Empuje horizontal guiado, sentado. La máquina controla la trayectoria, así que permite acercarse al fallo con menos exigencia de estabilización que el press con barra."
+  },
+  {
+    "id": "machine_glute_drive",
+    "category": "lower",
+    "movement": "hinge",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "machine"
+    ],
+    "tags": [
+      "lower_strength",
+      "hypertrophy",
+      "gym",
+      "machine_based"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "general_fitness"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "medium",
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak",
+      "taper"
+    ],
+    "stableName": "Empuje de cadera en máquina",
+    "stableDescription": "Extiende la cadera contra el cinturón o la almohadilla manteniendo el tronco estable. Termina el recorrido sin arquear la zona lumbar."
+  },
+  {
+    "id": "machine_glute_kickback",
+    "category": "lower",
+    "movement": "hinge",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "machine"
+    ],
+    "unilateral": true,
+    "tags": [
+      "lower_strength",
+      "hypertrophy",
+      "gym",
+      "machine_based",
+      "accessory"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "general_fitness"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "low",
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak",
+      "taper"
+    ],
+    "stableName": "Extensión de cadera en máquina",
+    "stableDescription": "Empuja hacia atrás con una pierna desde el apoyo de la máquina, manteniendo la pelvis quieta. Evita ganar recorrido moviendo la espalda."
+  },
+  {
+    "id": "machine_hack_squat",
+    "category": "lower",
+    "movement": "squat",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "machine"
+    ],
+    "tags": [
+      "lower_strength",
+      "hypertrophy",
+      "gym",
+      "machine_based"
+    ],
+    "difficulty": "intermediate",
+    "sportsTransfer": [
+      "strength",
+      "general_fitness"
+    ],
+    "riskLevel": "medium",
+    "fatigueCost": "medium",
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak",
+      "taper"
+    ],
+    "stableName": "Sentadilla hack en máquina",
+    "stableDescription": "Desciende con la espalda apoyada y empuja la plataforma sin perder el contacto de la pelvis con el respaldo. Ajusta la profundidad al control del movimiento."
   },
   {
     "id": "machine_hip_abduction",
@@ -1981,6 +2258,67 @@
     ],
     "stableName": "Aducción de cadera en máquina",
     "stableDescription": "Juntar las rodillas contra las almohadillas, sentado. Carga los aductores de forma graduable, distinta de la exigencia de tronco de la plancha Copenhagen."
+  },
+  {
+    "id": "machine_incline_chest_press",
+    "category": "upper",
+    "movement": "push",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "machine"
+    ],
+    "tags": [
+      "upper_strength",
+      "hypertrophy",
+      "gym",
+      "machine_based"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "general_fitness"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "medium",
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak",
+      "taper"
+    ],
+    "stableName": "Press inclinado en máquina",
+    "stableDescription": "Empuja los agarres desde el pecho con el respaldo inclinado. Ajusta el asiento y limita el recorrido a una posición controlada del hombro."
+  },
+  {
+    "id": "machine_lateral_raise",
+    "category": "upper",
+    "movement": "push",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "machine"
+    ],
+    "tags": [
+      "upper_strength",
+      "hypertrophy",
+      "gym",
+      "machine_based",
+      "accessory"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "general_fitness"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "low",
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak",
+      "taper"
+    ],
+    "stableName": "Elevación lateral en máquina",
+    "stableDescription": "Eleva los brazos hacia los lados contra las almohadillas hasta una altura controlada. Mantén el tronco apoyado y evita encoger los hombros."
   },
   {
     "id": "machine_leg_extension",
@@ -2126,6 +2464,37 @@
     ],
     "stableName": "Press de hombros en máquina",
     "stableDescription": "Empuje vertical guiado, sentado con respaldo. Trabaja el hombro por encima de la cabeza sin pedir estabilidad de tronco."
+  },
+  {
+    "id": "machine_triceps_extension",
+    "category": "upper",
+    "movement": "elbow_extension",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "machine"
+    ],
+    "tags": [
+      "upper_strength",
+      "hypertrophy",
+      "gym",
+      "machine_based",
+      "accessory"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "general_fitness"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "low",
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak",
+      "taper"
+    ],
+    "stableName": "Extensión de tríceps en máquina",
+    "stableDescription": "Extiende los codos desde el apoyo de la máquina sin mover los hombros. Mantén el recorrido controlado al volver."
   },
   {
     "id": "med_ball_rotational_throw",
@@ -2762,6 +3131,96 @@
     ],
     "stableName": "Empuje de cadera a una pierna",
     "stableDescription": "Empuje de cadera unilateral con espalda en banco. Fuerza de glúteos con menor costo lumbar que el bilateral."
+  },
+  {
+    "id": "smith_bench_press",
+    "category": "upper",
+    "movement": "push",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "smith"
+    ],
+    "tags": [
+      "upper_strength",
+      "hypertrophy",
+      "gym",
+      "smith_based"
+    ],
+    "difficulty": "intermediate",
+    "sportsTransfer": [
+      "strength",
+      "general_fitness"
+    ],
+    "riskLevel": "medium",
+    "fatigueCost": "medium",
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak",
+      "taper"
+    ],
+    "stableName": "Press banca en Smith",
+    "stableDescription": "Empuja la barra guiada desde un banco plano. Alinea el banco con la trayectoria, ajusta los topes y registra la carga sin equipararla a la banca libre."
+  },
+  {
+    "id": "smith_incline_press",
+    "category": "upper",
+    "movement": "push",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "smith"
+    ],
+    "tags": [
+      "upper_strength",
+      "hypertrophy",
+      "gym",
+      "smith_based"
+    ],
+    "difficulty": "intermediate",
+    "sportsTransfer": [
+      "strength",
+      "general_fitness"
+    ],
+    "riskLevel": "medium",
+    "fatigueCost": "medium",
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak",
+      "taper"
+    ],
+    "stableName": "Press inclinado en Smith",
+    "stableDescription": "Empuja la barra guiada desde un banco inclinado. Ajusta la posición del banco y los topes para sostener un recorrido controlado; registra esta variante por separado."
+  },
+  {
+    "id": "smith_squat",
+    "category": "lower",
+    "movement": "squat",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "smith"
+    ],
+    "tags": [
+      "lower_strength",
+      "hypertrophy",
+      "gym",
+      "smith_based"
+    ],
+    "difficulty": "intermediate",
+    "sportsTransfer": [
+      "strength",
+      "general_fitness"
+    ],
+    "riskLevel": "medium",
+    "fatigueCost": "medium",
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak",
+      "taper"
+    ],
+    "stableName": "Sentadilla en Smith",
+    "stableDescription": "Desciende bajo la barra guiada con una posición de pies que permita controlar rodillas y pelvis. Ajusta los topes antes de cargar y registra esta variante por separado de la barra libre."
   },
   {
     "id": "split_jerk",

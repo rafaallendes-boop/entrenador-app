@@ -11,6 +11,9 @@ import { usePlanBuilderStore } from '../../store/usePlanBuilderStore'
 import type { AthleteProfile, GoalEvent, PlanWizardConfig } from '../../types'
 import type { TrainingPlan } from '../../types/planBuilder'
 import CompetitionPlanPage from '../CompetitionPlanPage'
+import { getSquashSelectionContext } from '../../services/ai/promptModules/squashPrompt'
+import { selectSquashDrills } from '../../services/training/drillSelector'
+import { findSquashDrillByName } from '../../services/training/drillLibrary'
 
 const mocks = vi.hoisted(() => ({
   profile: null as AthleteProfile | null,
@@ -284,6 +287,25 @@ describe('CompetitionPlanPage new_cycle', () => {
     expect(screen.getByRole('button', { name: 'Bandas elásticas', exact: true })).toBeTruthy()
   })
 
+  it('permite corregir equipamiento desconocido antes de continuar', async () => {
+    mocks.profile = { ...mocks.profile!, availableEquipment: ['equipo desconocido'] }
+    await openNewCycle()
+    fireEvent.change(screen.getByPlaceholderText(/Torneo Master Otoño/i), { target: { value: 'Nuevo torneo' } })
+    continueWizard()
+    fireEvent.change(document.querySelector('input[type="date"]') as HTMLInputElement, { target: { value: isoInDays(30) } })
+    continueWizard()
+    fireEvent.click(screen.getByRole('button', { name: /Rendir al máximo/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Jugador Intermedio (3ra-4ta)' }))
+    continueWizard()
+    expect(screen.getByRole('status').textContent).toContain('equipo desconocido')
+    expect((screen.getByRole('button', { name: /Continuar/i }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: /En casa/ }))
+    expect(screen.queryByText(/No pudimos reconocer/)).toBeNull()
+    expect((screen.getByRole('button', { name: /Continuar/i }) as HTMLButtonElement).disabled).toBe(false)
+    continueWizard()
+    expect(await screen.findByText('Paso 5 de 7')).toBeTruthy()
+  })
+
   it('en Free conserva un plan generado sólo para consulta', async () => {
     mocks.tier = 'free'
     await db.trainingPlans.put(previousCompletePlan)
@@ -418,6 +440,28 @@ describe('CompetitionPlanPage new_cycle', () => {
     await waitFor(() => expect(mocks.closePlanCycle).toHaveBeenCalled())
     expect(mocks.saveAthleteProfile).not.toHaveBeenCalled()
     expect(mocks.navigate).not.toHaveBeenCalled()
+  })
+
+  it('captura disponibilidad, la recarga y la transmite al selector', async () => {
+    mocks.profile = profileWith({ ...previousEvent, date: isoInDays(30) })
+    render(<CompetitionPlanPage />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar' }))
+    for (let step = 1; step < 4; step += 1) continueWizard()
+    fireEvent.change(screen.getByLabelText('Disponibilidad para squash'), { target: { value: 'solo' } })
+    for (let step = 4; step < 7; step += 1) continueWizard()
+    fireEvent.click(screen.getByRole('button', { name: /generar mi plan/i }))
+    await waitFor(() => expect(mocks.saveAthleteProfile).toHaveBeenCalledTimes(1))
+    expect(mocks.profile?.planWizardConfig?.partnerAvailability).toBe('solo')
+    cleanup()
+    render(<CompetitionPlanPage />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar' }))
+    for (let step = 1; step < 4; step += 1) continueWizard()
+    expect((screen.getByLabelText('Disponibilidad para squash') as HTMLSelectElement).value).toBe('solo')
+    const context = getSquashSelectionContext({ recentSessions: [], athleteProfile: mocks.profile! })
+    expect(context.partnerAvailability).toBe('solo')
+    const selected = selectSquashDrills({ ...context, desiredKind: 'control' })
+    expect(selected.drills.length).toBeGreaterThan(0)
+    expect(selected.drills.every(d => findSquashDrillByName(d.name)?.executionMode === 'solo')).toBe(true)
   })
 
   it('edit conserva id y createdAt y no cierra el ciclo', async () => {

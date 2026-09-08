@@ -13,12 +13,7 @@ vi.mock('../training/drillSelector', async (importOriginal) => ({
     blocks: [],
   })),
 }))
-vi.mock('../training/runningSelector', () => ({
-  selectRunningSession: vi.fn(() => ({
-    focus: 'z2 base',
-    session: { runningType: 'z2' },
-  })),
-}))
+// Running now materializes a typed recipe; exercise the real local contract.
 vi.mock('../training/strengthSelector', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../training/strengthSelector')>()),
   selectStrengthSession: vi.fn(() => ({
@@ -168,14 +163,14 @@ describe('repairGeneratedWeek', () => {
     const tempo = repaired.find((session) => session.sessionType === 'running')
 
     expect(meta.repairedSessionCount).toBeGreaterThan(0)
-    expect(tempo?.targetPaceMin).toBe('4:25')
-    expect(tempo?.targetPaceMax).toBe('4:35')
+    expect(tempo?.runningTemplateRef?.id).toBe('lactate_clearance')
+    expect(tempo?.targetPaceMin).toBeUndefined() // sustained effort is not a threshold pace
+    expect(tempo?.targetPaceMax).toBeUndefined()
     expect(tempo?.intervalStructure?.blocks.map((block) => block.label)).toEqual([
-      'Calentamiento Z2',
-      'Tempo umbral controlado',
-      'Enfriamiento Z2',
+      'Calentamiento Z2', 'Rodaje suave', 'Lactate clearance run', 'Enfriamiento Z2',
     ])
-    expect(tempo?.intervalStructure?.blocks[1].targetPace).toBe('4:25-4:35 /km')
+    expect(tempo?.intervalStructure?.blocks[2].targetPace).toBeUndefined()
+
   })
 
   it('materializes target running load as a real running session instead of squash aerobic drills', () => {

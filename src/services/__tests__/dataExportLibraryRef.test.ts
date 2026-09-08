@@ -1,3 +1,4 @@
+import { materializeRunningTemplate } from '../training/runningTemplateMaterializer'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { db } from '../../db/db'
@@ -150,4 +151,26 @@ describe('libraryRef en backup/import', () => {
     expect(exercise.libraryRef).toBeUndefined()
     expect(exercise.name).toBe('Press banca')
   })
+  it('running y squash conservan prescripción, procedencia y resultado en Dexie → backup → import', async () => {
+    const dose = materializeRunningTemplate({ template: 'repeats_400', durationMin: 60, profile: { fiveKTime: '25:00', z2PaceMax: '6:30' } })
+    if (!dose.ok) throw Error(dose.message)
+    const runningDetails = { runningType: 'intervals', templateRef: dose.templateRef, intervalStructure: dose.structure, selectionReason: 'Series específicas' }
+    const squashDetails = { trainingFocus: 'technical', sessionKind: 'control', drills: [{ name: 'Salida de pared lateral' }],
+      availability: { partnerAvailability: 'solo', court: true, equipment: ['racket', 'ball'], feeder: false },
+      technicalIntent: { family: 'wall_exit', side: 'backhand', successTarget: 80 }, technicalResult: { attempts: 20, successes: 17 } }
+    await db.sessions.bulkPut([
+      { ...sessionRow([]), id: 'run', type: 'running', runningDetails },
+      { ...sessionRow([]), id: 'squash', type: 'squash', status: 'adjusted', squashDetails },
+    ] as never)
+    const { json } = await exportAppData()
+    const parsed = parseAppDataExport(JSON.parse(json))
+    expect(parsed.tables.sessions.find(s => s.id === 'run')?.runningDetails).toEqual(runningDetails)
+    expect(parsed.tables.sessions.find(s => s.id === 'squash')?.squashDetails).toEqual(squashDetails)
+    const proposal = backupWithProposalExercise(undefined)
+    proposal.tables.coachProposals[0].actions = [{ type: 'add_session', reason: 'Series', sessionType: 'running', runningType: 'intervals', runningTemplateRef: dose.templateRef, intervalStructure: dose.structure } as never]
+    const restored = parseAppDataExport(proposal).tables.coachProposals[0].actions[0]
+    expect(restored.runningTemplateRef).toEqual(dose.templateRef)
+    expect(restored.intervalStructure).toEqual(dose.structure)
+  })
+
 })

@@ -74,6 +74,19 @@ describe('fail-closed de firmas de squash', () => {
     expect(buildLocalFallbackWeekMock).not.toHaveBeenCalled()
   })
 
+  it('E1: dosis incompatible termina tras un intento, sin fallback ni gasto adicional', async () => {
+    const failed = failedCoreResult()
+    failed.meta.errorClass = 'quality.session.dose_infeasible'
+    failed.meta.lastError = 'La dosis no cabe en el tiempo disponible.'
+    generateWeekCoreMock.mockResolvedValue(failed)
+    const { input } = makeRunInputForTest({ weekCount: 1, concurrency: 1 })
+    const result = await runAsyncPlanGeneration(input)
+    expect(generateWeekCoreMock).toHaveBeenCalledTimes(1)
+    expect(buildLocalFallbackWeekMock).not.toHaveBeenCalled()
+    expect(result.weeks[0]).toMatchObject({ status: 'error', sessions: [],
+      generationMeta: { errorClass: 'quality.session.dose_infeasible' } })
+  })
+
   it('termina la semana en error al agotar los reintentos', async () => {
     const { result, writtenWeeks } = await runFailureScenario()
     expect(result.weeks[0]).toMatchObject({ status: 'error', sessions: [] })

@@ -1,3 +1,4 @@
+import { getExecutedSessionsThrough } from '../services/training/executedSessions'
 import { addDays } from 'date-fns'
 import { create } from 'zustand'
 import { db } from '../db/db'
@@ -300,7 +301,7 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
           recentSessions: sessions
             .sort((a, b) => a.date.localeCompare(b.date) || a.timeBlock.localeCompare(b.timeBlock)),
           plannedSessions: sessions.filter(session => session.status === 'planned'),
-          historicalSessions: sessions.filter(session => session.status !== 'planned'),
+          historicalSessions: getExecutedSessionsThrough(sessions, todayISO()),
           currentWeekSummary: currentWeekSummary ?? undefined,
           weekDayLogs,
           athleteMemory: coachMemoryText,

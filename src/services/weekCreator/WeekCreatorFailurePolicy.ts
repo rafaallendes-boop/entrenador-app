@@ -125,7 +125,7 @@ export function classifyWeekCreatorRepairFailure(failure: RepairFailure): WeekCr
   return buildFailure(
     failure.errorClass,
     'unsafe_or_ambiguous',
-    'provider_retry',
+    failure.errorClass === 'quality.session.dose_infeasible' ? 'safe_decline' : 'provider_retry',
     failure.message,
     'quality_rejected',
   )

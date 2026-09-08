@@ -1,3 +1,4 @@
+import { getExecutedSessionsThrough } from '../services/training/executedSessions'
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { AlertTriangle, CheckCircle2, Menu, MoreHorizontal, Plus, Trash2, X } from 'lucide-react'
@@ -244,10 +245,8 @@ export default function ChatCoach() {
     )
     const sortedSessions = [...uniqueSessions.values()]
       .sort((a, b) => a.date.localeCompare(b.date) || a.timeBlock.localeCompare(b.timeBlock))
-    const plannedSessions = sortedSessions.filter(session => session.date >= todayISO())
-    const historicalSessions = sortedSessions.filter(
-      session => session.status !== 'planned' || session.date < todayISO(),
-    )
+    const plannedSessions = sortedSessions.filter(session => session.status === 'planned' && session.date >= todayISO())
+    const historicalSessions = getExecutedSessionsThrough(sortedSessions, todayISO())
 
     return {
       recentSessions: sortedSessions,

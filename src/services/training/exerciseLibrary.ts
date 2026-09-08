@@ -1642,6 +1642,271 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
     riskLevel: 'low',
     fatigueCost: 'low',
   },
+// Segunda tanda: variantes con historial propio y prescripción por RPE.
+  {
+    id: 'machine_incline_chest_press',
+    safety: { loadsRegions: ['chest_ribs', 'shoulder', 'elbow'], loadPatterns: [] },
+    name: 'Press inclinado en máquina',
+    category: 'upper',
+    movement: 'push',
+    intensityType: 'hypertrophy',
+    equipment: ['machine'],
+    tags: ['upper_strength', 'hypertrophy', 'gym', 'machine_based'],
+    description: 'Empuja los agarres desde el pecho con el respaldo inclinado. Ajusta el asiento y limita el recorrido a una posición controlada del hombro.',
+    aliases: ['Incline machine chest press', 'Press de pecho inclinado en máquina'],
+    difficulty: 'beginner',
+    sportsTransfer: ['strength', 'general_fitness'],
+    riskLevel: 'low',
+    fatigueCost: 'medium',
+    appropriateForPhases: ['base', 'build', 'peak', 'taper'],
+  },
+  {
+    id: 'machine_hack_squat',
+    safety: { loadsRegions: ['knee', 'hip', 'lumbar', 'shoulder'], loadPatterns: ['axial_load', 'deep_flexion'] },
+    name: 'Sentadilla hack en máquina',
+    category: 'lower',
+    movement: 'squat',
+    intensityType: 'hypertrophy',
+    equipment: ['machine'],
+    tags: ['lower_strength', 'hypertrophy', 'gym', 'machine_based'],
+    description: 'Desciende con la espalda apoyada y empuja la plataforma sin perder el contacto de la pelvis con el respaldo. Ajusta la profundidad al control del movimiento.',
+    aliases: ['Hack squat machine', 'Hack squat', 'Sentadilla hack'],
+    difficulty: 'intermediate',
+    sportsTransfer: ['strength', 'general_fitness'],
+    riskLevel: 'medium',
+    fatigueCost: 'medium',
+    appropriateForPhases: ['base', 'build', 'peak', 'taper'],
+  },
+  {
+    id: 'machine_glute_drive',
+    safety: { loadsRegions: ['hip', 'pelvis_sacroiliac', 'lumbar', 'hamstring'], loadPatterns: [] },
+    name: 'Empuje de cadera en máquina',
+    category: 'lower',
+    movement: 'hinge',
+    intensityType: 'hypertrophy',
+    equipment: ['machine'],
+    tags: ['lower_strength', 'hypertrophy', 'gym', 'machine_based'],
+    description: 'Extiende la cadera contra el cinturón o la almohadilla manteniendo el tronco estable. Termina el recorrido sin arquear la zona lumbar.',
+    aliases: ['Machine hip thrust', 'Glute drive', 'Hip thrust en máquina'],
+    difficulty: 'beginner',
+    sportsTransfer: ['strength', 'general_fitness'],
+    riskLevel: 'low',
+    fatigueCost: 'medium',
+    appropriateForPhases: ['base', 'build', 'peak', 'taper'],
+  },
+  {
+    id: 'machine_glute_kickback',
+    safety: { loadsRegions: ['hip', 'pelvis_sacroiliac', 'lumbar', 'hamstring'], loadPatterns: [] },
+    name: 'Extensión de cadera en máquina',
+    category: 'lower',
+    movement: 'hinge',
+    intensityType: 'hypertrophy',
+    equipment: ['machine'],
+    isolation: true,
+    unilateral: true,
+    tags: ['lower_strength', 'hypertrophy', 'gym', 'machine_based', 'accessory'],
+    description: 'Empuja hacia atrás con una pierna desde el apoyo de la máquina, manteniendo la pelvis quieta. Evita ganar recorrido moviendo la espalda.',
+    aliases: ['Machine glute kickback', 'Patada de glúteo en máquina'],
+    difficulty: 'beginner',
+    sportsTransfer: ['strength', 'general_fitness'],
+    riskLevel: 'low',
+    fatigueCost: 'low',
+    appropriateForPhases: ['base', 'build', 'peak', 'taper'],
+  },
+  {
+    id: 'machine_biceps_curl',
+    safety: { loadsRegions: ['elbow', 'wrist'], loadPatterns: ['grip_demand'] },
+    name: 'Curl de bíceps en máquina',
+    category: 'upper',
+    movement: 'elbow_flexion',
+    intensityType: 'hypertrophy',
+    equipment: ['machine'],
+    isolation: true,
+    tags: ['upper_strength', 'hypertrophy', 'gym', 'machine_based', 'accessory'],
+    description: 'Flexiona los codos con los brazos apoyados, sin levantar los hombros. Ajusta el asiento para alinear el codo con el eje de la máquina.',
+    aliases: ['Machine biceps curl', 'Curl predicador en máquina', 'Bíceps en máquina'],
+    difficulty: 'beginner',
+    sportsTransfer: ['strength', 'general_fitness'],
+    riskLevel: 'low',
+    fatigueCost: 'low',
+    appropriateForPhases: ['base', 'build', 'peak', 'taper'],
+  },
+  {
+    id: 'machine_triceps_extension',
+    safety: { loadsRegions: ['elbow', 'shoulder'], loadPatterns: [] },
+    name: 'Extensión de tríceps en máquina',
+    category: 'upper',
+    movement: 'elbow_extension',
+    intensityType: 'hypertrophy',
+    equipment: ['machine'],
+    isolation: true,
+    tags: ['upper_strength', 'hypertrophy', 'gym', 'machine_based', 'accessory'],
+    description: 'Extiende los codos desde el apoyo de la máquina sin mover los hombros. Mantén el recorrido controlado al volver.',
+    aliases: ['Machine triceps extension', 'Tríceps en máquina'],
+    difficulty: 'beginner',
+    sportsTransfer: ['strength', 'general_fitness'],
+    riskLevel: 'low',
+    fatigueCost: 'low',
+    appropriateForPhases: ['base', 'build', 'peak', 'taper'],
+  },
+  {
+    id: 'machine_assisted_dip',
+    safety: { loadsRegions: ['chest_ribs', 'shoulder', 'elbow', 'wrist'], loadPatterns: ['grip_demand'] },
+    name: 'Fondos asistidos en máquina',
+    category: 'upper',
+    movement: 'push',
+    intensityType: 'hypertrophy',
+    equipment: ['machine'],
+    tags: ['upper_strength', 'hypertrophy', 'gym', 'machine_based'],
+    description: 'Baja y empuja sobre las barras con ayuda de la plataforma. Más asistencia reduce la dificultad: ajusta la ayuda al RPE objetivo y registra la asistencia usada.',
+    aliases: ['Assisted dip machine', 'Assisted dips', 'Fondos en máquina asistida'],
+    difficulty: 'beginner',
+    sportsTransfer: ['strength', 'general_fitness'],
+    riskLevel: 'medium',
+    fatigueCost: 'medium',
+    appropriateForPhases: ['base', 'build', 'peak', 'taper'],
+  },
+  {
+    id: 'machine_lateral_raise',
+    safety: { loadsRegions: ['shoulder'], loadPatterns: [] },
+    name: 'Elevación lateral en máquina',
+    category: 'upper',
+    movement: 'push',
+    intensityType: 'hypertrophy',
+    equipment: ['machine'],
+    isolation: true,
+    tags: ['upper_strength', 'hypertrophy', 'gym', 'machine_based', 'accessory'],
+    description: 'Eleva los brazos hacia los lados contra las almohadillas hasta una altura controlada. Mantén el tronco apoyado y evita encoger los hombros.',
+    aliases: ['Machine lateral raise', 'Elevaciones laterales en máquina'],
+    difficulty: 'beginner',
+    sportsTransfer: ['strength', 'general_fitness'],
+    riskLevel: 'low',
+    fatigueCost: 'low',
+    appropriateForPhases: ['base', 'build', 'peak', 'taper'],
+  },
+  {
+    id: 'cable_biceps_curl',
+    safety: { loadsRegions: ['elbow', 'wrist'], loadPatterns: ['grip_demand'] },
+    name: 'Curl de bíceps en polea',
+    category: 'upper',
+    movement: 'elbow_flexion',
+    intensityType: 'hypertrophy',
+    equipment: ['cable'],
+    isolation: true,
+    tags: ['upper_strength', 'hypertrophy', 'gym', 'cable_based', 'accessory'],
+    description: 'Flexiona los codos desde la polea baja manteniendo los brazos cerca del tronco. Regresa sin balancearte ni soltar la tensión de golpe.',
+    aliases: ['Cable biceps curl', 'Cable curl', 'Bíceps en polea'],
+    difficulty: 'beginner',
+    sportsTransfer: ['strength', 'general_fitness'],
+    riskLevel: 'low',
+    fatigueCost: 'low',
+    appropriateForPhases: ['base', 'build', 'peak', 'taper'],
+  },
+  {
+    id: 'cable_face_pull',
+    safety: { loadsRegions: ['shoulder', 'thoracic', 'elbow', 'wrist'], loadPatterns: ['grip_demand'] },
+    name: 'Face pull en polea',
+    category: 'upper',
+    movement: 'pull',
+    intensityType: 'hypertrophy',
+    equipment: ['cable'],
+    isolation: true,
+    tags: ['upper_strength', 'hypertrophy', 'gym', 'cable_based', 'accessory'],
+    description: 'Lleva la cuerda hacia la cara separando las manos y manteniendo el tronco estable. Usa una carga que permita controlar la posición de hombros y codos.',
+    aliases: ['Cable face pull', 'Face pull', 'Tirón a la cara en polea'],
+    difficulty: 'beginner',
+    sportsTransfer: ['strength', 'general_fitness'],
+    riskLevel: 'low',
+    fatigueCost: 'low',
+    appropriateForPhases: ['base', 'build', 'peak', 'taper'],
+  },
+  {
+    id: 'cable_chest_fly',
+    safety: { loadsRegions: ['chest_ribs', 'shoulder', 'trunk_core'], loadPatterns: [] },
+    name: 'Aperturas de pecho en poleas',
+    category: 'upper',
+    movement: 'push',
+    intensityType: 'hypertrophy',
+    equipment: ['cable'],
+    isolation: true,
+    tags: ['upper_strength', 'hypertrophy', 'gym', 'cable_based', 'accessory'],
+    description: 'Acerca las manos al frente desde dos poleas con los codos ligeramente flexionados. Controla la apertura sin llevar el hombro más atrás de lo que puedas sostener.',
+    aliases: ['Cable chest fly', 'Cable crossover', 'Cruces en polea', 'Aperturas en polea'],
+    difficulty: 'beginner',
+    sportsTransfer: ['strength', 'general_fitness'],
+    riskLevel: 'low',
+    fatigueCost: 'low',
+    appropriateForPhases: ['base', 'build', 'peak', 'taper'],
+  },
+  {
+    id: 'cable_straight_arm_pulldown',
+    safety: { loadsRegions: ['shoulder', 'thoracic', 'trunk_core', 'wrist'], loadPatterns: ['overhead', 'grip_demand'] },
+    name: 'Jalón de brazos rectos en polea',
+    category: 'upper',
+    movement: 'pull',
+    intensityType: 'hypertrophy',
+    equipment: ['cable'],
+    isolation: true,
+    tags: ['upper_strength', 'hypertrophy', 'gym', 'cable_based', 'accessory'],
+    description: 'Lleva el agarre de la polea alta hacia los muslos manteniendo los codos casi fijos y el tronco estable. Evita convertir el movimiento en un balanceo.',
+    aliases: ['Straight arm cable pulldown', 'Jalón con brazos rectos', 'Pullover en polea'],
+    difficulty: 'beginner',
+    sportsTransfer: ['strength', 'general_fitness'],
+    riskLevel: 'low',
+    fatigueCost: 'low',
+    appropriateForPhases: ['base', 'build', 'peak', 'taper'],
+  },
+  {
+    id: 'smith_squat',
+    safety: { loadsRegions: ['knee', 'hip', 'lumbar', 'shoulder'], loadPatterns: ['axial_load', 'deep_flexion'] },
+    name: 'Sentadilla en Smith',
+    category: 'lower',
+    movement: 'squat',
+    intensityType: 'hypertrophy',
+    equipment: ['smith'],
+    tags: ['lower_strength', 'hypertrophy', 'gym', 'smith_based'],
+    description: 'Desciende bajo la barra guiada con una posición de pies que permita controlar rodillas y pelvis. Ajusta los topes antes de cargar y registra esta variante por separado de la barra libre.',
+    aliases: ['Smith machine squat', 'Smith squat', 'Sentadilla en multipower'],
+    difficulty: 'intermediate',
+    sportsTransfer: ['strength', 'general_fitness'],
+    riskLevel: 'medium',
+    fatigueCost: 'medium',
+    appropriateForPhases: ['base', 'build', 'peak', 'taper'],
+  },
+  {
+    id: 'smith_bench_press',
+    safety: { loadsRegions: ['chest_ribs', 'shoulder', 'elbow', 'wrist'], loadPatterns: ['grip_demand'] },
+    name: 'Press banca en Smith',
+    category: 'upper',
+    movement: 'push',
+    intensityType: 'hypertrophy',
+    equipment: ['smith'],
+    tags: ['upper_strength', 'hypertrophy', 'gym', 'smith_based'],
+    description: 'Empuja la barra guiada desde un banco plano. Alinea el banco con la trayectoria, ajusta los topes y registra la carga sin equipararla a la banca libre.',
+    aliases: ['Smith machine bench press', 'Smith bench press', 'Press banca en multipower'],
+    difficulty: 'intermediate',
+    sportsTransfer: ['strength', 'general_fitness'],
+    riskLevel: 'medium',
+    fatigueCost: 'medium',
+    appropriateForPhases: ['base', 'build', 'peak', 'taper'],
+  },
+  {
+    id: 'smith_incline_press',
+    safety: { loadsRegions: ['chest_ribs', 'shoulder', 'elbow', 'wrist'], loadPatterns: ['grip_demand'] },
+    name: 'Press inclinado en Smith',
+    category: 'upper',
+    movement: 'push',
+    intensityType: 'hypertrophy',
+    equipment: ['smith'],
+    tags: ['upper_strength', 'hypertrophy', 'gym', 'smith_based'],
+    description: 'Empuja la barra guiada desde un banco inclinado. Ajusta la posición del banco y los topes para sostener un recorrido controlado; registra esta variante por separado.',
+    aliases: ['Smith machine incline press', 'Smith incline bench press', 'Press inclinado en multipower'],
+    difficulty: 'intermediate',
+    sportsTransfer: ['strength', 'general_fitness'],
+    riskLevel: 'medium',
+    fatigueCost: 'medium',
+    appropriateForPhases: ['base', 'build', 'peak', 'taper'],
+  },
 ]
 
 const EXERCISE_LOAD_REFERENCES: Partial<Record<string, StrengthLoadReference>> = {
@@ -1787,18 +2052,34 @@ export function normalizeStrengthExerciseKey(value: string): string {
   return normalizeKey(value)
 }
 
+// El catálogo es estático durante la vida del módulo. Normalizar sus nombres
+// una sola vez evita repetir este trabajo por cada candidato de cada semana.
+// Se conserva el primer match en orden de catálogo y todos los candidatos de
+// substring: el índice no cambia precedencia ni estrecha ambigüedades.
+const NORMALIZED_EXERCISES = STRENGTH_EXERCISE_LIBRARY.map(definition => ({
+  definition,
+  id: normalizeStrengthExerciseKey(definition.id),
+  name: normalizeStrengthExerciseKey(definition.name),
+  aliases: (definition.aliases ?? []).map(normalizeStrengthExerciseKey),
+}))
+const EXACT_NAME_INDEX = new Map<string, ExerciseDefinition>()
+const ALIAS_NAME_INDEX = new Map<string, ExerciseDefinition>()
+for (const entry of NORMALIZED_EXERCISES) {
+  for (const key of [entry.id, entry.name]) {
+    if (!EXACT_NAME_INDEX.has(key)) EXACT_NAME_INDEX.set(key, entry.definition)
+  }
+  for (const key of entry.aliases) {
+    if (!ALIAS_NAME_INDEX.has(key)) ALIAS_NAME_INDEX.set(key, entry.definition)
+  }
+}
+
 function resolveByNameLadder(name: string): StrengthExerciseResolution | undefined {
   const normalized = normalizeStrengthExerciseKey(name)
 
-  const exact = STRENGTH_EXERCISE_LIBRARY.find((exercise) =>
-    normalizeStrengthExerciseKey(exercise.name) === normalized ||
-    normalizeStrengthExerciseKey(exercise.id) === normalized,
-  )
+  const exact = EXACT_NAME_INDEX.get(normalized)
   if (exact) return { definition: exact, matchKind: 'exact', candidates: [exact] }
 
-  const aliasExact = STRENGTH_EXERCISE_LIBRARY.find((exercise) =>
-    exercise.aliases?.some((alias) => normalizeStrengthExerciseKey(alias) === normalized),
-  )
+  const aliasExact = ALIAS_NAME_INDEX.get(normalized)
   if (aliasExact) return { definition: aliasExact, matchKind: 'alias', candidates: [aliasExact] }
 
   const aliasMap: Record<string, string> = {
@@ -1838,14 +2119,10 @@ function resolveByNameLadder(name: string): StrengthExerciseResolution | undefin
     return definition ? { definition, matchKind: 'alias', candidates: [definition] } : undefined
   }
 
-  const substringCandidates = STRENGTH_EXERCISE_LIBRARY.filter((exercise) =>
-    normalized.includes(normalizeStrengthExerciseKey(exercise.name)) ||
-    normalizeStrengthExerciseKey(exercise.name).includes(normalized) ||
-    exercise.aliases?.some((alias) =>
-      normalized.includes(normalizeStrengthExerciseKey(alias)) ||
-      normalizeStrengthExerciseKey(alias).includes(normalized),
-    ),
-  )
+  const substringCandidates = NORMALIZED_EXERCISES.filter(entry =>
+    normalized.includes(entry.name) || entry.name.includes(normalized) ||
+    entry.aliases.some(alias => normalized.includes(alias) || alias.includes(normalized)),
+  ).map(entry => entry.definition)
 
   // Varios ejercicios igual de plausibles significa que el fragmento no
   // discrimina. Se prefiere no resolver: adivinar mal prescribe carga sobre el

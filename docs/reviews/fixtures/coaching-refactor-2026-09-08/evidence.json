@@ -1,0 +1,239 @@
+{
+  "schemaVersion": 1,
+  "documentDate": "2026-09-08",
+  "scope": "Revisión de código y diseño; sin cambios en runtime, IA externa ni despliegue.",
+  "reference": {
+    "head": "b82a603905a690daf4fab82c3de6c8a59c201637",
+    "dirty": true,
+    "capturedAt": "2026-09-07T22:15:49.827030-03:00",
+    "snapshotRoot": "/private/tmp/entrenador-review-20260907-g9_su5x0",
+    "sourceFilesHashedInTemporarySnapshot": 1133,
+    "snapshotDependencies": "node_modules enlazado al workspace; variables Supabase ficticias en pruebas locales"
+  },
+  "verification": {
+    "fullSuite": {
+      "scope": "árbol vivo antes de snapshot, no congelado",
+      "command": "npm test -- --maxWorkers=4",
+      "files": 586,
+      "filesPassed": 583,
+      "filesFailed": 3,
+      "testsPassed": 4985,
+      "testsFailed": 15,
+      "durationSeconds": 95.1,
+      "exitCode": 1,
+      "log": "suite-live-before-snapshot.txt"
+    },
+    "focusedSuite": {
+      "scope": "snapshot fijado",
+      "commandPrefix": "VITE_SUPABASE_URL=https://example.supabase.co VITE_SUPABASE_ANON_KEY=review-local-placeholder npm test -- --maxWorkers=4",
+      "testFiles": [
+        "src/services/__tests__/repairWeek.test.ts",
+        "src/services/planBuilder/__tests__/recentContextIntraPlan.test.ts",
+        "src/services/weekCreator/__tests__/WeekCreatorEnginePhase3.test.ts",
+        "src/services/weekCreator/__tests__/WeekCreatorLocalHydrator.test.ts",
+        "src/services/planBuilder/__tests__/activeGeneration.test.ts",
+        "src/services/planBuilder/__tests__/asyncGenerationLoop.test.ts",
+        "src/services/__tests__/chatRouting.test.ts",
+        "src/services/__tests__/contextOptimizer.test.ts",
+        "src/services/training/__tests__/sessionDose.test.ts",
+        "src/services/training/__tests__/runningTemplates.test.ts",
+        "src/services/training/__tests__/squashTrainingContext.test.ts",
+        "src/store/__tests__/sessionDosePersistence.test.ts",
+        "scripts/selector-dose-routes.test.js"
+      ],
+      "files": 13,
+      "filesPassed": 11,
+      "filesFailed": 2,
+      "testsPassed": 158,
+      "testsFailed": 13,
+      "durationSeconds": 8.76,
+      "exitCode": 1,
+      "log": "suite-snapshot.txt"
+    },
+    "typecheck": {
+      "scope": "snapshot fijado",
+      "command": "npx tsc -b --pretty false",
+      "exitCode": 0,
+      "log": "types-snapshot.txt"
+    },
+    "lint": {
+      "scope": "snapshot fijado",
+      "command": "npm run lint",
+      "exitCode": 0,
+      "log": "lint-snapshot.txt"
+    },
+    "savedProbe": {
+      "scope": "snapshot fijado",
+      "command": "node docs/reviews/fixtures/coaching-refactor-2026-09-08/probe.mjs /private/tmp/entrenador-review-20260907-g9_su5x0",
+      "exitCode": 0,
+      "providerCalls": 0,
+      "fetchAttempts": 0,
+      "mechanism": "Vite SSR middleware; fetch rechazado. Sin listen ni invocaciones de proveedor. El guard no intercepta todos los mecanismos posibles de red de Node.",
+      "output": "probe-output.json",
+      "outputSha256": "88c59908d10dbd2c41b0a5b53d0a5f34077bd6e774f2e50fbe28e87f62acdbf6",
+      "scriptSha256": "2d689e7684450ee65db46ab5cbfde749f41ef15b2500c6d5e962232741a5f44d",
+      "independentRuns": 2,
+      "repeatOutputIdentical": true
+    },
+    "additionalAgentProbes": {
+      "scope": "Sondas locales de agentes; F02/F08 ejecutadas antes de fijar snapshot y contrastadas después por inspección de fuentes idénticos. No ejecutadas mediante el script adjunto.",
+      "cases": [
+        "F02: executionSignals omitidas por adaptador semanal",
+        "F08: horizonte allocator completo versus singleton",
+        "F10: historial no renderizado en prompt general",
+        "F11: contaminación temporal fuerza/cycling",
+        "F15: dos timeout seguidos de éxito sin retryUsed"
+      ],
+      "limitation": "Sus scripts no están archivados; no confundir con el probe reproducible adjunto ni con E2E."
+    }
+  },
+  "sourceFiles": {
+    "netlify/functions/_shared/planGenerationShared.ts": "288d36d895733b5f1712bad5720e7a07c56e992886b3ba9bbf2652b3b6c8c9ac",
+    "netlify/functions/generate-plan-background.ts": "004fc919cd086397202d0056324fa645c1a9c38d98de94df3e8f6bc339b7691b",
+    "package.json": "7f3a40c9070078169ab629ba84466ec3806c9af1e07296e11e1210baaceeba6c",
+    "scripts/selector-dose-routes.test.js": "a5e2b6694b08b6723851c72db0bb5798f3ec3c8ec4d5428ae41a5fa208c6cf75",
+    "src/components/session/SessionForm.tsx": "df07023e40e7abc15d50291c343630c710e5d043ac809e74f19a5ab0b1e8f4dd",
+    "src/db/queries.ts": "f7947a316ee1e02af0dec88b43b1296c0cff5c3cd6ae8533826e925af7f249d2",
+    "src/pages/ChatCoach.tsx": "70fda8da354d0f532274689bb8e1c823daf3c26c439998591a57b0cbd8a916ad",
+    "src/services/__tests__/chatRouting.test.ts": "a813991bca10cdd7f81bd70be1692e65d257c4abe1f362aba9497151cd7d4b2c",
+    "src/services/__tests__/contextOptimizer.test.ts": "63a862d6d7bf5fa4b59aab201432653ee6d24d8e43a1dd93f8e53947f0130b41",
+    "src/services/__tests__/repairWeek.test.ts": "bec3530967538f9c0fb496322fc499982d7e8236fc85f09afdcae9f7c6ad8686",
+    "src/services/ai/CoachEngine.ts": "c9dbc9478b306056fdb6ced741dd4c6b95877c297716bbfdb8e5aac8cb349f4f",
+    "src/services/ai/actionPostProcessor.ts": "c525c13044ed870106edd039da237e4588c76628e3413dd8794b02e536536333",
+    "src/services/ai/coachRecovery.ts": "94c8221ec6a2de75eeb0bba4d0eef9f63c8b7a3183638778edafdede13149021",
+    "src/services/ai/contextOptimizer.ts": "fd075abca2c53572e3a2c8044a5c9d75ae58fbc980671a44974225fd37b92d23",
+    "src/services/ai/promptBuilder.ts": "af29f59d1d03ffcba2c36aaf5b7a0c1dda6775d684a4c545f7c198036bd8b60f",
+    "src/services/ai/promptModules/strengthPrompt.ts": "2cd03c406f39446f3ecdda4e1284f39ed431724a2d5a02209113089ab0ce9154",
+    "src/services/ai/providers/ProxyProvider.ts": "ef98e8b85988305d9eedcb89ce7c2e455c4de199acc66350f15c1031c7502513",
+    "src/services/athlete/coachNotes.ts": "cac19fbbee03d36276961c90310ae9189fcdc5dfa0a9097e82733f5f2a2419c1",
+    "src/services/athlete/coachSessionSerializer.ts": "c9723c82cfde986582d611545b72b259c4197c2a055bba2b1ed7427b97d42d71",
+    "src/services/athlete/sessionTemplateSerializer.ts": "8927125928ba39f87ca55d7d311335a7282c8cbaaf514967f235a3610955bbcd",
+    "src/services/planBuilder/__tests__/activeGeneration.test.ts": "f369bd3803d480d83b39bd5d497538bc47856a785c845d70a0389234d92345d3",
+    "src/services/planBuilder/__tests__/asyncGenerationLoop.test.ts": "4ab4a57cf2d7d71e9add9fc47940c1a1cdfc41da5713c429824802a4e506894c",
+    "src/services/planBuilder/__tests__/recentContextIntraPlan.test.ts": "6d4e72a8af2be2316f282458d34e1e6aa3a5d99e412ed6b49a9b1260b94aa2a6",
+    "src/services/planBuilder/activeGeneration.ts": "e9b0ad54766b97b4f1befc1b92bf2c5034c4fc83b985e1b2c6e57e2823360fe1",
+    "src/services/planBuilder/asyncGenerationLoop.ts": "d471e9ea71e21ea40517e72b45684c95c7cba04572aafc7082b95e9ce2cf8905",
+    "src/services/planBuilder/blockIdentity.ts": "de3ab17180cc281cd75d462b144c414084a9234d90ef1fc433b0b8d19f26efbd",
+    "src/services/planBuilder/commitPlan.ts": "22818cc8fa0c33a0495756aca38fc5bca2e08173d43e48c0a8400c21b8c8e1f7",
+    "src/services/planBuilder/generatePlan.ts": "f1e09cc1fd9aaf1866346e9574613f44c9501ff6382186c35c7d85321c39bfcb",
+    "src/services/planBuilder/generateWeek.ts": "b59d56308719d1175d6b706fd6eab6405c96512de925a2d62dc05ac4fce3349a",
+    "src/services/planBuilder/generateWeekCore.ts": "2c825c8e5dc103d6eb0a82c4ab345a1313f797ae1270ffabb877af438cce6f2d",
+    "src/services/planBuilder/generationJobRunner.ts": "8776ca4e7f76064bc4eb8a2d5b13d0a34fa5c97c65a3d03cc95ad503d01da61c",
+    "src/services/planBuilder/repairWeek.ts": "befe1f089c369b5c2722fa39a08543774f2a3b40c4a5879b71263f4a933e0918",
+    "src/services/planBuilder/squashWeeklyExposurePolicy.ts": "2671e278b820133c84d0fc6848313072c202fa3268f478ced58659947fc4df19",
+    "src/services/training/__tests__/runningTemplates.test.ts": "95dd0f41cb8b208c288d87953139cf42bb600d6ff20f9ce73fbdd946ef3d1fba",
+    "src/services/training/__tests__/sessionDose.test.ts": "6150abc15189b7677666fc09a64dfbe6da95a5da9bdf74d57a4cbac404c54602",
+    "src/services/training/__tests__/squashTrainingContext.test.ts": "655437200f80ed3abe8585d63d10254cc84e28b2cfb8108ea60e73e49b6501a9",
+    "src/services/training/coachActionDose.ts": "6a0400ca0da8b7a1da6667e12f547d5a59a67b417e082e02743972bf8493463c",
+    "src/services/training/cyclingSelector.ts": "840b255b5667f674f13f1b1c93067cdae086fc18212e77fb95776f2ca24371c7",
+    "src/services/training/drillLibrary.ts": "1f2ab795adde727e64ff967767ef7d806f26574cb7d9f1b3b8bae70dc15b9c6c",
+    "src/services/training/mobilitySelector.ts": "17437b6f7f7dc271999099a0ff2fb1d493975079704b6f20c06d2cc569f228a8",
+    "src/services/training/runningPolicy.ts": "5b99936f33333f84e644e4605435097838036797e32cf67ae0b49a3111adffb2",
+    "src/services/training/runningTemplateMaterializer.ts": "b48e732c6565a289c67fe9a560248076574523361b5394780551d6ec4c975e25",
+    "src/services/training/sessionDoseFinalizer.ts": "adf1c04ba69a5fb14883296ff3449ff4f4a1c7def4dd1968162e5f321b63210d",
+    "src/services/training/squashSessionDose.ts": "c5ef2b9f142d35d552141d623abe46a389000023d3c52bd4e6d78b4ec84e0eb3",
+    "src/services/training/squashSessionHydrator.ts": "98e78e5228f147283c5b35dc857ced98b25f38ff59a2acaea969d7aea9f3e158",
+    "src/services/training/strengthContext.ts": "d53e5a59caf773a7cda0148d6034c883530604667cbe2d7088a8c7a5e5be328c",
+    "src/services/training/strengthSelector.ts": "5cff3e051fe07e417273a7146b140add8d18638e349f04c573dde3556691cefa",
+    "src/services/weekCreator/WeekCreatorEngine.ts": "b05f189f59fb0718db87f05390fd218acca600640178e6154bcb893cf98b38e7",
+    "src/services/weekCreator/WeekCreatorLocalHydrator.ts": "5c1a2eb6841b08272ee0b2328ce7b80f8e2595882a0a12a84a557628b252dfc0",
+    "src/services/weekCreator/WeekCreatorPromptBuilder.ts": "45c277c0d031dfc7d159242c4102f8ac9b1c8678210b4c92bad08e4447ce3de0",
+    "src/services/weekCreator/__tests__/WeekCreatorEnginePhase3.test.ts": "4b8e3fa1f65a24f73258c0d6432501283edfbfe3751c7e6bdfdbb2859a7ca48f",
+    "src/services/weekCreator/__tests__/WeekCreatorLocalHydrator.test.ts": "f9244cbb884871323659c857ee69b107387d57d0d9f8e7eab0513c817337eb2f",
+    "src/services/weeklyCoachNote.ts": "2163d683b0930401a4569221d0d8bcd48bc3c032cdaae9dfa9c5b5619150a9c8",
+    "src/store/__tests__/sessionDosePersistence.test.ts": "c0bec8f63ad0430dd4be46eb47262220f010837b0a8cabb09b8412dc959b44b4",
+    "src/store/useChatStore.ts": "8029e89362ccbe08457dfdb7898088acf3970f7aeecb4de53d984135176f69bc",
+    "src/store/useTrainingStore.ts": "6005f88c8005de5e806a08cbdfc6d7ac2eb4a748085fdd9d930f11cb625b060c",
+    "vite.config.ts": "c65282b6d56d63b06cc4665703829d67aa74d5921594672d13a60a945e167696",
+    "vitest.setup.ts": "92cbc900e7f091bbb9ff1c797286a1a2df44c540b7eb913ee48b3ab0c1e7adb4"
+  },
+  "logs": {
+    "suite-live-before-snapshot.txt": {
+      "sha256": "18d43748c7b50f1cc5dcbb177837e8dd9cb975a454497ed7139056b1ee9639aa",
+      "bytes": 14997
+    },
+    "suite-snapshot.txt": {
+      "sha256": "8ac5f2bb3879e41e74283b9633c42d7e4624cdc641e0d359640988cc158f88f5",
+      "bytes": 11508
+    },
+    "lint-snapshot.txt": {
+      "sha256": "a4f0ddfd8845ceca4a0af4b4c270bcdbd2411fe791c5f9864f4cdd87fa7bac37",
+      "bytes": 34
+    },
+    "types-snapshot.txt": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "probe-current-output.json": {
+      "sha256": "510ce2d7072ed86dfa652af6d0e0665820dd7423416d7360b02b18c3c4b940b3",
+      "bytes": 1626
+    },
+    "suite-current-repair.txt": {
+      "sha256": "d27399d2044ed42bf941835cb0c67f9cd03e362d6f61f80caeb08bae3db335db",
+      "bytes": 323
+    }
+  },
+  "limits": [
+    "No hay baseline productivo actual de latencia ni calidad.",
+    "La suite completa no se repitió sobre snapshot.",
+    "No se verificó navegador autenticado ni sincronización multidispositivo.",
+    "La copia temporal fija el estado leído; las huellas identifican el código y no sustituyen un archivo permanente de todos sus fuentes."
+  ],
+  "postSnapshotCheck": {
+    "checkedAt": "2026-09-08T07:20:22.696819-03:00",
+    "sourceScope": "árbol vivo posterior; ver huellas y copia original para distinguir referencias",
+    "changedReferencedFiles": {
+      "package.json": {
+        "snapshotSha256": "7f3a40c9070078169ab629ba84466ec3806c9af1e07296e11e1210baaceeba6c",
+        "currentSha256": "f82c4f900b45f7d1ff81f7e659568faa5b0958273eda1e170a7b75eec4ae6fe8"
+      },
+      "src/components/session/SessionForm.tsx": {
+        "snapshotSha256": "df07023e40e7abc15d50291c343630c710e5d043ac809e74f19a5ab0b1e8f4dd",
+        "currentSha256": "2256710fd83cc88575cb55e02d72106a4901b3b29f108ceb5bb1342b66dd1279"
+      },
+      "src/pages/ChatCoach.tsx": {
+        "snapshotSha256": "70fda8da354d0f532274689bb8e1c823daf3c26c439998591a57b0cbd8a916ad",
+        "currentSha256": "bba466f93731a34c0b17f4a5289c757fa9705ca6ce3b6d34cebe920ec97b5428"
+      },
+      "src/services/__tests__/repairWeek.test.ts": {
+        "snapshotSha256": "bec3530967538f9c0fb496322fc499982d7e8236fc85f09afdcae9f7c6ad8686",
+        "currentSha256": "b67c2af78d3e5e5d3db66e131fee94c4c11c0878fe68837bc72579a0c673c57f"
+      },
+      "src/services/athlete/coachSessionSerializer.ts": {
+        "snapshotSha256": "c9723c82cfde986582d611545b72b259c4197c2a055bba2b1ed7427b97d42d71",
+        "currentSha256": "c5b7f7a6e360680acd5e0a9f70bb238629a465f223bd34117281b298997fbcd1"
+      },
+      "src/services/training/drillLibrary.ts": {
+        "snapshotSha256": "1f2ab795adde727e64ff967767ef7d806f26574cb7d9f1b3b8bae70dc15b9c6c",
+        "currentSha256": "180f11d70b28c0b595d667190e95b820714f421bafdcaec1a415cdaf7d27fb41"
+      },
+      "src/services/training/runningTemplateMaterializer.ts": {
+        "snapshotSha256": "b48e732c6565a289c67fe9a560248076574523361b5394780551d6ec4c975e25",
+        "currentSha256": "ecea74e3753657ff9639734e52c7001744629af5c428c8ca5470455f9bd0a993"
+      },
+      "src/services/training/sessionDoseFinalizer.ts": {
+        "snapshotSha256": "adf1c04ba69a5fb14883296ff3449ff4f4a1c7def4dd1968162e5f321b63210d",
+        "currentSha256": "dd46d5c5b142a7505fdadaf4805e5aa582f1b309f08a973bcf73efa519792c3a"
+      }
+    },
+    "probe": {
+      "command": "node docs/reviews/fixtures/coaching-refactor-2026-09-08/probe.mjs",
+      "exitCode": 0,
+      "output": "probe-current-output.json",
+      "findingF04": "Caso dirigido corregido: objetivos Z2 6:00–6:30, bloques6:30 /km. Restantes salidas del probe sin cambios.",
+      "fetchAttempts": 0
+    },
+    "repairTests": {
+      "command": "npm test -- src/services/__tests__/repairWeek.test.ts --maxWorkers=4",
+      "exitCode": 0,
+      "testsPassed": 18,
+      "testsFailed": 0,
+      "durationSeconds": 2.23,
+      "log": "suite-current-repair.txt"
+    },
+    "limitations": [
+      "No se repitió la suite completa sobre este árbol posterior.",
+      "La corrección de F04 está acreditada para el caso dirigido, no para toda combinación de objetivos/recetas."
+    ]
+  }
+}

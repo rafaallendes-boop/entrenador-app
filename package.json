@@ -25,6 +25,8 @@
     "loadtest:week-creator": "node scripts/loadtest-week-creator.mjs",
     "loadtest:plan-builder": "node scripts/loadtest-plan-builder.mjs",
     "migrate:dry-run": "node scripts/migrate-dry-run.mjs",
+    "probe:selectors": "node scripts/probe-selectors.mjs --stage=e3",
+    "probe:selectors:check": "node scripts/probe-selectors.mjs --stage=e3 --check",
     "e2e:dev": "node scripts/e2e-coach-test.mjs",
     "e2e:dev:headed": "node scripts/e2e-coach-test.mjs --headed",
     "e2e:dev:quick": "node scripts/e2e-coach-test.mjs --quick",

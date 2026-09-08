@@ -87,6 +87,16 @@ interface SessionCardProps {
   whoopWorkout?: WhoopWorkout
 }
 
+/**
+ * Sólo los bloques por repetición se leen en segundos. Un rodaje continuo se
+ * mostraba como "1800 s" en vez de "30 min".
+ */
+function formatRunningBlockDuration(durationMin: number, basis?: 'total' | 'per_repetition'): string {
+  const seconds = Math.round(durationMin * 60)
+  if (basis === 'per_repetition' || seconds < 90) return `${seconds} s`
+  return `${Number(durationMin.toFixed(1))} min`
+}
+
 export default function SessionCard({ session, compact = false, onDelete, whoopWorkout }: SessionCardProps) {
   const [expanded, setExpanded] = useState(false)
   const cycleStatus = useTrainingStore((s) => s.cycleSessionStatus)
@@ -331,6 +341,7 @@ export default function SessionCard({ session, compact = false, onDelete, whoopW
                   </div>
                 )}
               </div>
+              {session.runningDetails.selectionReason && <p className="text-xs text-ink-muted">{session.runningDetails.selectionReason}</p>}
               {session.runningDetails.intervalStructure && (
                 <div className="space-y-1">
                   <p className="font-display text-[10px] font-semibold uppercase tracking-wider text-ink-faint">Estructura</p>
@@ -342,9 +353,9 @@ export default function SessionCard({ session, compact = false, onDelete, whoopW
                         {block.notes && <span className="ml-1 text-[11px] text-ink-faint">({block.notes})</span>}
                       </div>
                       <span className="font-mono flex-shrink-0 text-right text-[11px] tabular-nums text-sky-400/80">
-                        {block.repetitions != null && block.distanceKm != null && `${block.repetitions}×${block.distanceKm}km`}
-                        {block.durationMin != null && ` ${block.durationMin}min`}
-                        {block.targetPace && ` · ${block.targetPace}/km`}
+                        {block.distanceKm != null && `${block.repetitions ?? 1}×${block.distanceKm}km`}
+                        {block.durationMin != null && ` ${formatRunningBlockDuration(block.durationMin, block.durationBasis)}${block.durationKind === 'estimated' ? ' estimados' : ''}`}
+                        {block.targetPace && ` · ${block.targetPace}`}
                       </span>
                     </div>
                   ))}
@@ -447,6 +458,9 @@ export default function SessionCard({ session, compact = false, onDelete, whoopW
               </p>
             </div>
           )}
+          {hasSquashDetails && session.squashDetails?.selectionReason && <p className="text-xs text-ink-muted">{session.squashDetails.selectionReason}</p>}
+          {hasSquashDetails && session.squashDetails?.technicalIntent && <p className="text-xs">Objetivo: {session.squashDetails.technicalIntent.family.replaceAll('_', ' ')}{session.squashDetails.technicalIntent.successTarget != null ? ` · ${session.squashDetails.technicalIntent.successTarget}% de aciertos` : ''}</p>}
+          {hasSquashDetails && session.squashDetails?.technicalResult && <p className="text-xs">Resultado: {session.squashDetails.technicalResult.successes}/{session.squashDetails.technicalResult.attempts} aciertos</p>}
           {hasSquashDetails && session.squashDetails && squashBlocks.length > 0 && (
             <div className="mt-2 space-y-2">
               <div className="space-y-1">

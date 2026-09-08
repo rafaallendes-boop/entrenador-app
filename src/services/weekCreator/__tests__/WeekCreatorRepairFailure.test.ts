@@ -182,4 +182,18 @@ describe('propagación de repair fail-closed en Week Creator', () => {
     expect(result.meta?.outcome).toBe('quality_rejected')
     expect(result.meta?.actionParseFailed).toBe(false)
   })
+
+  it('E1: dosis incompatible no reintenta ni sustituye la semana por fallback', async () => {
+    const failure: RepairFailure = { errorClass: 'quality.session.dose_infeasible', message: 'La dosis no cabe en 10 min.' }
+    repairGeneratedWeekMock.mockReturnValue({ sessions: [], meta: createRepairMeta(1), failure })
+    providerCallMock.mockResolvedValue({ text: JSON.stringify({ actions: [action()] }), provider: 'mock', traceId: 'dose' })
+    const result = await WeekCreatorEngine.sendWeekCreate('arma una semana', context(), {
+      targetWeekStart: TARGET_WEEK, provider: { name: 'mock', call: providerCallMock },
+    })
+    expect(providerCallMock).toHaveBeenCalledTimes(1)
+    expect(result.actions).toEqual([])
+    expect(result.fallbackUsed).toBe(false)
+    expect(result.message).toBe(failure.message)
+    expect(classifyWeekCreatorRepairFailure(failure).decision).toBe('safe_decline')
+  })
 })

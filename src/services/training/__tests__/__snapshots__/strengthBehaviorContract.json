@@ -194,6 +194,26 @@
     }
   },
   {
+    "id": "cable_biceps_curl",
+    "resolvedBlock": "pull",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "pull",
+    "loadReference": null
+  },
+  {
+    "id": "cable_chest_fly",
+    "resolvedBlock": "push",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "push",
+    "loadReference": null
+  },
+  {
     "id": "cable_chop",
     "resolvedBlock": "core",
     "reps": 3,
@@ -201,6 +221,26 @@
     "targetPercent1RM": null,
     "targetRpe": null,
     "group": "core",
+    "loadReference": null
+  },
+  {
+    "id": "cable_face_pull",
+    "resolvedBlock": "pull",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "pull",
+    "loadReference": null
+  },
+  {
+    "id": "cable_straight_arm_pulldown",
+    "resolvedBlock": "pull",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "pull",
     "loadReference": null
   },
   {
@@ -613,6 +653,26 @@
     "loadReference": null
   },
   {
+    "id": "machine_assisted_dip",
+    "resolvedBlock": "push",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "push",
+    "loadReference": null
+  },
+  {
+    "id": "machine_biceps_curl",
+    "resolvedBlock": "pull",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "pull",
+    "loadReference": null
+  },
+  {
     "id": "machine_chest_press",
     "resolvedBlock": "push",
     "reps": 3,
@@ -620,6 +680,36 @@
     "targetPercent1RM": null,
     "targetRpe": 7,
     "group": "push",
+    "loadReference": null
+  },
+  {
+    "id": "machine_glute_drive",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "legs",
+    "loadReference": null
+  },
+  {
+    "id": "machine_glute_kickback",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "legs",
+    "loadReference": null
+  },
+  {
+    "id": "machine_hack_squat",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "legs",
     "loadReference": null
   },
   {
@@ -640,6 +730,26 @@
     "targetPercent1RM": null,
     "targetRpe": 7,
     "group": "legs",
+    "loadReference": null
+  },
+  {
+    "id": "machine_incline_chest_press",
+    "resolvedBlock": "push",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "push",
+    "loadReference": null
+  },
+  {
+    "id": "machine_lateral_raise",
+    "resolvedBlock": "push",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "push",
     "loadReference": null
   },
   {
@@ -684,6 +794,16 @@
   },
   {
     "id": "machine_shoulder_press",
+    "resolvedBlock": "push",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "push",
+    "loadReference": null
+  },
+  {
+    "id": "machine_triceps_extension",
     "resolvedBlock": "push",
     "reps": 3,
     "weight": null,
@@ -897,6 +1017,36 @@
       "factor": 1.2,
       "selectorEligible": false
     }
+  },
+  {
+    "id": "smith_bench_press",
+    "resolvedBlock": "push",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "push",
+    "loadReference": null
+  },
+  {
+    "id": "smith_incline_press",
+    "resolvedBlock": "push",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "push",
+    "loadReference": null
+  },
+  {
+    "id": "smith_squat",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "legs",
+    "loadReference": null
   },
   {
     "id": "split_jerk",

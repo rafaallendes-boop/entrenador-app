@@ -1,3 +1,4 @@
+import { getExecutedSessionsThrough } from '../../training/executedSessions'
 /**
  * Shared helpers used across per-sport prompt modules.
  */
@@ -39,24 +40,14 @@ export function getAllContextSessions(context: ChatContext): Session[] {
   return [...merged.values()].sort((a, b) => a.date.localeCompare(b.date) || a.timeBlock.localeCompare(b.timeBlock))
 }
 
-export function getPlannedSessions(context: ChatContext): Session[] {
-  if (context.plannedSessions && context.plannedSessions.length > 0) {
-    return [...context.plannedSessions].sort((a, b) => a.date.localeCompare(b.date) || a.timeBlock.localeCompare(b.timeBlock))
-  }
-
-  const today = todayISO()
-  return getAllContextSessions(context).filter(session => session.date >= today)
+export function getPlannedSessions(context: ChatContext, referenceDate = todayISO()): Session[] {
+  const sessions = context.plannedSessions?.length ? context.plannedSessions : getAllContextSessions(context)
+  return sessions.filter(session => session.status === 'planned' && session.date >= referenceDate)
+    .sort((a, b) => a.date.localeCompare(b.date) || (a.timeBlock ?? '').localeCompare(b.timeBlock ?? ''))
 }
 
-export function getHistoricalSessions(context: ChatContext): Session[] {
-  if (context.historicalSessions && context.historicalSessions.length > 0) {
-    return [...context.historicalSessions].sort((a, b) => a.date.localeCompare(b.date) || a.timeBlock.localeCompare(b.timeBlock))
-  }
-
-  const today = todayISO()
-  return getAllContextSessions(context).filter(
-    session => session.status !== 'planned' || session.date < today,
-  )
+export function getHistoricalSessions(context: ChatContext, referenceDate = todayISO()): Session[] {
+  return getExecutedSessionsThrough(context.historicalSessions?.length ? context.historicalSessions : getAllContextSessions(context), referenceDate)
 }
 
 // ─── Fatigue derivation (shared across all sports) ──────────────────────────

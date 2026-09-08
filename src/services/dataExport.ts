@@ -1,3 +1,5 @@
+import { sanitizeSquashTrainingContext } from '../types/squashTrainingContext'
+import { sanitizeRunningTemplateRef } from '../types/runningTemplate'
 import { db } from '../db/db'
 import { getAllLocalTables } from '../db/athleteScopedTables'
 import { APP_INFO } from '../constants/appInfo'
@@ -1393,6 +1395,9 @@ function parseCoachAction(value: unknown, path: string): CoachAction {
     timeBlock: optionalEnum(row.timeBlock, TIME_BLOCKS, `${path}.timeBlock`) as CoachAction['timeBlock'],
     objective: optionalString(row.objective, `${path}.objective`),
     subtype: optionalEnum(row.subtype, SQUASH_SUBTYPES, `${path}.subtype`) as CoachAction['subtype'],
+    intervalStructure: optionalRunningIntervalStructure(row.intervalStructure, path),
+    runningTemplateRef: sanitizeRunningTemplateRef(row.runningTemplateRef),
+    runningSelectionReason: optionalString(row.runningSelectionReason, `${path}.runningSelectionReason`),
     runningType: optionalEnum(row.runningType, RUNNING_TYPES, `${path}.runningType`) as CoachAction['runningType'],
     targetPaceMin: optionalString(row.targetPaceMin, `${path}.targetPaceMin`),
     targetPaceMax: optionalString(row.targetPaceMax, `${path}.targetPaceMax`),
@@ -1595,6 +1600,9 @@ function optionalCoachSessions(value: unknown, path: string): CoachAction['sessi
       rpe: optionalFiniteNumber(row.rpe, `${path}[${index}].rpe`),
       objective: optionalString(row.objective, `${path}[${index}].objective`),
       subtype: optionalEnum(row.subtype, SQUASH_SUBTYPES, `${path}[${index}].subtype`) as NonNullable<CoachAction['sessions']>[number]['subtype'],
+      intervalStructure: optionalRunningIntervalStructure(row.intervalStructure, `${path}[${index}]`),
+      runningTemplateRef: sanitizeRunningTemplateRef(row.runningTemplateRef),
+      runningSelectionReason: optionalString(row.runningSelectionReason, `${path}[${index}].runningSelectionReason`),
       runningType: optionalEnum(row.runningType, RUNNING_TYPES, `${path}[${index}].runningType`) as NonNullable<CoachAction['sessions']>[number]['runningType'],
       targetPaceMin: optionalString(row.targetPaceMin, `${path}[${index}].targetPaceMin`),
       targetPaceMax: optionalString(row.targetPaceMax, `${path}[${index}].targetPaceMax`),
@@ -1663,11 +1671,49 @@ function optionalGeneratedProtocol(
   }
 }
 
+/**
+ * Degrada en vez de abortar.
+ *
+ * Las estructuras persistidas sólo pasaron por `isRunningIntervalStructure`,
+ * que no comprueba nada más allá de `Array.isArray(blocks)`: hay filas
+ * guardadas con bloques sin `label`. Antes este campo no se parseaba y se
+ * perdía en silencio; hacerlo lanzar ahora abortaría el import completo del
+ * backup por un bloque viejo. Se pierde la estructura, no el resto.
+ */
+function optionalRunningIntervalStructure(value: unknown, path: string): NonNullable<Session['runningDetails']>['intervalStructure'] {
+  if (value == null) return undefined
+  try {
+    return { blocks: ensureArray(ensureRecord(value, `${path}.intervalStructure`).blocks, `${path}.intervalStructure.blocks`).map((block, index) => {
+      const blockPath = `${path}.intervalStructure.blocks[${index}]`
+      const b = ensureRecord(block, blockPath)
+      return {
+        label: requireString(b.label, `${blockPath}.label`),
+        durationMin: optionalFiniteNumber(b.durationMin, `${blockPath}.durationMin`),
+        distanceKm: optionalFiniteNumber(b.distanceKm, `${blockPath}.distanceKm`),
+        repetitions: optionalFiniteNumber(b.repetitions, `${blockPath}.repetitions`),
+        recoverySeconds: optionalFiniteNumber(b.recoverySeconds, `${blockPath}.recoverySeconds`),
+        role: optionalEnum(b.role, ['warmup', 'work', 'recovery', 'cooldown', 'technique'] as const, `${blockPath}.role`),
+        durationBasis: optionalEnum(b.durationBasis, ['total', 'per_repetition'] as const, `${blockPath}.durationBasis`),
+        durationKind: optionalEnum(b.durationKind, ['prescribed', 'estimated'] as const, `${blockPath}.durationKind`),
+        targetPace: optionalString(b.targetPace, `${blockPath}.targetPace`),
+        targetHrMin: optionalFiniteNumber(b.targetHrMin, `${blockPath}.targetHrMin`),
+        targetHrMax: optionalFiniteNumber(b.targetHrMax, `${blockPath}.targetHrMax`),
+        notes: optionalString(b.notes, `${blockPath}.notes`),
+      }
+    }) }
+  } catch {
+    return undefined
+  }
+}
+
 function optionalRunningDetails(value: unknown, path: string): Session['runningDetails'] {
   if (value == null) return undefined
   const row = ensureRecord(value, path)
 
   return {
+    templateRef: sanitizeRunningTemplateRef(row.templateRef),
+    selectionReason: optionalString(row.selectionReason, `${path}.selectionReason`),
+    intervalStructure: optionalRunningIntervalStructure(row.intervalStructure, path),
     runningType: requireEnum(row.runningType, RUNNING_TYPES, `${path}.runningType`) as NonNullable<Session['runningDetails']>['runningType'],
     targetPaceMin: optionalString(row.targetPaceMin, `${path}.targetPaceMin`),
     targetPaceMax: optionalString(row.targetPaceMax, `${path}.targetPaceMax`),
@@ -1748,6 +1794,7 @@ function optionalSquashDetails(value: unknown, path: string): Session['squashDet
   }
 
   return {
+    ...sanitizeSquashTrainingContext(row),
     trainingFocus: requireEnum(row.trainingFocus, SQUASH_TRAINING_FOCUSES, `${path}.trainingFocus`) as NonNullable<Session['squashDetails']>['trainingFocus'],
     drills,
     sessionMode: optionalEnum(row.sessionMode, SQUASH_SESSION_MODES, `${path}.sessionMode`) as NonNullable<Session['squashDetails']>['sessionMode'],
@@ -2099,6 +2146,8 @@ function optionalRunningProfile(value: unknown, path: string): AthleteProfile['r
   if (value == null) return undefined
   const row = ensureRecord(value, path)
   return {
+    experienceLevel: optionalEnum(row.experienceLevel, ['beginner', 'intermediate', 'advanced'] as const, `${path}.experienceLevel`),
+    impactRestriction: optionalEnum(row.impactRestriction, ['none', 'no_fast_running', 'no_running'] as const, `${path}.impactRestriction`),
     fiveKTime: optionalString(row.fiveKTime, `${path}.fiveKTime`),
     tenKTime: optionalString(row.tenKTime, `${path}.tenKTime`),
     halfMarathonTime: optionalString(row.halfMarathonTime, `${path}.halfMarathonTime`),

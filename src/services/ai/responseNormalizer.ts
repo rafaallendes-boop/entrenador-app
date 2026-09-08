@@ -1,3 +1,5 @@
+import { sanitizeSquashTrainingContext } from '../../types/squashTrainingContext'
+import { sanitizeRunningTemplateRef } from '../../types/runningTemplate'
 import type { CoachAction, CoachActionType, CoachExerciseProposal, CoachSessionProposal, CyclingDetails, GeneratedProtocol, MobilityDetails, RunningIntervalStructure, RunningType, SessionType, SquashDetails, SquashDrill, SquashDrillExecutionMode, SquashDrillExecutionModeLegacy, SquashSessionBlock, SquashSessionBlockKind, SquashSessionKind, SquashSessionMode, SquashSubtype, SquashTrainingFocus, TimeBlock, WarmupSet } from '../../types'
 import type { AIRawResponse, CoachNormalizedResponse, CreateWeekNormalizationDiagnostic } from './types'
 import {
@@ -124,6 +126,8 @@ export function normalizeSessionProposalDraft(
   if (typeof record.targetHrMin === 'number') session.targetHrMin = record.targetHrMin
   if (typeof record.targetHrMax === 'number') session.targetHrMax = record.targetHrMax
   if (isRunningIntervalStructure(record.intervalStructure)) session.intervalStructure = record.intervalStructure
+  session.runningTemplateRef = sanitizeRunningTemplateRef(record.runningTemplateRef)
+  if (typeof record.runningSelectionReason === 'string') session.runningSelectionReason = record.runningSelectionReason
   if (Array.isArray(record.exercises)) {
     const exercises = record.exercises
       .map(validateExerciseProposal)
@@ -622,6 +626,8 @@ function validateAction(obj: unknown): {
       if (typeof record.targetHrMin === 'number') action.targetHrMin = record.targetHrMin
       if (typeof record.targetHrMax === 'number') action.targetHrMax = record.targetHrMax
       if (isRunningIntervalStructure(record.intervalStructure)) action.intervalStructure = record.intervalStructure
+  action.runningTemplateRef = sanitizeRunningTemplateRef(record.runningTemplateRef)
+  if (typeof record.runningSelectionReason === 'string') action.runningSelectionReason = record.runningSelectionReason
       if (Array.isArray(record.exercises)) {
         const exercises = record.exercises
           .map(validateExerciseProposal)
@@ -670,6 +676,7 @@ function sessionProposalToActionFields(session: CoachSessionProposal): Partial<C
     targetHrMin: session.targetHrMin,
     targetHrMax: session.targetHrMax,
     intervalStructure: session.intervalStructure,
+    runningTemplateRef: session.runningTemplateRef, runningSelectionReason: session.runningSelectionReason,
     cyclingDetails: session.cyclingDetails,
     exercises: session.exercises,
     mobilityDetails: session.mobilityDetails,
@@ -928,6 +935,7 @@ function normalizeSquashDetailsDraft(value: unknown): { details: SquashDetails; 
   }
 
   const details: SquashDetails = {
+    ...sanitizeSquashTrainingContext(value),
     trainingFocus: focus,
     drills: normalizedDrills,
   }

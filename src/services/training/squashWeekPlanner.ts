@@ -1,3 +1,5 @@
+import type { SquashWeeklyExposureDecision } from '../planBuilder/squashWeeklyExposurePolicy'
+import { getExecutedSessions } from './executedSessions'
 import type { Session, SquashSessionKind } from '../../types'
 import { resolveSquashSessionKind } from '../../utils/squash'
 import type { DisciplineAcwr } from '../loadAnalytics'
@@ -13,6 +15,8 @@ export interface SquashWeekPlan {
 }
 
 export interface PlanSquashWeekInput {
+  weeklyExposure?: SquashWeeklyExposureDecision
+  partnerAvailability?: 'solo' | 'partner' | 'either'
   sessionSlots: number
   phase: SquashSelectionPhase
   daysToNextCompetition?: number
@@ -48,10 +52,10 @@ const PHASE_PATTERNS: Record<SquashSelectionPhase, Record<number, SquashSelectio
   },
 }
 
-export function extractRecentSquashKinds(sessions: Session[], limit = 6): SquashSessionKind[] {
-  return [...sessions]
+export function extractRecentSquashKinds(sessions: Session[], limit = 6, referenceDate?: string): SquashSessionKind[] {
+  return getExecutedSessions(sessions, referenceDate)
     .filter((session): session is Session & { type: 'squash' } => session.type === 'squash')
-    .sort((a, b) => b.date.localeCompare(a.date) || b.timeBlock.localeCompare(a.timeBlock))
+    .sort((a, b) => b.date.localeCompare(a.date) || (b.timeBlock ?? '').localeCompare(a.timeBlock ?? ''))
     .map((session) => resolveSquashSessionKind(session))
     .filter((kind): kind is SquashSessionKind => Boolean(kind))
     .slice(0, limit)
@@ -66,13 +70,6 @@ export function planSquashWeek(input: PlanSquashWeekInput): SquashWeekPlan {
     slots[slots.length - 1] = 'control'
   }
 
-  if (input.squashAcwr?.status === 'risk' || input.fatigueLevel >= 8) {
-    replaceFirstSlot(slots, 'match', 'control')
-    replaceFirstSlot(slots, 'technical', 'shadows')
-  } else if (input.fatigueLevel >= 6) {
-    replaceFirstSlot(slots, 'match', 'control')
-  }
-
   const repeatedKinds = getRepeatedKinds(input.recentKinds)
   for (const repeatedKind of repeatedKinds) {
     const index = slots.findIndex((slot) => slot === repeatedKind)
@@ -81,6 +78,26 @@ export function planSquashWeek(input: PlanSquashWeekInput): SquashWeekPlan {
     }
   }
 
+  const exposure = input.weeklyExposure
+  const exposureBlocked = exposure?.ensure === false && ['partner_unavailable', 'medical_restriction', 'severe_overload', 'race_event_counts', 'transition'].includes(exposure.reason)
+  // Rotation is a preference and cannot reopen the shared weekly policy veto.
+  // Las degradaciones corren después de la rotación —no antes— para que ésta no
+  // pueda reintroducir lo que ya se había bajado, y así cada regla se aplica una
+  // sola vez.
+  //
+  // Veto duro: sin compañero, o con la política semanal bloqueando la
+  // exposición, no puede quedar ningún match.
+  if (exposureBlocked || input.partnerAvailability === 'solo') {
+    for (let i = 0; i < slots.length; i++) if (slots[i] === 'match') slots[i] = 'control'
+  }
+  // Fatiga y ACWR degradan un slot, no la semana entera: bajar todos los
+  // `technical` dejaba semanas sin nada de técnico mientras la fatiga declarada
+  // siguiera en `overloaded` (que `fatigueToNumber` traduce a 9).
+  if (input.fatigueLevel >= 6 || input.squashAcwr?.status === 'risk') replaceFirstSlot(slots, 'match', 'control')
+  if (input.fatigueLevel >= 8 || input.squashAcwr?.status === 'risk') replaceFirstSlot(slots, 'technical', 'shadows')
+  // Reafirmación, no repetición de la línea de arriba: la rotación pudo cambiar
+  // el último slot después de la primera asignación.
+  if ((input.daysToNextCompetition ?? 99) <= 3) slots[slots.length - 1] = 'control'
   const normalizedSlots = normalizeSlotCount(slots, sessionSlots)
   return {
     slots: normalizedSlots.map((kind, index) => ({

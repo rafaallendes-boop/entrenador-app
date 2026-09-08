@@ -489,6 +489,7 @@ export const WeekCreatorEngine = {
             failureCategory: failure.category,
             repairErrorClass: repaired.repairFailure.errorClass,
           })
+          if (repaired.repairFailure.errorClass === 'quality.session.dose_infeasible') break
           if (attempt < MAX_ATTEMPTS) continue
           break
         }
@@ -672,6 +673,7 @@ export const WeekCreatorEngine = {
     // fallback week. The candidate remains rejected after its retries.
     if (lastFailure && !isLocalFallbackEligible(lastFailure.code)) {
       return buildWeekCreatorRepairFailureResponse({
+        message: lastFailure.code === 'quality.session.dose_infeasible' ? lastFailure.error : undefined,
         generationId,
         provider: lastFailure.provider ?? provider.name,
         model: lastFailure.model,
@@ -1005,6 +1007,7 @@ function buildWeekCreatorUserFailureMessage(reason?: WeekCreatorFailureCode): st
 }
 
 function buildWeekCreatorRepairFailureResponse(input: {
+  message?: string
   generationId: string
   provider: CoachNormalizedResponse['provider']
   model?: string
@@ -1013,7 +1016,7 @@ function buildWeekCreatorRepairFailureResponse(input: {
   retryUsed: boolean
 }): CoachNormalizedResponse {
   return {
-    message: buildWeekCreatorUserFailureMessage('quality.squash.signature_uniqueness_unresolved'),
+    message: input.message ?? buildWeekCreatorUserFailureMessage('quality.squash.signature_uniqueness_unresolved'),
     actions: [],
     filteredCreateWeek: false,
     provider: input.provider,

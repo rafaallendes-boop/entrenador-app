@@ -1,3 +1,4 @@
+import { materializeRunningTemplate } from '../../training/runningTemplateMaterializer'
 import { describe, expect, it } from 'vitest'
 import type { Session } from '../../../types'
 import type { SessionTemplatePayload } from '../../../types/sessionTemplate'
@@ -446,4 +447,20 @@ describe('exercises de squash en plantillas', () => {
     expect(next.squashDetails?.drills).toEqual(payload.squashDetails?.drills)
     expect(next.squashDetails?.blocks).toEqual(payload.squashDetails?.blocks)
   })
+})
+
+
+it('plantilla de running conserva dosis/ref en abrir, editar y aplicar, y limpia identidad al cambiar tipo', () => {
+  const dose = materializeRunningTemplate({ template: 'repeats_400', durationMin: 60, profile: { fiveKTime: '25:00' } })
+  if (!dose.ok) throw Error(dose.message)
+  const payload: SessionTemplatePayload = { type: 'running', timeBlock: 'AM', title: 'Series 400', durationMin: 60,
+    runningDetails: { runningType: 'intervals', templateRef: dose.templateRef, intervalStructure: dose.structure, selectionReason: 'Específico' } }
+  const { draft, originalsById } = templateToDraft(payload, '2026-09-07')
+  expect(draft.runningTargets).toEqual(payload.runningDetails)
+  const patch = templateDraftToPatch(payload, { ...draft, title: 'Series traducidas' }, originalsById)
+  expect(patch.runningTargets).toBeUndefined()
+  expect(applyTemplateDraft(payload, { ...draft, title: 'Series traducidas' }, originalsById).runningDetails).toEqual(payload.runningDetails)
+  const changed = applyTemplateDraft(payload, { ...draft, runningTargets: { runningType: 'z2' } }, originalsById)
+  expect(changed.runningDetails?.templateRef).toBeUndefined()
+  expect(changed.runningDetails?.intervalStructure).toBeUndefined()
 })

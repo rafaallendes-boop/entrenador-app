@@ -1,3 +1,4 @@
+import { sanitizeSquashTrainingContext } from '../../types/squashTrainingContext'
 import type { Exercise, Session } from '../../types'
 import type {
   SessionTemplateExercise,
@@ -43,7 +44,7 @@ export function sessionToTemplatePayload(session: Session): SessionTemplatePaylo
     rpe: session.rpe,
     notes: session.notes,
     subtype: session.subtype,
-    squashDetails: session.squashDetails ? structuredClone(session.squashDetails) : undefined,
+    squashDetails: session.squashDetails ? { ...structuredClone(session.squashDetails), technicalResult: undefined } : undefined,
     runningDetails: session.runningDetails ? structuredClone(session.runningDetails) : undefined,
     cyclingDetails: session.cyclingDetails ? structuredClone(session.cyclingDetails) : undefined,
     mobilityDetails: session.mobilityDetails ? structuredClone(session.mobilityDetails) : undefined,
@@ -111,8 +112,10 @@ export function templateToDraft(
       squashKind: payload.type === 'squash'
         ? resolveCoachSquashKind(payload.squashDetails, payload.subtype)
         : undefined,
+      squashTraining: { ...sanitizeSquashTrainingContext(payload.squashDetails), technicalResult: undefined },
       runningTargets: payload.runningDetails
         ? {
+            ...payload.runningDetails,
             runningType: payload.runningDetails.runningType,
             targetPaceMin: payload.runningDetails.targetPaceMin,
             targetPaceMax: payload.runningDetails.targetPaceMax,
@@ -213,6 +216,7 @@ export function applyTemplateDraft(
     next.squashDetails = next.squashDetails
       ? {
         ...next.squashDetails,
+        ...sanitizeSquashTrainingContext(draft.squashTraining), technicalResult: undefined,
         sessionKind: squashKind,
         trainingFocus: resolveSquashTrainingFocus(
           subtype,
@@ -228,6 +232,11 @@ export function applyTemplateDraft(
     next.runningDetails = {
       ...existing.runningDetails,
       ...draft.runningTargets,
+    }
+    if (existing.type === 'running' && draft.runningTargets.runningType !== previousRunningType && !draft.runningTargets.templateRef) {
+      next.runningDetails.templateRef = undefined
+      next.runningDetails.selectionReason = undefined
+      next.runningDetails.intervalStructure = draft.runningTargets.intervalStructure
     }
     if (existing.type === 'cycling' && draft.runningTargets.runningType !== previousRunningType) {
       next.cyclingDetails = mergeCyclingDerivedDetails(
@@ -274,8 +283,10 @@ export function templateDraftToPatch(
     squashKind: openedPayload.type === 'squash'
       ? resolveCoachSquashKind(openedPayload.squashDetails, openedPayload.subtype)
       : undefined,
+    squashTraining: { ...sanitizeSquashTrainingContext(openedPayload.squashDetails), technicalResult: undefined },
     runningTargets: openedPayload.runningDetails
       ? {
+          ...openedPayload.runningDetails,
           runningType: openedPayload.runningDetails.runningType,
           targetPaceMin: openedPayload.runningDetails.targetPaceMin,
           targetPaceMax: openedPayload.runningDetails.targetPaceMax,
@@ -296,6 +307,7 @@ export function templateDraftToPatch(
     'notes',
     'subtype',
     'squashKind',
+    'squashTraining',
     'runningTargets',
     'exercises',
   ]
@@ -401,6 +413,11 @@ export function applyTemplatePatch(
   ) {
     const previousRunningType = latest.runningDetails?.runningType
     next.runningDetails = { ...latest.runningDetails, ...patch.runningTargets }
+    if (latest.type === 'running' && patch.runningTargets.runningType !== previousRunningType && !patch.runningTargets.templateRef) {
+      next.runningDetails.templateRef = undefined
+      next.runningDetails.selectionReason = undefined
+      next.runningDetails.intervalStructure = patch.runningTargets.intervalStructure
+    }
     if (latest.type === 'cycling' && patch.runningTargets.runningType !== previousRunningType) {
       next.cyclingDetails = mergeCyclingDerivedDetails(
         latest.cyclingDetails,
@@ -410,6 +427,14 @@ export function applyTemplatePatch(
     }
   }
 
+  if (latest.type === 'squash' && next.squashDetails && hasPatchKey(patch, 'squashTraining')) {
+    const details = { ...next.squashDetails }
+    delete details.availability
+    delete details.technicalIntent
+    delete details.technicalResult
+    delete details.selectionReason
+    next.squashDetails = { ...details, ...sanitizeSquashTrainingContext(patch.squashTraining), technicalResult: undefined }
+  }
   if (hasPatchKey(patch, 'exercises') && isExerciseType(latest.type)) {
     next.exercises = mergeTemplateExercises(patch.exercises, originalsById)
   }

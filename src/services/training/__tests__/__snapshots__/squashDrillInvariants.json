@@ -1065,7 +1065,7 @@
     ],
     "partnerRequired": false,
     "executionMode": "solo",
-    "family": "solo_control_volume",
+    "family": "drive_patterns",
     "blockKind": "control",
     "stableName": "Paralelas de revés — 100",
     "stableDescription": "Sin rival: juega 100 paralelas de revés desde el fondo, pegadas a la pared lateral. Objetivo: que tu lado menos cómodo sostenga el mismo largo que el drive. Clave: cuenta como buena solo la que pasa el cuadro de saque y queda a menos de una raqueta de la pared."
@@ -1104,7 +1104,7 @@
     ],
     "partnerRequired": false,
     "executionMode": "solo",
-    "family": "solo_control_volume",
+    "family": "front_court_touch",
     "blockKind": "control",
     "stableName": null,
     "stableDescription": null
@@ -1145,7 +1145,7 @@
     ],
     "partnerRequired": false,
     "executionMode": "solo",
-    "family": "solo_control_volume",
+    "family": "drive_patterns",
     "blockKind": "control",
     "stableName": "Paralelas de derecha — 100",
     "stableDescription": "Sin rival: juega 100 paralelas de derecha desde el fondo, pegadas a la pared lateral. Objetivo: sostener el mismo largo lado a lado sin que la derecha se acelere. Clave: cuenta como buena solo la que pasa el cuadro de saque y queda a menos de una raqueta de la pared."
@@ -1184,7 +1184,7 @@
     ],
     "partnerRequired": false,
     "executionMode": "solo",
-    "family": "solo_control_volume",
+    "family": "technical_general",
     "blockKind": "control",
     "stableName": null,
     "stableDescription": "Desde media cancha, golpea 100 drives alternando paralelo y cruzado. Objetivo: aprender a transformar una pelota cómoda en largo profundo. Clave: contacta delante del pie delantero y no sigas si la pelota empieza a quedar en el centro."
@@ -1223,7 +1223,7 @@
     ],
     "partnerRequired": false,
     "executionMode": "solo",
-    "family": "solo_control_volume",
+    "family": "drive_patterns",
     "blockKind": "control",
     "stableName": null,
     "stableDescription": "Desde el fondo, juega 100 drives paralelos pegados a la pared lateral. Objetivo: que tu paralela sea una pelota segura, profunda y difícil de atacar. Clave: cuenta como buena solo la pelota que llega atrás y se mantiene a menos de una raqueta de la pared lateral."
@@ -1262,7 +1262,7 @@
     ],
     "partnerRequired": false,
     "executionMode": "solo",
-    "family": "solo_control_volume",
+    "family": "technical_general",
     "blockKind": "control",
     "stableName": null,
     "stableDescription": "Juega 100 drives hacia un objetivo visible dentro del cuadro de saque. Objetivo: darle una referencia concreta a tu profundidad. Clave: marca una zona con cono/cinta y cuenta como buena solo la pelota que cae o pasa por ahí; 50 repeticiones por lado."
@@ -1301,7 +1301,7 @@
     ],
     "partnerRequired": false,
     "executionMode": "solo",
-    "family": "solo_control_volume",
+    "family": "drive_patterns",
     "blockKind": "control",
     "stableName": "Boast y paralela en solitario — 50 ciclos",
     "stableDescription": "Sin rival: juega un boast —el golpe que va primero a la pared lateral—, corre al frente y sal con una paralela profunda; vuelve atrás y repite. Objetivo: unir el golpe de salida del rincón con el desplazamiento que de verdad exige. Clave: es exigente de piernas; si la paralela deja de llegar al fondo, corta la serie en vez de bajar la calidad."
@@ -1342,7 +1342,7 @@
     ],
     "partnerRequired": false,
     "executionMode": "solo",
-    "family": "solo_control_volume",
+    "family": "drive_patterns",
     "blockKind": "control",
     "stableName": "Paralela de fondo y cruzada — 100 ciclos",
     "stableDescription": "Sin rival: juega una paralela profunda y, cuando la pelota vuelve, una cruzada al fondo contrario; repite el ciclo 100 veces. Objetivo: sostener largo cambiando de dirección, que en solitario solo se entrena alternando —una cruzada suelta no te vuelve a la mano—. Clave: la paralela te ordena la posición y la cruzada tiene que llegar detrás del cuadro de saque."
@@ -1381,7 +1381,7 @@
     ],
     "partnerRequired": false,
     "executionMode": "solo",
-    "family": "solo_control_volume",
+    "family": "finishing",
     "blockKind": "control",
     "stableName": "3 paralelas de fondo + kill paralelo — 25 ciclos",
     "stableDescription": "Sin rival: juega tres paralelas profundas seguidas y cierra la cuarta con un kill paralelo, bajo y rápido; repite 25 ciclos. Objetivo: entrenar la decisión de cerrar después de construir, no antes. Clave: las tres primeras tienen que llegar al fondo; si alguna queda corta, el ciclo no cuenta."
@@ -1419,7 +1419,7 @@
     ],
     "partnerRequired": false,
     "executionMode": "solo",
-    "family": "solo_control_volume",
+    "family": "volley_patterns",
     "blockKind": "control",
     "stableName": "Voleas en solitario",
     "stableDescription": null
@@ -1461,7 +1461,7 @@
     ],
     "partnerRequired": false,
     "executionMode": "solo",
-    "family": "solo_control_volume",
+    "family": "volley_patterns",
     "blockKind": "control",
     "stableName": "Volea paralela y volea cruzada — 100",
     "stableDescription": "Sin rival: alterna volea paralela y volea cruzada, 50 de cada una. Objetivo: controlar la dirección de la volea y no solo el contacto. Clave: es exigente; juega la cruzada como globo alto para que la pelota vuelva jugable, y si pierdes el ritmo vuelve a voleas paralelas."

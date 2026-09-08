@@ -521,6 +521,7 @@ export function buildWeekCreatorHydrationRepairContext(
     profile,
     wizardConfig,
     planWeekDescriptors: [{ weekIndex: week.weekIndex, phase: week.phase }],
+    historicalSessions: input.context.historicalSessions ?? input.context.recentSessions,
   }
 }
 

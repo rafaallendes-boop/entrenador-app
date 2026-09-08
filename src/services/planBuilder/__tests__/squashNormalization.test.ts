@@ -140,10 +140,10 @@ describe('normalización única de squash', () => {
     // El hidratador anterior puede redistribuir duración para cerrar la sesión,
     // pero ningún detalle del drill viejo puede sobrevivir al reemplazo.
     expect(drills.every((drill) => Boolean(drill.notes?.trim()))).toBe(true)
-    const replacements = drills.filter((drill) => drill.notes !== 'nota que pertenece al drill anterior')
+    const replacements = drills.filter((drill) => drill.notes?.split('\nDosis por tiempo: ')[0] !== 'nota que pertenece al drill anterior')
     expect(replacements.length).toBeGreaterThan(0)
     expect(replacements.every((drill) =>
-      drill.notes === findSquashDrillByName(drill.name)?.description,
+      drill.notes?.split('\nDosis por tiempo: ')[0] === findSquashDrillByName(drill.name)?.description,
     )).toBe(true)
     expect(replacements.every((drill) =>
       drill.executionMode === resolveDrillExecutionMode(findSquashDrillByName(drill.name)!),
@@ -155,7 +155,8 @@ describe('normalización única de squash', () => {
     const result = repairGeneratedWeek([source], contextFor(0))
     const drill = squashSessions(result)[0]?.squashDetails?.drills[0]
 
-    expect(drill?.notes).toBe(findSquashDrillByName(drill!.name)?.description)
+    expect(drill?.notes?.split('\nDosis por tiempo: ')[0]).toBe(findSquashDrillByName(drill!.name)?.description)
+    expect(drill?.notes).toContain('Dosis por tiempo:')
     expect(drill?.executionMode).toBe(resolveDrillExecutionMode(findSquashDrillByName(drill!.name)!))
   })
 

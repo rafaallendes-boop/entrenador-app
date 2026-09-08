@@ -1,3 +1,4 @@
+import { finalizeSessionDose } from '../training/sessionDoseFinalizer'
 import { addDays } from 'date-fns'
 import { db } from '../../db/db'
 import { getWeekSummary, recalculateWeekSummary, upsertWeekSummary } from '../../db/queries'
@@ -76,7 +77,9 @@ export async function applyCreateWeek({
   let repairedForSafety = false
   for (const session of allowedSessions) {
     if (session.sessionType !== 'strength') {
-      verifiedSessions.push(session)
+      const dose = finalizeSessionDose(session, athleteProfile)
+      if (!dose.ok) throw new Error(dose.message)
+      verifiedSessions.push(dose.session)
       continue
     }
     const messageConstraints = session.metadata?.strengthSafetyFinalization?.userMessageConstraints ?? []
@@ -147,6 +150,7 @@ export async function applyCreateWeek({
             targetHrMin: session.targetHrMin,
             targetHrMax: session.targetHrMax,
             intervalStructure: session.intervalStructure,
+              templateRef: session.runningTemplateRef, selectionReason: session.runningSelectionReason,
           }
         : undefined,
       cyclingDetails: session.sessionType === 'cycling' ? session.cyclingDetails : undefined,

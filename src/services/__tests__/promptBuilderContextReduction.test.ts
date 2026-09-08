@@ -158,14 +158,14 @@ describe('promptBuilder context reduction', () => {
       plannedSessions: [
         makeSession({
           id: 'run-12345',
-          date: '2026-04-21',
+          date: '2026-05-12',
           timeBlock: 'PM',
           type: 'running',
           title: 'Running Z2',
         }),
         makeSession({
           id: 'bike-123',
-          date: '2026-04-23',
+          date: '2026-05-14',
           timeBlock: 'PM',
           type: 'cycling',
           title: 'Ciclismo suave',

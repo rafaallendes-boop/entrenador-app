@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { Session, SessionType } from '../../types'
+import type { AthleteProfile, Session, SessionType } from '../../types'
 import type { SupportedSessionTemplate } from '../../types/sessionTemplate'
 import {
   draftToPatch,
@@ -40,19 +40,20 @@ export default function CoachSessionModal({
   const [defaultSport, setDefaultSport] = useState<SessionType | null>(
     template?.source.payload.type ?? session?.type ?? null,
   )
+  const [athleteProfile, setAthleteProfile] = useState<AthleteProfile | undefined>()
   const submittingRef = useRef(false)
 
   useEffect(() => {
-    if (session || template) return
     let cancelled = false
     void getAthleteProfileForAthlete(ownerAccountId, athleteId)
       .then((profile) => {
         if (cancelled) return
+        setAthleteProfile(profile)
         const sport = profile?.sportContext?.primarySport ?? profile?.primarySport ?? 'squash'
-        setDefaultSport(sport as SessionType)
+        if (!session && !template) setDefaultSport(sport as SessionType)
       })
       .catch(() => {
-        if (!cancelled) setDefaultSport('squash')
+        if (!cancelled && !session && !template) setDefaultSport('squash')
       })
     return () => { cancelled = true }
   }, [athleteId, ownerAccountId, session, template])
@@ -104,6 +105,7 @@ export default function CoachSessionModal({
       />
       <div className="relative w-full max-h-[92vh] overflow-y-auto rounded-t-2xl border-t border-surface-border bg-surface-card md:max-w-3xl md:rounded-2xl md:border md:max-h-[88vh]">
         <SessionForm
+          athleteProfile={athleteProfile}
           initialValues={templateDraftState?.draft ?? (session ? sessionToDraft(session) : undefined)}
           defaultSport={defaultSport}
           defaultDate={defaultDate}

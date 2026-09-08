@@ -1,3 +1,4 @@
+import { SQUASH_CATALOG_EXPANSION } from '../squashCatalogExpansion'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -76,13 +77,15 @@ const POST_COPY_DELIVERY_IDS = new Set([
  * Solo `name` de los 14 renombrados, `description` de los 21 reescritos y el
  * campo `aliases` quedan fuera del snapshot.
  *
+ * E2/backlog: se revisaron sólo los 11 cambios de familia técnica de los
+ * drills antes agrupados por ejecución solo; las nuevas altas se prueban aparte.
  * NO correr `vitest -u` sobre este archivo. Si el snapshot cambia, una edición
  * se salió de su carril — que es exactamente el bug que este guard atrapa.
  */
 describe('invariantes de la librería de squash', () => {
   it('solo cambian los nombres, descripciones y aliases previstos', async () => {
     const table = SQUASH_DRILL_LIBRARY
-      .filter((drill) => !POST_COPY_DELIVERY_IDS.has(drill.id))
+      .filter((drill) => !POST_COPY_DELIVERY_IDS.has(drill.id) && !SQUASH_CATALOG_EXPANSION.some(d => d.id === drill.id))
       .map((drill) => ({
         id: drill.id,
         category: drill.category,

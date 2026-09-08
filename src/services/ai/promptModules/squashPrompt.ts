@@ -1,3 +1,5 @@
+import { resolveSquashWeeklyExposurePolicy } from '../../planBuilder/squashWeeklyExposurePolicy'
+import { resolveStrengthSafetyConstraints } from '../../training/strengthSafetyConstraints'
 /**
  * Squash-specific prompt sections for the AI coach.
  */
@@ -73,6 +75,8 @@ export function getSquashSelectionContext(context: ChatContext): SquashSelection
     goal,
     competitionSoon,
     historicalSessions,
+    referenceDate: today,
+    partnerAvailability: context.athleteProfile?.planWizardConfig?.partnerAvailability,
     squashAcwr: context.loadAnalytics?.squashAcwr,
   }
 }
@@ -94,9 +98,17 @@ export function buildSquashSelectionSummary(context: ChatContext) {
     selection: selectSquashDrills(selectionContext),
     weekPlan: planSquashWeek({
       sessionSlots,
+      partnerAvailability: selectionContext.partnerAvailability,
+      weeklyExposure: resolveSquashWeeklyExposurePolicy({
+        primarySport: context.athleteProfile?.sportContext?.primarySport,
+        hasSquashGoalEvent: context.athleteProfile?.goalEvents?.some(e => e.sport === 'squash') ?? false,
+        phase: selectionContext.phase, partnerAvailability: selectionContext.partnerAvailability,
+        currentFatigue: selectionContext.fatigueLevel >= 8 ? 'overloaded' : selectionContext.fatigueLevel >= 6 ? 'loaded' : 'normal',
+        hasMedicalRestriction: resolveStrengthSafetyConstraints({ ...context.athleteProfile?.recoveryProfile, injuryNotes: context.athleteProfile?.planWizardConfig?.injuryNotes }).length > 0,
+      }),
       phase: selectionContext.phase,
       daysToNextCompetition,
-      recentKinds: extractRecentSquashKinds(selectionContext.historicalSessions ?? []),
+      recentKinds: extractRecentSquashKinds(selectionContext.historicalSessions ?? [], 6, selectionContext.referenceDate),
       fatigueLevel: selectionContext.fatigueLevel,
       squashAcwr: selectionContext.squashAcwr,
     }),

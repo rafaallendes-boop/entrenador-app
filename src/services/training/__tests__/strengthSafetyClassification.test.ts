@@ -8,9 +8,9 @@ const byId = (id: string) => {
 }
 
 describe('clasificación de seguridad de fuerza', () => {
-  it('clasifica los 93 ejercicios con al menos una región', () => {
-    // 77 originales + 16 máquinas y accesorios de polea (ampliación 2026-09-07).
-    expect(STRENGTH_EXERCISE_LIBRARY).toHaveLength(93)
+  it('clasifica los 108 ejercicios con al menos una región', () => {
+    // 77 originales + 31 máquinas, Smith y accesorios de polea (ampliación 2026-09-07).
+    expect(STRENGTH_EXERCISE_LIBRARY).toHaveLength(108)
     for (const exercise of STRENGTH_EXERCISE_LIBRARY) expect(exercise.safety.loadsRegions.length).toBeGreaterThan(0)
   })
 

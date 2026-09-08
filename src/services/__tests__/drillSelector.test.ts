@@ -161,7 +161,7 @@ describe('drillSelector progression', () => {
     expect(state.recommendation).toBe('deload')
   })
 
-  it('rotates when the same family is repeated in consecutive sessions', () => {
+  it('holds when a family repeats without measured technical outcomes', () => {
     const state = deriveSquashProgressionState({
       phase: 'build',
       fatigueLevel: 4,
@@ -175,10 +175,10 @@ describe('drillSelector progression', () => {
     })
 
     expect(state.targetFamily).toBe('drive_patterns')
-    expect(state.recommendation).toBe('rotate')
+    expect(state.recommendation).toBe('hold')
   })
 
-  it('progresses with a single recent family exposure and low fatigue', () => {
+  it('holds with a single exposure even at low fatigue', () => {
     const state = deriveSquashProgressionState({
       phase: 'build',
       fatigueLevel: 4,
@@ -188,7 +188,7 @@ describe('drillSelector progression', () => {
       historicalSessions: [makeSquashSession('2026-04-08', 'Drives paralelos a profundidad')],
     })
 
-    expect(state.recommendation).toBe('progress')
+    expect(state.recommendation).toBe('hold')
   })
 
   it('summarizes progression with family and ACWR signal', () => {
@@ -493,7 +493,10 @@ describe('drillSelector progression', () => {
       competitionSoon: false,
       goal: 'mejorar base fisica',
       recentDrills: [],
-      historicalSessions: [makeSquashSession('2026-04-08', 'Movimiento continuo de base aeróbica')],
+      historicalSessions: ['2026-04-08', '2026-04-06'].map(date => {
+        const session = makeSquashSession(date, 'Movimiento continuo de base aeróbica')
+        return { ...session, actualRpe: 5, squashDetails: { ...session.squashDetails!, technicalIntent: { family: getSquashDrillFamily(drill!), successTarget: 80 }, technicalResult: { attempts: 10, successes: 9 } } }
+      }),
     })
 
     expect(notes).toContain('Mantener el mismo ritmo')

@@ -1,3 +1,5 @@
+import type { SquashTrainingContext } from '../../types/squashTrainingContext'
+import { sanitizeSquashTrainingContext } from '../../types/squashTrainingContext'
 import type {
   CyclingDetails,
   Exercise,
@@ -14,7 +16,7 @@ import type {
 } from '../../types'
 import type { ExerciseLibraryRef } from '../../types/exerciseLibraryRef'
 import { fromISO, getWeekStart, toISO } from '../../utils/date'
-import { generateDefaultProtocols } from '../trainingProtocols'
+import { generateDefaultProtocols, ensureSessionProtocols } from '../trainingProtocols'
 import { normalizeSupersetGroupId } from '../training/supersetGroups'
 import { projectSquashSubtype } from '../training/squashSessionHydrator'
 
@@ -30,18 +32,13 @@ export interface CoachSessionDraft {
   notes?: string
   subtype?: SquashSubtype
   /** Modalidad explícita; `subtype` queda como proyección de compatibilidad. */
+  squashTraining?: SquashTrainingContext
   squashKind?: SquashSessionBlockKind
   opponent?: string
   matchResult?: MatchResult
   gamesWon?: number
   gamesLost?: number
-  runningTargets?: {
-    runningType: RunningType
-    targetPaceMin?: string
-    targetPaceMax?: string
-    targetHrMin?: number
-    targetHrMax?: number
-  }
+  runningTargets?: Session['runningDetails']
   exercises?: Array<{
     id: string
     name: string
@@ -91,12 +88,14 @@ export function sessionToDraft(session: Session): CoachSessionDraft {
     squashKind: session.type === 'squash'
       ? resolveCoachSquashKind(session.squashDetails, session.subtype)
       : undefined,
+    squashTraining: sanitizeSquashTrainingContext(session.squashDetails),
     opponent: session.opponent,
     matchResult: session.matchResult,
     gamesWon: session.gamesWon,
     gamesLost: session.gamesLost,
     runningTargets: session.runningDetails
       ? {
+          ...session.runningDetails,
           runningType: session.runningDetails.runningType,
           targetPaceMin: session.runningDetails.targetPaceMin,
           targetPaceMax: session.runningDetails.targetPaceMax,
@@ -229,7 +228,7 @@ export const EXERCISE_TYPES: SessionType[] = ['squash', 'strength', 'mobility']
 function buildTypeDefaults(
   draft: Pick<
     CoachSessionDraft,
-    'type' | 'subtype' | 'squashKind' | 'rpe' | 'objective' | 'runningTargets'
+    'type' | 'subtype' | 'squashKind' | 'squashTraining' | 'rpe' | 'objective' | 'runningTargets'
   >,
 ): Partial<Session> {
   const runningType = draft.runningTargets?.runningType ?? 'z2'
@@ -245,6 +244,7 @@ function buildTypeDefaults(
     runningDetails: draft.type === 'running' || draft.type === 'cycling'
       ? {
           runningType,
+          ...draft.runningTargets,
           targetPaceMin: draft.runningTargets?.targetPaceMin,
           targetPaceMax: draft.runningTargets?.targetPaceMax,
           targetHrMin: draft.runningTargets?.targetHrMin,
@@ -252,11 +252,11 @@ function buildTypeDefaults(
         }
       : undefined,
     squashDetails: draft.type === 'squash'
-      ? buildSquashDetailsDraft(
+      ? { ...sanitizeSquashTrainingContext(draft.squashTraining), ...buildSquashDetailsDraft(
           draft.squashKind ?? resolveCoachSquashKind(undefined, draft.subtype),
           draft.subtype ?? projectSquashSubtype(draft.squashKind ?? 'technical'),
           draft.objective ?? '',
-        )
+        ) }
       : undefined,
     cyclingDetails: draft.type === 'cycling'
       ? buildCyclingDetailsDraft(runningType, draft.objective ?? '')
@@ -311,7 +311,7 @@ function draftExercisesToExercises(
 export function draftToNewSessionFields(
   draft: CoachSessionDraft,
 ): Omit<Session, 'id' | 'athleteId' | 'authoredByRole' | 'createdAt' | 'updatedAt'> {
-  return {
+  const fields = {
     date: draft.date,
     weekStartDate: toISO(getWeekStart(fromISO(draft.date))),
     timeBlock: draft.timeBlock,
@@ -334,6 +334,7 @@ export function draftToNewSessionFields(
       ? draftExercisesToExercises(draft.exercises, undefined)
       : undefined,
   } as Omit<Session, 'id' | 'athleteId' | 'authoredByRole' | 'createdAt' | 'updatedAt'>
+  return fields.runningDetails?.intervalStructure ? ensureSessionProtocols(fields) : fields
 }
 
 function scalarPatch(patch: CoachSessionPatch): Partial<Session> {
@@ -369,6 +370,7 @@ export function applyCoachSessionPatch(existing: Session, patch: CoachSessionPat
       type: patch.type!,
       subtype: patch.subtype,
       squashKind: patch.squashKind,
+      squashTraining: patch.squashTraining,
       rpe: has('rpe') ? patch.rpe : existing.rpe,
       objective: has('objective') ? patch.objective : existing.objective,
       runningTargets: patch.runningTargets,
@@ -386,6 +388,14 @@ export function applyCoachSessionPatch(existing: Session, patch: CoachSessionPat
   }
 
   const next: Session = { ...existing, ...scalarPatch(patch) } as Session
+  if (existing.type === 'squash' && has('squashTraining') && next.squashDetails) {
+    const details = { ...next.squashDetails }
+    delete details.availability
+    delete details.technicalIntent
+    delete details.technicalResult
+    delete details.selectionReason
+    next.squashDetails = { ...details, ...sanitizeSquashTrainingContext(patch.squashTraining) }
+  }
   if (existing.type === 'squash' && has('squashKind') && patch.squashKind) {
     next.squashDetails = next.squashDetails
       ? { ...next.squashDetails, sessionKind: patch.squashKind }
@@ -423,6 +433,11 @@ export function applyCoachSessionPatch(existing: Session, patch: CoachSessionPat
     const targets = patch.runningTargets
     if (targets) {
       next.runningDetails = { ...existing.runningDetails, ...targets }
+      if (targets.runningType !== existing.runningDetails?.runningType && !targets.intervalStructure) {
+        next.runningDetails.intervalStructure = undefined
+        next.runningDetails.templateRef = undefined
+        next.runningDetails.selectionReason = undefined
+      }
       if (
         existing.type === 'cycling'
         && targets.runningType !== existing.runningDetails?.runningType

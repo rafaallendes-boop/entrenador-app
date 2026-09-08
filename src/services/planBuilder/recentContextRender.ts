@@ -1,5 +1,5 @@
 import type { ExecutionSignals } from '../training/loadDirectivePolicy'
-import type { SessionType } from '../../types'
+import type { Session, SessionType } from '../../types'
 
 export interface PlanBuilderRecentWeekContext {
   weekStartDate: string
@@ -39,6 +39,7 @@ export interface PlanBuilderWeeklyStructureDay {
 }
 
 export interface PlanBuilderRecentContext {
+  executedSessions?: Session[]
   referenceDate: string
   lookbackWeeks: number
   hasHistory: boolean

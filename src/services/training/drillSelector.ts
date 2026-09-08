@@ -1,3 +1,5 @@
+import type { SquashTrainingContext } from '../../types/squashTrainingContext'
+import { getExecutedSessions } from './executedSessions'
 import type {
   Session,
   SquashDrill,
@@ -11,6 +13,7 @@ import type {
 import { getRecentSquashCompetitiveExposure } from '../../utils/squash'
 import {
   findSquashDrillByName,
+  isSquashDrillAvailable,
   getSquashDrillFamily,
   getSuggestedTrainingFocus,
   isControlDrill,
@@ -28,12 +31,13 @@ import type { DisciplineAcwr } from '../loadAnalytics'
 
 export type SquashSelectionPhase = 'base' | 'build' | 'peak' | 'taper'
 
-export interface SquashSelectionContext {
+export interface SquashSelectionContext extends SquashTrainingContext {
   fatigueLevel: number
   phase: SquashSelectionPhase
   recentDrills: string[]
   goal: string
   competitionSoon: boolean
+  referenceDate?: string
   historicalSessions?: Session[]
   /** Quantitative ACWR signal for squash-specific load */
   squashAcwr?: DisciplineAcwr
@@ -142,9 +146,19 @@ export function selectSquashDrills(
   const recentSet = new Set(context.recentDrills.map(resolveSquashDrillKey))
   const progressionState = deriveSquashProgressionState(context)
   const byFatigue = filterByFatigue(SQUASH_DRILL_LIBRARY, context)
-  const byPhase = filterByPhase(byFatigue, context)
-  const byExecutionMode = filterByExecutionMode(byPhase, context.partnerAvailability)
-  const fallbackByExecutionMode = filterByExecutionMode(byFatigue, context.partnerAvailability)
+  const recentMatchCount = getRecentSquashCompetitiveExposure(getExecutedSessions(context.historicalSessions ?? [], context.referenceDate)).practiceMatchCount
+  // El tope de exposición competitiva es una restricción dura de carga, no una
+  // preferencia de fase: vale igual en el pool tolerante.
+  const withinMatchBudget = byFatigue.filter(d => context.desiredKind === 'match' || recentMatchCount < 2 || d.sessionKind !== 'match')
+  const byPhase = filterByPhase(withinMatchBudget, context)
+  const availablePool = (pool: SquashDrillDefinition[]) =>
+    filterByExecutionMode(pool, context.availability?.partnerAvailability ?? context.partnerAvailability)
+      .filter(d => isSquashDrillAvailable(d, context.availability))
+  const byExecutionMode = availablePool(byPhase)
+  // El fallback existe para ensanchar un pool corto, así que suelta la fase a
+  // propósito. Derivarlo de `byPhase` lo dejaba idéntico a `byExecutionMode` y
+  // la rama de `selected.length < 3` devolvía la misma sesión de 1-2 drills.
+  const fallbackByExecutionMode = availablePool(withinMatchBudget)
   const withoutRecent = avoidRecentDrills(byExecutionMode, recentSet)
   const basePool = withoutRecent.length >= 3 ? withoutRecent : byExecutionMode
 
@@ -174,7 +188,7 @@ export function selectSquashDrillReplacement(
   // Hard constraints: siempre, en todos los niveles.
   const byFatigue = filterByFatigue(SQUASH_DRILL_LIBRARY, request.context)
   const byPhase = filterByPhase(byFatigue, request.context)
-  const allowed = filterByExecutionMode(byPhase, request.context.partnerAvailability)
+  const allowed = filterByExecutionMode(byPhase, request.context.availability?.partnerAvailability ?? request.context.partnerAvailability).filter(d => isSquashDrillAvailable(d, request.context.availability))
 
   const matchesAxis = (candidate: SquashDrillDefinition): boolean => {
     const sameCategory = candidate.category === original.category
@@ -645,7 +659,7 @@ function scoreDrills(
   recentDrills: Set<string>,
 ): DrillScore[] {
   const goal = context.goal.toLowerCase()
-  const recentMatchExposure = getRecentSquashCompetitiveExposure(context.historicalSessions ?? [])
+  const recentMatchExposure = getRecentSquashCompetitiveExposure(getExecutedSessions(context.historicalSessions ?? [], context.referenceDate))
   const wantsCompetitiveExposure =
     goal.includes('partido') ||
     goal.includes('presion') ||
@@ -657,6 +671,7 @@ function scoreDrills(
   return drills
     .map((drill) => {
       let score = 0
+      if (context.technicalIntent?.family === getSquashDrillFamily(drill)) score += 20
 
       if (context.phase === 'build' && (drill.category === 'technical' || drill.category === 'tactical')) score += 4
       if (context.phase === 'base' && drill.category === 'technical') score += 4
@@ -712,7 +727,7 @@ function scoreDrills(
 }
 
 export function deriveSquashProgressionState(context: SquashSelectionContext): SquashProgressionState {
-  const squashSessions = [...(context.historicalSessions ?? [])]
+  const squashSessions = getExecutedSessions(context.historicalSessions ?? [], context.referenceDate)
     .filter(session =>
       session.type === 'squash' &&
       session.squashDetails?.drills &&
@@ -724,10 +739,13 @@ export function deriveSquashProgressionState(context: SquashSelectionContext): S
   const families: Record<string, SquashFamilyProgressionEntry> = {}
 
   for (const session of squashSessions) {
+    const countedFamilies = new Set<string>()
     for (const drill of session.squashDetails?.drills ?? []) {
       const definition = findSquashDrillByName(drill.name)
       if (!definition) continue
       const family = getSquashDrillFamily(definition)
+      if (countedFamilies.has(family)) continue
+      countedFamilies.add(family)
       const existing = families[family]
       const lastLevel = definition.progressionLevel ?? 1
 
@@ -765,33 +783,15 @@ export function deriveSquashProgressionState(context: SquashSelectionContext): S
     return { recommendation: 'deload', targetFamily, targetFocus, families }
   }
 
-  if (!targetFamily) {
-    return { recommendation: 'progress', targetFamily, targetFocus, families }
-  }
-
-  // Detect consecutive repetition: same family in the 2 most recent sessions
-  const prevSessionDefinitions = (squashSessions[1]?.squashDetails?.drills ?? [])
-    .map((drill) => findSquashDrillByName(drill.name))
-    .filter((drill): drill is SquashDrillDefinition => Boolean(drill))
-  const prevFamily = prevSessionDefinitions[0] ? getSquashDrillFamily(prevSessionDefinitions[0]) : undefined
-  const appearedConsecutive = prevFamily === targetFamily
-
-  const recentFamily = families[targetFamily]
-
-  // Rotate: same family used in consecutive sessions or overused (3+ times in last 6)
-  if (appearedConsecutive || (recentFamily && recentFamily.frequency >= 3)) {
-    return { recommendation: 'rotate', targetFamily, targetFocus, families }
-  }
-
-  // ACWR undertrained: nudge to progress when load is low and no rotation signal
-  if (context.squashAcwr?.status === 'undertrained' && context.fatigueLevel <= 5) {
-    return { recommendation: 'progress', targetFamily, targetFocus, families }
-  }
-
-  // Progress: family used once recently — add more exigence
-  if (recentFamily && recentFamily.frequency === 1) {
-    return { recommendation: 'progress', targetFamily, targetFocus, families }
-  }
+  const measured = squashSessions.slice(0, 2)
+  const achieved = measured.length === 2 && measured.every(s => {
+    const result = s.squashDetails?.technicalResult
+    const intent = s.squashDetails?.technicalIntent
+    return result && intent && intent.family === targetFamily && intent.successTarget != null
+      && result.attempts > 0 && result.successes <= result.attempts && result.successes / result.attempts * 100 >= intent.successTarget
+      && (s.actualRpe ?? 10) <= 6
+  })
+  if (targetFamily && achieved) return { recommendation: 'progress', targetFamily, targetFocus, families }
 
   // Hold: seen but not consecutive, maintain stimulus without escalating
   return { recommendation: 'hold', targetFamily, targetFocus, families }
@@ -954,7 +954,7 @@ export function buildProgressedDrillNotes(
 
 export function summarizeSquashProgression(context: SquashSelectionContext): string {
   const state = deriveSquashProgressionState(context)
-  const recentMatchExposure = getRecentSquashCompetitiveExposure(context.historicalSessions ?? [])
+  const recentMatchExposure = getRecentSquashCompetitiveExposure(getExecutedSessions(context.historicalSessions ?? [], context.referenceDate))
   const acwrLabel = context.squashAcwr?.ratio != null
     ? ` ACWR squash: ${context.squashAcwr.ratio.toFixed(2)} (${context.squashAcwr.status}).`
     : context.squashAcwr?.status
@@ -980,7 +980,7 @@ export function summarizeSquashProgression(context: SquashSelectionContext): str
 
 function shouldPrioritizePracticeMatch(context: SquashSelectionContext): boolean {
   const goal = context.goal.toLowerCase()
-  const recentExposure = getRecentSquashCompetitiveExposure(context.historicalSessions ?? [])
+  const recentExposure = getRecentSquashCompetitiveExposure(getExecutedSessions(context.historicalSessions ?? [], context.referenceDate))
   const wantsCompetitiveExposure =
     goal.includes('partido') ||
     goal.includes('presion') ||

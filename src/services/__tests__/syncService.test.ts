@@ -1919,6 +1919,22 @@ describe('syncService', () => {
     )
   })
 
+  it('running prescription and reference survive push and scoped remote pull', async () => {
+    vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+    const sync = await import('../syncService')
+    const { materializeRunningTemplate } = await import('../training/runningTemplateMaterializer')
+    const dose = materializeRunningTemplate({ template: 'repeats_800', durationMin: 60, profile: { fiveKTime: '25:00' } })
+    if (!dose.ok) throw Error(dose.message)
+    const runningDetails = { runningType: 'intervals' as const, templateRef: dose.templateRef, intervalStructure: dose.structure, selectionReason: 'Específico' }
+    await sync.pushSession({ id: 'run-ref', athleteId: 'ath_user-1', date: '2026-09-07', timeBlock: 'AM', type: 'running', status: 'planned', title: '800 m', durationMin: 60, createdAt: 1, updatedAt: 2, runningDetails })
+    const sent = upsertCalls.find(call => call.table === 'sessions')?.payload as Record<string, unknown>
+    expect((sent.data as Record<string, unknown>).runningDetails).toEqual(runningDetails)
+    sessionsRows = []
+    tableResults.set('sessions', { data: [{ ...sent, athlete_id: 'ath_user-1' }], error: null })
+    await sync.pullWeekSessionsForAthlete('user-1', 'ath_user-1', '2026-09-07', '2026-09-13', { includeLegacy: false })
+    expect((sessionsRows[0] as Record<string, unknown>).runningDetails).toEqual(runningDetails)
+  })
+
   it('re-enqueues writes on retryable 401 auth errors instead of treating them as infrastructure', async () => {
     tableResults.set('sessions', { data: null, error: { message: 'JWT expired', status: 401 } })
     const syncService = await import('../syncService')

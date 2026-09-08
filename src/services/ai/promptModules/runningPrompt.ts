@@ -1,3 +1,4 @@
+import { runningProfileWithRestrictions, hasNeighboringHardSession } from '../../training/runningPolicy'
 /**
  * Running-specific prompt sections for the AI coach.
  */
@@ -87,6 +88,12 @@ export function getRunningSelectionContext(context: ChatContext): RunningContext
     competitionSoon,
     daysToCompetition,
     historicalSessions,
+    referenceDate: today,
+    runningProfile: runningProfileWithRestrictions(context.athleteProfile),
+    sessionDurationMin: context.athleteProfile?.planWizardConfig?.sessionDurationMins,
+    neighboringHardSession: hasNeighboringHardSession(plannedSessions, today),
+    experienceLevel: context.athleteProfile?.runningProfile?.experienceLevel,
+    weeklyRunCount: context.loadAnalytics?.runningWeeklyLoads?.[0]?.sessionsCount,
     runningAcwr: context.loadAnalytics?.runningAcwr,
     runningWeeklyLoad: context.loadAnalytics?.runningWeeklyLoads?.[0],
   }
@@ -138,6 +145,7 @@ export function buildDynamicRunningSelectionSection(
   if (!summary) return ''
 
   const { selection, selectionContext } = summary
+  if (!selection.session) return `RUNNING: ${selection.rejectionReason}`
   const lines: string[] = ['SELECCION DINAMICA DE RUNNING']
 
   lines.push(`Perfil: ${selectionContext.sportProfile}`)

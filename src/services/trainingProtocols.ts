@@ -1,3 +1,4 @@
+import { sessionBudget } from './training/sessionTimeBudget'
 import type { DayLog, Session, SessionType, SquashSubtype, RunningType } from '../types'
 import {
   buildCooldown,
@@ -45,7 +46,9 @@ export function ensureSessionProtocols<T extends {
   type: SessionType
   subtype?: SquashSubtype
   rpe?: number
-  runningDetails?: { runningType?: RunningType }
+  runningDetails?: { runningType?: RunningType; intervalStructure?: import('../types').RunningIntervalStructure }
+  squashDetails?: Session['squashDetails']
+  durationMin?: number
   warmup?: unknown
   cooldown?: unknown
 }>(
@@ -69,11 +72,26 @@ export function ensureSessionProtocols<T extends {
     inputs,
   )
 
-  return {
-    ...session,
-    warmup: existingWarmup ?? resolved.warmup,
-    cooldown: existingCooldown ?? resolved.cooldown,
+  let warmup = existingWarmup ?? resolved.warmup
+  let cooldown = existingCooldown ?? resolved.cooldown
+  const timedRunning = session.runningDetails?.intervalStructure?.blocks
+  const runningWarmup = timedRunning?.find(b => b.label === 'Calentamiento Z2' && b.notes?.includes('Incluido en el tiempo total'))
+  const runningCooldown = timedRunning?.find(b => b.label === 'Enfriamiento Z2' && b.notes?.includes('Incluido en el tiempo total'))
+  const timedSquash = session.squashDetails?.sessionKind !== 'match'
+    && session.squashDetails?.drills.some(d => d.notes?.includes('Dosis por tiempo:'))
+  const budget = timedSquash && session.durationMin ? sessionBudget(session.durationMin) : undefined
+  // Protocol cards describe the SAME reserved minutes, not extra work.
+  if (warmup && (runningWarmup?.durationMin || budget)) warmup = { ...warmup,
+    durationMin: runningWarmup?.durationMin ?? budget!.warmupSec / 60,
+    note: 'Incluido en la duración total de la sesión; no añadir estos minutos de nuevo.',
+    steps: [{ label: 'Activación progresiva', detail: 'Comenzar suave y aumentar gradualmente dentro del tiempo reservado.' }],
   }
+  if (cooldown && (runningCooldown?.durationMin || budget)) cooldown = { ...cooldown,
+    durationMin: runningCooldown?.durationMin ?? budget!.cooldownSec / 60,
+    note: 'Incluido en la duración total de la sesión; no añadir estos minutos de nuevo.',
+    steps: [{ label: 'Vuelta a la calma', detail: 'Reducir gradualmente el esfuerzo dentro del tiempo reservado.' }],
+  }
+  return { ...session, warmup, cooldown }
 }
 
 export function getDayLogProtocolInputs(dayLog?: DayLog, recentSessions?: Session[]): ProtocolResolutionInputs {

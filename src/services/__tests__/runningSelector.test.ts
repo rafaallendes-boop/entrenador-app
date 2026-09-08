@@ -87,7 +87,7 @@ describe('runningSelector progression', () => {
     expect(state.intent).toBe('deload')
   })
 
-  it('rotates after repeating the same family twice', () => {
+  it('holds after repeating a family without measured outcomes', () => {
     const state = deriveRunningProgressionState({
       phase: 'build',
       fatigueLevel: 4,
@@ -101,10 +101,10 @@ describe('runningSelector progression', () => {
     })
 
     expect(state.currentFamily).toBe('tempo_threshold')
-    expect(state.intent).toBe('rotate')
+    expect(state.intent).toBe('hold')
   })
 
-  it('nudges progress when undertrained and fresh enough', () => {
+  it('does not infer progress from an undertrained load ratio alone', () => {
     const state = deriveRunningProgressionState({
       phase: 'build',
       fatigueLevel: 4,
@@ -115,7 +115,7 @@ describe('runningSelector progression', () => {
       historicalSessions: [makeRunningSession('2026-04-08', 'z2', 'Easy Z2 base')],
     })
 
-    expect(state.intent).toBe('progress')
+    expect(state.intent).toBe('hold')
   })
 
   it('keeps moderate-high fartlek but removes high intervals and hill sessions close to competition', () => {

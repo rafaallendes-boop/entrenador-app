@@ -1,0 +1,13 @@
+
+> rallyiq@0.1.0 test
+> vitest run src/services/__tests__/repairWeek.test.ts --maxWorkers=4
+
+
+ RUN  v4.1.3 /Users/rafaallendes/Projects/entrenador-app
+
+
+ Test Files  1 passed (1)
+      Tests  18 passed (18)
+   Start at  07:18:20
+   Duration  2.23s (transform 405ms, setup 38ms, import 1.86s, tests 150ms, environment 0ms)
+

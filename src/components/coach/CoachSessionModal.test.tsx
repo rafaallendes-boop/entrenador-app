@@ -106,7 +106,7 @@ describe('CoachSessionModal', () => {
     expect(screen.queryByLabelText('Games ganados')).toBeNull()
   })
 
-  it('aplica una plantilla sin consultar perfil y conserva el payload rico', async () => {
+  it('aplica una plantilla conservando el payload rico y lee restricciones del atleta correcto', async () => {
     const template: SupportedSessionTemplate = {
       id: 't-1', name: 'Volea', kind: 'session', payloadVersion: 1,
       payload: {
@@ -127,7 +127,7 @@ describe('CoachSessionModal', () => {
     )
     expect((screen.getByLabelText('Titulo') as HTMLInputElement).value).toBe('Drills de volea')
     await userEvent.click(screen.getByRole('button', { name: 'Agregar sesión' }))
-    expect(mocks.profile).not.toHaveBeenCalled()
+    expect(mocks.profile).toHaveBeenCalledWith('user-1', 'ath_m')
     expect(mocks.fromTemplate).toHaveBeenCalledWith(
       'user-1',
       'ath_m',

@@ -212,6 +212,7 @@ export function validateGeneratedWeekAction(
     profile,
     wizardConfig: plan.wizardConfig,
     executionSignals: executionSignalsFromLivedWeeks(recentContext),
+    historicalSessions: recentContext?.executedSessions,
     previousWeek,
     planWeekDescriptors,
   }

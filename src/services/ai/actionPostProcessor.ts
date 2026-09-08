@@ -1,5 +1,7 @@
-import { resolveSelectorEquipment } from '../training/equipmentVocabulary'
+import { materializeRunningTemplate } from '../training/runningTemplateMaterializer'
+import { finalizeCoachActionDose } from '../training/coachActionDose'
 import type { ChatContext, CoachAction, CoachExerciseProposal, CoachSessionProposal, MobilityDetails, Session, SessionType, SquashSessionBlockKind, TimeBlock } from '../../types'
+import { resolveSelectorEquipment } from '../training/equipmentVocabulary'
 import type { StrengthConstraint } from '../../types/strengthSafety'
 import { currentWeekStartISO, todayISO } from '../../utils/date'
 import { toStrengthProposalForEnhancement } from '../training/strengthExerciseProposal'
@@ -207,13 +209,23 @@ export function postProcessCoachActions(
     constraints: safetyConstraints,
     userMessageConstraints,
   })
-  const completeActions = safetyResult.actions.filter(action => !(
+  const doseMessages: string[] = []
+  const doseActions = safetyResult.actions.flatMap(action => {
+    const result = finalizeCoachActionDose(action, context, sessions)
+    if (!result.ok) { doseMessages.push(result.message); return [] }
+    return [result.action]
+  })
+  squashActionWarnings.push(...doseMessages.map(message => ({ code: 'session_dose_infeasible', message, userFacing: true })))
+  const completeActions = doseActions.filter(action => !(
     action.type === 'add_session'
     && (action.sessionType === 'mobility' || action.sessionType === 'recovery')
     && !action.exercises?.length
     && !action.mobilityDetails?.targetStructure?.trim()
   ))
-  const removedEmptySessions = completeActions.length < safetyResult.actions.length
+  // Contra `doseActions`, no contra la lista pre-dosis: un rechazo de dosis ya
+  // tiene su propio mensaje, y compararlo contra el original hacía que además
+  // se explicara como "no incluía ejercicios ni una estructura concreta".
+  const removedEmptySessions = completeActions.length < doseActions.length
   const { actions, removedCollidingAddSessionCount } = removeCollidingAddSessionActions(
     completeActions,
     sessions,
@@ -370,8 +382,8 @@ function buildRunningZone2ReplacementAction(
     newDurationMin: durationMin,
     newRpe: 4,
     runningType: 'z2',
-    targetHrMin: 62,
-    targetHrMax: 72,
+
+    runningTemplateRef: { source: 'running_template', id: 'easy_z2_base', version: 1 },
     intervalStructure: buildRunningZone2IntervalStructure(durationMin),
   }
 }
@@ -862,8 +874,9 @@ function completeRunningZone2Details(action: CoachAction, intentText: string): C
       durationMin,
       rpe: action.rpe ?? 4,
       runningType: 'z2',
-      targetHrMin: action.targetHrMin ?? 62,
-      targetHrMax: action.targetHrMax ?? 72,
+      targetHrMin: action.targetHrMin,
+      targetHrMax: action.targetHrMax,
+      runningTemplateRef: action.intervalStructure ? action.runningTemplateRef : { source: 'running_template', id: 'easy_z2_base', version: 1 },
       intervalStructure: action.intervalStructure ?? buildRunningZone2IntervalStructure(durationMin),
     }
   }
@@ -878,8 +891,9 @@ function completeRunningZone2Details(action: CoachAction, intentText: string): C
       newDurationMin: durationMin,
       newRpe: action.newRpe ?? 4,
       runningType: 'z2',
-      targetHrMin: action.targetHrMin ?? 62,
-      targetHrMax: action.targetHrMax ?? 72,
+      targetHrMin: action.targetHrMin,
+      targetHrMax: action.targetHrMax,
+      runningTemplateRef: action.intervalStructure ? action.runningTemplateRef : { source: 'running_template', id: 'easy_z2_base', version: 1 },
       intervalStructure: action.intervalStructure ?? buildRunningZone2IntervalStructure(durationMin),
     }
   }
@@ -888,13 +902,8 @@ function completeRunningZone2Details(action: CoachAction, intentText: string): C
 }
 
 function buildRunningZone2IntervalStructure(durationMin: number): NonNullable<CoachAction['intervalStructure']> {
-  return {
-    blocks: [
-      { label: 'Calentamiento caminata', durationMin: 5, notes: 'Activar articulaciones antes de correr.' },
-      { label: 'Trote Z2 continuo', durationMin: Math.max(15, durationMin - 10), notes: 'Ritmo conversacional; mantener 62-72% FCmax.' },
-      { label: 'Vuelta a la calma caminata', durationMin: 5, notes: 'Cerrar suave.' },
-    ],
-  }
+  const result = materializeRunningTemplate({ template: 'easy_z2_base', durationMin })
+  return result.ok ? result.structure : { blocks: [] }
 }
 
 function buildFallbackActionMessage(actions: CoachAction[], originalMessage: string): string {
@@ -1056,6 +1065,8 @@ function completeSquashAction(
     ? action.objective ?? action.title ?? ''
     : action.newObjective ?? currentSession?.objective ?? currentSession?.title ?? ''
   const result = hydrateSquashSession({
+    availability: action.squashDetails?.availability ?? currentSession?.squashDetails?.availability,
+    technicalIntent: action.squashDetails?.technicalIntent ?? currentSession?.squashDetails?.technicalIntent,
     kind: requestedKind,
     durationMin,
     phase,
@@ -1066,6 +1077,7 @@ function completeSquashAction(
     competitiveLevel: resolveSquashActionCompetitiveLevel(context),
     partnerAvailability: context.athleteProfile?.planWizardConfig?.partnerAvailability ?? 'either',
     historicalSessions: sessions,
+    referenceDate: action.targetDate ?? currentSession?.date ?? todayISO(),
     competitive: action.subtype === 'competitive',
   })
 
@@ -1176,6 +1188,7 @@ function completeSquashCreateWeek(
     }
 
     const result = hydrateSquashSession({
+      availability: session.squashDetails?.availability, technicalIntent: session.squashDetails?.technicalIntent,
       kind,
       durationMin: session.durationMin ?? 60,
       phase,
@@ -1186,6 +1199,7 @@ function completeSquashCreateWeek(
       competitiveLevel: resolveSquashActionCompetitiveLevel(context),
       partnerAvailability: context.athleteProfile?.planWizardConfig?.partnerAvailability ?? 'either',
       historicalSessions: contextSessions,
+      referenceDate: session.date,
       competitive: session.subtype === 'competitive',
     })
     for (const warning of result.warnings) {
@@ -1671,7 +1685,7 @@ function alignSingleSessionSportToRequest(
     targetPaceMax: undefined,
     targetHrMin: undefined,
     targetHrMax: undefined,
-    intervalStructure: undefined,
+    intervalStructure: undefined, runningTemplateRef: undefined, runningSelectionReason: undefined,
     cyclingDetails: undefined,
     mobilityDetails: undefined,
     squashDetails: undefined,

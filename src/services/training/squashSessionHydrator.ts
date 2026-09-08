@@ -1,3 +1,5 @@
+import type { SquashTrainingContext } from '../../types/squashTrainingContext'
+import { doseSquashSession } from './squashSessionDose'
 import type {
   GoalEventLevel,
   Session,
@@ -26,6 +28,7 @@ import {
  */
 
 export type SquashHydrationWarningCode =
+  | 'duration_infeasible'
   | 'pool_insufficient'
   | 'shadows_accessory_unavailable'
   | 'match_requires_partner'
@@ -35,7 +38,7 @@ export interface SquashHydrationWarning {
   message: string
 }
 
-export interface SquashHydrationInput {
+export interface SquashHydrationInput extends SquashTrainingContext {
   /** Modalidad principal declarada. Autoridad de la composición. */
   kind: SquashSessionBlockKind
   durationMin: number
@@ -46,6 +49,7 @@ export interface SquashHydrationInput {
   competitionSoon: boolean
   competitiveLevel?: GoalEventLevel
   partnerAvailability?: SquashPartnerAvailability
+  referenceDate?: string
   historicalSessions?: Session[]
   squashAcwr?: DisciplineAcwr
   /** Sombras como complemento del bloque principal. Nunca lo reemplaza. */
@@ -89,16 +93,6 @@ export function isSquashDrillKindCompatible(
   return drillKind === sessionKind || ALLOWED_ACCESSORIES[sessionKind].includes(drillKind)
 }
 
-function minimumDrillCount(kind: SquashSessionBlockKind, durationMin: number): number {
-  // Un partido es una sola actividad: entrada en calor y peloteo pertenecen al
-  // protocolo, no a una densificación artificial del contenido.
-  if (kind === 'match') return 1
-  if (kind === 'shadows') return 1
-  if (durationMin >= 60) return 4
-  if (durationMin >= 45) return 3
-  return 2
-}
-
 export function projectSquashSubtype(
   kind: SquashSessionBlockKind,
   competitive = false,
@@ -112,14 +106,17 @@ export function projectSquashSubtype(
 
 function selectForKind(kind: SquashSessionBlockKind, input: SquashHydrationInput) {
   return selectSquashDrills({
+    availability: input.availability,
+    technicalIntent: input.technicalIntent,
     fatigueLevel: input.fatigueLevel,
     phase: input.phase,
     recentDrills: input.recentDrills,
     goal: input.goal,
     competitionSoon: input.competitionSoon,
     competitiveLevel: input.competitiveLevel,
-    partnerAvailability: input.partnerAvailability,
+    partnerAvailability: input.availability?.partnerAvailability ?? input.partnerAvailability,
     historicalSessions: input.historicalSessions,
+    referenceDate: input.referenceDate,
     squashAcwr: input.squashAcwr,
     desiredKind: kind,
   })
@@ -149,7 +146,7 @@ export function hydrateSquashSession(input: SquashHydrationInput): SquashHydrati
   // resuelve en silencio ni se compensa con contenido de otra modalidad.
   let kind = input.kind
   let fallback: SquashHydrationResult['fallback']
-  if (kind === 'match' && input.partnerAvailability === 'solo') {
+  if (kind === 'match' && (input.availability?.partnerAvailability ?? input.partnerAvailability) === 'solo') {
     warnings.push({
       code: 'match_requires_partner',
       message: 'Un partido necesita rival: se entrega trabajo de control ejecutable en solitario.',
@@ -160,16 +157,6 @@ export function hydrateSquashSession(input: SquashHydrationInput): SquashHydrati
 
   const selection = selectForKind(kind, input)
   const mainBlocks = keepOnlyKind(selection.blocks, kind)
-  const mainDrills = mainBlocks.flatMap((block) => block.drills)
-
-  const minimum = minimumDrillCount(kind, input.durationMin)
-  if (mainDrills.length < minimum) {
-    warnings.push({
-      code: 'pool_insufficient',
-      message: `No hay suficientes drills de ${kind} para ${input.durationMin} min: `
-        + `se entregan ${mainDrills.length} de ${minimum}. No se completa con otra modalidad.`,
-    })
-  }
 
   const blocks: SquashSessionBlock[] = [...mainBlocks]
 
@@ -190,6 +177,8 @@ export function hydrateSquashSession(input: SquashHydrationInput): SquashHydrati
   const drills = orderedBlocks.flatMap((block) => block.drills)
 
   const details: SquashDetails = {
+    availability: input.availability, technicalIntent: input.technicalIntent,
+    selectionReason: selection.selectionNote ?? `Modalidad ${kind}; fase ${input.phase}; fatiga ${input.fatigueLevel}/10.${input.technicalIntent ? ` Objetivo: ${input.technicalIntent.family}.` : ''}`,
     trainingFocus: selection.trainingFocus,
     sessionMode: kind === 'match'
       ? (input.competitive ? 'competition_match' : 'practice_match')
@@ -201,5 +190,7 @@ export function hydrateSquashSession(input: SquashHydrationInput): SquashHydrati
     blocks: orderedBlocks,
   }
 
-  return { subtype: projectSquashSubtype(kind, input.competitive), details, warnings, fallback }
+  const dose = doseSquashSession(details, input.durationMin)
+  if (!dose.ok) warnings.push({ code: 'duration_infeasible', message: dose.message })
+  return { subtype: projectSquashSubtype(kind, input.competitive), details: dose.ok ? dose.details : { ...details, drills: [], blocks: [] }, warnings, fallback }
 }

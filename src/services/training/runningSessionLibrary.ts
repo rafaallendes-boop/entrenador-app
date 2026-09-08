@@ -1,3 +1,5 @@
+import { RUNNING_PRESCRIPTIONS } from './runningPrescriptions'
+import type { RunningTemplatePrescription } from '../../types/runningTemplate'
 import type { RunningType } from '../../types'
 
 export type RunningSessionCategory =
@@ -33,6 +35,8 @@ export type RunningSessionFamily =
   | 'recovery'
 
 export interface RunningSessionDefinition {
+  version: number
+  prescription: RunningTemplatePrescription
   id: string
   name: string
   category: RunningSessionCategory
@@ -47,7 +51,7 @@ export interface RunningSessionDefinition {
   runningType: RunningType
 }
 
-export const RUNNING_SESSION_LIBRARY: RunningSessionDefinition[] = [
+const RUNNING_DEFINITIONS: Omit<RunningSessionDefinition, 'version' | 'prescription'>[] = [
   // ─── easy_aerobic ────────────────────────────────────────────────────────────
   {
     id: 'easy_z2_base',
@@ -441,7 +445,23 @@ export const RUNNING_SESSION_LIBRARY: RunningSessionDefinition[] = [
     typicalStructure: '15-25 min muy suave. Puede incluir caminata si se necesita. Solo seguir moviéndose sin presión.',
     runningType: 'z2',
   },
+  { id: 'easy_fractionated_support', name: 'Z2 fraccionado de apoyo', category: 'easy', family: 'easy_aerobic',
+    focus: ['aerobic_base'], intensity: 'low', tags: ['aerobic_base', 'support'], progressionLevel: 1,
+    description: 'Bloques fáciles de cinco minutos separados por un minuto suave; sostener conversación.', typicalStructure: '5 min fácil / 1 min suave', runningType: 'z2' },
+  { id: 'short_support_tempo', name: 'Umbral breve fraccionado de apoyo', category: 'threshold', family: 'tempo_threshold', focus: ['threshold'], intensity: 'moderate', tags: ['support'], progressionLevel: 1, description: 'Pocos bloques de dos minutos a umbral controlado con pausa fácil de dos minutos; calidad acotada al presupuesto.', typicalStructure: '2 min umbral / 2 min suave', runningType: 'tempo' },
+  { id: 'short_support_fartlek', name: 'Fartlek corto de apoyo', category: 'speed', family: 'speed_economy',
+    focus: ['economy'], intensity: 'moderate', tags: ['support', 'economy'], progressionLevel: 1,
+    description: 'Cambios controlados de un minuto con dos minutos suaves; sin esfuerzo máximo.', typicalStructure: '1 min sostenido / 2 min suave', runningType: 'intervals' },
+  { id: 'squash_activation_run', name: 'Activación breve para squash', category: 'speed', family: 'speed_economy',
+    focus: ['economy'], intensity: 'low', tags: ['support', 'pre_match'], progressionLevel: 1,
+    description: 'Aceleraciones fluidas de quince segundos con recuperación completa; detenerse antes de perder frescura.', typicalStructure: '15 s fluido / 60 s suave', runningType: 'z2' },
 ]
+
+export const RUNNING_SESSION_LIBRARY: RunningSessionDefinition[] = RUNNING_DEFINITIONS.map(definition => {
+  const prescription = RUNNING_PRESCRIPTIONS[definition.id]
+  if (!prescription) throw new Error(`Falta prescripción de ${definition.id}`)
+  return { ...definition, version: 1, prescription }
+})
 
 export function getRunningSessionFamily(session: RunningSessionDefinition): RunningSessionFamily {
   return session.family

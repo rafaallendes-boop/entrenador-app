@@ -1,3 +1,5 @@
+import { todayISO } from '../utils/date'
+import { getExecutedSessionsThrough } from '../services/training/executedSessions'
 import { type ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Bell, Brain, Download, LogOut, RotateCcw, ShieldAlert, Trash2, Upload, User } from 'lucide-react'
@@ -1627,7 +1629,7 @@ function buildSettingsMacroWeekCoherence(athleteProfile: AthleteProfile | null |
   return buildMacroWeekCoherenceSummary({
     athleteProfile,
     sessions,
-    historicalSessions: sessions.filter((session) => session.status === 'completed' || session.status === 'adjusted'),
+    historicalSessions: getExecutedSessionsThrough(sessions, todayISO()),
   })
 }
 

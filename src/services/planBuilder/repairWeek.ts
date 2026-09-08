@@ -1,3 +1,7 @@
+import type { Session } from '../../types'
+import { resolveRunningSupportPolicy, hasNeighboringHardSession, runningExposureInWeek } from '../training/runningPolicy'
+import { runningTargets } from '../training/runningSessionMaterializer'
+import { finalizeSessionDose } from '../training/sessionDoseFinalizer'
 import { decideLoadDirective, type ExecutionSignals } from '../training/loadDirectivePolicy'
 import type {
   AthleteProfile,
@@ -6,8 +10,6 @@ import type {
   DayOfWeek,
   GoalEventLevel,
   PlanWizardConfig,
-  RunningIntervalStructure,
-  RunningType,
   SquashDetails,
   SquashDrill,
   SquashSessionBlock,
@@ -120,6 +122,7 @@ export interface RepairContext {
   profile: AthleteProfile
   wizardConfig: PlanWizardConfig
   previousWeek?: TrainingPlanWeek
+  historicalSessions?: Session[]
   executionSignals?: ExecutionSignals
   /** Descriptores ordenados de todas las semanas. El fallback unitario conserva compatibilidad de repair aislado. */
   planWeekDescriptors?: readonly PlanWeekDescriptor[]
@@ -206,7 +209,7 @@ export interface StrengthBlockAllocation {
 }
 
 export interface RepairFailure {
-  errorClass: 'quality.squash.signature_uniqueness_unresolved' | 'quality.strength.safety_blocked'
+  errorClass: 'quality.squash.signature_uniqueness_unresolved' | 'quality.strength.safety_blocked' | 'quality.session.dose_infeasible'
   message: string
 }
 
@@ -421,6 +424,29 @@ export function repairGeneratedWeek(
   sessions = enforceDoubleSessionDayConstraints(sessions, context, meta)
   sessions = checkDoubleSessionUtilization(sessions, context, meta)
 
+  // El presupuesto semanal de running se acumula en orden de calendario. Ir por
+  // el orden del array hacía que cuál sesión se clampea —o se rechaza con
+  // `dose_infeasible`, que no es elegible para fallback— dependiera de cómo
+  // emitió el modelo y no del día en que cae.
+  const doseOrder = sessions.map((_, index) => index).sort((a, b) =>
+    sessions[a].date.localeCompare(sessions[b].date)
+    || (sessions[a].timeBlock ?? '').localeCompare(sessions[b].timeBlock ?? '')
+    || a - b)
+  const dosed: CoachSessionProposal[] = []
+  for (const i of doseOrder) {
+    const proposal = sessions[i]
+    const neighborRows = sessions.filter((_, index) => index !== i).map(s => ({ date: s.date, type: s.sessionType, status: 'planned' as const, rpe: s.rpe, subtype: s.subtype, runningDetails: s.runningType ? { runningType: s.runningType } : undefined }))
+    const result = finalizeSessionDose(proposal, context.profile, {
+      phase: mapPhase(context.week.phase) as RunningPhase, fatigueLevel: fatigueToNumber(context.wizardConfig.currentFatigue),
+      primarySport: getPrimarySport(context), historicalSessions: context.historicalSessions,
+      neighboringHardSession: hasNeighboringHardSession(neighborRows, proposal.date),
+      ...runningExposureInWeek(dosed.map(s => ({ date: s.date, type: s.sessionType, status: 'planned' as const, durationMin: s.durationMin })), proposal.date),
+    })
+    if (!result.ok) return { sessions: [], meta, failure: { errorClass: 'quality.session.dose_infeasible', message: result.message } }
+    sessions[i] = result.session
+    dosed.push(result.session)
+    if (sessions[i].metadata?.planBuilderSquashRotation) sessions[i].metadata!.planBuilderSquashRotation!.signature = canonicalSquashSignature(sessions[i])
+  }
   measureSquashMatchRoles(sessions, meta)
   return { sessions, meta }
 }
@@ -990,6 +1016,10 @@ function completeSquashDetails(
   // Materialización por el hidratador compartido: la misma intención produce la
   // misma sesión acá, en Crear semana, en el chat y en el formulario.
   const hydration = hydrateSquashSession({
+    availability: session.squashDetails?.availability,
+    technicalIntent: session.squashDetails?.technicalIntent,
+    referenceDate: session.date,
+    historicalSessions: context.historicalSessions,
     kind: intentKind === 'match' ? 'match' : intentKind as SquashSessionBlockKind,
     durationMin: session.durationMin,
     phase,
@@ -1182,6 +1212,8 @@ function densifySparseSquashDetails(
 }
 
 function getMinimumSquashDrillCount(session: CoachSessionProposal): number {
+  const marker = session.metadata?.planBuilderSquashRotation
+  if (marker && marker.signature === canonicalSquashSignature(session)) return session.squashDetails?.drills.length ?? 1
   // Un partido standalone es una sola actividad; entrada en calor y peloteo
   // pertenecen al protocolo, no a una densificación artificial del contenido.
   if (resolveSquashMatchRole(session.squashDetails) === 'standalone') return 1
@@ -2011,6 +2043,8 @@ function projectSquashEventAnchor(session: CoachSessionProposal, anchorDate: str
   session.exercises = undefined
   session.runningType = undefined
   session.intervalStructure = undefined
+  session.runningTemplateRef = undefined
+  session.runningSelectionReason = undefined
   session.cyclingDetails = undefined
   session.mobilityDetails = undefined
   applySquashMatchDetails(session, 'competition_match')
@@ -3201,7 +3235,7 @@ function normalizeSquashSessionContent(
       message: `Se regeneraron ${correctiveSessionsResolved} sesiones de squash para evitar repetir los mismos drills.`,
     })
   }
-  if (currentBlockId != null && (weekIndexInBlock > 0 || correctiveSessions.size > 0)) {
+  if (currentBlockId != null) {
     for (const session of squashSessions) {
       session.metadata = {
         ...(session.metadata ?? {}),
@@ -3498,183 +3532,35 @@ function completeRunningDetails(session: CoachSessionProposal, context: RepairCo
     fatigueLevel: fatigueToNumber(context.wizardConfig.currentFatigue),
     phase,
     recentSessions,
+    sessionDurationMin: session.durationMin,
+    requestedRunningType: session.runningType,
+    runningProfile: context.profile.runningProfile,
+    experienceLevel: context.profile.runningProfile?.experienceLevel,
+    referenceDate: session.date,
+    historicalSessions: context.historicalSessions,
     goal: session.objective ?? context.profile.mainGoal ?? '',
     sportProfile,
     primarySport: context.profile.sportContext?.primarySport,
   })
+  if (!result.session) return changed
   if (!session.runningType) {
     session.runningType = result.session.runningType
     changed = true
   }
 
   const runningType = session.runningType ?? result.session.runningType
-  const targets = buildRunningTargets(runningType, context.profile.runningProfile)
-
-  if (!session.targetPaceMin && targets.targetPaceMin) {
-    session.targetPaceMin = targets.targetPaceMin
+  const targets = runningTargets(runningType, context.profile.runningProfile)
+  for (const key of ['targetPaceMin', 'targetPaceMax'] as const) {
+    if (!session[key] && targets[key]) { session[key] = targets[key]; changed = true }
+  }
+  if (!session.intervalStructure?.blocks.length) {
+    session.durationMin = result.session.durationMin
+    session.intervalStructure = result.session.intervalStructure
+    session.runningTemplateRef = result.session.templateRef
+    session.runningSelectionReason = result.session.notes
     changed = true
   }
-  if (!session.targetPaceMax && targets.targetPaceMax) {
-    session.targetPaceMax = targets.targetPaceMax
-    changed = true
-  }
-  if (session.targetHrMin == null && targets.targetHrMin != null) {
-    session.targetHrMin = targets.targetHrMin
-    changed = true
-  }
-  if (session.targetHrMax == null && targets.targetHrMax != null) {
-    session.targetHrMax = targets.targetHrMax
-    changed = true
-  }
-
-  if (!hasRunningStructure(session)) {
-    session.intervalStructure = buildRunningIntervalStructure(
-      runningType,
-      session.durationMin,
-      {
-        targetPaceMin: session.targetPaceMin,
-        targetPaceMax: session.targetPaceMax,
-        targetHrMin: session.targetHrMin,
-        targetHrMax: session.targetHrMax,
-      },
-      result.session.structure,
-    )
-    changed = true
-  }
-
   return changed
-}
-
-function hasRunningStructure(session: CoachSessionProposal): boolean {
-  return Array.isArray(session.intervalStructure?.blocks) && session.intervalStructure.blocks.length > 0
-}
-
-function buildRunningTargets(
-  runningType: RunningType,
-  profile: AthleteProfile['runningProfile'],
-): Pick<CoachSessionProposal, 'targetPaceMin' | 'targetPaceMax' | 'targetHrMin' | 'targetHrMax'> {
-  switch (runningType) {
-    case 'tempo': {
-      const threshold = profile?.thresholdPace
-      return {
-        targetPaceMin: threshold ? addSecsToPace(threshold, -10) : '4:40',
-        targetPaceMax: threshold ?? '5:00',
-        targetHrMin: 155,
-        targetHrMax: 170,
-      }
-    }
-    case 'intervals': {
-      const intervalPace = profile?.fiveKTime
-        ? derivePaceFromFiveK(profile.fiveKTime)
-        : profile?.thresholdPace
-          ? addSecsToPace(profile.thresholdPace, -25)
-          : '4:15'
-      return {
-        targetPaceMin: intervalPace,
-        targetPaceMax: addSecsToPace(intervalPace, 15),
-        targetHrMin: 165,
-        targetHrMax: 180,
-      }
-    }
-    case 'long': {
-      const pace = profile?.longRunPace ?? profile?.easyPaceMax ?? profile?.z2PaceMax ?? '6:00'
-      return {
-        targetPaceMin: profile?.easyPaceMin ?? profile?.z2PaceMin ?? pace,
-        targetPaceMax: pace,
-        targetHrMin: 130,
-        targetHrMax: 150,
-      }
-    }
-    case 'z2':
-    default:
-      return {
-        targetPaceMin: profile?.z2PaceMin ?? profile?.easyPaceMin ?? '5:30',
-        targetPaceMax: profile?.z2PaceMax ?? profile?.easyPaceMax ?? '6:00',
-        targetHrMin: 130,
-        targetHrMax: 150,
-      }
-  }
-}
-
-function buildRunningIntervalStructure(
-  runningType: RunningType,
-  durationMin: number,
-  targets: Pick<CoachSessionProposal, 'targetPaceMin' | 'targetPaceMax' | 'targetHrMin' | 'targetHrMax'>,
-  selectorStructure?: string,
-): RunningIntervalStructure {
-  const pace = formatPaceTarget(targets)
-  const warmup = Math.min(10, Math.max(5, Math.floor(durationMin * 0.2)))
-  const cooldown = warmup
-
-  if (runningType === 'tempo') {
-    const main = Math.max(15, Math.min(35, durationMin - warmup - cooldown))
-    return {
-      blocks: [
-        { label: 'Calentamiento Z2', durationMin: warmup, targetPace: pace.z2, notes: 'Trote facil + movilidad dinamica.' },
-        { label: 'Tempo umbral controlado', durationMin: main, targetPace: pace.main, targetHrMax: targets.targetHrMax, notes: selectorStructure ?? 'RPE 6.5-7.5; sostenido, sin cerrar a tope.' },
-        { label: 'Enfriamiento Z2', durationMin: cooldown, targetPace: pace.z2, notes: 'Soltar hasta respiracion comoda.' },
-      ],
-    }
-  }
-
-  if (runningType === 'intervals') {
-    const repetitions = durationMin >= 60 ? 5 : 4
-    return {
-      blocks: [
-        { label: 'Calentamiento Z2', durationMin: warmup, targetPace: pace.z2, notes: 'Incluye 3 progresivos de 20s.' },
-        { label: 'Series principales', repetitions, distanceKm: 0.8, targetPace: pace.main, targetHrMax: targets.targetHrMax, notes: selectorStructure ?? 'Recupera 2-3 min trotando entre repeticiones.' },
-        { label: 'Enfriamiento Z2', durationMin: cooldown, targetPace: pace.z2, notes: 'Baja pulsaciones sin apurar.' },
-      ],
-    }
-  }
-
-  if (runningType === 'long') {
-    return {
-      blocks: [
-        { label: 'Fondo Z2', durationMin, targetPace: pace.main, targetHrMax: targets.targetHrMax, notes: selectorStructure ?? 'Ritmo conversacional; hidrata si supera 60 min.' },
-      ],
-    }
-  }
-
-  return {
-    blocks: [
-      { label: 'Rodaje Z2', durationMin, targetPace: pace.main, targetHrMax: targets.targetHrMax, notes: selectorStructure ?? 'Ritmo conversacional y respiracion estable.' },
-    ],
-  }
-}
-
-function formatPaceTarget(targets: Pick<CoachSessionProposal, 'targetPaceMin' | 'targetPaceMax'>): { main?: string; z2?: string } {
-  const main = targets.targetPaceMin && targets.targetPaceMax
-    ? targets.targetPaceMin === targets.targetPaceMax
-      ? `${targets.targetPaceMin} /km`
-      : `${targets.targetPaceMin}-${targets.targetPaceMax} /km`
-    : targets.targetPaceMin
-      ? `${targets.targetPaceMin} /km`
-      : targets.targetPaceMax
-        ? `${targets.targetPaceMax} /km`
-        : undefined
-  return { main, z2: main }
-}
-
-function addSecsToPace(pace: string, secs: number): string {
-  const match = pace.trim().match(/^(\d+):(\d{1,2})$/)
-  if (!match) return pace
-  const total = Math.max(60, Number(match[1]) * 60 + Number(match[2]) + secs)
-  const minutes = Math.floor(total / 60)
-  const seconds = total % 60
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`
-}
-
-function derivePaceFromFiveK(fiveKTime: string): string {
-  const parts = fiveKTime.trim().split(':').map(Number)
-  if (parts.length < 2 || parts.length > 3 || parts.some((value) => Number.isNaN(value))) return '4:15'
-  const total = parts.length === 3
-    ? parts[0] * 3600 + parts[1] * 60 + parts[2]
-    : parts[0] * 60 + parts[1]
-  const pace = Math.round(total / 5)
-  const minutes = Math.floor(pace / 60)
-  const seconds = pace % 60
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`
 }
 
 function completeStrengthExercises(
@@ -4087,7 +3973,8 @@ function normalizeSquashSupportAerobicLoad(
   return sessions.map((session) => {
     if (session.sessionType !== 'running' && session.sessionType !== 'cycling') return session
 
-    const durationMin = Math.min(session.durationMin, isTaper ? 25 : 40)
+    const policy = resolveRunningSupportPolicy({ primarySport: getPrimarySport(context), phase })
+    const durationMin = Math.min(session.durationMin, policy.durationCap)
     const rpe = Math.min(session.rpe ?? (isTaper ? 3 : 4), isTaper ? 3 : 4)
 
     if (session.sessionType === 'running') {
@@ -4122,20 +4009,9 @@ function normalizeSquashSupportAerobicLoad(
         runningType: 'z2',
         targetPaceMin: undefined,
         targetPaceMax: undefined,
-        targetHrMin: session.targetHrMin ?? 130,
-        targetHrMax: session.targetHrMax ?? (isTaper ? 140 : 145),
-        intervalStructure: {
-          blocks: [
-            {
-              label: isTaper ? 'Z2 activación taper' : 'Z2 soporte squash',
-              durationMin: Math.max(isTaper ? 15 : 20, durationMin - 5),
-              targetHrMax: session.targetHrMax ?? (isTaper ? 140 : 145),
-              notes: isTaper
-                ? `Trote muy suave, conversacional. Mantener <140 lpm. No forzar ritmo.`
-                : `Mantener entre ${session.targetHrMin ?? 130}-${session.targetHrMax ?? 145} lpm, conversacional.`,
-            },
-          ],
-        },
+        targetHrMin: undefined,
+        targetHrMax: undefined,
+        intervalStructure: undefined, runningTemplateRef: undefined, runningSelectionReason: undefined,
       }
     }
 
@@ -4262,16 +4138,7 @@ function buildSupportRunningSession(
       ? 'Activación aeróbica muy suave para mantener circulación sin fatiga residual.'
       : 'Materializar el soporte aeróbico objetivo con baja interferencia para squash.',
     runningType: 'z2',
-    targetHrMin: 130,
-    targetHrMax: isTaper ? 140 : 145,
-    intervalStructure: {
-      blocks: [{
-        label: isTaper ? 'Z2 activación taper' : 'Z2 soporte squash',
-        durationMin,
-        targetHrMax: isTaper ? 140 : 145,
-        notes: 'Ritmo conversacional; cortar si aparece fatiga de piernas.',
-      }],
-    },
+    intervalStructure: undefined, runningTemplateRef: undefined, runningSelectionReason: undefined,
   }
 
   try {

@@ -1,5 +1,9 @@
+import { resolveRunningSupportPolicy } from './runningPolicy'
+import { materializeRunningTemplate } from './runningTemplateMaterializer'
+import type { RunningTemplateRef } from '../../types/runningTemplate'
+import { getExecutedSessions } from './executedSessions'
 import type { RunningAcwr, RunningWeeklyLoad } from '../loadAnalytics'
-import type { Session, RunningType } from '../../types'
+import type { Session, RunningType, RunningProfile, RunningIntervalStructure } from '../../types'
 import {
   RUNNING_SESSION_LIBRARY,
   type RunningIntensity,
@@ -23,6 +27,11 @@ export interface RunningContext {
   sessionDurationMin?: number
   weeklyRunCount?: number
   experienceLevel?: 'beginner' | 'intermediate' | 'advanced'
+  requestedRunningType?: RunningType
+  runningProfile?: RunningProfile
+  runningMinutesThisWeek?: number
+  neighboringHardSession?: boolean
+  referenceDate?: string
   historicalSessions?: Session[]
   runningAcwr?: RunningAcwr
   runningWeeklyLoad?: RunningWeeklyLoad
@@ -45,6 +54,10 @@ export interface RunningProgressionState {
 export interface RunningSelectionResult {
   focus: string
   session: {
+    id: string
+    templateRef: RunningTemplateRef
+    intervalStructure: RunningIntervalStructure
+    durationMin: number
     name: string
     category: RunningSessionCategory
     family: RunningSessionFamily
@@ -52,7 +65,8 @@ export interface RunningSelectionResult {
     structure: string
     intensity: RunningIntensity
     notes?: string
-  }
+  } | null
+  rejectionReason?: string
   progressionSummary?: string
 }
 
@@ -69,34 +83,54 @@ export function selectRunningSession(context: RunningContext): RunningSelectionR
   const recentFamilies = new Set(context.recentSessions)
   const progressionState = deriveRunningProgressionState(context)
 
+  const policy = resolveRunningSupportPolicy({ ...context, loadRisk: context.runningAcwr?.status === 'risk', runningMinutesThisWeek: context.runningMinutesThisWeek ?? context.runningWeeklyLoad?.totalDurationMin })
   const byFatigue = filterByFatigue(RUNNING_SESSION_LIBRARY, context)
   const byPhase = filterByPhase(byFatigue, context)
   const byCompetition = filterByCompetition(byPhase, context)
   const byProfile = filterByProfile(byCompetition, context)
-  const withoutRecent = avoidRecentFamilies(byProfile, recentFamilies)
+  const eligible = byProfile.filter(s =>
+    (!policy.lowOnly || s.intensity === 'low') &&
+    (!context.requestedRunningType || s.runningType === context.requestedRunningType)
+    && (context.experienceLevel !== 'beginner' || (s.progressionLevel ?? 1) <= 1)
+    && context.runningProfile?.impactRestriction !== 'no_running'
+    && (context.runningProfile?.impactRestriction !== 'no_fast_running' || s.prescription.effort === 'easy')
+    && (!(context.neighboringHardSession || context.runningAcwr?.status === 'risk'
+      || (context.weeklyRunCount ?? 0) >= 4 && context.sportProfile === 'sport_support') || s.intensity === 'low'))
+  const duration = Math.min(context.sessionDurationMin ?? 40, policy.durationCap)
+  const scored = scoreSessions(eligible, context, recentFamilies, progressionState)
+  const candidates = scored.map(({ session }) => ({ session, dose: materializeRunningTemplate({
+    template: session, durationMin: (() => {
+      const previous = getRecentCompletedRunningSessions(context.historicalSessions ?? [], context.referenceDate).find(s => deriveRunningFamilyFromSession(s) === session.family)
+      if (!previous) return duration
+      const baseline = previous.actualDurationMin ?? previous.durationMin
+      const multiplier = progressionState.intent === 'deload' ? 0.8 : progressionState.intent === 'progress' ? 1.05 : 1
+      return Math.min(duration, Math.max(session.prescription.minimumMinutes, Math.floor(baseline * multiplier)))
+    })(), profile: context.runningProfile, intent: progressionState.intent,
+  }) }))
+  const candidate = candidates.find(c => c.dose.ok)
+  if (!candidate || !candidate.dose.ok) return {
+    focus: 'Sin sesión compatible', session: null,
+    rejectionReason: 'No hay una plantilla ejecutable con esta duración, ritmos y restricciones. Ajusta la solicitud.',
+    progressionSummary: summarizeRunningProgression(context, progressionState),
+  }
+  const selected = candidate.session
+  const dose = candidate.dose
 
-  const pool = withoutRecent.length >= 3 ? withoutRecent : byProfile
-  const scored = scoreSessions(pool, context, recentFamilies, progressionState)
-  const fallbackScored = scored.length > 0
-    ? scored
-    : scoreSessions(byFatigue, context, recentFamilies, progressionState)
-
-  const selected =
-    fallbackScored[0]?.session ??
-    RUNNING_SESSION_LIBRARY.find(s => s.id === 'easy_z2_base') ??
-    RUNNING_SESSION_LIBRARY[0]
-
-  const notes = buildProgressedRunningNotes(selected, progressionState, context)
+  const notes = `${buildProgressedRunningNotes(selected, progressionState, context)} ${policy.reason}`
   const progressionSummary = summarizeRunningProgression(context, progressionState)
 
   return {
     focus: deriveRunningFocus(selected, context),
     session: {
+      id: selected.id,
+      templateRef: dose.templateRef,
+      intervalStructure: dose.structure,
+      durationMin: dose.durationMin,
       name: selected.name,
       category: selected.category,
       family: selected.family,
       runningType: selected.runningType,
-      structure: selected.typicalStructure,
+      structure: dose.structure.blocks.map(b => `${b.label}: ${Math.round((b.durationMin ?? 0) * 60)} s`).join('; '),
       intensity: selected.intensity,
       notes,
     },
@@ -124,7 +158,7 @@ export function filterByFatigue(
     return sessions.filter(s => s.intensity === 'low')
   }
   if (context.fatigueLevel >= 6) {
-    return sessions.filter(s => s.intensity !== 'high')
+    return sessions.filter(s => s.intensity !== 'high' && s.intensity !== 'moderate-high')
   }
   return sessions
 }
@@ -144,14 +178,14 @@ export function filterByPhase(
       )
     case 'peak':
       return sessions.filter(
-        s => s.intensity !== 'low' || s.family === 'recovery' || s.family === 'speed_economy',
+        s => context.sportProfile !== 'running_primary' || s.intensity !== 'low' || s.family === 'recovery' || s.family === 'speed_economy',
       )
     case 'base':
       return sessions.filter(
         s => s.family !== 'race_specific' || s.id === 'race_activation',
       )
     case 'transition':
-      return sessions.filter(s => s.intensity !== 'high' && s.family !== 'race_specific')
+      return sessions.filter(s => s.intensity !== 'high' && s.intensity !== 'moderate-high' && s.family !== 'race_specific')
     case 'build':
     default:
       return sessions
@@ -183,9 +217,9 @@ export function filterByProfile(
   if (context.sportProfile === 'sport_support') {
     return sessions.filter(
       s =>
-        ['easy_aerobic', 'recovery', 'speed_economy'].includes(s.family) ||
-        (s.family === 'tempo_threshold' && s.intensity !== 'high') ||
-        s.id === 'race_activation',
+        (s.intensity === 'low' || s.intensity === 'moderate') && ((context.requestedRunningType === 'long' && s.family === 'long_run' && s.intensity === 'low') || ['easy_aerobic', 'recovery', 'speed_economy'].includes(s.family) ||
+        s.family === 'tempo_threshold' ||
+        s.id === 'race_activation'),
     )
   }
   return sessions
@@ -294,7 +328,9 @@ function scoreSessions(
       }
 
       // Recency penalty
-      if (recentFamilies.has(session.family)) score -= 5
+      if (recentFamilies.has(session.family) && !(context.sportProfile === 'sport_support' && session.family === 'easy_aerobic')) score -= 2
+      if (context.sportProfile === 'sport_support' && session.family === 'easy_aerobic') score += 4
+      score -= Math.abs((context.sessionDurationMin ?? 40) - session.prescription.defaultMinutes) / 10
 
       return { session, score }
     })
@@ -303,11 +339,14 @@ function scoreSessions(
 
 // ─── Progression ─────────────────────────────────────────────────────────────
 
-export function extractRecentRunningSessions(historicalSessions: Session[]): string[] {
-  return getRecentCompletedRunningSessions(historicalSessions).map(s => deriveRunningFamilyFromSession(s))
+export function extractRecentRunningSessions(historicalSessions: Session[], referenceDate?: string): string[] {
+  return getRecentCompletedRunningSessions(historicalSessions, referenceDate).map(s => deriveRunningFamilyFromSession(s))
 }
 
 function deriveRunningFamilyFromSession(session: Session): string {
+  const ref = session.runningDetails?.templateRef
+  const definition = ref && RUNNING_SESSION_LIBRARY.find(s => s.id === ref.id)
+  if (definition) return definition.family
   const rt = session.runningDetails?.runningType
   const title = (session.title ?? '').toLowerCase()
   const obj = (session.objective ?? '').toLowerCase()
@@ -342,7 +381,7 @@ function deriveRunningFamilyFromSession(session: Session): string {
 }
 
 export function deriveRunningProgressionState(context: RunningContext): RunningProgressionState {
-  const runningSessions = getRecentCompletedRunningSessions(context.historicalSessions ?? [])
+  const runningSessions = getRecentCompletedRunningSessions(context.historicalSessions ?? [], context.referenceDate)
 
   const families: Record<string, RunningFamilyEntry> = {}
 
@@ -368,12 +407,11 @@ export function deriveRunningProgressionState(context: RunningContext): RunningP
   }
 }
 
-function getRecentCompletedRunningSessions(sessions: Session[]): Session[] {
-  return [...sessions]
+function getRecentCompletedRunningSessions(sessions: Session[], referenceDate?: string): Session[] {
+  return getExecutedSessions(sessions, referenceDate)
     .filter(
       s =>
         s.type === 'running' &&
-        (s.status === 'completed' || s.status === 'adjusted') &&
         s.runningDetails != null,
     )
     .sort((a, b) => b.date.localeCompare(a.date) || b.timeBlock.localeCompare(a.timeBlock))
@@ -399,25 +437,11 @@ function deriveRunningProgressionIntent(
   }
 
   const currentEntry = currentFamily ? families[currentFamily] : undefined
-  if (currentEntry && currentEntry.frequency >= 2) {
-    return 'rotate'
-  }
-
-  if (
-    context.runningAcwr?.status === 'undertrained' &&
-    context.fatigueLevel <= 5 &&
-    !context.competitionSoon
-  ) {
-    return 'progress'
-  }
-
-  if (
-    context.sportProfile === 'running_primary' &&
-    (context.phase === 'build' || context.phase === 'peak') &&
-    context.fatigueLevel <= 5
-  ) {
-    return 'progress'
-  }
+  const recent = getRecentCompletedRunningSessions(context.historicalSessions ?? [], context.referenceDate).slice(0, 2)
+  if (currentEntry && currentEntry.frequency >= 2 && recent.length === 2
+    && recent.every(s => s.actualRpe != null && s.actualRpe <= 6 && (s.actualDurationMin ?? (s.status === 'completed' ? s.durationMin : 0)) >= s.durationMin * 0.9)
+    && context.fatigueLevel <= 5 && !context.competitionSoon
+    && context.runningAcwr?.status !== 'limited') return 'progress'
 
   return 'hold'
 }
@@ -521,7 +545,7 @@ export function runRunningSelectorSmokeChecks(): string[] {
     sportProfile: 'running_primary',
     competitionSoon: false,
   })
-  outputs.push(`running_primary_base=${primaryBase.session.name} (${primaryBase.session.runningType}) · intent=${primaryBase.progressionSummary?.split(' ')[0]}`)
+  outputs.push(`running_primary_base=${primaryBase.session?.name} (${primaryBase.session?.runningType}) · intent=${primaryBase.progressionSummary?.split(' ')[0]}`)
 
   const primaryBuild = selectRunningSession({
     phase: 'build',
@@ -531,7 +555,7 @@ export function runRunningSelectorSmokeChecks(): string[] {
     sportProfile: 'running_primary',
     competitionSoon: false,
   })
-  outputs.push(`running_primary_build=${primaryBuild.session.name} (${primaryBuild.session.runningType})`)
+  outputs.push(`running_primary_build=${primaryBuild.session?.name} (${primaryBuild.session?.runningType})`)
 
   const hybrid = selectRunningSession({
     phase: 'peak',
@@ -543,7 +567,7 @@ export function runRunningSelectorSmokeChecks(): string[] {
     competitionSoon: true,
     daysToCompetition: 5,
   })
-  outputs.push(`hybrid_peak=${hybrid.session.name} (${hybrid.session.runningType})`)
+  outputs.push(`hybrid_peak=${hybrid.session?.name} (${hybrid.session?.runningType})`)
 
   const support = selectRunningSession({
     phase: 'base',
@@ -553,7 +577,7 @@ export function runRunningSelectorSmokeChecks(): string[] {
     sportProfile: 'sport_support',
     primarySport: 'squash',
   })
-  outputs.push(`sport_support_fatigue=${support.session.name} (${support.session.runningType})`)
+  outputs.push(`sport_support_fatigue=${support.session?.name} (${support.session?.runningType})`)
 
   const competition = selectRunningSession({
     phase: 'taper',
@@ -564,7 +588,7 @@ export function runRunningSelectorSmokeChecks(): string[] {
     competitionSoon: true,
     daysToCompetition: 2,
   })
-  outputs.push(`competition_soon=${competition.session.name} (${competition.session.runningType})`)
+  outputs.push(`competition_soon=${competition.session?.name} (${competition.session?.runningType})`)
 
   const rotateCheck = selectRunningSession({
     phase: 'build',
@@ -575,7 +599,7 @@ export function runRunningSelectorSmokeChecks(): string[] {
     competitionSoon: false,
     historicalSessions: [],
   })
-  outputs.push(`rotate=${rotateCheck.session.name} family=${rotateCheck.session.family}`)
+  outputs.push(`rotate=${rotateCheck.session?.name} family=${rotateCheck.session?.family}`)
 
   const acwrRisk = selectRunningSession({
     phase: 'build',
@@ -587,7 +611,7 @@ export function runRunningSelectorSmokeChecks(): string[] {
     runningWeeklyLoad: { weekStart: '2026-04-06', totalLoad: 900, totalDurationMin: 180, totalDistanceKm: 32, sessionsCount: 4 },
     competitionSoon: false,
   })
-  outputs.push(`acwr_risk=${acwrRisk.session.name} intent=${summarizeRunningProgression({ phase: 'build', fatigueLevel: 4, recentSessions: ['long_run'], goal: 'corredor hibrido con running cargado', sportProfile: 'hybrid', runningAcwr: { acuteLoad: 900, chronicLoad: 600, ratio: 1.5, status: 'risk', baselineWeeks: 3 }, competitionSoon: false }).split(' ')[0]}`)
+  outputs.push(`acwr_risk=${acwrRisk.session?.name} intent=${summarizeRunningProgression({ phase: 'build', fatigueLevel: 4, recentSessions: ['long_run'], goal: 'corredor hibrido con running cargado', sportProfile: 'hybrid', runningAcwr: { acuteLoad: 900, chronicLoad: 600, ratio: 1.5, status: 'risk', baselineWeeks: 3 }, competitionSoon: false }).split(' ')[0]}`)
 
   const acwrLimited = selectRunningSession({
     phase: 'build',
@@ -598,7 +622,7 @@ export function runRunningSelectorSmokeChecks(): string[] {
     runningAcwr: { acuteLoad: 250, chronicLoad: 0, ratio: null, status: 'limited', baselineWeeks: 0 },
     competitionSoon: false,
   })
-  outputs.push(`acwr_limited=${acwrLimited.session.name} (${acwrLimited.session.runningType})`)
+  outputs.push(`acwr_limited=${acwrLimited.session?.name} (${acwrLimited.session?.runningType})`)
 
   cachedRunningSelectorSmokeChecks = outputs
   return outputs
