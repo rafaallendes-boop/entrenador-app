@@ -49,6 +49,39 @@ function finalize(
 }
 
 describe('strength safety finalizer', () => {
+  it('rechecks a sealed proposal against the current equipment before accepting', () => {
+    const options = {
+      constraints: [], userMessageConstraints: [], userMessage: '',
+      selectionContext: context([]),
+      structureOptions: { durationMin: 60 },
+      supersetMode: 'off' as const,
+    }
+    const original = prepareStrengthSession({ durationMin: 60, exercises: [exercise('Press banca')] }, options)
+    expect(original.status).toBe('ok')
+    if (original.status !== 'ok') return
+    const revised = prepareStrengthSession(original.session, {
+      ...options,
+      selectionContext: buildStrengthSafetyContext({ id: 'athlete', updatedAt: 1, availableEquipment: ['bodyweight', 'bands'] }, 60, 'fuerza', []),
+    })
+    expect(revised.status).toBe('ok')
+    if (revised.status !== 'ok') return
+    expect(revised.session.exercises?.length).toBeGreaterThan(0)
+    for (const item of revised.session.exercises ?? []) {
+      expect(resolveStrengthExercise(item)?.definition?.equipment.some(e => ['bodyweight', 'bands'].includes(e)), item.name).toBe(true)
+    }
+    expect(revised.replaced.length + revised.removed.length).toBeGreaterThan(0)
+  })
+
+  it('an explicit empty inventory cannot keep AI-proposed barbell exercises', () => {
+    const result = finalizeStrengthExercisesForRestrictions({
+      exercises: [exercise('Press banca'), exercise('Sentadilla trasera con barra')],
+      constraints: [], durationMin: 30, sessionType: 'strength',
+      selectionContext: { ...context([]), availableEquipment: [] }, userMessage: '', supersetMode: 'off',
+    })
+    expect(result.status).toBe('blocked')
+    expect(result.removed.every(item => item.reason === 'equipment_unavailable')).toBe(true)
+  })
+
   it('blocks an empty preserved-density session even without restrictions', () => {
     const result = finalizeStrengthExercisesForRestrictions({
       exercises: [],

@@ -40,6 +40,8 @@ import {
   formatStrengthConstraintFeedback,
   resolveStrengthSafetyConstraints,
 } from '../services/training/strengthSafetyConstraints'
+import { EQUIPMENT_LABELS, EQUIPMENT_PRESETS, matchEquipmentPreset } from '../services/training/equipmentPresets'
+import type { EquipmentType } from '../services/training/exerciseLibrary'
 import type {
   GoalEventType,
   GoalEventObjective,
@@ -187,6 +189,12 @@ interface WizardState {
   fitnessLevel?: WizardFitnessLevel
   fatigue?: WizardFatigueLevel
   injuryNotes: string
+  /**
+   * Equipamiento declarado. `undefined` = no lo eligió (se conserva el
+   * comportamiento previo); una lista vacía es una selección real y el paso no
+   * deja avanzar con ella.
+   */
+  availableEquipment?: string[]
   /** `undefined` = Automático (usa la política de exposición sin meta declarada). */
   hardPrimaryMatches?: number
 }
@@ -236,6 +244,7 @@ function initWizardState(
     fitnessLevel: existingConfig?.currentFitnessLevel,
     fatigue: existingConfig?.currentFatigue,
     injuryNotes: existingConfig?.injuryNotes ?? '',
+    availableEquipment: athleteProfile?.availableEquipment,
     hardPrimaryMatches: existingConfig?.targetHardPrimaryMatches,
   }
 }
@@ -602,6 +611,7 @@ export default function CompetitionPlanPage() {
       case 2: return goalEventWindowIsValid && planWindow.isFuture && !planWindow.exceedsMax
       case 3: return !!state.objective && !!state.competitiveLevel
       case 4: return state.trainingDays.length > 0 && !!state.sessionsPerWeek && !!state.sessionDurationMins
+        && state.availableEquipment?.length !== 0
       case 5: return true  // complementary sports optional
       case 6: return !!state.fitnessLevel && !!state.fatigue
       case 7: return true
@@ -749,7 +759,14 @@ export default function CompetitionPlanPage() {
       }
 
       if (!isStableAthleteOperation(athleteIdAtStart, switchEpochAtStart)) return
-      await saveAthleteProfile({ goalEvents: [newEvent], planWizardConfig: newConfig })
+      await saveAthleteProfile({
+        goalEvents: [newEvent],
+        planWizardConfig: newConfig,
+        // El equipamiento vive en el perfil, no en la config del plan: es una
+        // propiedad del gimnasio del atleta y la consumen también el chat y el
+        // prompt, que nunca ven un `PlanWizardConfig`.
+        ...(state.availableEquipment ? { availableEquipment: state.availableEquipment } : {}),
+      })
       if (!isStableAthleteOperation(athleteIdAtStart, switchEpochAtStart)) return
 
       navigate(ROUTES.PLAN_BUILDER_V2, {
@@ -1387,6 +1404,10 @@ function Step4Schedule({
         ))}
       </div>
 
+      <div className="mb-5">
+        <EquipmentPicker state={state} update={update} />
+      </div>
+
       <div className="flex items-center justify-between rounded-xl border border-surface-border bg-surface-raised px-4 py-3">
         <div>
           <p className="text-sm font-medium text-ink">¿Doble sesión algunos días?</p>
@@ -1438,6 +1459,91 @@ function Step4Schedule({
             })}
           </div>
         </div>
+      )}
+    </div>
+  )
+}
+
+
+// ─── Equipamiento disponible ──────────────────────────────────────────────────
+
+function EquipmentPicker({
+  state,
+  update,
+}: {
+  state: WizardState
+  update: (p: Partial<WizardState>) => void
+}) {
+  const activePreset = matchEquipmentPreset(state.availableEquipment)
+  const selected = new Set(state.availableEquipment ?? [])
+  const [editingCustom, setEditingCustom] = useState(false)
+  const isCustom = editingCustom || activePreset === 'custom'
+
+  function toggleEquipment(item: EquipmentType) {
+    const next = new Set(selected)
+    if (next.has(item)) next.delete(item)
+    else next.add(item)
+    update({ availableEquipment: [...next] })
+  }
+
+  return (
+    <div>
+      <label className="text-sm font-medium text-ink block mb-2">
+        Equipamiento disponible
+      </label>
+      <p className="text-xs text-ink-faint leading-relaxed mb-3">
+        Sólo se te van a proponer ejercicios que puedas hacer con esto. Si no lo eliges,
+        se asume que tienes acceso a todo.
+      </p>
+
+      <div className="space-y-2 mb-3">
+        {EQUIPMENT_PRESETS.map(preset => (
+          <button
+            key={preset.id}
+            type="button"
+            onClick={() => {
+              setEditingCustom(false)
+              update({ availableEquipment: [...preset.equipment] })
+            }}
+            className={`${chipCls(!isCustom && activePreset === preset.id)} w-full text-left`}
+          >
+            <span className="block font-medium">{preset.label}</span>
+            <span className="block text-xs text-ink-faint mt-0.5">{preset.hint}</span>
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={() => {
+            setEditingCustom(true)
+            update({ availableEquipment: state.availableEquipment ?? [] })
+          }}
+          className={`${chipCls(isCustom)} w-full text-left`}
+        >
+          <span className="block font-medium">Personalizado</span>
+          <span className="block text-xs text-ink-faint mt-0.5">Elegir una por una.</span>
+        </button>
+      </div>
+
+      {isCustom && (
+        <div className="flex flex-wrap gap-2 mb-2">
+          {(Object.keys(EQUIPMENT_LABELS) as EquipmentType[]).map(item => (
+            <button
+              key={item}
+              type="button"
+              onClick={() => toggleEquipment(item)}
+              className={chipCls(selected.has(item))}
+            >
+              {EQUIPMENT_LABELS[item]}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {state.availableEquipment?.length === 0 && (
+        <p className="text-xs text-danger leading-relaxed">
+          Sin nada seleccionado no se puede armar una sesión de fuerza. Elige al menos una opción
+          o vuelve a un preset.
+        </p>
       )}
     </div>
   )

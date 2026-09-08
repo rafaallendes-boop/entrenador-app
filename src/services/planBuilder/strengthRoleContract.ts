@@ -1,5 +1,5 @@
 import type { ExerciseLibraryRef } from '../../types/exerciseLibraryRef'
-import { resolveStrengthExercise } from '../training/exerciseLibrary'
+import { isMainLiftEligible, resolveStrengthExercise } from '../training/exerciseLibrary'
 import { getStrengthExerciseKey } from '../training/strengthExerciseProposal'
 import { normalizeSupersetGroups } from '../training/supersetGroups'
 
@@ -14,7 +14,8 @@ import { normalizeSupersetGroups } from '../training/supersetGroups'
  *   2. power           -> power    (contable)
  *   3. seguidor de un grupo (cualquier miembro que no sea el primero de su
  *      segmento) -> accessory (contable; pierde elegibilidad para main_lift)
- *   4. primer líder restante reconocido por catálogo -> main_lift (EXENTO)
+ *   4. primer líder restante reconocido y elegible -> main_lift (EXENTO)
+ *      (un aislamiento no es elegible y cae en accessory, contable)
  *   5. siguientes      -> accessory (contable)
  *   6. desconocido     -> unknown  (contable; nunca exento)
  *
@@ -40,6 +41,9 @@ export function resolveSessionStrengthRoles(
     if (definition.category === 'core') return 'trunk'
     if (definition.intensityType === 'power') return 'power'
     if (!isLeader[index]) return 'accessory'
+    // Un aislamiento nunca toma la exención: si quedara primero, se
+    // autoeximiría del conteo de repetición por su posición.
+    if (!isMainLiftEligible(definition)) return 'accessory'
     if (!mainLiftTaken) {
       mainLiftTaken = true
       return 'main_lift'

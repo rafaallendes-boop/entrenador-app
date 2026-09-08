@@ -268,6 +268,22 @@ describe('CompetitionPlanPage new_cycle', () => {
     },
   )
 
+  it('permite personalizar un preset y seguir editando al volver a coincidir con él', async () => {
+    await openNewCycle()
+    fireEvent.change(screen.getByPlaceholderText(/Torneo Master Otoño/i), { target: { value: 'Nuevo torneo' } })
+    continueWizard()
+    fireEvent.change(document.querySelector('input[type="date"]') as HTMLInputElement, { target: { value: isoInDays(30) } })
+    continueWizard()
+    fireEvent.click(screen.getByRole('button', { name: /Rendir al máximo/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Jugador Intermedio (3ra-4ta)' }))
+    continueWizard()
+    fireEvent.click(screen.getByRole('button', { name: /En casa/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Personalizado/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Mancuernas', exact: true }))
+    fireEvent.click(screen.getByRole('button', { name: 'Mancuernas', exact: true }))
+    expect(screen.getByRole('button', { name: 'Bandas elásticas', exact: true })).toBeTruthy()
+  })
+
   it('en Free conserva un plan generado sólo para consulta', async () => {
     mocks.tier = 'free'
     await db.trainingPlans.put(previousCompletePlan)

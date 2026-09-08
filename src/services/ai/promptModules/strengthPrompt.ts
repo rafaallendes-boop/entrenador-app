@@ -3,6 +3,7 @@
  */
 
 import type { ChatContext, MacroPlanPhase } from '../../../types'
+import { resolveSelectorEquipment } from '../../training/equipmentVocabulary'
 import { isCompetitionSquashMatch } from '../../../utils/squash'
 import { todayISO } from '../../../utils/date'
 import { buildStrengthLoadPack } from '../prompt/packs/quality/strengthLoad'
@@ -85,6 +86,7 @@ export function getStrengthSelectionContext(context: ChatContext): StrengthConte
     historicalSessions,
     strengthAcwr: context.loadAnalytics?.strengthAcwr,
     safetyConstraints: resolveProfileStrengthSafetyConstraints(context.athleteProfile),
+    availableEquipment: resolveSelectorEquipment(context.athleteProfile?.availableEquipment),
   }
 }
 

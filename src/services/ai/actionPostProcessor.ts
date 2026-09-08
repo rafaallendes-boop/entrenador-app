@@ -1,3 +1,4 @@
+import { resolveSelectorEquipment } from '../training/equipmentVocabulary'
 import type { ChatContext, CoachAction, CoachExerciseProposal, CoachSessionProposal, MobilityDetails, Session, SessionType, SquashSessionBlockKind, TimeBlock } from '../../types'
 import type { StrengthConstraint } from '../../types/strengthSafety'
 import { currentWeekStartISO, todayISO } from '../../utils/date'
@@ -1719,6 +1720,7 @@ function buildStrengthSelectionContextForAction(
     experienceLevel: 'intermediate',
     sessionDurationMin: durationMin ?? 60,
     safetyConstraints,
+    availableEquipment: resolveSelectorEquipment(context.athleteProfile?.availableEquipment),
   }
 }
 

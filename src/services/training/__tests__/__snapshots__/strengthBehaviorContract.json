@@ -34,7 +34,7 @@
     "resolvedBlock": "pull",
     "reps": 3,
     "weight": null,
-    "targetPercent1RM": 82.5,
+    "targetPercent1RM": null,
     "targetRpe": 7,
     "group": "pull",
     "loadReference": null
@@ -204,11 +204,21 @@
     "loadReference": null
   },
   {
+    "id": "cable_triceps_pushdown",
+    "resolvedBlock": "push",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "push",
+    "loadReference": null
+  },
+  {
     "id": "chest_supported_row",
     "resolvedBlock": "pull",
     "reps": 3,
     "weight": null,
-    "targetPercent1RM": 82.5,
+    "targetPercent1RM": null,
     "targetRpe": 7,
     "group": "pull",
     "loadReference": null
@@ -398,6 +408,16 @@
     }
   },
   {
+    "id": "horizontal_leg_press",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "legs",
+    "loadReference": null
+  },
+  {
     "id": "incline_bench_press",
     "resolvedBlock": "push",
     "reps": 3,
@@ -547,7 +567,7 @@
     "resolvedBlock": "pull",
     "reps": 3,
     "weight": null,
-    "targetPercent1RM": 82.5,
+    "targetPercent1RM": null,
     "targetRpe": 7,
     "group": "pull",
     "loadReference": null
@@ -570,6 +590,106 @@
     "targetPercent1RM": null,
     "targetRpe": null,
     "group": "legs",
+    "loadReference": null
+  },
+  {
+    "id": "leg_press_45",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "legs",
+    "loadReference": null
+  },
+  {
+    "id": "lying_leg_curl",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "legs",
+    "loadReference": null
+  },
+  {
+    "id": "machine_chest_press",
+    "resolvedBlock": "push",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "push",
+    "loadReference": null
+  },
+  {
+    "id": "machine_hip_abduction",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "legs",
+    "loadReference": null
+  },
+  {
+    "id": "machine_hip_adduction",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "legs",
+    "loadReference": null
+  },
+  {
+    "id": "machine_leg_extension",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "legs",
+    "loadReference": null
+  },
+  {
+    "id": "machine_pec_fly",
+    "resolvedBlock": "push",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "push",
+    "loadReference": null
+  },
+  {
+    "id": "machine_reverse_fly",
+    "resolvedBlock": "pull",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "pull",
+    "loadReference": null
+  },
+  {
+    "id": "machine_seated_row",
+    "resolvedBlock": "pull",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "pull",
+    "loadReference": null
+  },
+  {
+    "id": "machine_shoulder_press",
+    "resolvedBlock": "push",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "push",
     "loadReference": null
   },
   {
@@ -705,6 +825,36 @@
     "loadReference": null
   },
   {
+    "id": "seated_cable_row",
+    "resolvedBlock": "pull",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "pull",
+    "loadReference": null
+  },
+  {
+    "id": "seated_calf_raise",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "legs",
+    "loadReference": null
+  },
+  {
+    "id": "seated_leg_curl",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "legs",
+    "loadReference": null
+  },
+  {
     "id": "side_plank",
     "resolvedBlock": "core",
     "reps": "3s",
@@ -780,6 +930,16 @@
     "targetPercent1RM": null,
     "targetRpe": null,
     "group": "core",
+    "loadReference": null
+  },
+  {
+    "id": "standing_machine_calf_raise",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": 7,
+    "group": "legs",
     "loadReference": null
   },
   {

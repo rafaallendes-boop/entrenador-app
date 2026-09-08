@@ -106,6 +106,7 @@ import {
   formatStrengthConstraintFeedback,
   resolveStrengthSafetyConstraints,
 } from '../training/strengthSafetyConstraints'
+import { resolveSelectorEquipment } from '../training/equipmentVocabulary'
 
 const ADJUST_SESSION_ACTION_KINDS: readonly ActionKind[] = [
   'add_session',
@@ -1857,6 +1858,8 @@ function buildResponsePromptContext(
   const strengthSelection = strengthSummary?.selection
   const strengthSelectorContext = strengthSummary?.selectionContext
   const strengthSafetyConstraints = strengthSelectorContext?.safetyConstraints ?? []
+  const strengthAvailableEquipment = strengthSelectorContext?.availableEquipment
+    ?? resolveSelectorEquipment(context.athleteProfile?.availableEquipment)
 
   const squashBaseSelection = squashSelection ?? selectSquashDrills({
     fatigueLevel: 4,
@@ -1929,6 +1932,7 @@ function buildResponsePromptContext(
     sessionDurationMin: primary === 'strength' ? 65 : 55,
     competitionSoon: false,
     safetyConstraints: strengthSafetyConstraints,
+    availableEquipment: strengthAvailableEquipment,
   })
   const strengthSupportSelection = selectStrengthSession({
     fatigueLevel: Math.max(strengthSelectorContext?.fatigueLevel ?? 4, 4),
@@ -1942,6 +1946,7 @@ function buildResponsePromptContext(
     competitionSoon: strengthSelectorContext?.competitionSoon ?? false,
     daysToCompetition: strengthSelectorContext?.daysToCompetition,
     safetyConstraints: strengthSafetyConstraints,
+    availableEquipment: strengthAvailableEquipment,
   })
   const strengthPrimarySelection = selectStrengthSession({
     fatigueLevel: strengthSelectorContext?.fatigueLevel ?? 4,
@@ -1954,6 +1959,7 @@ function buildResponsePromptContext(
     sessionDurationMin: 65,
     competitionSoon: false,
     safetyConstraints: strengthSafetyConstraints,
+    availableEquipment: strengthAvailableEquipment,
   })
   const strengthPrimaryFollowUpSelection = selectStrengthSession({
     fatigueLevel: strengthSelectorContext?.fatigueLevel ?? 4,
@@ -1966,6 +1972,7 @@ function buildResponsePromptContext(
     sessionDurationMin: 60,
     competitionSoon: false,
     safetyConstraints: strengthSafetyConstraints,
+    availableEquipment: strengthAvailableEquipment,
   })
   const strengthBaseSummary = formatSelectedStrengthExercises(strengthBaseSelection.exercises, 3)
   const strengthBaseExercisesJson = stringifyStrengthExercises(strengthBaseSelection.exercises, 5)

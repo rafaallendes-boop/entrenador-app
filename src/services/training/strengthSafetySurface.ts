@@ -1,3 +1,4 @@
+import { resolveSelectorEquipment } from './equipmentVocabulary'
 import type { AthleteProfile } from '../../types'
 import type { StrengthConstraint } from '../../types/strengthSafety'
 import type { StrengthContext, StrengthPhase, StrengthSportProfile } from './strengthSelector'
@@ -33,6 +34,7 @@ export function buildStrengthSafetyContext(
     experienceLevel: 'intermediate',
     sessionDurationMin: durationMin ?? 60,
     safetyConstraints: constraints,
+    availableEquipment: resolveSelectorEquipment(profile?.availableEquipment),
   }
 }
 

@@ -1,3 +1,4 @@
+import { resolveDeclaredEquipment } from './equipmentVocabulary'
 import type {
   CoachExerciseProposal,
   SessionMetadata,
@@ -7,7 +8,7 @@ import type {
 } from '../../types'
 import type { ExerciseLibraryRef } from '../../types/exerciseLibraryRef'
 import type { ConstraintKey, ConstraintSource, StrengthConstraint } from '../../types/strengthSafety'
-import { resolveStrengthExercise, type MovementPattern } from './exerciseLibrary'
+import { resolveStrengthExercise, type ExerciseDefinition, type MovementPattern } from './exerciseLibrary'
 import {
   constraintKey,
   hasUnresolvedMedicalRestriction,
@@ -44,7 +45,7 @@ export type BlockedReason =
 export interface RemovedExercise {
   exerciseId?: string
   libraryRef?: ExerciseLibraryRef
-  reason: 'constraint_intersection' | 'unresolvable_identity' | 'ambiguous_identity'
+  reason: 'equipment_unavailable' | 'constraint_intersection' | 'unresolvable_identity' | 'ambiguous_identity'
   matchedConstraints: readonly ConstraintKey[]
 }
 
@@ -106,6 +107,9 @@ export function finalizeStrengthExercisesForRestrictions(
     ...input.selectionContext,
     safetyConstraints: input.constraints,
   }
+  const availableEquipment = new Set(resolveDeclaredEquipment(safetyContext.availableEquipment).equipment)
+  const hasEquipment = (definition: ExerciseDefinition | undefined) =>
+    definition != null && definition.equipment.some(item => availableEquipment.has(item))
   const usedIds = new Set(
     input.exercises
       .map((exercise) => resolveStrengthExercise(exercise)?.definition?.id)
@@ -127,7 +131,7 @@ export function finalizeStrengthExercisesForRestrictions(
       continue
     }
 
-    if (isExerciseAllowed(definition, input.constraints)) {
+    if (isExerciseAllowed(definition, input.constraints) && hasEquipment(definition)) {
       kept.push(exercise)
       continue
     }
@@ -145,7 +149,7 @@ export function finalizeStrengthExercisesForRestrictions(
     if (!substitute || !substituteId) {
       removed.push({
         exerciseId: definition.id,
-        reason: 'constraint_intersection',
+        reason: hasEquipment(definition) ? 'constraint_intersection' : 'equipment_unavailable',
         matchedConstraints: matched,
       })
       continue
@@ -167,7 +171,7 @@ export function finalizeStrengthExercisesForRestrictions(
   let strengthWorkCount = kept.filter(isStrengthWorkExercise).length
   const addCandidate = (candidate: StrengthSelectionExercise): boolean => {
     const definition = resolveStrengthExercise(candidate)?.definition
-    if (!definition || usedIds.has(definition.id) || !isExerciseAllowed(definition, input.constraints)) return false
+    if (!definition || usedIds.has(definition.id) || (!isExerciseAllowed(definition, input.constraints) || !hasEquipment(definition))) return false
     const proposal = toProposal(candidate)
     kept.push(proposal)
     usedIds.add(definition.id)
@@ -199,7 +203,7 @@ export function finalizeStrengthExercisesForRestrictions(
     if (!definition) {
       return { status: 'blocked', reason: 'unresolvable_exercise_identity', removed }
     }
-    if (!isExerciseAllowed(definition, input.constraints)) {
+    if (!isExerciseAllowed(definition, input.constraints) || !hasEquipment(definition)) {
       return { status: 'blocked', reason: 'insufficient_safe_pool', removed }
     }
   }

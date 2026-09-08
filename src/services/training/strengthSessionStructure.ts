@@ -544,6 +544,11 @@ function shouldExposePercent1RM(
 
 function definitionExposesPercent1RM(definition: ExerciseDefinition): boolean {
   if (definition.id === 'goblet_squat') return false
+  // Un aislamiento no tiene 1RM propio ni deriva de uno: «82,5%» sería un
+  // número sin referente. Tampoco basta que un ejercicio use una máquina:
+  // sin una referencia de carga no corresponde mostrar porcentajes.
+  if (definition.isolation) return false
+  if (definition.equipment.includes('machine') && !definition.loadReference) return false
   const hasBarbellReference = definition.equipment.includes('barbell') || definition.equipment.includes('trap_bar') || definition.equipment.includes('machine')
   return hasBarbellReference && !definition.unilateral
 }

@@ -81,12 +81,12 @@ describe('copy de fuerza — renombres (spec §4)', () => {
     expect(offenders).toEqual([])
   })
 
-  it('los 77 nombres canónicos resuelven a su propio id', () => {
+  it('los 93 nombres canónicos resuelven a su propio id', () => {
     const offenders = STRENGTH_EXERCISE_LIBRARY
       .filter((definition) => findStrengthExerciseByName(definition.name)?.id !== definition.id)
       .map((definition) => definition.id)
 
-    expect(STRENGTH_EXERCISE_LIBRARY).toHaveLength(77)
+    expect(STRENGTH_EXERCISE_LIBRARY).toHaveLength(93)
     expect(offenders).toEqual([])
   })
 })
@@ -141,7 +141,7 @@ describe('copy de fuerza — descripciones finales (spec §5)', () => {
     expect(definition!.description).toBe(description)
   })
 
-  it('los 46 ids fuera de alcance conservan la descripción congelada en el snapshot de Task 1', () => {
+  it('los ids fuera de alcance conservan la descripción congelada en el snapshot de Task 1', () => {
     const offenders = STRENGTH_EXERCISE_LIBRARY
       .filter((definition) => !REWRITTEN_DESCRIPTION_IDS.has(definition.id))
       .filter((definition) => FINAL_DESCRIPTIONS[definition.id] !== undefined)
@@ -149,7 +149,9 @@ describe('copy de fuerza — descripciones finales (spec §5)', () => {
     expect(offenders).toEqual([])
     expect(
       STRENGTH_EXERCISE_LIBRARY.filter((definition) => !REWRITTEN_DESCRIPTION_IDS.has(definition.id)),
-    ).toHaveLength(46)
+      // 46 originales + las 16 altas de máquinas, que nacen fuera del alcance
+      // de la reescritura de copy de 2026-08-01.
+    ).toHaveLength(62)
   })
 })
 

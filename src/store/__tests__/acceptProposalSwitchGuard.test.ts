@@ -266,6 +266,26 @@ describe('acceptProposal - switch guard', () => {
     expect((await db.coachProposals.get('concurrent-update'))?.status).toBe('rejected')
   })
 
+  it('revalida equipamiento actualizado al guardar una propuesta de fuerza', async () => {
+    await db.coachProposals.put({
+      id: 'equipment-change', athleteId: 'ath_user-1', createdAt: Date.now(), status: 'pending', message: 'Fuerza',
+      actions: [{ type: 'add_session', targetDate: '2026-08-10', timeBlock: 'PM', sessionType: 'strength',
+        title: 'Fuerza', durationMin: 60, exercises: [{ name: 'Press banca', sets: 3, reps: 8 }] }],
+    })
+    await useCoachActionsStore.getState().loadProposals()
+    useCoachMemoryStore.setState({ athleteProfile: {
+      id: 'profile', updatedAt: 2, availableEquipment: ['bodyweight', 'bands'],
+    } })
+    const result = await useCoachActionsStore.getState().acceptProposal('equipment-change')
+    expect(result.errors).toEqual([])
+    const sessions = await db.sessions.toArray()
+    expect(sessions).toHaveLength(1)
+    expect(sessions[0].exercises?.length).toBeGreaterThan(0)
+    for (const item of sessions[0].exercises ?? []) {
+      expect(resolveStrengthExercise(item)?.definition?.equipment.some(e => ['bodyweight', 'bands'].includes(e)), item.name).toBe(true)
+    }
+  })
+
   it('bloquea la escritura si aparece una restricción médica después de generar', async () => {
     await db.coachProposals.put({
       id: 'late-restriction', athleteId: 'ath_user-1', createdAt: Date.now(),

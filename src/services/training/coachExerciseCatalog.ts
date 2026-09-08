@@ -1,3 +1,4 @@
+import { EQUIPMENT_LABELS } from './equipmentPresets'
 import type { SessionType, SquashSessionBlockKind } from '../../types'
 import type { ExerciseLibraryRef, ExerciseLibrarySource } from '../../types/exerciseLibraryRef'
 import { SQUASH_DRILL_LIBRARY, type DrillCategory } from './drillLibrary'
@@ -82,7 +83,10 @@ const STRENGTH_ENTRIES: CatalogEntry[] = STRENGTH_EXERCISE_LIBRARY.map((exercise
   category: STRENGTH_CATEGORY_LABELS[exercise.category],
   intensity: STRENGTH_INTENSITY[exercise.intensityType],
   description: exercise.description,
-  searchText: buildSearchText([exercise.name, ...(exercise.aliases ?? []), ...exercise.tags]),
+  searchText: buildSearchText([
+    exercise.name, ...(exercise.aliases ?? []), ...exercise.tags,
+    ...exercise.equipment.flatMap(item => [item, EQUIPMENT_LABELS[item]]),
+  ]),
   defaults: { ...STRENGTH_DEFAULTS[exercise.intensityType] },
 }))
 

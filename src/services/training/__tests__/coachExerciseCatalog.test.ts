@@ -9,6 +9,13 @@ import { SQUASH_DRILL_LIBRARY } from '../drillLibrary'
 import { STRENGTH_EXERCISE_LIBRARY } from '../exerciseLibrary'
 
 describe('coachExerciseCatalog', () => {
+  it('busca equipamiento declarado aunque no aparezca en el nombre', () => {
+    for (const query of ['jalón máquina', 'jalón poleas', 'jalón cable']) {
+      expect(searchCatalog('strength', query).map(entry => entry.libraryId)).toContain('lat_pulldown')
+    }
+    expect(searchCatalog('strength', 'máquinas').map(entry => entry.libraryId)).not.toContain('bench_press')
+  })
+
   it('squash ofrece drills + fuerza; fuerza solo fuerza; otros deportes nada', () => {
     const squash = getCatalogForSport('squash')
     expect(squash).toHaveLength(SQUASH_DRILL_LIBRARY.length + STRENGTH_EXERCISE_LIBRARY.length)

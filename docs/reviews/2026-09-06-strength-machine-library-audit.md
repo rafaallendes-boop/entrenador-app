@@ -98,3 +98,116 @@ Inventario y resolución comprobados cargando la biblioteca real mediante transp
 Referencias de código: `src/services/training/exerciseLibrary.ts`, `src/services/training/coachExerciseCatalog.ts`, `src/services/training/strengthSelector.ts`, `src/services/training/strengthLoadPrescription.ts`, `src/services/ai/actionPostProcessor.ts`.
 
 Contraste externo: [catálogo oficial Life Fitness Insignia](https://www.lifefitness.com/en-us/catalog/strength-training/selectorized/insignia-series), que enumera press de pecho/hombros, remo, aperturas, brazos, prensa, extensión/curl de piernas, cadera, pantorrillas y tronco. Se utilizó para verificar familias de máquinas disponibles comercialmente, no para afirmar prevalencia en gimnasios ni prescribir ejercicios para una lesión. La priorización anterior es una recomendación de cobertura del producto.
+
+---
+
+## Estado de implementación (2026-09-07)
+
+Implementado y verificado con la suite completa (579 archivos / 4898 tests), `tsc -b`, lint y build.
+
+**Hallazgo que la auditoría no registró y que cambió el orden de trabajo.** `availableEquipment`
+nunca se poblaba en producción: `PlanWizardConfig` no declaraba el campo y
+`profileAdapter.ts` lo leía con un cast de una propiedad inexistente, así que
+`normalizeEquipment` siempre resolvía «todo». El hallazgo 6 era por eso inocuo hoy
+y el paso 5 de la secuencia propuesta —verificar una sesión sólo de máquinas— no
+era expresable. Por eso la captura del equipamiento se hizo antes que la ampliación.
+
+| Entrega | Alcance | Estado |
+|---|---|---|
+| E1 | Guard de modificador de equipamiento en el tier `substring` | hecho |
+| E2 | Captura en el perfil + propagación a los 6 productores + UI del wizard | hecho |
+| E3 | Filtro estricto por disponibilidad en el camino de bloques | hecho |
+| E4 | Patrones de función, campo `isolation` y elegibilidad para principal | hecho |
+| E5 | 16 altas prioritarias | hecho |
+| E6 | Verificación diferencial | hecho |
+| E7 | Los 15 de la segunda tanda | **pendiente** |
+
+### Decisiones que se apartan de lo propuesto
+
+- **El equipamiento vive en `AthleteProfile`, no en `PlanWizardConfig`.** Es una
+  propiedad del gimnasio del atleta, y el chat y el prompt nunca ven un
+  `PlanWizardConfig`. Viaja dentro de `athlete_profiles.data` por el rest-spread
+  de `athleteProfileToRow`, así que **no requiere migración**.
+- **Tres estados distintos, ninguno confundido con otro:** ausente = sin declarar
+  (todo disponible, comportamiento previo); `[]` = seleccionó nada y el wizard no
+  deja avanzar; texto no interpretable = no se entendió, se conserva la
+  compatibilidad y el término queda registrado. Fallar en interpretar no es
+  evidencia de ausencia.
+- **El guard de nombres sólo puede quitar confianza, nunca agregarla.** Sobre un
+  candidato único rechaza («press banca en máquina» ya no hereda la carga de la
+  banca libre). Sobre un empate no estrecha la lista: hacerlo dejaba un solo
+  candidato y los consumidores que miran `candidates` para decidir si exponen un
+  %1RM se volvían más confiados por un filtro pensado para lo contrario.
+- **La elegibilidad para levantamiento principal es un predicado explícito
+  compartido** (`isMainLiftEligible`), no una consecuencia de la taxonomía. Hay
+  cuatro caminos que pueden coronar un principal y ninguno mira el patrón; el
+  cuarto —`resolveSessionStrengthRoles`— otorga además la **única exención** del
+  conteo de repetición, así que un aislamiento primero se autoeximía del detector
+  de diversidad.
+- **Sin `loadReference` no bastaba.** `buildSelectionExercise` no prescribía
+  `targetRpe`, así que por el camino del chat y del prompt una máquina llegaba sin
+  ninguna señal de intensidad. Ahora lo prescribe. Además, un aislamiento ya no
+  expone `targetPercent1RM`: sin 1RM propio ni derivado, era un número sin referente.
+- **El inventario es por familia, no por máquina.** Declarar `machine` no acredita
+  prensa, peck deck y hack squat; el copy del preset lo dice. Modelar máquina por
+  máquina se descarta explícitamente para un piloto de 1–3 personas.
+
+### Verificación diferencial
+
+Barrido de 192 escenarios (4 inventarios × 4 fases × 3 perfiles deportivos × 2
+rutas × 2 niveles de fatiga), ejecutando el selector con el catálogo anterior y
+con el nuevo sobre los mismos inputs:
+
+| Inventario | Idéntico | Sólo prescripción | Selección distinta |
+|---|---:|---:|---:|
+| Todo disponible | 24 | 24 | **0** |
+| Barra + mancuernas + polea | 24 | 24 | **0** |
+| Mancuernas + bandas + peso corporal | 15 | 24 | 9 |
+| Máquinas + poleas | 0 | 0 | 48 |
+
+Lecturas: ampliar el catálogo **no desplaza nada** para quien tiene todo
+disponible. Los 9 cambios del inventario de casa no vienen de las altas —ninguna
+es accesible con mancuernas y bandas— sino del filtro estricto, que reemplaza
+equipo ausente por una alternativa real. Los 48 de máquinas son la corrección: antes
+ese atleta recibía sentadilla con barra.
+
+La invariante quedó congelada como test permanente
+(`strengthEquipmentSweep.test.ts`): en los 192 escenarios, ningún ejercicio
+propuesto requiere equipo no declarado, y un atleta de sólo peso corporal sigue
+recibiendo una sesión ejecutable de al menos 3 ejercicios.
+
+Los barridos congelados confirman que **los 77 ejercicios previos no cambiaron**:
+`strengthBehaviorContract` y `strengthExerciseCopyInvariants` quedaron byte a byte
+idénticos salvo `targetRpe` (de `null` a número) y la supresión de
+`targetPercent1RM` en las **9 altas de aislamiento** —ningún id previo entre ellas—.
+
+### Alcance de la afirmación de compatibilidad
+
+Los planes ya guardados no cambian. **Las generaciones nuevas sí pueden cambiar**,
+y ése es el objetivo del trabajo: un atleta que declare su equipamiento recibirá
+sesiones distintas de las que habría recibido ayer.
+
+### Costo medido y riesgo abierto
+
+El allocator escala con el tamaño del catálogo. `strengthAllocatorDomain.test.ts`
+pasó de **4,84–4,89 s** a **5,60–6,83 s** aislado (+15% a +40%), contra un
+`testTimeout` de 10 s; bajo carga paralela de la suite completa expiró en 2 de 3
+corridas, aunque pasa siempre aislado y la suite completa termina en verde. El test
+ya era flaky antes de este cambio, pero el margen es ahora medible y menor.
+Indexar el catálogo por `id` no lo movió: el costo está en filtrar y puntuar un
+pool 21% mayor, no en búsquedas lineales.
+
+**Esto es el argumento concreto para separar la segunda tanda:** 15 altas más
+suben el catálogo a 108 (+40% sobre el original) y estrecharían el margen otra
+vez. Antes de E7 conviene medir la complejidad del allocator, no sólo agregar
+ejercicios.
+
+### Fuera de alcance, declarado
+
+- Los 15 ejercicios de la segunda tanda, incluidas las variantes en Smith.
+- El `targetPercent1RM` que `lat_pulldown` y `chest_supported_row` exponen sin
+  referencia de carga: es comportamiento anterior a esta entrega y cambiarlo
+  movería contenido ya generado. Queda registrado como pregunta abierta.
+- Backfill de sesiones existentes y del equipamiento de perfiles ya creados.
+- Registro diferenciado de asistencia en dominadas y fondos asistidos (hallazgo 10):
+  las altas de esta entrega no incluyen fondos asistidos.

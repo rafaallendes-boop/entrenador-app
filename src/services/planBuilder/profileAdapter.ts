@@ -1,5 +1,6 @@
 import type { AthleteProfile, PlanWizardConfig, SupportedSport } from '../../types'
 import type { EquipmentType, Exercise1RMReference } from '../training/exerciseLibrary'
+import { resolveSelectorEquipment } from '../training/equipmentVocabulary'
 import { resolveStrengthSafetyConstraints } from '../training/strengthSafetyConstraints'
 import type { StrengthConstraint } from '../../types/strengthSafety'
 
@@ -31,6 +32,7 @@ export function buildAthleteParameters(
   if (strengthProfile?.overheadPress1RM != null) available1RM.push('overheadPress')
 
   const ageYears = resolveAgeYears(profile, referenceDate)
+  const declaredEquipment = resolveSelectorEquipment(profile.availableEquipment)
 
   return {
     available1RM,
@@ -38,7 +40,7 @@ export function buildAthleteParameters(
     requireExtraRecovery: (ageYears ?? 0) >= 35,
     primarySport: profile.sportContext?.primarySport,
     complementarySports: wizardConfig.complementarySports ?? [],
-    availableEquipment: (wizardConfig as { availableEquipment?: EquipmentType[] }).availableEquipment,
+    availableEquipment: declaredEquipment,
     fitnessLevel: wizardConfig.currentFitnessLevel,
     fatigueLevel: wizardConfig.currentFatigue,
     ageYears,

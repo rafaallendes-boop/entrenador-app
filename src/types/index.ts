@@ -923,6 +923,16 @@ export interface AthleteProfile {
    * restricción de seguridad.
    */
   performanceLimiter?: string
+  /**
+   * Equipamiento disponible declarado por el atleta, como texto libre que
+   * `resolveDeclaredEquipment` interpreta.
+   *
+   * Tres estados con significados distintos: ausente = sin declarar (se
+   * comporta como antes de existir el campo), `[]` = no seleccionó nada, y
+   * cualquier lista = su inventario. Viaja dentro de `athlete_profiles.data`
+   * por el rest-spread de `athleteProfileToRow`, así que no necesita migración.
+   */
+  availableEquipment?: string[]
   runningProfile?: RunningProfile
   strengthProfile?: StrengthProfile
   recoveryProfile?: RecoveryProfile

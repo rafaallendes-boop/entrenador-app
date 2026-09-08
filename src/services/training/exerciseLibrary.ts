@@ -1,15 +1,32 @@
 import type { ExerciseGroup } from '../../types'
 import type { ExerciseSafetyProfile } from '../../types/strengthSafety'
 import type { ExerciseLibraryRef } from '../../types/exerciseLibraryRef'
+import {
+  detectEquipmentMentionsInName,
+  normalizeStrengthExerciseKey as normalizeKey,
+} from './equipmentVocabulary'
 
 export type ExerciseCategory = 'lower' | 'upper' | 'core' | 'full_body'
-export type MovementPattern = 'squat' | 'hinge' | 'push' | 'pull' | 'rotation' | 'carry' | 'locomotion'
+/**
+ * Patrón mecánico del ejercicio.
+ *
+ * Los siete primeros son patrones compuestos y son los únicos que las
+ * plantillas de bloque piden por slot. Los seis últimos describen funciones
+ * articulares aisladas: existen para que una extensión de rodilla no tenga que
+ * declararse `squat` y terminar sustituyendo a una sentadilla. Un ejercicio con
+ * uno de estos patrones sólo entra como relleno de densidad.
+ */
+export type MovementPattern =
+  | 'squat' | 'hinge' | 'push' | 'pull' | 'rotation' | 'carry' | 'locomotion'
+  | 'knee_extension' | 'knee_flexion' | 'hip_abduction' | 'hip_adduction'
+  | 'plantar_flexion' | 'elbow_flexion' | 'elbow_extension'
 export type IntensityType = 'strength' | 'power' | 'hypertrophy' | 'stability' | 'recovery'
 export type EquipmentType =
   | 'barbell'
   | 'dumbbell'
   | 'bodyweight'
   | 'machine'
+  | 'smith'
   | 'cable'
   | 'kettlebell'
   | 'medball'
@@ -68,6 +85,15 @@ export interface ExerciseDefinition {
   intensityType: IntensityType
   equipment: EquipmentType[]
   unilateral?: boolean
+  /**
+   * Trabajo de una sola articulación, sin capacidad de sostener una sesión.
+   *
+   * Es explícito y no derivado del patrón: `machine_pec_fly` y
+   * `machine_chest_press` son ambos `push`, y sólo el segundo puede encabezar
+   * una sesión. Ausente significa elegible, así que declarar el campo no
+   * cambia ningún ejercicio anterior.
+   */
+  isolation?: boolean
   tags: string[]
   description: string
   aliases?: string[]
@@ -1346,6 +1372,276 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
     difficulty: 'beginner',
     sportsTransfer: ['strength', 'general_fitness'],
   },
+  {
+    id: 'machine_chest_press',
+    safety: { loadsRegions: ['shoulder', 'elbow', 'chest_ribs'], loadPatterns: [] },
+    name: 'Press de pecho en máquina',
+    category: 'upper',
+    movement: 'push',
+    intensityType: 'hypertrophy',
+    equipment: ['machine'],
+    tags: ['upper_strength', 'hypertrophy', 'gym', 'beginner_friendly', 'machine_based'],
+    description: 'Empuje horizontal guiado, sentado. La máquina controla la trayectoria, así que permite acercarse al fallo con menos exigencia de estabilización que el press con barra.',
+    aliases: ['Machine chest press', 'Press pecho máquina', 'Press de pecho sentado en máquina'],
+    difficulty: 'beginner',
+    sportsTransfer: ['strength', 'general_fitness'],
+    riskLevel: 'low',
+    fatigueCost: 'medium',
+  },
+  {
+    id: 'machine_shoulder_press',
+    safety: { loadsRegions: ['shoulder', 'elbow', 'cervical'], loadPatterns: ['overhead'] },
+    name: 'Press de hombros en máquina',
+    category: 'upper',
+    movement: 'push',
+    intensityType: 'hypertrophy',
+    equipment: ['machine'],
+    tags: ['upper_strength', 'hypertrophy', 'gym', 'beginner_friendly', 'machine_based'],
+    description: 'Empuje vertical guiado, sentado con respaldo. Trabaja el hombro por encima de la cabeza sin pedir estabilidad de tronco.',
+    aliases: ['Machine shoulder press', 'Press hombro máquina', 'Press militar en máquina'],
+    difficulty: 'beginner',
+    sportsTransfer: ['strength', 'general_fitness'],
+    riskLevel: 'low',
+    fatigueCost: 'medium',
+  },
+  {
+    id: 'machine_seated_row',
+    safety: { loadsRegions: ['thoracic', 'shoulder', 'elbow'], loadPatterns: ['grip_demand'] },
+    name: 'Remo sentado en máquina',
+    category: 'upper',
+    movement: 'pull',
+    intensityType: 'hypertrophy',
+    equipment: ['machine'],
+    tags: ['upper_strength', 'hypertrophy', 'gym', 'beginner_friendly', 'machine_based'],
+    description: 'Tirón horizontal sentado con el pecho apoyado en la almohadilla. La espalda alta trabaja sin que la zona lumbar sostenga la carga.',
+    aliases: ['Machine seated row', 'Remo en máquina', 'Remo sentado con apoyo de pecho'],
+    difficulty: 'beginner',
+    sportsTransfer: ['strength', 'general_fitness'],
+    riskLevel: 'low',
+    fatigueCost: 'medium',
+  },
+  {
+    id: 'machine_pec_fly',
+    safety: { loadsRegions: ['chest_ribs', 'shoulder'], loadPatterns: [] },
+    name: 'Aperturas de pecho en máquina',
+    category: 'upper',
+    movement: 'push',
+    intensityType: 'hypertrophy',
+    equipment: ['machine'],
+    isolation: true,
+    tags: ['upper_strength', 'hypertrophy', 'gym', 'accessory', 'machine_based'],
+    description: 'Juntar los brazos al frente con los codos casi fijos. Trabaja el pecho en un rango que el press no cubre; el hombro queda expuesto al final del recorrido, así que se abre sin forzar.',
+    aliases: ['Peck deck', 'Pec fly', 'Contractora de pecho', 'Aperturas en máquina'],
+    difficulty: 'beginner',
+    sportsTransfer: ['strength', 'general_fitness'],
+    riskLevel: 'low',
+    fatigueCost: 'low',
+  },
+  {
+    id: 'machine_reverse_fly',
+    safety: { loadsRegions: ['shoulder', 'thoracic'], loadPatterns: [] },
+    name: 'Aperturas inversas en máquina',
+    category: 'upper',
+    movement: 'pull',
+    intensityType: 'hypertrophy',
+    equipment: ['machine'],
+    isolation: true,
+    tags: ['upper_strength', 'hypertrophy', 'gym', 'accessory', 'machine_based'],
+    description: 'Abrir los brazos hacia atrás sentado de frente a la máquina. Trabaja hombro posterior y espalda alta, la cara opuesta a las aperturas de pecho.',
+    aliases: ['Reverse peck deck', 'Reverse fly', 'Contractora inversa', 'Aperturas posteriores en máquina'],
+    difficulty: 'beginner',
+    sportsTransfer: ['strength', 'general_fitness'],
+    riskLevel: 'low',
+    fatigueCost: 'low',
+  },
+  {
+    id: 'leg_press_45',
+    safety: { loadsRegions: ['knee', 'hip', 'lumbar'], loadPatterns: ['deep_flexion'] },
+    name: 'Prensa de piernas a 45°',
+    category: 'lower',
+    movement: 'squat',
+    intensityType: 'hypertrophy',
+    equipment: ['machine'],
+    tags: ['lower_strength', 'hypertrophy', 'gym', 'beginner_friendly', 'machine_based'],
+    description: 'Empuje de piernas en el carro inclinado. Permite cargar el tren inferior sin comprimir la columna; bajar sólo hasta donde la pelvis no se despegue del respaldo.',
+    aliases: ['Leg press', 'Prensa 45', 'Prensa inclinada', 'Prensa de piernas'],
+    difficulty: 'beginner',
+    sportsTransfer: ['strength', 'general_fitness'],
+    riskLevel: 'low',
+    fatigueCost: 'medium',
+  },
+  {
+    id: 'horizontal_leg_press',
+    safety: { loadsRegions: ['knee', 'hip', 'lumbar'], loadPatterns: ['deep_flexion'] },
+    name: 'Prensa de piernas horizontal',
+    category: 'lower',
+    movement: 'squat',
+    intensityType: 'hypertrophy',
+    equipment: ['machine'],
+    tags: ['lower_strength', 'hypertrophy', 'gym', 'beginner_friendly', 'machine_based'],
+    description: 'Empuje de piernas sentado, con el carro en horizontal. Misma función que la prensa a 45° con otra posición de cadera, así que su historial de carga se lleva por separado.',
+    aliases: ['Horizontal leg press', 'Prensa horizontal', 'Prensa sentado'],
+    difficulty: 'beginner',
+    sportsTransfer: ['strength', 'general_fitness'],
+    riskLevel: 'low',
+    fatigueCost: 'medium',
+  },
+  {
+    id: 'machine_leg_extension',
+    safety: { loadsRegions: ['knee'], loadPatterns: [] },
+    name: 'Extensión de rodilla en máquina',
+    category: 'lower',
+    movement: 'knee_extension',
+    intensityType: 'hypertrophy',
+    equipment: ['machine'],
+    isolation: true,
+    tags: ['lower_strength', 'hypertrophy', 'gym', 'accessory', 'machine_based'],
+    description: 'Estirar la rodilla contra la almohadilla, sentado. Trabaja el cuádriceps aislado; es el patrón que ningún ejercicio compuesto del catálogo cubre por separado.',
+    aliases: ['Leg extension', 'Extensión de cuádriceps', 'Extensiones de pierna', 'Cuádriceps en máquina'],
+    difficulty: 'beginner',
+    sportsTransfer: ['strength', 'general_fitness'],
+    riskLevel: 'low',
+    fatigueCost: 'low',
+  },
+  {
+    id: 'seated_leg_curl',
+    safety: { loadsRegions: ['hamstring', 'knee'], loadPatterns: [] },
+    name: 'Curl femoral sentado',
+    category: 'lower',
+    movement: 'knee_flexion',
+    intensityType: 'hypertrophy',
+    equipment: ['machine'],
+    isolation: true,
+    tags: ['lower_strength', 'hypertrophy', 'gym', 'accessory', 'machine_based'],
+    description: 'Flexionar la rodilla llevando el talón hacia atrás, sentado con la cadera en ángulo. Trabaja el isquiotibial en una posición que el peso muerto rumano no repite.',
+    aliases: ['Seated leg curl', 'Curl de isquiotibiales sentado', 'Femoral sentado'],
+    difficulty: 'beginner',
+    sportsTransfer: ['strength', 'general_fitness'],
+    riskLevel: 'low',
+    fatigueCost: 'low',
+  },
+  {
+    id: 'lying_leg_curl',
+    safety: { loadsRegions: ['hamstring', 'knee'], loadPatterns: [] },
+    name: 'Curl femoral tumbado',
+    category: 'lower',
+    movement: 'knee_flexion',
+    intensityType: 'hypertrophy',
+    equipment: ['machine'],
+    isolation: true,
+    tags: ['lower_strength', 'hypertrophy', 'gym', 'accessory', 'machine_based'],
+    description: 'Flexionar la rodilla boca abajo, con la cadera extendida. Misma articulación que el curl sentado pero con el isquiotibial en otra longitud, así que se registran aparte.',
+    aliases: ['Lying leg curl', 'Curl femoral acostado', 'Femoral tumbado'],
+    difficulty: 'beginner',
+    sportsTransfer: ['strength', 'general_fitness'],
+    riskLevel: 'low',
+    fatigueCost: 'low',
+  },
+  {
+    id: 'machine_hip_abduction',
+    safety: { loadsRegions: ['hip', 'pelvis_sacroiliac'], loadPatterns: [] },
+    name: 'Abducción de cadera en máquina',
+    category: 'lower',
+    movement: 'hip_abduction',
+    intensityType: 'hypertrophy',
+    equipment: ['machine'],
+    isolation: true,
+    tags: ['lower_strength', 'hypertrophy', 'gym', 'accessory', 'machine_based'],
+    description: 'Separar las rodillas contra las almohadillas, sentado. Carga el glúteo medio con más resistencia de la que permite la caminata con banda.',
+    aliases: ['Hip abduction', 'Abductores en máquina', 'Máquina de abductores'],
+    difficulty: 'beginner',
+    sportsTransfer: ['strength', 'squash', 'general_fitness'],
+    squashTransfer: ['lateral_control'],
+    riskLevel: 'low',
+    fatigueCost: 'low',
+  },
+  {
+    id: 'machine_hip_adduction',
+    safety: { loadsRegions: ['groin', 'hip', 'pelvis_sacroiliac'], loadPatterns: [] },
+    name: 'Aducción de cadera en máquina',
+    category: 'lower',
+    movement: 'hip_adduction',
+    intensityType: 'hypertrophy',
+    equipment: ['machine'],
+    isolation: true,
+    tags: ['lower_strength', 'hypertrophy', 'gym', 'accessory', 'machine_based'],
+    description: 'Juntar las rodillas contra las almohadillas, sentado. Carga los aductores de forma graduable, distinta de la exigencia de tronco de la plancha Copenhagen.',
+    aliases: ['Hip adduction', 'Aductores en máquina', 'Máquina de aductores'],
+    difficulty: 'beginner',
+    sportsTransfer: ['strength', 'squash', 'general_fitness'],
+    squashTransfer: ['lateral_control'],
+    riskLevel: 'low',
+    fatigueCost: 'low',
+  },
+  {
+    id: 'seated_calf_raise',
+    safety: { loadsRegions: ['calf', 'achilles', 'ankle'], loadPatterns: [] },
+    name: 'Elevación de talones sentado',
+    category: 'lower',
+    movement: 'plantar_flexion',
+    intensityType: 'hypertrophy',
+    equipment: ['machine'],
+    isolation: true,
+    tags: ['lower_strength', 'hypertrophy', 'gym', 'accessory', 'machine_based'],
+    description: 'Subir los talones con la rodilla doblada y la carga sobre el muslo. Con la rodilla flexionada el trabajo recae en el sóleo, no en el gemelo.',
+    aliases: ['Seated calf raise', 'Gemelos sentado', 'Elevación de gemelos sentado', 'Sóleo en máquina'],
+    difficulty: 'beginner',
+    sportsTransfer: ['strength', 'running', 'squash'],
+    squashTransfer: ['deceleration'],
+    riskLevel: 'low',
+    fatigueCost: 'low',
+  },
+  {
+    id: 'standing_machine_calf_raise',
+    safety: { loadsRegions: ['calf', 'achilles', 'ankle'], loadPatterns: ['axial_load'] },
+    name: 'Elevación de talones de pie en máquina',
+    category: 'lower',
+    movement: 'plantar_flexion',
+    intensityType: 'hypertrophy',
+    equipment: ['machine'],
+    isolation: true,
+    tags: ['lower_strength', 'hypertrophy', 'gym', 'accessory', 'machine_based'],
+    description: 'Subir los talones de pie con las hombreras cargadas. Con la rodilla estirada el gemelo es el que trabaja, a diferencia de la versión sentada.',
+    aliases: ['Standing calf raise', 'Gemelos de pie', 'Elevación de gemelos de pie'],
+    difficulty: 'beginner',
+    sportsTransfer: ['strength', 'running', 'squash'],
+    squashTransfer: ['deceleration'],
+    riskLevel: 'low',
+    fatigueCost: 'low',
+  },
+  {
+    id: 'seated_cable_row',
+    safety: { loadsRegions: ['thoracic', 'lumbar', 'shoulder', 'elbow'], loadPatterns: ['grip_demand'] },
+    name: 'Remo sentado en polea baja',
+    category: 'upper',
+    movement: 'pull',
+    intensityType: 'hypertrophy',
+    equipment: ['cable'],
+    tags: ['upper_strength', 'hypertrophy', 'gym', 'beginner_friendly'],
+    description: 'Tirón horizontal sentado desde la polea baja, sin apoyo de pecho. La espalda alta trabaja y el tronco sostiene la posición.',
+    aliases: ['Seated cable row', 'Remo en polea baja', 'Remo bajo en polea'],
+    difficulty: 'beginner',
+    sportsTransfer: ['strength', 'general_fitness'],
+    riskLevel: 'low',
+    fatigueCost: 'medium',
+  },
+  {
+    id: 'cable_triceps_pushdown',
+    safety: { loadsRegions: ['elbow', 'shoulder'], loadPatterns: [] },
+    name: 'Extensión de tríceps en polea',
+    category: 'upper',
+    movement: 'elbow_extension',
+    intensityType: 'hypertrophy',
+    equipment: ['cable'],
+    isolation: true,
+    tags: ['upper_strength', 'hypertrophy', 'gym', 'accessory'],
+    description: 'Estirar los codos empujando la barra o la cuerda hacia abajo, con los brazos pegados al cuerpo. Accesorio de brazo que el catálogo no cubría.',
+    aliases: ['Triceps pushdown', 'Extensión de tríceps en cuerda', 'Jalón de tríceps', 'Tríceps en polea'],
+    difficulty: 'beginner',
+    sportsTransfer: ['strength', 'general_fitness'],
+    riskLevel: 'low',
+    fatigueCost: 'low',
+  },
 ]
 
 const EXERCISE_LOAD_REFERENCES: Partial<Record<string, StrengthLoadReference>> = {
@@ -1435,8 +1731,19 @@ export const EXERCISE_LIBRARY = STRENGTH_EXERCISE_LIBRARY
  */
 export const RETIRED_STRENGTH_EXERCISE_IDS: readonly string[] = []
 
+/**
+ * Índice por `id`, construido una vez.
+ *
+ * La búsqueda lineal se paga en los caminos calientes del plan builder, que
+ * resuelven ejercicios por id miles de veces por semana reparada, y ese costo
+ * crece con cada alta del catálogo.
+ */
+const EXERCISE_BY_ID: ReadonlyMap<string, ExerciseDefinition> = new Map(
+  STRENGTH_EXERCISE_LIBRARY.map((exercise) => [exercise.id, exercise]),
+)
+
 export function getExerciseById(id: string): ExerciseDefinition | undefined {
-  return STRENGTH_EXERCISE_LIBRARY.find((exercise) => exercise.id === id)
+  return EXERCISE_BY_ID.get(id)
 }
 
 /**
@@ -1458,19 +1765,26 @@ export function getStrengthExerciseIdentityById(id: string): {
   }
 }
 
+/**
+ * Si el ejercicio puede ser el levantamiento principal de una sesión.
+ *
+ * Autoridad única y compartida: la consumen el rol posicional del selector, el
+ * contrato de roles del plan builder y la elección de slots estrella. Un
+ * aislamiento no sostiene una sesión y, sobre todo, no puede quedarse con la
+ * exención del conteo de repetición sólo por aparecer primero.
+ */
+export function isMainLiftEligible(definition: ExerciseDefinition): boolean {
+  return definition.isolation !== true
+}
+
 export function getStrengthExerciseRole(definition: ExerciseDefinition, index = 0): StrengthExerciseRole {
   if (definition.category === 'core') return 'trunk'
   if (definition.intensityType === 'power') return 'power'
-  return index === 0 ? 'main_lift' : 'accessory'
+  return index === 0 && isMainLiftEligible(definition) ? 'main_lift' : 'accessory'
 }
 
 export function normalizeStrengthExerciseKey(value: string): string {
-  return value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
+  return normalizeKey(value)
 }
 
 function resolveByNameLadder(name: string): StrengthExerciseResolution | undefined {
@@ -1541,15 +1855,44 @@ function resolveByNameLadder(name: string): StrengthExerciseResolution | undefin
   // Los candidatos viajan igual, ordenados por `id` para no reintroducir esa
   // dependencia de orden. Quien clasifica puede usarlos; quien prescribe carga
   // solo mira `definition`, que acá queda ausente a propósito.
+  // El guard de equipamiento sólo puede QUITAR confianza, nunca agregarla.
+  //
+  // Sobre un candidato único resuelve el error que motivó el guard: «press
+  // banca en máquina» heredaba la carga de la banca libre. Sobre un empate no
+  // toca la lista: estrecharla dejaría un solo candidato y los consumidores que
+  // miran `candidates` para decidir si exponen un %1RM se volverían más
+  // confiados por un filtro pensado para lo contrario. Un empate sólo se
+  // resuelve a nada, cuando ningún candidato es compatible.
+  const surviving = filterCandidatesByNamedEquipment(name, substringCandidates)
+  if (surviving.length === 0) return undefined
+
   const candidates = [...substringCandidates].sort((left, right) => left.id.localeCompare(right.id))
-  if (candidates.length === 0) return undefined
   if (candidates.length === 1) return { definition: candidates[0]!, matchKind: 'substring', candidates }
   return { matchKind: 'ambiguous', candidates }
 }
 
+/**
+ * Descarta candidatos incompatibles con el equipamiento que el nombre pide.
+ *
+ * Un candidato sobrevive si declara al menos uno de los equipamientos
+ * nombrados: los arrays de `equipment` son alternativas, no requisitos
+ * conjuntos, así que «press banca con barra y mancuernas» acepta un ejercicio
+ * que sólo declara barra. Sin equipamiento pedido no se filtra nada.
+ */
+function filterCandidatesByNamedEquipment(
+  name: string,
+  candidates: ExerciseDefinition[],
+): ExerciseDefinition[] {
+  const { requested } = detectEquipmentMentionsInName(name)
+  if (requested.length === 0) return candidates
+  return candidates.filter((candidate) =>
+    candidate.equipment.some((item) => requested.includes(item)),
+  )
+}
+
 function resolveFromLibraryRef(ref: ExerciseLibraryRef | undefined): ExerciseDefinition | undefined {
   if (!ref || ref.source !== 'strength_exercise') return undefined
-  return STRENGTH_EXERCISE_LIBRARY.find((exercise) => exercise.id === ref.id)
+  return EXERCISE_BY_ID.get(ref.id)
 }
 
 export function resolveStrengthExercise(
@@ -1579,7 +1922,7 @@ export function getExerciseGroupForDefinition(exercise: ExerciseDefinition): Exe
   ) return 'cardio'
   if (exercise.tags.includes('olympic_power')) return 'olympic'
   if (exercise.category === 'core') return 'core'
-  if (exercise.movement === 'push') return 'push'
-  if (exercise.movement === 'pull') return 'pull'
+  if (exercise.movement === 'push' || exercise.movement === 'elbow_extension') return 'push'
+  if (exercise.movement === 'pull' || exercise.movement === 'elbow_flexion') return 'pull'
   return 'legs'
 }

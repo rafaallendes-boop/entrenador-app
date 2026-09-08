@@ -63,7 +63,7 @@ describe('invariantes de copy de fuerza (pre-edición)', () => {
         stableDescription: REWRITTEN_DESCRIPTION_IDS.has(id) ? null : description,
       }))
 
-    expect(rows).toHaveLength(77)
+    expect(rows).toHaveLength(93)
     expect(rows.filter((row) => row.stableName === null)).toHaveLength(12)
     expect(rows.filter((row) => row.stableDescription === null)).toHaveLength(31)
 

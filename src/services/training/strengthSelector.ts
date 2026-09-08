@@ -3,8 +3,10 @@ import type { ExerciseLibraryRef } from '../../types/exerciseLibraryRef'
 import type { StrengthConstraint } from '../../types/strengthSafety'
 import {
   findStrengthExerciseByName,
+  getExerciseById,
   getExerciseGroupForDefinition,
   getStrengthExerciseRole,
+  isMainLiftEligible,
   normalizeStrengthExerciseKey,
   resolveStrengthExercise,
   STRENGTH_EXERCISE_LIBRARY,
@@ -20,6 +22,7 @@ import { getStrengthExerciseKey } from './strengthExerciseProposal'
 import { selectStrengthBlockTemplate, type StrengthBlockSlot } from './strengthBlocks'
 import type { DisciplineAcwr } from '../loadAnalytics'
 import { isExerciseAllowed } from './strengthSafetyConstraints'
+import { resolveDeclaredEquipment } from './equipmentVocabulary'
 
 export type StrengthPhase = 'base' | 'build' | 'peak' | 'taper' | 'transition' | 'race'
 export type StrengthSportProfile = 'strength_primary' | 'hybrid' | 'sport_support'
@@ -113,7 +116,7 @@ export function buildStrengthReplacementById(
   context: StrengthContext,
   exerciseIndex: number,
 ): StrengthSelectionExercise | undefined {
-  const candidate = STRENGTH_EXERCISE_LIBRARY.find((exercise) => exercise.id === candidateId)
+  const candidate = getExerciseById(candidateId)
   if (!candidate || !isCandidateAllowedInContext(candidate, context)) return undefined
   return buildPrescribedExercise(candidate, context, exerciseIndex)
 }
@@ -272,15 +275,17 @@ function selectExerciseForBlockSlot({
   available1RM: Set<Exercise1RMReference>
   selectedIds: Set<string>
 }): ExerciseDefinition | undefined {
-  const pool = buildStrengthCandidatePool(STRENGTH_EXERCISE_LIBRARY, context)
+  const pool = filterByEquipment(buildStrengthCandidatePool(STRENGTH_EXERCISE_LIBRARY, context), normalizedEquipment)
     .filter((exercise) => !selectedIds.has(exercise.id))
     .filter((exercise) => exercise.appropriateForPhases?.includes(phase) ?? true)
     .filter((exercise) => matchesBlockSlotPattern(exercise, slot.pattern))
+    // El slot `lunge` acepta cualquier unilateral, así que el patrón no basta
+    // para impedir que un aislamiento sea el levantamiento estrella.
+    .filter((exercise) => !slot.isStarLiftCandidate || isMainLiftEligible(exercise))
 
   const scored = scoreBlockCandidates(pool, {
     slot,
     context,
-    normalizedEquipment,
     recentSet,
     available1RM,
   })
@@ -305,16 +310,47 @@ function pickBlockFillers({
   selectedIds: Set<string>
   targetCount: number
 }): ExerciseDefinition[] {
-  const pool = buildStrengthCandidatePool(STRENGTH_EXERCISE_LIBRARY, context)
+  const pool = filterByEquipment(buildStrengthCandidatePool(STRENGTH_EXERCISE_LIBRARY, context), normalizedEquipment)
     .filter((exercise) => !selectedIds.has(exercise.id))
     .filter((exercise) => exercise.appropriateForPhases?.includes(phase) ?? true)
 
-  return scoreBlockCandidates(pool, {
-    context,
-    normalizedEquipment,
-    recentSet,
-    available1RM,
-  }).slice(0, targetCount).map(({ exercise }) => exercise)
+  return capIsolationFillers(
+    scoreBlockCandidates(pool, { context, recentSet, available1RM }).map(({ exercise }) => exercise),
+    selectedIds,
+  ).slice(0, targetCount)
+}
+
+/**
+ * Cupo de aislamientos en el relleno de densidad.
+ *
+ * El relleno toma los mejores puntuados, y los aislamientos puntúan bien
+ * porque son baratos en fatiga y compatibles con casi toda restricción.
+ * Sin cupo, ampliar el catálogo de accesorios convertiría una sesión de apoyo
+ * deportivo en una rutina analítica. El cupo cuenta lo ya seleccionado, así
+ * que un aislamiento que entró por un slot también consume del mismo total.
+ */
+const MAX_ISOLATION_PER_SESSION = 2
+
+function capIsolationFillers(
+  ordered: ExerciseDefinition[],
+  selectedIds: Set<string>,
+): ExerciseDefinition[] {
+  let budget = MAX_ISOLATION_PER_SESSION - countSelectedIsolations(selectedIds)
+
+  return ordered.filter((exercise) => {
+    if (!exercise.isolation) return true
+    if (budget <= 0) return false
+    budget -= 1
+    return true
+  })
+}
+
+function countSelectedIsolations(selectedIds: Set<string>): number {
+  let total = 0
+  for (const id of selectedIds) {
+    if (getExerciseById(id)?.isolation) total += 1
+  }
+  return total
 }
 
 function scoreBlockCandidates(
@@ -322,13 +358,11 @@ function scoreBlockCandidates(
   {
     slot,
     context,
-    normalizedEquipment,
     recentSet,
     available1RM,
   }: {
     slot?: StrengthBlockSlot
     context: StrengthContext
-    normalizedEquipment: EquipmentType[]
     recentSet: Set<string>
     available1RM: Set<Exercise1RMReference>
   },
@@ -343,8 +377,6 @@ function scoreBlockCandidates(
       if (context.primarySport === 'squash' && exercise.sportsTransfer?.includes('squash')) score += 5
       if (exercise.unilateral) score += slot?.pattern === 'lunge' ? 10 : 2
       if (exercise.category === 'core') score += 4
-      if (exercise.equipment.some((item) => normalizedEquipment.includes(item))) score += 8
-      else score -= 30
       if (recentSet.has(normalizeStrengthExerciseKey(exercise.id)) || recentSet.has(normalizeStrengthExerciseKey(exercise.name))) score -= 60
       if (context.fatigueLevel >= 7 && (exercise.intensityType === 'strength' || exercise.intensityType === 'power')) score -= 12
       if (context.requireExtraRecovery && exercise.fatigueCost === 'high') score -= 25
@@ -1172,6 +1204,7 @@ export function selectMainLiftWithProgression(
       exercise.movement !== progressionState.mainPattern &&
       exercise.intensityType === 'strength' &&
       exercise.category !== 'core' &&
+      isMainLiftEligible(exercise) &&
       !recentExercises.has(normalizeStrengthExerciseKey(exercise.id)),
     )
     if (alternative) return alternative.exercise
@@ -1182,6 +1215,7 @@ export function selectMainLiftWithProgression(
       exercise.movement === progressionState.mainPattern &&
       exercise.intensityType === 'strength' &&
       exercise.category !== 'core' &&
+      isMainLiftEligible(exercise) &&
       (
         progressionState.intent !== 'progress' ||
         !recentExercises.has(normalizeStrengthExerciseKey(exercise.id)) ||
@@ -1194,6 +1228,7 @@ export function selectMainLiftWithProgression(
   return pickFirst(scored, context, (exercise) =>
     exercise.intensityType === 'strength' &&
     exercise.category !== 'core' &&
+    isMainLiftEligible(exercise) &&
     !recentExercises.has(normalizeStrengthExerciseKey(exercise.id)),
   )
 }
@@ -1257,6 +1292,10 @@ function buildSelectionExercise(
     sets: prescription.sets,
     reps: prescription.reps,
     intensity: prescription.intensity,
+    // El esfuerzo objetivo es la prescripción de todo ejercicio sin carga
+    // derivada. Faltaba en esta ruta —la del chat y el prompt—, así que una
+    // máquina sin `loadReference` llegaba sin ninguna señal de intensidad.
+    targetRpe: resolveTargetRpe(prescription.intensity),
     notes: buildExerciseNotes(exercise, context, prescription.intensity, index),
     group: getExerciseGroupForDefinition(exercise),
     libraryRef: { source: 'strength_exercise', id: exercise.id },
@@ -1523,34 +1562,15 @@ function pickFirst(
     )?.exercise
 }
 
+/**
+ * El equipamiento disponible, resuelto por la única autoridad del vocabulario.
+ *
+ * Sin declarar sigue significando todo, que es el comportamiento previo al
+ * campo. Una selección vacía significa vacía: convertirla en gimnasio completo
+ * —como hacía el fallback anterior— produce sesiones inejecutables.
+ */
 function normalizeEquipment(availableEquipment?: string[]): EquipmentType[] {
-  if (!availableEquipment || availableEquipment.length === 0) {
-    return ['barbell', 'dumbbell', 'bodyweight', 'machine', 'cable', 'kettlebell', 'medball', 'bands', 'trap_bar', 'trx', 'box', 'ladder', 'plate', 'stability_ball', 'assault_bike', 'air_treadmill']
-  }
-
-  const mapped = availableEquipment
-    .map((item) => item.toLowerCase().trim())
-    .flatMap<EquipmentType>((item) => {
-      if (item.includes('trap') || item.includes('hex')) return ['trap_bar']
-      if (item.includes('trx') || item.includes('suspension')) return ['trx']
-      if (item.includes('box') || item.includes('cajon') || item.includes('cajón')) return ['box']
-      if (item.includes('ladder') || item.includes('escalera')) return ['ladder']
-      if (item.includes('assault') || item.includes('asalto') || item.includes('air bike') || item.includes('bici')) return ['assault_bike']
-      if (item.includes('air runner') || item.includes('trotadora') || item.includes('cinta') || item.includes('curved') || item.includes('curva')) return ['air_treadmill']
-      if (item.includes('plate') || item.includes('disco')) return ['plate']
-      if (item.includes('stability') || item.includes('swiss') || item.includes('fitball')) return ['stability_ball']
-      if (item.includes('bar')) return ['barbell']
-      if (item.includes('manc') || item.includes('dumb')) return ['dumbbell']
-      if (item.includes('body') || item.includes('peso')) return ['bodyweight']
-      if (item.includes('machine') || item.includes('maquina')) return ['machine']
-      if (item.includes('cable') || item.includes('polea')) return ['cable']
-      if (item.includes('kettle')) return ['kettlebell']
-      if (item.includes('med')) return ['medball']
-      if (item.includes('band')) return ['bands']
-      return []
-    })
-
-  return mapped.length > 0 ? [...new Set(mapped)] : ['bodyweight', 'dumbbell', 'bands']
+  return resolveDeclaredEquipment(availableEquipment).equipment
 }
 
 export function runStrengthSelectorSmokeChecks(): string[] {

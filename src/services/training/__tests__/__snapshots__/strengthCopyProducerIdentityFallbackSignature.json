@@ -29,7 +29,7 @@
         "group": "core",
         "weight": null,
         "targetPercent1RM": null,
-        "targetRpe": null,
+        "targetRpe": 6,
         "warmupSetsCount": 0
       },
       {
@@ -68,7 +68,7 @@
         "reps": 10,
         "group": "pull",
         "weight": null,
-        "targetPercent1RM": 62.5,
+        "targetPercent1RM": null,
         "targetRpe": 6,
         "warmupSetsCount": 0
       },
@@ -114,7 +114,7 @@
         "group": "core",
         "weight": null,
         "targetPercent1RM": null,
-        "targetRpe": null,
+        "targetRpe": 6,
         "warmupSetsCount": 0
       },
       {

@@ -628,6 +628,34 @@
     "stableDescription": "Corte diagonal en polea de arriba hacia abajo. Transferencia rotacional controlada entre caderas y hombros."
   },
   {
+    "id": "cable_triceps_pushdown",
+    "category": "upper",
+    "movement": "elbow_extension",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "cable"
+    ],
+    "tags": [
+      "upper_strength",
+      "hypertrophy",
+      "gym",
+      "accessory"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "general_fitness"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "low",
+    "appropriateForPhases": [
+      "base",
+      "build"
+    ],
+    "stableName": "Extensión de tríceps en polea",
+    "stableDescription": "Estirar los codos empujando la barra o la cuerda hacia abajo, con los brazos pegados al cuerpo. Accesorio de brazo que el catálogo no cubría."
+  },
+  {
     "id": "chest_supported_row",
     "category": "upper",
     "movement": "pull",
@@ -1227,6 +1255,35 @@
     "stableDescription": null
   },
   {
+    "id": "horizontal_leg_press",
+    "category": "lower",
+    "movement": "squat",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "machine"
+    ],
+    "tags": [
+      "lower_strength",
+      "hypertrophy",
+      "gym",
+      "beginner_friendly",
+      "machine_based"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "general_fitness"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "medium",
+    "appropriateForPhases": [
+      "base",
+      "build"
+    ],
+    "stableName": "Prensa de piernas horizontal",
+    "stableDescription": "Empuje de piernas sentado, con el carro en horizontal. Misma función que la prensa a 45° con otra posición de cadera, así que su historial de carga se lleva por separado."
+  },
+  {
     "id": "incline_bench_press",
     "category": "upper",
     "movement": "push",
@@ -1773,6 +1830,304 @@
     "stableDescription": "Saltos laterales alternando de pie en pie. Potencia lateral, desaceleración y reaceleración. Aterriza absorbiendo y empuja para el siguiente salto."
   },
   {
+    "id": "leg_press_45",
+    "category": "lower",
+    "movement": "squat",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "machine"
+    ],
+    "tags": [
+      "lower_strength",
+      "hypertrophy",
+      "gym",
+      "beginner_friendly",
+      "machine_based"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "general_fitness"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "medium",
+    "appropriateForPhases": [
+      "base",
+      "build"
+    ],
+    "stableName": "Prensa de piernas a 45°",
+    "stableDescription": "Empuje de piernas en el carro inclinado. Permite cargar el tren inferior sin comprimir la columna; bajar sólo hasta donde la pelvis no se despegue del respaldo."
+  },
+  {
+    "id": "lying_leg_curl",
+    "category": "lower",
+    "movement": "knee_flexion",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "machine"
+    ],
+    "tags": [
+      "lower_strength",
+      "hypertrophy",
+      "gym",
+      "accessory",
+      "machine_based"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "general_fitness"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "low",
+    "appropriateForPhases": [
+      "base",
+      "build"
+    ],
+    "stableName": "Curl femoral tumbado",
+    "stableDescription": "Flexionar la rodilla boca abajo, con la cadera extendida. Misma articulación que el curl sentado pero con el isquiotibial en otra longitud, así que se registran aparte."
+  },
+  {
+    "id": "machine_chest_press",
+    "category": "upper",
+    "movement": "push",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "machine"
+    ],
+    "tags": [
+      "upper_strength",
+      "hypertrophy",
+      "gym",
+      "beginner_friendly",
+      "machine_based"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "general_fitness"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "medium",
+    "appropriateForPhases": [
+      "base",
+      "build"
+    ],
+    "stableName": "Press de pecho en máquina",
+    "stableDescription": "Empuje horizontal guiado, sentado. La máquina controla la trayectoria, así que permite acercarse al fallo con menos exigencia de estabilización que el press con barra."
+  },
+  {
+    "id": "machine_hip_abduction",
+    "category": "lower",
+    "movement": "hip_abduction",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "machine"
+    ],
+    "tags": [
+      "lower_strength",
+      "hypertrophy",
+      "gym",
+      "accessory",
+      "machine_based"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "squash",
+      "general_fitness"
+    ],
+    "squashTransfer": [
+      "lateral_control"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "low",
+    "appropriateForPhases": [
+      "base",
+      "build"
+    ],
+    "stableName": "Abducción de cadera en máquina",
+    "stableDescription": "Separar las rodillas contra las almohadillas, sentado. Carga el glúteo medio con más resistencia de la que permite la caminata con banda."
+  },
+  {
+    "id": "machine_hip_adduction",
+    "category": "lower",
+    "movement": "hip_adduction",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "machine"
+    ],
+    "tags": [
+      "lower_strength",
+      "hypertrophy",
+      "gym",
+      "accessory",
+      "machine_based"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "squash",
+      "general_fitness"
+    ],
+    "squashTransfer": [
+      "lateral_control"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "low",
+    "appropriateForPhases": [
+      "base",
+      "build"
+    ],
+    "stableName": "Aducción de cadera en máquina",
+    "stableDescription": "Juntar las rodillas contra las almohadillas, sentado. Carga los aductores de forma graduable, distinta de la exigencia de tronco de la plancha Copenhagen."
+  },
+  {
+    "id": "machine_leg_extension",
+    "category": "lower",
+    "movement": "knee_extension",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "machine"
+    ],
+    "tags": [
+      "lower_strength",
+      "hypertrophy",
+      "gym",
+      "accessory",
+      "machine_based"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "general_fitness"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "low",
+    "appropriateForPhases": [
+      "base",
+      "build"
+    ],
+    "stableName": "Extensión de rodilla en máquina",
+    "stableDescription": "Estirar la rodilla contra la almohadilla, sentado. Trabaja el cuádriceps aislado; es el patrón que ningún ejercicio compuesto del catálogo cubre por separado."
+  },
+  {
+    "id": "machine_pec_fly",
+    "category": "upper",
+    "movement": "push",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "machine"
+    ],
+    "tags": [
+      "upper_strength",
+      "hypertrophy",
+      "gym",
+      "accessory",
+      "machine_based"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "general_fitness"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "low",
+    "appropriateForPhases": [
+      "base",
+      "build"
+    ],
+    "stableName": "Aperturas de pecho en máquina",
+    "stableDescription": "Juntar los brazos al frente con los codos casi fijos. Trabaja el pecho en un rango que el press no cubre; el hombro queda expuesto al final del recorrido, así que se abre sin forzar."
+  },
+  {
+    "id": "machine_reverse_fly",
+    "category": "upper",
+    "movement": "pull",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "machine"
+    ],
+    "tags": [
+      "upper_strength",
+      "hypertrophy",
+      "gym",
+      "accessory",
+      "machine_based"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "general_fitness"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "low",
+    "appropriateForPhases": [
+      "base",
+      "build"
+    ],
+    "stableName": "Aperturas inversas en máquina",
+    "stableDescription": "Abrir los brazos hacia atrás sentado de frente a la máquina. Trabaja hombro posterior y espalda alta, la cara opuesta a las aperturas de pecho."
+  },
+  {
+    "id": "machine_seated_row",
+    "category": "upper",
+    "movement": "pull",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "machine"
+    ],
+    "tags": [
+      "upper_strength",
+      "hypertrophy",
+      "gym",
+      "beginner_friendly",
+      "machine_based"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "general_fitness"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "medium",
+    "appropriateForPhases": [
+      "base",
+      "build"
+    ],
+    "stableName": "Remo sentado en máquina",
+    "stableDescription": "Tirón horizontal sentado con el pecho apoyado en la almohadilla. La espalda alta trabaja sin que la zona lumbar sostenga la carga."
+  },
+  {
+    "id": "machine_shoulder_press",
+    "category": "upper",
+    "movement": "push",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "machine"
+    ],
+    "tags": [
+      "upper_strength",
+      "hypertrophy",
+      "gym",
+      "beginner_friendly",
+      "machine_based"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "general_fitness"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "medium",
+    "appropriateForPhases": [
+      "base",
+      "build"
+    ],
+    "stableName": "Press de hombros en máquina",
+    "stableDescription": "Empuje vertical guiado, sentado con respaldo. Trabaja el hombro por encima de la cabeza sin pedir estabilidad de tronco."
+  },
+  {
     "id": "med_ball_rotational_throw",
     "category": "core",
     "movement": "rotation",
@@ -2165,6 +2520,96 @@
     "stableDescription": "Lanzamiento rotacional explosivo con balón medicinal contra la pared. Intención de transferencia deportiva."
   },
   {
+    "id": "seated_cable_row",
+    "category": "upper",
+    "movement": "pull",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "cable"
+    ],
+    "tags": [
+      "upper_strength",
+      "hypertrophy",
+      "gym",
+      "beginner_friendly"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "general_fitness"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "medium",
+    "appropriateForPhases": [
+      "base",
+      "build"
+    ],
+    "stableName": "Remo sentado en polea baja",
+    "stableDescription": "Tirón horizontal sentado desde la polea baja, sin apoyo de pecho. La espalda alta trabaja y el tronco sostiene la posición."
+  },
+  {
+    "id": "seated_calf_raise",
+    "category": "lower",
+    "movement": "plantar_flexion",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "machine"
+    ],
+    "tags": [
+      "lower_strength",
+      "hypertrophy",
+      "gym",
+      "accessory",
+      "machine_based"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "running",
+      "squash"
+    ],
+    "squashTransfer": [
+      "deceleration"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "low",
+    "appropriateForPhases": [
+      "base",
+      "build"
+    ],
+    "stableName": "Elevación de talones sentado",
+    "stableDescription": "Subir los talones con la rodilla doblada y la carga sobre el muslo. Con la rodilla flexionada el trabajo recae en el sóleo, no en el gemelo."
+  },
+  {
+    "id": "seated_leg_curl",
+    "category": "lower",
+    "movement": "knee_flexion",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "machine"
+    ],
+    "tags": [
+      "lower_strength",
+      "hypertrophy",
+      "gym",
+      "accessory",
+      "machine_based"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "general_fitness"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "low",
+    "appropriateForPhases": [
+      "base",
+      "build"
+    ],
+    "stableName": "Curl femoral sentado",
+    "stableDescription": "Flexionar la rodilla llevando el talón hacia atrás, sentado con la cadera en ángulo. Trabaja el isquiotibial en una posición que el peso muerto rumano no repite."
+  },
+  {
     "id": "side_plank",
     "category": "core",
     "movement": "carry",
@@ -2423,6 +2868,39 @@
     ],
     "stableName": "Plancha frontal en fitball",
     "stableDescription": null
+  },
+  {
+    "id": "standing_machine_calf_raise",
+    "category": "lower",
+    "movement": "plantar_flexion",
+    "intensityType": "hypertrophy",
+    "equipment": [
+      "machine"
+    ],
+    "tags": [
+      "lower_strength",
+      "hypertrophy",
+      "gym",
+      "accessory",
+      "machine_based"
+    ],
+    "difficulty": "beginner",
+    "sportsTransfer": [
+      "strength",
+      "running",
+      "squash"
+    ],
+    "squashTransfer": [
+      "deceleration"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "low",
+    "appropriateForPhases": [
+      "base",
+      "build"
+    ],
+    "stableName": "Elevación de talones de pie en máquina",
+    "stableDescription": "Subir los talones de pie con las hombreras cargadas. Con la rodilla estirada el gemelo es el que trabaja, a diferencia de la versión sentada."
   },
   {
     "id": "step_up",
