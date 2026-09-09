@@ -3,6 +3,7 @@ import { Navigate, useNavigate } from 'react-router-dom'
 import { Users } from 'lucide-react'
 import { useAuthStore, type SyncStatus } from '../store/useAuthStore'
 import { isCoachAccount } from '../services/athlete/coachAccess'
+import { useEntitlementStore } from '../store/useEntitlementStore'
 import { getSelfAthleteId } from '../services/athlete/activeAthlete'
 import { athleteIdForOwner } from '../services/athlete/athleteScopeMigration'
 import { resolveSelfAthleteIdForOwner } from '../services/athlete/athleteWeekScope'
@@ -112,9 +113,13 @@ export default function CoachWorkspacePage({
     getCoachRosterRevision,
   )
 
+  // El rol se lee del store, no del holder: el holder no es reactivo y la UI
+  // no volvería a renderizar cuando la hidratación confirme identidad.
+  const accountRole = useEntitlementStore((state) => state.accountRole)
+  const entitlementHydrated = useEntitlementStore((state) => state.hydrated)
   const isCoach = allowlistOverride !== undefined
-    ? isCoachAccount(user, allowlistOverride)
-    : isCoachAccount(user)
+    ? isCoachAccount(user, allowlistOverride, accountRole)
+    : isCoachAccount(user, undefined, accountRole)
 
   useEffect(() => {
     if (!isCoach || !user?.id) return
@@ -205,7 +210,13 @@ export default function CoachWorkspacePage({
     }
   }, [user?.id, activeAthleteId, navigate])
 
-  if (!isCoach || !user?.id) return <Navigate to={ROUTES.HOME} replace />
+  if (!user?.id) return <Navigate to={ROUTES.HOME} replace />
+  // Redirigir antes de saber el rol expulsaría a una cuenta coach que no esté
+  // en la allowlist puente. Sin evidencia todavía no se decide.
+  if (!isCoach && !entitlementHydrated) {
+    return <p className="px-4 py-6 text-sm text-ink-muted">Cargando tu espacio de coach...</p>
+  }
+  if (!isCoach) return <Navigate to={ROUTES.HOME} replace />
 
   const triage = triageSnapshot?.ownerAccountId === user.id
     ? triageSnapshot.result

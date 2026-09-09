@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { ChevronDown, Users, Zap } from 'lucide-react'
 import { useAuthStore } from '../../store/useAuthStore'
 import { isCoachAccount } from '../../services/athlete/coachAccess'
+import { useEntitlementStore } from '../../store/useEntitlementStore'
 import { getSelfAthleteId } from '../../services/athlete/activeAthlete'
 import { listOwnedAthletes } from '../../services/athlete/managedAthletes'
 import { switchActiveAthlete } from '../../services/athlete/switchActiveAthlete'
@@ -23,9 +24,12 @@ export default function CoachContextBar({ allowlistOverride, initialAthletes }: 
   const [isOpen, setIsOpen] = useState(false)
   const navigate = useNavigate()
 
+  // Reactivo a propósito: el holder de rol no lo es, y la barra debe aparecer
+  // en cuanto la hidratación confirme que la cuenta es coach.
+  const accountRole = useEntitlementStore((state) => state.accountRole)
   const isCoach = allowlistOverride !== undefined
-    ? isCoachAccount(user, allowlistOverride)
-    : isCoachAccount(user)
+    ? isCoachAccount(user, allowlistOverride, accountRole)
+    : isCoachAccount(user, undefined, accountRole)
 
   // Nota: el guard de scope (enforceCoachScopeGuard) NO vive aquí — este
   // componente solo monta dentro de AppShell y /onboarding queda fuera.

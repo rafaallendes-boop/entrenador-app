@@ -25,6 +25,19 @@ vi.mock('../store/useAuthStore', () => {
   useAuthStore.getState = () => authState
   return { useAuthStore }
 })
+// Mismo motivo que el mock de auth: SSR lee getInitialState(), así que el rol
+// de cuenta se inyecta con estado mutable. El default reproduce el arranque
+// real: `unknown` y sin hidratar.
+const { entitlementState } = vi.hoisted(() => ({
+  entitlementState: { accountRole: 'unknown' as 'athlete' | 'coach' | 'unknown', hydrated: false },
+}))
+vi.mock('../store/useEntitlementStore', () => {
+  const useEntitlementStore = (selector: (state: typeof entitlementState) => unknown) => selector(entitlementState)
+  useEntitlementStore.setState = (patch: Partial<typeof entitlementState>) => { Object.assign(entitlementState, patch) }
+  useEntitlementStore.getState = () => entitlementState
+  return { useEntitlementStore }
+})
+
 import CoachWorkspacePage from './CoachWorkspacePage'
 import { useAuthStore } from '../store/useAuthStore'
 import { setActiveAthleteId, setSelfAthleteId } from '../services/athlete/activeAthlete'
@@ -72,6 +85,43 @@ describe('CoachWorkspacePage', () => {
     useAuthStore.setState({ user: null, activeAthleteId: null })
     setActiveAthleteId(null)
     setSelfAthleteId(null)
+    entitlementState.accountRole = 'unknown'
+    entitlementState.hydrated = false
+  })
+
+  /** Entrega 2, paso 1: `account_role` habilita la UI; la allowlist es puente. */
+  describe('gate por rol de cuenta', () => {
+    it('rol coach entra sin estar en la allowlist', () => {
+      entitlementState.accountRole = 'coach'
+      entitlementState.hydrated = true
+      const html = render('', [SELF, MANAGED])
+      expect(html).toContain('Workspace de coach')
+    })
+
+    // `<Navigate>` no redirige bajo renderToStaticMarkup: el marcador de que
+    // se decidió expulsar es que no queda ni workspace ni estado de carga.
+    it('rol athlete confirmado y fuera de la allowlist: expulsa', () => {
+      entitlementState.accountRole = 'athlete'
+      entitlementState.hydrated = true
+      const html = render('otra@persona.cl')
+      expect(html).not.toContain('Workspace de coach')
+      expect(html).not.toContain('Cargando tu espacio de coach')
+    })
+
+    it('rol sin resolver: no decide todavía, ni entra ni expulsa', () => {
+      entitlementState.accountRole = 'unknown'
+      entitlementState.hydrated = false
+      const html = render('otra@persona.cl')
+      expect(html).not.toContain('Workspace de coach')
+      expect(html).toContain('Cargando tu espacio de coach')
+    })
+
+    it('la allowlist sigue entrando aunque el rol sea athlete (puente)', () => {
+      entitlementState.accountRole = 'athlete'
+      entitlementState.hydrated = true
+      const html = render('rafa@x.cl', [SELF, MANAGED])
+      expect(html).toContain('Workspace de coach')
+    })
   })
 
   it('no-coach entrando manualmente a /coach: no renderiza el workspace', () => {

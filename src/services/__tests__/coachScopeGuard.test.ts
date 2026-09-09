@@ -9,6 +9,7 @@ import { db } from '../../db/db'
 import { getActiveAthleteId, setActiveAthleteId, setSelfAthleteId } from '../athlete/activeAthlete'
 import { getPersistedAthleteSelection, persistAthleteSelection } from '../athlete/athleteSelection'
 import { enforceCoachScopeGuard } from '../athlete/coachScopeGuard'
+import { setAccountRole } from '../entitlements/accountRoleHolder'
 
 const OWNER = 'user-1'
 const SELF = 'ath_user-1'
@@ -57,9 +58,11 @@ describe('enforceCoachScopeGuard', () => {
     db.close()
     setActiveAthleteId(null)
     setSelfAthleteId(null)
+    setAccountRole('unknown')
   })
 
   it('cuenta FUERA de allowlist con gestionado activo: vuelve al self y limpia la selección', async () => {
+    setAccountRole('athlete')
     setActiveAthleteId(MANAGED)
     persistAthleteSelection(OWNER, MANAGED)
 
@@ -78,6 +81,44 @@ describe('enforceCoachScopeGuard', () => {
 
     expect(enforced).toBe(false)
     expect(getActiveAthleteId()).toBe(MANAGED)
+  })
+
+  /**
+   * Entrega 2, paso 1. Revocar y habilitar son preguntas distintas.
+   *
+   * `isCoachAccount` falla cerrado con `unknown`: sin evidencia no se muestra
+   * la UI de coach. Pero este guard **revoca** una selección ya hecha, y el
+   * rol arranca en `unknown` hasta que hidraten los entitlements: aplicar el
+   * mismo criterio destruiría el scope de un coach real en cada arranque,
+   * antes de saber quién es.
+   */
+  it('rol coach con gestionado activo: no interviene aunque esté fuera de la allowlist', async () => {
+    setAccountRole('coach')
+    setActiveAthleteId(MANAGED)
+    persistAthleteSelection(OWNER, MANAGED)
+
+    expect(await enforceCoachScopeGuard(COACH_USER, '')).toBe(false)
+    expect(getActiveAthleteId()).toBe(MANAGED)
+  })
+
+  it('rol todavía sin resolver: difiere en vez de revocar', async () => {
+    setAccountRole('unknown')
+    setActiveAthleteId(MANAGED)
+    persistAthleteSelection(OWNER, MANAGED)
+
+    expect(await enforceCoachScopeGuard(COACH_USER, '')).toBe(false)
+    expect(getActiveAthleteId()).toBe(MANAGED)
+    expect(getPersistedAthleteSelection(OWNER)).toBe(MANAGED)
+  })
+
+  it('rol athlete confirmado y fuera de la allowlist: sí revoca', async () => {
+    setAccountRole('athlete')
+    setActiveAthleteId(MANAGED)
+    persistAthleteSelection(OWNER, MANAGED)
+
+    expect(await enforceCoachScopeGuard(COACH_USER, '')).toBe(true)
+    expect(getActiveAthleteId()).toBe(SELF)
+    expect(getPersistedAthleteSelection(OWNER)).toBeNull()
   })
 
   it('self activo o holder sin resolver: no-op', async () => {

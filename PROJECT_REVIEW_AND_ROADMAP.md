@@ -1,6 +1,6 @@
 # RallyIQ — Trabajo pendiente
 
-Actualizado: 2026-09-08. Línea base: `main` = `origin/main` = `38d25a3`.
+Actualizado: 2026-09-09. Línea base: `main` = `origin/main` = `411556a`.
 
 **Qué es este documento.** Sólo lo que falta ejecutar. El registro histórico de
 entregas cerradas —secciones §1 a §35, cortes ejecutivos anteriores, checklists
@@ -148,6 +148,65 @@ Lo que falta, y todo depende del mismo hecho:
 
 Es lo que genera el sujeto del punto 5. Sin esto, 1b cortaría con una regla que
 nunca se ejerció contra su caso.
+
+**Estado medido en producción el 2026-09-09:**
+
+| | |
+|---|---:|
+| Cuentas en `auth.users` | 7 |
+| Filas en `user_entitlements` | **1** |
+| Roles distintos | `athlete` |
+| Cuentas con rol `coach` | **0** |
+| Atletas | 8 (7 con `linked_account_id`) |
+| Atletas por owner | 1,1,1,1,1,1,**2** |
+| Membresías | 8 — **`coach`=1, `self`=7** |
+| Invitaciones | 0 |
+
+Dos cosas que no estaban registradas: **ya existe una membresía `coach`** sobre
+el gestionado de la cuenta híbrida —lo que falta no es la membresía, es la
+*cuenta* con rol coach—, y **6 de 7 cuentas no tienen fila de entitlements**, así
+que su rol nunca se escribió (resuelven a `free` por ausencia, que es correcto).
+
+El servidor ya está listo: `030` trae `create_self_athlete`,
+`admin_create_managed_athlete` —exige que el owner sea cuenta coach— y
+`admin_delete_athlete`, más el trigger «una cuenta coach no puede tener self».
+**Lo que falta es cliente.**
+
+#### ✅ Paso 1 — el gate de UI lee `account_role` (2026-09-09)
+
+`isCoachAccount` pasa a ser `rol === 'coach' || email en la allowlist`. El rol es
+el criterio definitivo; `VITE_COACH_ACCOUNTS` queda como **puente** porque la
+cuenta del owner es híbrida a propósito (rol `athlete` con self y gestionados,
+Task 8 de 1a) y exigir rol coach hoy la dejaría fuera de su propio workspace.
+La allowlist habilita **UI**: los permisos reales siguen en la RLS por membresía
+y en `resolveCapability`.
+
+Dos asimetrías que el cableado obligó a resolver, ambas del mismo tipo —
+*habilitar* y *revocar* no usan el mismo criterio ante la falta de evidencia:
+
+- `enforceCoachScopeGuard` **difiere** mientras el rol es `unknown` en vez de
+  revocar. Aplicar el fail-closed de `isCoachAccount` habría destruido en cada
+  arranque la selección de un coach real fuera de la allowlist.
+- `CoachWorkspacePage` no redirige a Home hasta que los entitlements hidratan,
+  por la misma razón. Los componentes leen el rol del **store**, no del holder:
+  el holder no es reactivo y la UI no volvería a renderizar al confirmarse la
+  identidad.
+
+#### Pendiente de la Entrega 2
+
+1. **Cuenta coach definitiva**: crearla vacía (rol `coach`, sin self) y
+   transferirle la membresía `coach` del gestionado que hoy cuelga de la cuenta
+   híbrida.
+2. **Onboarding sin atleta self** — hoy no existe; es lo que bloquea el punto 1.
+3. **Rutas `/coach/*` fuera del shell de atleta.**
+4. **Retiro de `VITE_COACH_ACCOUNTS`**: cuando el punto 1 esté probado, el gate
+   pasa a ser sólo por rol y se eliminan la variable y `parseCoachAllowlist`.
+   Condición explícita acordada con el owner el 2026-09-09.
+5. Recién entonces, `enforce` (§5).
+
+Se descartó a propósito marcar `coach` la cuenta del owner: el trigger de `030`
+prohíbe que una cuenta coach tenga self, así que exigiría sacarle su atleta self
+—la migración de datos más delicada del proyecto— sólo para cambiar un gate.
 
 ---
 
