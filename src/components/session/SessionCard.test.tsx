@@ -393,3 +393,80 @@ describe('SessionCard — detalle de Whoop', () => {
     expect(screen.getByText(/no pudo puntuar/)).not.toBeNull()
   })
 })
+
+/** Regresión del code review del 2026-09-08 (hallazgos 12 y las tres líneas de squash). */
+describe('SessionCard — estructura de running y contexto de squash', () => {
+  function runningSession(blocks: unknown[]) {
+    return makeSession({
+      type: 'running', title: 'Running',
+      runningDetails: { runningType: 'z2', intervalStructure: { blocks } },
+    } as Partial<Session>)
+  }
+
+  it('un bloque continuo se lee en minutos, no en segundos', () => {
+    render(<SessionCard session={runningSession([{ label: 'Trote Z2 continuo', durationMin: 30, role: 'work' }])} />)
+    fireEvent.click(screen.getByText('Running'))
+    expect(screen.getByText(/30 min/)).toBeTruthy()
+    expect(screen.queryByText(/1800 s/)).toBeNull()
+  })
+
+  it('un bloque por repetición se lee en segundos', () => {
+    render(<SessionCard session={runningSession([
+      { label: 'Series', durationMin: 1, repetitions: 6, durationBasis: 'per_repetition', role: 'work' },
+    ])} />)
+    fireEvent.click(screen.getByText('Running'))
+    expect(screen.getByText(/60 s/)).toBeTruthy()
+  })
+
+  it('una serie corta sin basis declarado también se lee en segundos', () => {
+    // Caso real observado en el smoke del 2026-09-08: las repeticiones de 400 m
+    // se persisten sin `durationBasis`, y a 113 s "1.9 min" no es lenguaje de
+    // entrenador. El corte de 3 minutos las devuelve a segundos.
+    render(<SessionCard session={runningSession([
+      { label: 'Repetición 1', durationMin: 113 / 60, distanceKm: 0.4, repetitions: 1,
+        durationKind: 'estimated', role: 'work' },
+      { label: 'Recuperación suave', durationMin: 1.5, role: 'recovery' },
+    ])} />)
+    fireEvent.click(screen.getByText('Running'))
+    expect(screen.getByText(/113 s/)).toBeTruthy()
+    expect(screen.getByText(/90 s/)).toBeTruthy()
+    expect(screen.queryByText(/1\.9 min/)).toBeNull()
+  })
+
+  it('un bloque por distancia marca las repeticiones y el tiempo estimado', () => {
+    render(<SessionCard session={runningSession([
+      { label: 'Series 400', distanceKm: 0.4, repetitions: 5, durationMin: 1.5,
+        durationBasis: 'per_repetition', durationKind: 'estimated', role: 'work' },
+    ])} />)
+    fireEvent.click(screen.getByText('Running'))
+    expect(screen.getByText(/5×0\.4km/)).toBeTruthy()
+    expect(screen.getByText(/estimados/)).toBeTruthy()
+  })
+
+  it('el ritmo no duplica el sufijo /km', () => {
+    render(<SessionCard session={runningSession([
+      { label: 'Rodaje', durationMin: 30, targetPace: '6:00-6:30 /km', role: 'work' },
+    ])} />)
+    fireEvent.click(screen.getByText('Running'))
+    expect(screen.queryByText(/\/km\/km/)).toBeNull()
+    expect(screen.getByText(/6:00-6:30 \/km/)).toBeTruthy()
+  })
+
+  it('muestra objetivo y resultado técnico de squash', () => {
+    render(<SessionCard session={makeSession({
+      type: 'squash', title: 'Squash',
+      squashDetails: {
+        trainingFocus: 'technical', sessionKind: 'technical', sessionMode: 'drill_session',
+        drills: [{ name: 'Tiros paralelos profundos', durationMin: 60 }],
+        selectionReason: 'Elección manual',
+        technicalIntent: { family: 'drive_patterns', successTarget: 80 },
+        technicalResult: { attempts: 20, successes: 18 },
+      },
+    } as Partial<Session>)} />)
+    fireEvent.click(screen.getByText('Squash'))
+    expect(screen.getByText(/drive patterns/)).toBeTruthy()
+    expect(screen.getByText(/80% de aciertos/)).toBeTruthy()
+    expect(screen.getByText(/18\/20 aciertos/)).toBeTruthy()
+    expect(screen.getByText(/Elección manual/)).toBeTruthy()
+  })
+})

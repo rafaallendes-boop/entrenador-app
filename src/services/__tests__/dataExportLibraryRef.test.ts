@@ -174,3 +174,100 @@ describe('libraryRef en backup/import', () => {
   })
 
 })
+
+/**
+ * Regresión del code review del 2026-09-08 (hallazgo 7).
+ *
+ * `optionalRunningIntervalStructure` es nuevo: antes este campo no se parseaba
+ * y se perdía en silencio. Las estructuras persistidas sólo pasaron por
+ * `isRunningIntervalStructure`, que no valida más que `Array.isArray(blocks)`,
+ * así que existen filas con bloques sin `label`. Hacerlo lanzar abortaba el
+ * import completo del backup por una fila vieja.
+ */
+describe('intervalStructure malformada en backup', () => {
+  function runningBackup(intervalStructure: unknown) {
+    const fixture = backupFixture([])
+    return {
+      ...fixture,
+      tables: {
+        ...fixture.tables,
+        sessions: [{
+          ...sessionRow([]),
+          type: 'running',
+          runningDetails: { runningType: 'z2', intervalStructure },
+        }],
+      },
+    }
+  }
+
+  it('conserva una estructura válida', () => {
+    const parsed = parseAppDataExport((runningBackup({
+      blocks: [{ label: 'Rodaje suave', durationMin: 30, role: 'work' }],
+    })))
+    const [session] = parsed.tables.sessions
+    expect(session.runningDetails?.intervalStructure?.blocks).toHaveLength(1)
+    expect(session.runningDetails?.intervalStructure?.blocks[0].label).toBe('Rodaje suave')
+  })
+
+  it.each([
+    ['un bloque sin label', { blocks: [{ durationMin: 30 }] }],
+    ['un label vacío', { blocks: [{ label: '   ', durationMin: 30 }] }],
+    ['blocks que no es array', { blocks: 'nope' }],
+    ['un bloque que no es objeto', { blocks: ['nope'] }],
+  ])('degrada %s sin abortar el import', (_caso, intervalStructure) => {
+    const parsed = parseAppDataExport((runningBackup(intervalStructure)))
+    const [session] = parsed.tables.sessions
+    expect(session.runningDetails?.intervalStructure).toBeUndefined()
+    // El resto de la fila sobrevive: se pierde la estructura, no la sesión.
+    expect(session.id).toBe('session-ref')
+    expect(session.runningDetails?.runningType).toBe('z2')
+    expect(session.durationMin).toBe(60)
+  })
+})
+
+/**
+ * Regresión encontrada en el smoke de DEV del 2026-09-08, sobre un backup real.
+ *
+ * El formulario manual guarda una sesión de squash sin ejercicios, y
+ * `buildSquashDetailsDraft` emite igual el `squashDetails`. El parser exigía al
+ * menos un drill, así que el export producía una fila que el import rechazaba:
+ * el backup de ese entorno **no se podía restaurar**, y caía el archivo entero,
+ * no la sesión. Es anterior a la entrega de dosis.
+ */
+describe('squashDetails sin drills en backup', () => {
+  function squashBackup(squashDetails: unknown) {
+    const fixture = backupFixture([])
+    return {
+      ...fixture,
+      tables: {
+        ...fixture.tables,
+        sessions: [{ ...sessionRow([]), type: 'squash', squashDetails }],
+      },
+    }
+  }
+
+  it('acepta una lista de drills explícitamente vacía', () => {
+    const parsed = parseAppDataExport(squashBackup({
+      trainingFocus: 'technical', sessionKind: 'technical', sessionMode: 'drill_session',
+      drills: [], blocks: [],
+    }))
+    const [session] = parsed.tables.sessions
+    expect(session.squashDetails?.drills).toEqual([])
+    expect(session.squashDetails?.sessionKind).toBe('technical')
+    expect(session.id).toBe('session-ref')
+  })
+
+  it('sigue rechazando un squashDetails del que no se puede derivar nada', () => {
+    expect(() => parseAppDataExport(squashBackup({
+      trainingFocus: 'technical', sessionKind: 'technical', sessionMode: 'drill_session',
+    }))).toThrow(/al menos un drill/)
+  })
+
+  it('deriva los drills desde blocks cuando no viene la lista', () => {
+    const parsed = parseAppDataExport(squashBackup({
+      trainingFocus: 'technical', sessionKind: 'technical', sessionMode: 'drill_session',
+      blocks: [{ kind: 'technical', drills: [{ name: 'Tiros paralelos profundos', durationMin: 20 }] }],
+    }))
+    expect(parsed.tables.sessions[0].squashDetails?.drills).toHaveLength(1)
+  })
+})

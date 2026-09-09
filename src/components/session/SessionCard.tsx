@@ -13,6 +13,7 @@ import { normalizeGeneratedProtocol } from '../../services/trainingProtocols'
 import { formatMobilityFocusAreas, normalizeMobilityTargetStructure } from '../../services/training/mobilitySessionLibrary'
 import { resolveSupersetLayout } from '../../services/training/supersetGroups'
 import { resolveSquashDrillGuidance } from '../../services/training/drillLibrary'
+import { formatRunningBlockDuration } from '../../services/training/runningBlockDisplay'
 
 const STATUS_CONFIG: Record<SessionStatus, { label: string; badge: string; icon: string }> = {
   planned:   { label: 'Planificado', badge: 'bg-surface-raised text-ink-faint border border-surface-border',       icon: '○' },
@@ -85,16 +86,6 @@ interface SessionCardProps {
   onDelete?: (session: Session) => void
   /** Detalle real del entrenamiento. La tarjeta no consulta Dexie: se lo pasan. */
   whoopWorkout?: WhoopWorkout
-}
-
-/**
- * Sólo los bloques por repetición se leen en segundos. Un rodaje continuo se
- * mostraba como "1800 s" en vez de "30 min".
- */
-function formatRunningBlockDuration(durationMin: number, basis?: 'total' | 'per_repetition'): string {
-  const seconds = Math.round(durationMin * 60)
-  if (basis === 'per_repetition' || seconds < 90) return `${seconds} s`
-  return `${Number(durationMin.toFixed(1))} min`
 }
 
 export default function SessionCard({ session, compact = false, onDelete, whoopWorkout }: SessionCardProps) {

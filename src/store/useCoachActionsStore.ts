@@ -1018,8 +1018,24 @@ async function applyCoachAction(
               targetPaceMax: action.targetPaceMax ?? current.runningDetails?.targetPaceMax,
               targetHrMin: action.targetHrMin ?? current.runningDetails?.targetHrMin,
               targetHrMax: action.targetHrMax ?? current.runningDetails?.targetHrMax,
-              intervalStructure: action.intervalStructure ?? current.runningDetails?.intervalStructure,
-              templateRef: action.runningTemplateRef, selectionReason: action.runningSelectionReason,
+              // La procedencia viaja con la estructura, siempre desde la misma
+              // fuente. Un update que sólo toca pulsaciones no pasa por la dosis
+              // (`changesDose` no mira `targetHrMin`) y llegaba sin ref: escribirla
+              // tal cual borraba en silencio la identidad que usa la progresión.
+              // Y cuando la acción sí trae estructura propia, la ref ausente es
+              // decisión del finalizador —limpia la ref que dejó de corresponder—,
+              // así que no se repone.
+              ...(action.intervalStructure
+                ? {
+                    intervalStructure: action.intervalStructure,
+                    templateRef: action.runningTemplateRef,
+                    selectionReason: action.runningSelectionReason,
+                  }
+                : {
+                    intervalStructure: current.runningDetails?.intervalStructure,
+                    templateRef: action.runningTemplateRef ?? current.runningDetails?.templateRef,
+                    selectionReason: action.runningSelectionReason ?? current.runningDetails?.selectionReason,
+                  }),
             }
           : current.runningDetails
         patch.cyclingDetails = undefined

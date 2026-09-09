@@ -656,4 +656,55 @@ describe('repairGeneratedWeek', () => {
     // At least one fallback must be primary sport if missing
     expect(newSessions.some((s) => s.sessionType === 'squash' || s.sessionType === 'mobility')).toBe(true)
   })
+
+  /**
+   * Regresión del code review del 2026-09-08 (hallazgo 9).
+   *
+   * El loop terminal de dosis acumulaba el presupuesto semanal de running con
+   * `sessions.slice(0, i)` — «lo anterior en el array» —, y el array no está
+   * ordenado por fecha en ese punto. El arreglo lo hace determinista por
+   * construcción, recorriendo en orden de calendario.
+   *
+   * **Guard, no reproducción.** Con la política de presupuesto actual no se
+   * pudo construir un caso donde el orden cambie el resultado observable: el
+   * `durationCap` es 60 hasta superar 60 minutos acumulados y el clamp a 60 es
+   * idempotente, así que las permutaciones convergen. Esto fija la propiedad
+   * para que un cambio futuro de `resolveRunningSupportPolicy` —uno que haga
+   * el cap sensible al acumulado desde el primer minuto— falle acá.
+   */
+  it('16. dosifica en orden de calendario, no en orden de array', () => {
+    const build = (): CoachSessionProposal[] => [
+      { date: '2026-05-04', timeBlock: 'AM', sessionType: 'squash', title: 'Lunes', durationMin: 45, objective: 'obj' },
+      { date: '2026-05-06', timeBlock: 'AM', sessionType: 'running', runningType: 'z2', title: 'Miércoles', durationMin: 30, objective: 'obj' },
+      { date: '2026-05-08', timeBlock: 'AM', sessionType: 'running', runningType: 'z2', title: 'Viernes', durationMin: 30, objective: 'obj' },
+      { date: '2026-05-09', timeBlock: 'AM', sessionType: 'strength', title: 'Sábado', durationMin: 45, objective: 'obj' },
+    ]
+
+    const clave = (sessions: CoachSessionProposal[]) =>
+      sessions
+        .map((s) => `${s.date}|${s.timeBlock}|${s.sessionType}|${s.durationMin}`)
+        .sort()
+        .join(' · ')
+
+    const enOrden = repairGeneratedWeek(build(), mockContext)
+    const alReves = repairGeneratedWeek([...build()].reverse(), mockContext)
+    const barajado = repairGeneratedWeek(
+      [build()[2], build()[0], build()[3], build()[1]],
+      mockContext,
+    )
+
+    expect(enOrden.failure).toBeUndefined()
+    expect(clave(alReves.sessions)).toBe(clave(enOrden.sessions))
+    expect(clave(barajado.sessions)).toBe(clave(enOrden.sessions))
+
+    // Y la duración persistida siempre coincide con lo que suman sus bloques.
+    for (const session of enOrden.sessions) {
+      if (session.sessionType !== 'running' || !session.intervalStructure) continue
+      const total = session.intervalStructure.blocks.reduce(
+        (n, b) => n + (b.durationMin ?? 0) * (b.durationBasis === 'per_repetition' ? (b.repetitions ?? 1) : 1),
+        0,
+      )
+      expect(Math.round(total)).toBe(session.durationMin)
+    }
+  })
 })

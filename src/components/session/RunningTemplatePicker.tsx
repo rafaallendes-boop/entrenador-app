@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { AthleteProfile, RunningDetails } from '../../types'
 import { RUNNING_SESSION_LIBRARY } from '../../services/training/runningSessionLibrary'
 import { materializeRunningTemplate } from '../../services/training/runningTemplateMaterializer'
+import { formatRunningBlockDuration } from '../../services/training/runningBlockDisplay'
 import { runningProfileWithRestrictions } from '../../services/training/runningPolicy'
 
 export default function RunningTemplatePicker({ durationMin, athleteProfile, value, onChange }: {
@@ -30,6 +31,6 @@ export default function RunningTemplatePicker({ durationMin, athleteProfile, val
       })}
     </select>
     {value?.selectionReason && <p className="text-xs text-ink-muted">{value.selectionReason}</p>}
-    {structure && <ol className="space-y-1 text-xs">{structure.blocks.map((b, i) => <li key={i}>{b.label}: {Math.round((b.durationMin ?? 0) * 60)} s{b.distanceKm ? ` · ${b.distanceKm * 1000} m (tiempo estimado)` : ''}{b.targetPace ? ` · ${b.targetPace}` : ''}</li>)}</ol>}
+    {structure && <ol className="space-y-1 text-xs">{structure.blocks.map((b, i) => <li key={i}>{b.label}: {formatRunningBlockDuration(b.durationMin ?? 0, b.durationBasis)}{b.distanceKm ? ` · ${b.distanceKm * 1000} m (tiempo estimado)` : ''}{b.targetPace ? ` · ${b.targetPace}` : ''}</li>)}</ol>}
   </div>
 }

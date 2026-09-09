@@ -1789,7 +1789,13 @@ function optionalSquashDetails(value: unknown, path: string): Session['squashDet
     ? (blocks ?? []).flatMap((block) => block.drills)
     : ensureArray(row.drills, `${path}.drills`).map((drill, index) => parseDrill(drill, `${path}.drills[${index}]`))
 
-  if (drills.length === 0) {
+  // Una lista `drills` explícita manda, aunque venga vacía: el formulario
+  // manual guarda una sesión de squash sin ejercicios y `buildSquashDetailsDraft`
+  // emite igual el `squashDetails`. Exigir contenido acá hacía que el backup de
+  // ese entorno **no se pudiera reimportar** — el export escribe una fila que el
+  // import rechaza, y cae el archivo entero, no la sesión.
+  // Sólo es error no poder derivar nada: sin `drills` y sin bloques con drills.
+  if (row.drills == null && drills.length === 0) {
     throw new Error(`${path}.drills debe incluir al menos un drill o derivarse desde blocks.`)
   }
 

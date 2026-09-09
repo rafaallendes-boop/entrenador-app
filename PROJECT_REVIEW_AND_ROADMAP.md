@@ -1,6 +1,6 @@
 # RallyIQ — Trabajo pendiente
 
-Actualizado: 2026-09-06. Línea base: `main` = `origin/main` = `411aac3`.
+Actualizado: 2026-09-08. Línea base: `main` = `origin/main` = `38d25a3`.
 
 **Qué es este documento.** Sólo lo que falta ejecutar. El registro histórico de
 entregas cerradas —secciones §1 a §35, cortes ejecutivos anteriores, checklists
@@ -180,8 +180,12 @@ Detalle en el Paso 7 del
 
 ### 10. Verificación manual de superseries
 
-Pendiente el round-trip completo de backup y las dos peticiones de chat (con y
-sin superseries). Estas dos últimas consumen API.
+**Round-trip de backup cerrado el 2026-09-08.** El backup real de DEV (98
+sesiones, 3,2 MB) se exportó y se pasó por `parseAppDataExport`: **5 sesiones
+con `supersetGroup` y 11 con `libraryRef` sobreviven íntegras**. Evidencia en
+[`2026-09-08-dev-smoke.md`](docs/superpowers/smokes/2026-09-08-dev-smoke.md).
+
+Quedan las dos peticiones de chat (con y sin superseries), que consumen API.
 
 ---
 
@@ -279,7 +283,16 @@ directamente. Incluirla en el próximo smoke de Whoop.
 
 ### 17. Reporter de errores de frontend
 
-Implementación pendiente. La
+**`035` y `036` están aplicadas en producción** — verificado el 2026-09-08 con
+[`2026-09-08-035-036-applied-checks.sql`](supabase/queries/2026-09-08-035-036-applied-checks.sql):
+tabla, RLS activa, policy única `client_error_events_select_own`, 4 índices, las
+tres funciones `security definer` con EXECUTE sólo para `service_role`, SELECT de
+`authenticated` acotado a las 14 columnas y `anon` sin ninguna. Cero filas: la
+ingesta sigue apagada, que es el estado previsto. Evidencia y la trampa de los
+grants por columna en
+[`2026-09-08-035-036-applied-evidence.md`](docs/superpowers/smokes/2026-09-08-035-036-applied-evidence.md).
+
+Lo pendiente es **la activación, no la migración**. La
 [definición revisada de Entrega B](docs/superpowers/specs/2026-09-06-client-error-reporting-design.md)
 registra las decisiones confirmadas: identidad de cuenta con RLS de lectura,
 escritura sólo por endpoint, frames normalizados sin mensaje, severidad derivada,
@@ -309,6 +322,44 @@ para siempre: el costo se resuelve al escribir.
 Cuatro de los seis pasos ya dejan fila sincronizada (`athletes`,
 `training_plans`, `sessions`). Faltan de verdad registro → onboarding y la
 conversión. **No instalar una herramienta de analytics para 20 usuarios.**
+
+---
+
+## Huecos de UI encontrados en el smoke del 2026-09-08
+
+Los tres son alcanzables por un atleta y ninguno estaba registrado. No los
+descubrió un test: los descubrió abrir la app. Detalle y evidencia en
+[`2026-09-08-dev-smoke.md`](docs/superpowers/smokes/2026-09-08-dev-smoke.md).
+
+### 25. El atleta no puede editar una sesión
+
+`AddSessionModal` no recibe `initialValues`: el único editor con precarga es
+`CoachSessionModal`, dentro del Coach Workspace, y `CoachWorkspacePage.tsx:208`
+redirige a `/` si la cuenta no es coach. Una sesión creada a mano se puede
+cambiar de estado, no de contenido.
+
+Consecuencia para la verificación: el guard de dosis en edición
+—«bajar a 12 min debe rechazar»— **no se puede smokear con una cuenta de
+atleta**. Queda cubierto sólo por tests, y su prueba manual depende de la
+Entrega 2 (§6), igual que §5.
+
+### 26. El atleta no puede borrar una sesión propia
+
+`WeeklyView.tsx:355` pasa `onDelete` **sólo** cuando `session.source === 'coach'`.
+Una sesión creada desde el formulario manual no tiene forma de borrarse desde la
+UI; `DayDetail` no ofrece ninguna. Se descubrió al limpiar los datos de prueba
+del smoke, y es la razón por la que esa limpieza quedó a medias.
+
+### 27. Un borrado local no basta: el sync repone
+
+Borrar filas directamente en IndexedDB no deja tombstone, así que `runFullSync`
+las restaura desde Supabase en la siguiente pasada. Es el contrato correcto
+—§«la ausencia remota nunca es señal de borrado»— pero conviene tenerlo escrito:
+**el entorno de desarrollo escribe en la Supabase de producción**, así que un
+dato de prueba creado en `localhost` es un dato de producción.
+
+Implicación operativa para el piloto (§2): antes de invitar a alguien hace falta
+decidir si dev y prod comparten proyecto Supabase. Hoy lo comparten.
 
 ---
 
@@ -404,3 +455,9 @@ respalda.
 | 8 | Entrega 2, después `enforce` (§6, §5) | La Entrega 2 genera el sujeto que vuelve informativa la auditoría de rol |
 | 9 | Observabilidad y funnel (§17, §18, §19) | Sin esto la beta no enseña |
 | 10 | Beta de 10–20, OAuth, iOS, load test (§20–§23) | Post-piloto, si el funnel lo justifica |
+
+Los huecos de UI del smoke (§25, §26) entran donde toque por costo: §26 —el
+atleta no puede borrar lo que creó— es de una línea y bloquea la higiene de
+cualquier prueba futura, así que conviene antes del piloto. §27 —dev y prod
+comparten proyecto Supabase— es una decisión de infraestructura que hay que
+tomar **antes** de invitar al primer cliente.

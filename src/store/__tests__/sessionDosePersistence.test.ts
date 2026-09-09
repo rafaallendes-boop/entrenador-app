@@ -74,6 +74,79 @@ describe('E1: propuesta → aceptación → Dexie', () => {
     expect(saved!.runningDetails!.intervalStructure!.blocks.every(b => b.targetPace == null)).toBe(true)
   })
 
+  /** Regresiones del code review del 2026-09-08. */
+
+  async function seedRunning(durationMin: number) {
+    expect((await accept([{ type: 'add_session', reason: 'E1', sessionType: 'running', runningType: 'z2',
+      title: 'Running', durationMin, targetDate: '2026-06-01', timeBlock: 'AM' }])).errors).toEqual([])
+    const [saved] = await db.sessions.toArray()
+    return saved
+  }
+
+  it('un update de pulsaciones conserva la procedencia de la receta', async () => {
+    const original = await seedRunning(45)
+    // El selector estampa la identidad; sin ella el test no probaría nada.
+    expect(original.runningDetails?.templateRef?.id).toBeTruthy()
+
+    expect((await accept([{ type: 'update_session', reason: 'E1', sessionId: original.id,
+      targetHrMin: 130, targetHrMax: 150 }])).errors).toEqual([])
+
+    const updated = await db.sessions.get(original.id)
+    expect(updated!.runningDetails?.targetHrMin).toBe(130)
+    // `changesDose` no mira `targetHrMin`, así que la acción vuelve sin ref:
+    // escribirla tal cual borraba la identidad que usa la progresión.
+    expect(updated!.runningDetails?.templateRef).toEqual(original.runningDetails?.templateRef)
+    expect(updated!.runningDetails?.selectionReason).toBe(original.runningDetails?.selectionReason)
+    expect(updated!.runningDetails?.intervalStructure).toEqual(original.runningDetails?.intervalStructure)
+  })
+
+  it('un update que trae estructura propia no repone una ref que la dosis descartó', async () => {
+    const original = await seedRunning(45)
+    expect(original.runningDetails?.templateRef?.id).toBeTruthy()
+
+    // Estructura que no corresponde a ninguna materialización de la plantilla:
+    // el finalizador limpia la ref a propósito y no debe resucitarse.
+    expect((await accept([{ type: 'update_session', reason: 'E1', sessionId: original.id,
+      runningType: 'z2', newDurationMin: 30,
+      intervalStructure: { blocks: [
+        { label: 'Calentamiento', durationMin: 10, role: 'warmup' },
+        { label: 'Rodaje suave', durationMin: 15, role: 'work' },
+        { label: 'Vuelta a la calma', durationMin: 5, role: 'cooldown' },
+      ] } }])).errors).toEqual([])
+
+    const updated = await db.sessions.get(original.id)
+    expect(updated!.runningDetails?.templateRef).toBeUndefined()
+    expect(sumTimedBlocks(updated!.runningDetails!.intervalStructure!.blocks)).toBe(1800)
+  })
+
+  it('alargar vuelve a dosificar y la duración persistida coincide con sus bloques', async () => {
+    const original = await seedRunning(30)
+    expect((await accept([{ type: 'lengthen_session', reason: 'E1', sessionId: original.id, newDurationMin: 45 }])).errors).toEqual([])
+
+    const lengthened = await db.sessions.get(original.id)
+    // El tope semanal de apoyo puede clampear: lo que no se acepta es que la
+    // duración declarada difiera de lo que suman los bloques.
+    expect(sumTimedBlocks(lengthened!.runningDetails!.intervalStructure!.blocks))
+      .toBe(lengthened!.durationMin * 60)
+    expect(lengthened!.durationMin).toBeGreaterThan(original.durationMin)
+    expect(lengthened!.durationMin).toBeLessThanOrEqual(45)
+  })
+
+  it('alargar squash redosifica los drills a la nueva duración', async () => {
+    const processed = postProcessCoachActions({ message: '', provider: 'gemini', timestamp: 0, filteredCreateWeek: false, requestClass: 'chat_action',
+      actions: [{ type: 'add_session', targetDate: '2026-06-01', timeBlock: 'AM', sessionType: 'squash',
+        title: 'Squash', durationMin: 30, reason: 'E1', squashKind: 'technical' }] },
+    { recentSessions: [] }, 'Agrega squash técnico de 30 minutos')
+    expect((await accept(processed.actions!)).errors).toEqual([])
+    const [original] = await db.sessions.toArray()
+
+    expect((await accept([{ type: 'lengthen_session', reason: 'E1', sessionId: original.id, newDurationMin: 60 }])).errors).toEqual([])
+
+    const lengthened = await db.sessions.get(original.id)
+    expect(sumTimedBlocks(lengthened!.squashDetails!.drills)).toBe(lengthened!.durationMin * 60)
+    expect(lengthened!.durationMin).toBe(60)
+  })
+
   it('acortar vuelve a dosificar y una edición imposible no cambia Dexie', async () => {
     expect((await accept([{ type: 'add_session', reason: 'E1', sessionType: 'running', runningType: 'z2',
       title: 'Running', durationMin: 45, targetDate: '2026-06-01', timeBlock: 'AM' }])).errors).toEqual([])
