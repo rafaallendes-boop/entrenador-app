@@ -3,7 +3,8 @@
 Fecha: 2026-09-01
 Estado: diseño revisado por el owner (ronda 1), pendiente de aprobación
 Proyecto 2 de la descomposición abierta en
-[`2026-09-01-athlete-tier-separation-design.md`](2026-09-01-athlete-tier-separation-design.md).
+`2026-09-01-athlete-tier-separation-design.md`, retirada el 2026-09-09 por estar
+implementada (`git show 411556a:docs/superpowers/specs/2026-09-01-athlete-tier-separation-design.md`).
 Relación con [`2026-07-05-coach-two-sided-foundation-sp1-design.md`](2026-07-05-coach-two-sided-foundation-sp1-design.md):
 esta spec **consume** su fundación (`013a/b/c`) y **prevalece** sobre su plan de
 rollout. SP1b (invites + UI) sigue sin implementarse y queda fuera de alcance.
