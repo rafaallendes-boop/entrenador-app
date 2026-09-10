@@ -1,7 +1,9 @@
-import { BrowserRouter, Navigate, Routes, Route, useNavigate, useLocation } from 'react-router-dom'
+import { BrowserRouter, Navigate, Routes, Route, useLocation } from 'react-router-dom'
 import { Component, lazy, Suspense, useEffect, type ErrorInfo, type ReactNode } from 'react'
 import { addDays } from 'date-fns'
 import AppShell from './components/layout/AppShell'
+import CoachShell from './components/layout/CoachShell'
+import OnboardingGuard from './components/layout/OnboardingGuard'
 import AuthGate from './components/auth/AuthGate'
 import ConsentGate from './components/legal/ConsentGate'
 import CoachScopeGuard from './components/layout/CoachScopeGuard'
@@ -11,7 +13,6 @@ import {
   runFullSync,
   migrateLocalDataToCloud,
   prepareLocalDataForUser,
-  hasInitialRemotePullCompleted,
   pullMemberships,
   pullSessionsForDateRange,
 } from './services/syncService'
@@ -21,8 +22,6 @@ import { usePlanBuilderStore } from './store/usePlanBuilderStore'
 import { useEntitlementStore } from './store/useEntitlementStore'
 import { currentWeekStartISO, fromISO, toISO } from './utils/date'
 import { db } from './db/db'
-import { hasSkippedOnboarding, needsOnboarding } from './utils/onboarding'
-import { isSupabaseConfigured } from './services/auth'
 import { backfillLocalAthleteScope } from './services/athlete/athleteScopeMigration'
 import { hydrateActiveAthlete } from './services/athlete/hydrateActiveAthlete'
 import { getActiveAthleteId } from './services/athlete/activeAthlete'
@@ -136,59 +135,6 @@ function RouteBoundary({ children, area }: { children: ReactNode; area?: ClientE
       {children}
     </AppRouteBoundary>
   )
-}
-
-/**
- * Redirects first-time users (no sports configured) to onboarding.
- * Escape hatch: if primarySport has legacy free-text, skip the redirect.
- */
-function OnboardingGuard({ children }: { children: ReactNode }) {
-  const navigate = useNavigate()
-  const location = useLocation()
-  const user = useAuthStore(s => s.user)
-  const syncAttemptInFlight = useAuthStore(s => s.syncDetails.syncAttemptInFlight)
-  const awaitingProfileRecreationAfterReset = useAuthStore(s => s.syncDetails.awaitingProfileRecreationAfterReset)
-  const memoryLoadRequiredAfterSyncAt = useAuthStore(s => s.syncDetails.memoryLoadRequiredAfterSyncAt)
-  const memoryLoadedForSyncAt = useAuthStore(s => s.syncDetails.memoryLoadedForSyncAt)
-  const athleteProfile = useCoachMemoryStore(s => s.athleteProfile)
-  const hasLoadedMemory = useCoachMemoryStore(s => s.hasLoaded)
-
-  useEffect(() => {
-    if (location.pathname === ROUTES.ONBOARDING) return
-    if (!hasLoadedMemory) return
-    if (syncAttemptInFlight) return
-    if (
-      isSupabaseConfigured &&
-      user?.id &&
-      memoryLoadRequiredAfterSyncAt != null &&
-      memoryLoadedForSyncAt !== memoryLoadRequiredAfterSyncAt
-    ) return
-    if (isSupabaseConfigured && user?.id && memoryLoadRequiredAfterSyncAt == null) return
-
-    if (isSupabaseConfigured && user?.id && awaitingProfileRecreationAfterReset) {
-      navigate(ROUTES.ONBOARDING, { replace: true })
-      return
-    }
-
-    const skippedOnboarding = hasSkippedOnboarding(user?.id)
-
-    // Multi-device safety: if we have a signed-in user but have never completed a remote pull
-    // (e.g. sync failed before the profile was fetched), do NOT redirect to onboarding — a
-    // profile may already exist in the cloud on another device. Wait for a successful sync.
-    if (
-      isSupabaseConfigured &&
-      user?.id &&
-      needsOnboarding(athleteProfile) &&
-      !skippedOnboarding &&
-      !hasInitialRemotePullCompleted(user.id)
-    ) return
-
-    if (needsOnboarding(athleteProfile) && !skippedOnboarding) {
-      navigate(ROUTES.ONBOARDING, { replace: true })
-    }
-  }, [athleteProfile, awaitingProfileRecreationAfterReset, hasLoadedMemory, location.pathname, memoryLoadRequiredAfterSyncAt, memoryLoadedForSyncAt, navigate, syncAttemptInFlight, user?.id])
-
-  return <>{children}</>
 }
 
 export default function App() {
@@ -479,6 +425,9 @@ export default function App() {
                 <OnboardingGuard>
                   <Routes>
                   <Route path={ROUTES.ONBOARDING} element={<OnboardingPage />} />
+                  <Route element={<CoachShell />}>
+                    <Route path={ROUTES.COACH} element={<RouteBoundary area="CoachWorkspace"><CoachWorkspacePage /></RouteBoundary>} />
+                  </Route>
                   <Route element={<AppShell />}>
                     <Route path={ROUTES.HOME} element={<RouteBoundary area="Dashboard"><Dashboard /></RouteBoundary>} />
                     <Route path={ROUTES.WEEK} element={<RouteBoundary area="WeeklyView"><WeeklyView /></RouteBoundary>} />
@@ -488,7 +437,6 @@ export default function App() {
                     <Route path={ROUTES.COMPETITION_PLAN} element={<RouteBoundary area="CompetitionPlan"><CompetitionPlanPage /></RouteBoundary>} />
                     <Route path={ROUTES.PLAN_BUILDER_V2} element={<RouteBoundary area="PlanBuilderV2"><PlanBuilderV2Page /></RouteBoundary>} />
                     <Route path="/history" element={<Navigate to={ROUTES.COMPETITION_PLAN} replace />} />
-                    <Route path={ROUTES.COACH} element={<RouteBoundary area="CoachWorkspace"><CoachWorkspacePage /></RouteBoundary>} />
                     <Route path={ROUTES.OPS} element={<RouteBoundary area="Operations"><OperationsPage /></RouteBoundary>} />
                     <Route path="/dashboard" element={<Navigate to={ROUTES.HOME} replace />} />
                     <Route path="/plan" element={<Navigate to={ROUTES.COMPETITION_PLAN} replace />} />

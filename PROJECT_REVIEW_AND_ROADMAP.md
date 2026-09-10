@@ -194,11 +194,19 @@ Dos asimetrías que el cableado obligó a resolver, ambas del mismo tipo —
 
 #### Pendiente de la Entrega 2
 
+**Revisión 2026-09-09:** la transferencia tiene un bloqueo adicional: roster,
+selector y accesos scoped del cliente aún exigen propietario. También falta
+resolver archivo/borrado del seleccionado sin self. Ver
+[hallazgos y secuencia restante](docs/reviews/2026-09-09-coach-entrega-2-review.md).
+
 1. **Cuenta coach definitiva**: crearla vacía (rol `coach`, sin self) y
    transferirle la membresía `coach` del gestionado que hoy cuelga de la cuenta
    híbrida.
-2. **Onboarding sin atleta self** — hoy no existe; es lo que bloquea el punto 1.
-3. **Rutas `/coach/*` fuera del shell de atleta.**
+2. **Onboarding sin atleta self** — implementado localmente (2026-09-09):
+   espera identidad, entrada a Workspace y formulario deportivo sólo con atleta
+   seleccionado para coach. Pendiente smoke con cuenta coach real.
+3. **Rutas `/coach/*` fuera del shell de atleta.** `/coach` ya tiene shell
+   propio localmente; faltan las vistas deportivas del gestionado.
 4. **Retiro de `VITE_COACH_ACCOUNTS`**: cuando el punto 1 esté probado, el gate
    pasa a ser sólo por rol y se eliminan la variable y `parseCoachAllowlist`.
    Condición explícita acordada con el owner el 2026-09-09.
