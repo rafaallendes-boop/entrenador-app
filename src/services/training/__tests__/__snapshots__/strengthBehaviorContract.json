@@ -10,6 +10,16 @@
     "loadReference": null
   },
   {
+    "id": "alternating_horizontal_bounds",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "legs",
+    "loadReference": null
+  },
+  {
     "id": "alternating_step_up_jump",
     "resolvedBlock": "legs",
     "reps": 3,
@@ -17,6 +27,16 @@
     "targetPercent1RM": null,
     "targetRpe": null,
     "group": "legs",
+    "loadReference": null
+  },
+  {
+    "id": "assault_bike_15_45",
+    "resolvedBlock": "cardio",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "cardio",
     "loadReference": null
   },
   {
@@ -590,6 +610,36 @@
     "loadReference": null
   },
   {
+    "id": "ladder_lateral_crossover",
+    "resolvedBlock": "cardio",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "cardio",
+    "loadReference": null
+  },
+  {
+    "id": "ladder_lateral_icky_shuffle",
+    "resolvedBlock": "cardio",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "cardio",
+    "loadReference": null
+  },
+  {
+    "id": "ladder_split_step_acceleration",
+    "resolvedBlock": "cardio",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "cardio",
+    "loadReference": null
+  },
+  {
     "id": "landmine_press",
     "resolvedBlock": "push",
     "reps": 3,
@@ -833,6 +883,26 @@
     "loadReference": null
   },
   {
+    "id": "mini_hurdle_lateral_rebounds",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "legs",
+    "loadReference": null
+  },
+  {
+    "id": "mini_hurdle_single_leg_lateral_hops",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "legs",
+    "loadReference": null
+  },
+  {
     "id": "mixed_grip_pull_up",
     "resolvedBlock": "pull",
     "reps": 3,
@@ -918,6 +988,16 @@
     "targetPercent1RM": null,
     "targetRpe": 7,
     "group": "push",
+    "loadReference": null
+  },
+  {
+    "id": "repeated_broad_jump",
+    "resolvedBlock": "legs",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "legs",
     "loadReference": null
   },
   {
@@ -1129,6 +1209,16 @@
       "factor": 0.95,
       "selectorEligible": true
     }
+  },
+  {
+    "id": "treadmill_30_30",
+    "resolvedBlock": "cardio",
+    "reps": 3,
+    "weight": null,
+    "targetPercent1RM": null,
+    "targetRpe": null,
+    "group": "cardio",
+    "loadReference": null
   },
   {
     "id": "trx_inverted_row",

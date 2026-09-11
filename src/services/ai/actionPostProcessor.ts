@@ -8,7 +8,7 @@ import { toStrengthProposalForEnhancement } from '../training/strengthExercisePr
 import { selectStrengthSession, type StrengthContext, type StrengthPhase, type StrengthSportProfile } from '../training/strengthSelector'
 import { prepareStrengthSession, type BlockedReason, type RemovedExercise, type ReplacedExercise } from '../training/strengthSafetyFinalizer'
 import { resolveStrengthSafetyConstraints } from '../training/strengthSafetyConstraints'
-import { BLOCKED_STRENGTH_COPY } from '../training/strengthSafetyCopy'
+import { BLOCKED_STRENGTH_COPY, blockedStrengthCopy } from '../training/strengthSafetyCopy'
 import {
   selectMobilitySessionForContext,
   type MobilityFocus,
@@ -235,8 +235,16 @@ export function postProcessCoachActions(
   // mensaje ahí decía "no pude verificar…" junto a una tarjeta de acción viva.
   const fullyBlocked = safetyResult.blockedReasons.length > 0 && actions.length === 0
   const partiallyBlocked = safetyResult.blockedReasons.length > 0 && actions.length > 0
+  // Un bloqueo por contexto de entrenamiento no es una restricción registrada:
+  // si TODAS las razones son de contexto, el copy médico mentiría. Basta una
+  // razón de restricción para volver al copy conservador.
+  const blockedCopy = blockedStrengthCopy(
+    safetyResult.blockedReasons.every((reason) => reason === 'training_context_unavailable')
+      ? 'training_context_unavailable'
+      : 'insufficient_safe_pool',
+  )
   const baseMessage = fullyBlocked
-    ? BLOCKED_STRENGTH_COPY
+    ? blockedCopy
     : removedEmptySessions && actions.length === 0
     ? 'No pude generar una sesión con ejercicios y dosis concretas. La propuesta quedó incompleta, así que no hay una sesión para aplicar.'
     : repairedReplacementAction
@@ -249,7 +257,7 @@ export function postProcessCoachActions(
     ? `${baseMessage}\n\nOmití una propuesta de recuperación o movilidad porque no incluía ejercicios ni una estructura concreta.`
     : baseMessage
   const messageWithSafetyNotice = partiallyBlocked
-    ? `${completeMessage}\n\n${BLOCKED_STRENGTH_COPY}`
+    ? `${completeMessage}\n\n${blockedCopy}`
     : completeMessage
   const actionMessage = removedCollidingAddSessionCount > 0
     ? `${messageWithSafetyNotice}\n\nNo agregué ${removedCollidingAddSessionCount === 1 ? 'una sesión' : `${removedCollidingAddSessionCount} sesiones`} porque el bloque ya estaba ocupado.`

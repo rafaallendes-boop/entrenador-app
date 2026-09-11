@@ -9,7 +9,12 @@ describe('bloqueo parcial de seguridad', () => {
   it('el copy de bloqueo no reemplaza el mensaje cuando sobreviven acciones', () => {
     const source = readFileSync('src/services/ai/actionPostProcessor.ts', 'utf8')
     expect(source).toContain('const fullyBlocked =')
-    expect(source).toMatch(/fullyBlocked\s*\n?\s*\?\s*BLOCKED_STRENGTH_COPY/)
+    // El copy dejó de ser una constante única: se resuelve por razón de
+    // bloqueo, porque un retiro por contexto de entrenamiento no puede
+    // reportarse como restricción registrada. La invariante que este guard
+    // protege es la misma: sólo `fullyBlocked` puede REEMPLAZAR el mensaje.
+    expect(source).toMatch(/fullyBlocked\s*\n?\s*\?\s*blockedCopy/)
+    expect(source).toContain('const blockedCopy = blockedStrengthCopy(')
   })
 
   // Y el caso parcial tiene que ser contable en /ops sin mentir sobre el

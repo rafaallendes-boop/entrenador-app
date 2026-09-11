@@ -28,11 +28,45 @@
     "riskLevel": "medium",
     "fatigueCost": "high",
     "appropriateForPhases": [
+      "base",
       "build",
       "peak"
     ],
     "stableName": null,
     "stableDescription": null
+  },
+  {
+    "id": "alternating_horizontal_bounds",
+    "category": "full_body",
+    "movement": "locomotion",
+    "intensityType": "power",
+    "equipment": [
+      "bodyweight"
+    ],
+    "unilateral": true,
+    "tags": [
+      "power",
+      "jump_power",
+      "athletic_transfer",
+      "squash_specific"
+    ],
+    "difficulty": "advanced",
+    "sportsTransfer": [
+      "squash",
+      "running"
+    ],
+    "squashTransfer": [
+      "horizontal_power",
+      "single_leg_power"
+    ],
+    "riskLevel": "high",
+    "fatigueCost": "medium",
+    "appropriateForPhases": [
+      "build",
+      "peak"
+    ],
+    "stableName": "Saltos horizontales alternados",
+    "stableDescription": "Avanza con saltos largos alternando pierna derecha e izquierda. Empuja hacia delante sin buscar longitud a costa del control de la recepción."
   },
   {
     "id": "alternating_step_up_jump",
@@ -70,6 +104,39 @@
     "stableDescription": null
   },
   {
+    "id": "assault_bike_15_45",
+    "category": "full_body",
+    "movement": "locomotion",
+    "intensityType": "power",
+    "equipment": [
+      "assault_bike"
+    ],
+    "tags": [
+      "finisher",
+      "cardio_specific",
+      "court_conditioning",
+      "repeat_sprint",
+      "squash_specific"
+    ],
+    "difficulty": "intermediate",
+    "sportsTransfer": [
+      "squash"
+    ],
+    "squashTransfer": [
+      "repeat_sprint_capacity",
+      "short_point_recovery"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "high",
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak"
+    ],
+    "stableName": "Bici de asalto 15/45 — 6 rondas",
+    "stableDescription": "Completa seis rondas de 15 segundos fuertes y 45 segundos de pedaleo suave: seis minutos en total. Conserva una potencia repetible entre rondas."
+  },
+  {
     "id": "assault_bike_30_30",
     "category": "full_body",
     "movement": "locomotion",
@@ -96,6 +163,7 @@
     "riskLevel": "low",
     "fatigueCost": "high",
     "appropriateForPhases": [
+      "base",
       "build",
       "peak"
     ],
@@ -1817,6 +1885,99 @@
     "stableDescription": null
   },
   {
+    "id": "ladder_lateral_crossover",
+    "category": "full_body",
+    "movement": "locomotion",
+    "intensityType": "stability",
+    "equipment": [
+      "ladder"
+    ],
+    "tags": [
+      "court_footwork",
+      "coordination",
+      "squash_specific"
+    ],
+    "difficulty": "intermediate",
+    "sportsTransfer": [
+      "squash"
+    ],
+    "squashTransfer": [
+      "lateral_movement",
+      "footwork_rhythm"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "low",
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak"
+    ],
+    "stableName": "Escalera lateral con paso cruzado",
+    "stableDescription": "Desplázate de costado por la escalera alternando un paso lateral y un cruce por delante. Mantén precisión en los cuadros y repite hacia ambos lados."
+  },
+  {
+    "id": "ladder_lateral_icky_shuffle",
+    "category": "full_body",
+    "movement": "locomotion",
+    "intensityType": "stability",
+    "equipment": [
+      "ladder"
+    ],
+    "tags": [
+      "court_footwork",
+      "coordination",
+      "squash_specific"
+    ],
+    "difficulty": "intermediate",
+    "sportsTransfer": [
+      "squash"
+    ],
+    "squashTransfer": [
+      "lateral_movement",
+      "footwork_rhythm"
+    ],
+    "riskLevel": "low",
+    "fatigueCost": "low",
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak"
+    ],
+    "stableName": "Escalera lateral con Icky shuffle",
+    "stableDescription": "Recorre la escalera de lado enlazando dos apoyos dentro y uno fuera. Mantén el pecho orientado al frente y practica ambas direcciones."
+  },
+  {
+    "id": "ladder_split_step_acceleration",
+    "category": "full_body",
+    "movement": "locomotion",
+    "intensityType": "stability",
+    "equipment": [
+      "ladder"
+    ],
+    "tags": [
+      "court_footwork",
+      "coordination",
+      "squash_specific"
+    ],
+    "difficulty": "intermediate",
+    "sportsTransfer": [
+      "squash"
+    ],
+    "squashTransfer": [
+      "split_step_quality",
+      "court_reacceleration"
+    ],
+    "riskLevel": "medium",
+    "fatigueCost": "medium",
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak"
+    ],
+    "stableName": "Escalera con split-step y salida de 3 metros",
+    "stableDescription": "Recorre la escalera con apoyos precisos, realiza un split-step al salir y acelera tres metros. Deja espacio libre para frenar de forma progresiva."
+  },
+  {
     "id": "landmine_press",
     "category": "upper",
     "movement": "push",
@@ -2548,6 +2709,73 @@
     "stableDescription": "Lanzar el balón medicinal contra el suelo con fuerza desde arriba. Patrón explosivo de cuerpo entero con bajo costo excéntrico."
   },
   {
+    "id": "mini_hurdle_lateral_rebounds",
+    "category": "full_body",
+    "movement": "locomotion",
+    "intensityType": "power",
+    "equipment": [
+      "mini_hurdles"
+    ],
+    "tags": [
+      "power",
+      "lateral_power",
+      "reactive_stiffness",
+      "athletic_transfer",
+      "squash_specific"
+    ],
+    "difficulty": "intermediate",
+    "sportsTransfer": [
+      "squash",
+      "running"
+    ],
+    "squashTransfer": [
+      "lateral_power",
+      "reactive_stiffness",
+      "split_step_quality"
+    ],
+    "riskLevel": "medium",
+    "fatigueCost": "medium",
+    "appropriateForPhases": [
+      "build",
+      "peak"
+    ],
+    "stableName": "Saltos laterales rápidos sobre mini valla",
+    "stableDescription": "Con los pies juntos, salta lateralmente de ida y vuelta sobre una mini valla baja. Mantén el tronco estable y minimiza el tiempo de apoyo."
+  },
+  {
+    "id": "mini_hurdle_single_leg_lateral_hops",
+    "category": "full_body",
+    "movement": "locomotion",
+    "intensityType": "power",
+    "equipment": [
+      "mini_hurdles"
+    ],
+    "unilateral": true,
+    "tags": [
+      "power",
+      "lateral_power",
+      "reactive_stiffness",
+      "squash_specific"
+    ],
+    "difficulty": "advanced",
+    "sportsTransfer": [
+      "squash"
+    ],
+    "squashTransfer": [
+      "single_leg_power",
+      "lateral_power",
+      "landing_quality"
+    ],
+    "riskLevel": "high",
+    "fatigueCost": "medium",
+    "appropriateForPhases": [
+      "build",
+      "peak"
+    ],
+    "stableName": "Saltos laterales a una pierna sobre mini valla",
+    "stableDescription": "Salta lateralmente sobre una mini valla baja apoyando una sola pierna. Completa pocos contactos y cambia de pierna tras recuperar el control."
+  },
+  {
     "id": "mixed_grip_pull_up",
     "category": "upper",
     "movement": "pull",
@@ -2819,6 +3047,39 @@
     ],
     "stableName": "Flexión de brazos",
     "stableDescription": "Flexión con peso corporal. Empuje horizontal accesible para fuerza y volumen."
+  },
+  {
+    "id": "repeated_broad_jump",
+    "category": "full_body",
+    "movement": "locomotion",
+    "intensityType": "power",
+    "equipment": [
+      "bodyweight"
+    ],
+    "tags": [
+      "power",
+      "jump_power",
+      "athletic_transfer",
+      "squash_specific"
+    ],
+    "difficulty": "advanced",
+    "sportsTransfer": [
+      "squash",
+      "running",
+      "strength"
+    ],
+    "squashTransfer": [
+      "horizontal_power",
+      "landing_quality"
+    ],
+    "riskLevel": "high",
+    "fatigueCost": "medium",
+    "appropriateForPhases": [
+      "build",
+      "peak"
+    ],
+    "stableName": "Tres saltos horizontales encadenados",
+    "stableDescription": "Encadena tres saltos bipodales hacia delante y estabiliza la última recepción. Busca cubrir distancia manteniendo el control en los tres apoyos."
   },
   {
     "id": "romanian_deadlift",
@@ -3478,6 +3739,41 @@
     ],
     "stableName": "Peso muerto con trap bar",
     "stableDescription": "Bisagra con barra hexagonal, técnicamente más simple que el peso muerto convencional. Buena alternativa cuando el peso muerto clásico carga mucho la zona lumbar."
+  },
+  {
+    "id": "treadmill_30_30",
+    "category": "full_body",
+    "movement": "locomotion",
+    "intensityType": "power",
+    "equipment": [
+      "treadmill",
+      "air_treadmill"
+    ],
+    "tags": [
+      "finisher",
+      "cardio_specific",
+      "court_conditioning",
+      "repeat_sprint",
+      "squash_specific"
+    ],
+    "difficulty": "intermediate",
+    "sportsTransfer": [
+      "squash",
+      "running"
+    ],
+    "squashTransfer": [
+      "repeat_sprint_capacity",
+      "short_point_recovery"
+    ],
+    "riskLevel": "medium",
+    "fatigueCost": "high",
+    "appropriateForPhases": [
+      "base",
+      "build",
+      "peak"
+    ],
+    "stableName": "Cinta 30/30 — 4 rondas",
+    "stableDescription": "Completa cuatro rondas de 30 segundos fuertes y 30 segundos suaves en cinta: cuatro minutos en total. Ajusta la velocidad al esfuerzo que puedas repetir con buena técnica."
   },
   {
     "id": "trx_inverted_row",

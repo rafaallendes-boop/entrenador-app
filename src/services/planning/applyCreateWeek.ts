@@ -19,7 +19,7 @@ import {
   formatCreateWeekCollisionWarning,
   formatCreateWeekPreservedCountWarning,
 } from './createWeekCollisionCopy'
-import { BLOCKED_STRENGTH_COPY } from '../training/strengthSafetyCopy'
+import { blockedStrengthCopy, STRENGTH_TRAINING_CONTEXT_TRIM_WARNING } from '../training/strengthSafetyCopy'
 
 type CreateWeekSessionInput = NonNullable<CoachAction['sessions']>
 
@@ -75,6 +75,7 @@ export async function applyCreateWeek({
   const profileConstraints = resolveProfileStrengthSafetyConstraints(athleteProfile)
   const verifiedSessions: CreateWeekSessionInput = []
   let repairedForSafety = false
+  let trimmedForContext = false
   for (const session of allowedSessions) {
     if (session.sessionType !== 'strength') {
       const dose = finalizeSessionDose(session, athleteProfile)
@@ -102,13 +103,18 @@ export async function applyCreateWeek({
       sealLocation: 'metadata',
     })
     if (result.status === 'blocked') {
-      throw new Error(BLOCKED_STRENGTH_COPY)
+      throw new Error(blockedStrengthCopy(result.reason))
     }
-    repairedForSafety ||= result.removed.length > 0 || result.replaced.length > 0
+    repairedForSafety ||= result.replaced.length > 0
+      || result.removed.some((item) => item.reason !== 'training_context')
+    trimmedForContext ||= result.removed.some((item) => item.reason === 'training_context')
     verifiedSessions.push(result.session)
   }
   if (repairedForSafety) {
     warnings.push('Se excluyeron o reemplazaron ejercicios por tu restricción.')
+  }
+  if (trimmedForContext) {
+    warnings.push(STRENGTH_TRAINING_CONTEXT_TRIM_WARNING)
   }
 
   const replacement = await replacePlannedSessionsForCreateWeek(

@@ -15,6 +15,7 @@ import {
   type ExerciseDefinition,
   type ExercisePhase,
   type ExperienceLevel,
+  type IntensityType,
   type MovementPattern,
   type StrengthExerciseRole,
 } from './exerciseLibrary'
@@ -22,7 +23,9 @@ import { getStrengthExerciseKey } from './strengthExerciseProposal'
 import { selectStrengthBlockTemplate, type StrengthBlockSlot } from './strengthBlocks'
 import type { DisciplineAcwr } from '../loadAnalytics'
 import { isExerciseAllowed } from './strengthSafetyConstraints'
-import { resolveDeclaredEquipment } from './equipmentVocabulary'
+import { hasExerciseEquipment, resolveDeclaredEquipment } from './equipmentVocabulary'
+import { isLungeStrengthExercise } from './strengthMovementCompatibility'
+import { athleticPreferenceScore, athleticPrescriptionNotes, isAthleticReplacementCompatible, isAthleticWorkAllowed, isFinisherExercise } from './athleticTraining'
 
 export type StrengthPhase = 'base' | 'build' | 'peak' | 'taper' | 'transition' | 'race'
 export type StrengthSportProfile = 'strength_primary' | 'hybrid' | 'sport_support'
@@ -101,6 +104,7 @@ export function getStrengthReplacementPool(
 
   return STRENGTH_EXERCISE_LIBRARY
     .filter((candidate) => candidate.movement === resolved.movement)
+    .filter((candidate) => isAthleticReplacementCompatible(resolved, candidate))
     .filter((candidate) => candidate.id !== resolved.id)
     .filter((candidate) => isCandidateAllowedInContext(candidate, context))
     .map((candidate) => candidate.id)
@@ -167,10 +171,15 @@ export function selectStrengthSession(
   const density = getTargetExerciseDensity(context)
   const selected = pickStrengthStructure(pool, context, recentSet, progressionState)
 
+  // Se puede repetir un ejercicio conocido y admitir una fase vecina, pero
+  // nunca relajar fatiga, restricciones ni experiencia para llenar una cuota.
+  // Pasar `experiencePool` a secas era un no-op demostrable: cuando el pool es
+  // delgado `pool` YA es `experiencePool`, y `pickStrengthStructure` es
+  // determinista, así que devolvía la misma selección corta.
   const fallback = selected.length >= density.min
     ? selected
     : pickStrengthStructure(
-        buildStrengthCandidatePool(equipmentPool, { ...context, fatigueLevel: Math.min(context.fatigueLevel, 6) }),
+        buildStrengthCandidatePool(equipmentPool, context, { relaxPhase: true }),
         context,
         recentSet,
         progressionState,
@@ -202,11 +211,14 @@ function selectBlockStrengthSession(
   const normalizedEquipment = normalizeEquipment(context.availableEquipment)
   const recentSet = buildRecentStrengthKeySet(context.recentExercises)
   const available1RM = new Set(context.available1RM ?? [])
+  const progressionState = deriveStrengthProgressionState(context)
   const selectedDefinitions: ExerciseDefinition[] = []
   const selectedIds = new Set<string>()
   let starDefinition: ExerciseDefinition | undefined
 
   for (const slot of template.slots) {
+    // La misma selección de coordinación/finisher sirve a ambas rutas.
+    if (slot.pattern === 'cardio') continue
     if (!slot.required && slot.minDurationMin != null && (context.sessionDurationMin ?? 50) < slot.minDurationMin) continue
 
     const candidate = selectExerciseForBlockSlot({
@@ -228,6 +240,32 @@ function selectBlockStrengthSession(
   }
 
   const density = getTargetExerciseDensity(context)
+  const conditioningPool = scoreExercises(
+    filterByEquipment(buildStrengthCandidatePool(STRENGTH_EXERCISE_LIBRARY, context), normalizedEquipment),
+    context, recentSet,
+  )
+  const cardioTarget = Math.min(
+    getSpecificCardioTarget(conditioningPool, context, density.target),
+    Math.max(0, density.target - selectedDefinitions.length),
+  )
+  for (const exercise of pickSpecificCardioBlock(conditioningPool, context, selectedIds, cardioTarget)) {
+    selectedDefinitions.push(exercise)
+    selectedIds.add(exercise.id)
+  }
+  // Misma garantía que la ruta puntuada: si los slots no pudieron cubrir el
+  // tren inferior —pool corto por material o fase—, se intenta antes que el
+  // relleno genérico, que llenaba el hueco con más core.
+  if (selectedDefinitions.length < density.target && !selectedDefinitions.some(isLowerCompound)) {
+    const lower = pickBlockFillers({
+      phase, context, normalizedEquipment, recentSet, available1RM, selectedIds, targetCount: 1,
+      only: isLowerCompound,
+    })[0]
+    if (lower) {
+      selectedDefinitions.push(lower)
+      selectedIds.add(lower.id)
+    }
+  }
+
   if (selectedDefinitions.length < density.target) {
     const fillers = pickBlockFillers({
       phase,
@@ -237,6 +275,13 @@ function selectBlockStrengthSession(
       available1RM,
       selectedIds,
       targetCount: density.target - selectedDefinitions.length,
+      // El relleno no puede convertir una sesión de fuerza en cuatro cores
+      // porque los cores puntúan bien y los slots quedaron sin candidato.
+      coreBudget: Math.max(
+        0,
+        getTargetCoreCount(context, density.target)
+          - selectedDefinitions.filter((exercise) => exercise.category === 'core').length,
+      ),
     })
     for (const filler of fillers) {
       selectedDefinitions.push(filler)
@@ -245,11 +290,18 @@ function selectBlockStrengthSession(
   }
 
   const finalSelection = selectedDefinitions.slice(0, density.max)
+  const starIndex = finalSelection.findIndex((exercise) => exercise.id === starDefinition?.id)
   const builtExercises = finalSelection.map((exercise, index) =>
-    buildPrescribedExercise(exercise, context, index, exercise.id === starDefinition?.id),
+    buildPrescribedExercise(exercise, context, index, index === starIndex, progressionState),
   )
   const ordered = orderStrengthExercisesForSession(builtExercises, context)
-  const starLift = starDefinition ? selectStarLift(starDefinition, context, weekIndexInBlock) : undefined
+  const starPrescription = starIndex >= 0 ? builtExercises[starIndex] : undefined
+  const starLift = starPrescription ? {
+    name: starPrescription.name,
+    targetPercent1RM: starPrescription.targetPercent1RM,
+    targetRpe: starPrescription.targetRpe,
+    weekProgression: weekIndexInBlock,
+  } : undefined
 
   return {
     focus: deriveStrengthFocus(finalSelection, context),
@@ -278,11 +330,13 @@ function selectExerciseForBlockSlot({
   const pool = filterByEquipment(buildStrengthCandidatePool(STRENGTH_EXERCISE_LIBRARY, context), normalizedEquipment)
     .filter((exercise) => !selectedIds.has(exercise.id))
     .filter((exercise) => exercise.appropriateForPhases?.includes(phase) ?? true)
+    .filter((exercise) => !isSpecificCardioExercise(exercise))
     .filter((exercise) => matchesBlockSlotPattern(exercise, slot.pattern))
-    // El slot `lunge` acepta cualquier unilateral, así que el patrón no basta
-    // para impedir que un aislamiento sea el levantamiento estrella.
+    .filter((exercise) => withinPowerBudget(exercise, selectedIds))
+    // Los slots compuestos no se satisfacen con un aislamiento del mismo
+    // patrón (aperturas como push, patada de glúteo como hinge, etc.).
+    .filter((exercise) => !exercise.isolation)
     .filter((exercise) => !slot.isStarLiftCandidate || isMainLiftEligible(exercise))
-    .filter((exercise) => !exercise.isolation || countSelectedIsolations(selectedIds) < MAX_ISOLATION_PER_SESSION)
 
   const scored = scoreBlockCandidates(pool, {
     slot,
@@ -302,6 +356,8 @@ function pickBlockFillers({
   available1RM,
   selectedIds,
   targetCount,
+  only,
+  coreBudget = Number.POSITIVE_INFINITY,
 }: {
   phase: ExercisePhase
   context: StrengthContext
@@ -310,15 +366,25 @@ function pickBlockFillers({
   available1RM: Set<Exercise1RMReference>
   selectedIds: Set<string>
   targetCount: number
+  only?: (exercise: ExerciseDefinition) => boolean
+  coreBudget?: number
 }): ExerciseDefinition[] {
   const pool = filterByEquipment(buildStrengthCandidatePool(STRENGTH_EXERCISE_LIBRARY, context), normalizedEquipment)
     .filter((exercise) => !selectedIds.has(exercise.id))
     .filter((exercise) => exercise.appropriateForPhases?.includes(phase) ?? true)
+    .filter((exercise) => !isSpecificCardioExercise(exercise))
+    .filter((exercise) => only?.(exercise) ?? true)
 
+  let core = coreBudget
   return capIsolationFillers(
     scoreBlockCandidates(pool, { context, recentSet, available1RM }).map(({ exercise }) => exercise),
     selectedIds,
-  ).slice(0, targetCount)
+  ).filter((exercise) => {
+    if (exercise.category !== 'core') return true
+    if (core <= 0) return false
+    core -= 1
+    return true
+  }).slice(0, targetCount)
 }
 
 /**
@@ -337,9 +403,14 @@ function capIsolationFillers(
   selectedIds: Set<string>,
 ): ExerciseDefinition[] {
   let budget = MAX_ISOLATION_PER_SESSION - countSelectedIsolations(selectedIds)
+  const acceptedIds = new Set(selectedIds)
 
   return ordered.filter((exercise) => {
-    if (!exercise.isolation) return true
+    if (!withinPowerBudget(exercise, acceptedIds)) return false
+    if (!exercise.isolation) {
+      acceptedIds.add(exercise.id)
+      return true
+    }
     if (budget <= 0) return false
     budget -= 1
     return true
@@ -354,7 +425,17 @@ function capIsolationFillers(
  * elegido a propósito.
  */
 function withinIsolationBudget(exercise: ExerciseDefinition, selectedIds: Set<string>): boolean {
-  return !exercise.isolation || countSelectedIsolations(selectedIds) < MAX_ISOLATION_PER_SESSION
+  return withinPowerBudget(exercise, selectedIds)
+    && (!exercise.isolation || countSelectedIsolations(selectedIds) < MAX_ISOLATION_PER_SESSION)
+}
+
+function withinPowerBudget(exercise: ExerciseDefinition, selectedIds: Set<string>): boolean {
+  if (exercise.intensityType !== 'power' || isSpecificCardioExercise(exercise)) return true
+  const powerCount = [...selectedIds].filter((id) => {
+    const selected = getExerciseById(id)
+    return selected?.intensityType === 'power' && !isSpecificCardioExercise(selected)
+  }).length
+  return powerCount < 2
 }
 
 function countSelectedIsolations(selectedIds: Set<string>): number {
@@ -382,6 +463,7 @@ function scoreBlockCandidates(
   return exercises
     .map((exercise) => {
       let score = 0
+      score += athleticPreferenceScore(exercise, context.goal)
       if (slot?.preferredRotationGroup && exercise.blockRotationGroup === slot.preferredRotationGroup) score += 30
       const reference = exercise.loadReference
       if (reference?.selectorEligible && available1RM.has(reference.lift)) score += 35
@@ -404,7 +486,7 @@ function matchesBlockSlotPattern(exercise: ExerciseDefinition, pattern: Strength
   if (pattern === 'plyo') return exercise.intensityType === 'power' && !isSpecificCardioExercise(exercise)
   if (pattern === 'mobility') return exercise.intensityType === 'recovery' || exercise.tags.includes('recovery')
   if (pattern === 'lunge') {
-    return exercise.unilateral === true || exercise.tags.includes('court_lunge') || exercise.tags.includes('lateral_strength')
+    return isLungeStrengthExercise(exercise)
   }
   return exercise.movement === pattern
 }
@@ -414,12 +496,16 @@ function buildPrescribedExercise(
   context: StrengthContext,
   index: number,
   isStarLift = false,
+  // Derivar el estado por ejercicio recorría todo el historial N veces por
+  // sesión. Lo calcula una vez quien arma la sesión y viaja hacia abajo.
+  progressionState = deriveStrengthProgressionState(context),
 ): StrengthSelectionExercise {
-  const base = buildSelectionExercise(exercise, context, index)
+  // El core puede ir primero; el principal conserva su dosis de principal.
+  const base = buildSelectionExercise(exercise, context, isStarLift ? 0 : index, progressionState)
   const targetRpe = clamp(resolveTargetRpe(base.intensity) + (context.rpeAdjustment ?? 0), 4, 9)
   const reference = exercise.loadReference
   const targetPercent1RM = reference?.selectorEligible && context.available1RM?.includes(reference.lift)
-    ? resolveTargetPercent1RM(context, isStarLift)
+    ? resolveTargetPercent1RM(context, isStarLift, progressionState)
     : undefined
 
   return {
@@ -472,20 +558,26 @@ export function selectStarLift(
   context: StrengthContext,
   weekIndexInBlock = context.weekIndexInBlock ?? 0,
 ): StarLiftInfo {
-  const reference = exercise.loadReference
-  const targetPercent1RM = reference?.selectorEligible && context.available1RM?.includes(reference.lift)
-    ? resolveTargetPercent1RM(context, true)
-    : undefined
+  const starContext = { ...context, weekIndexInBlock }
+  const prescription = buildPrescribedExercise(
+    exercise, starContext, 0, true, deriveStrengthProgressionState(starContext),
+  )
 
   return {
     name: exercise.name,
-    targetPercent1RM,
-    targetRpe: clamp(resolveTargetRpe(context.phase === 'peak' ? 'heavy' : 'moderate-heavy') + (context.rpeAdjustment ?? 0), 4, 9),
+    targetPercent1RM: prescription.targetPercent1RM,
+    targetRpe: prescription.targetRpe,
     weekProgression: weekIndexInBlock,
   }
 }
 
-function resolveTargetPercent1RM(context: StrengthContext, isStarLift: boolean): number {
+function resolveTargetPercent1RM(
+  context: StrengthContext,
+  isStarLift: boolean,
+  progressionState = deriveStrengthProgressionState(context),
+): number {
+  // Una descarga no puede conservar el porcentaje ascendente de la semana.
+  if (progressionState.intent === 'deload') return 60
   const weekStep = Math.abs(context.weekIndexInBlock ?? 0) % 3
   if (context.phase === 'peak') return isStarLift ? [80, 82, 85][weekStep]! : 72
   if (context.phase === 'build') return isStarLift ? [75, 80, 85][weekStep]! : 70
@@ -596,7 +688,7 @@ export function filterByEquipment(
   availableEquipment: EquipmentType[],
 ): ExerciseDefinition[] {
   return exercises.filter((exercise) =>
-    exercise.equipment.some((item) => availableEquipment.includes(item)),
+    hasExerciseEquipment(exercise, availableEquipment),
   )
 }
 
@@ -607,20 +699,22 @@ export function avoidRecentExercises(
   return exercises.filter((exercise) => !recentExercises.has(normalizeStrengthExerciseKey(exercise.id)))
 }
 
+/**
+ * Pool elegible. `relaxPhase` es el ÚNICO eje que el fallback puede relajar:
+ * la fase es una preferencia de programación, mientras que restricciones,
+ * experiencia, metadata de seguridad, contexto atlético y fatiga no lo son.
+ */
 function buildStrengthCandidatePool(
   exercises: ExerciseDefinition[],
   context: StrengthContext,
+  { relaxPhase = false }: { relaxPhase?: boolean } = {},
 ): ExerciseDefinition[] {
-  return filterByFatigue(
-    filterByPhase(
-      filterBySafetyMetadata(
-        filterByExperience(filterBySafetyConstraints(exercises, context), context),
-        context,
-      ),
-      context,
-    ),
+  const eligible = filterBySafetyMetadata(
+    filterByExperience(filterBySafetyConstraints(exercises, context), context)
+      .filter((exercise) => isAthleticWorkAllowed(exercise, context)),
     context,
   )
+  return filterByFatigue(relaxPhase ? eligible : filterByPhase(eligible, context), context)
 }
 
 function filterBySafetyConstraints(
@@ -654,6 +748,14 @@ function filterBySafetyMetadata(
 
     return true
   })
+}
+
+/** Compuesto de tren inferior: sostiene carga de piernas, no sólo la etiqueta. */
+function isLowerCompound(exercise: ExerciseDefinition): boolean {
+  return exercise.category === 'lower'
+    && exercise.isolation !== true
+    && exercise.intensityType !== 'power'
+    && exercise.intensityType !== 'recovery'
 }
 
 export function pickStrengthStructure(
@@ -714,6 +816,28 @@ export function pickStrengthStructure(
     }
   }
 
+  // Cobertura de pierna: un apoyo de squash sin ningún compuesto de tren
+  // inferior no es una sesión de fuerza de piernas más corta, es otra sesión.
+  // Va después del accesorio y antes del slot unilateral/estabilidad, que es
+  // el que la desplazaba: `lateral_band_walk` satisface «lower» sin cargar.
+  if (selected.length < nonCoreLimit && !selected.some(isLowerCompound)) {
+    const lower = pickFirst(scored, context, (exercise) =>
+      !selectedIds.has(exercise.id) &&
+      isLowerCompound(exercise) &&
+      ['squat', 'hinge'].includes(exercise.movement) &&
+      !isSpecificCardioExercise(exercise),
+    (exercise) =>
+      !selectedIds.has(exercise.id) &&
+      isLowerCompound(exercise) &&
+      !isSpecificCardioExercise(exercise),
+    )
+    if (lower) {
+      selected.push(lower)
+      selectedMovements.add(lower.movement)
+      selectedIds.add(lower.id)
+    }
+  }
+
   if (selected.length < nonCoreLimit) {
     const unilateralOrStability = pickFirst(scored, context, (exercise) =>
       !selectedIds.has(exercise.id) &&
@@ -767,6 +891,7 @@ export function pickStrengthStructure(
 
   for (const { exercise } of scored) {
     if (selected.length >= targetCount) break
+    if (!withinPowerBudget(exercise, selectedIds)) continue
     if (exercise.isolation && countSelectedIsolations(selectedIds) >= MAX_ISOLATION_PER_SESSION) continue
     if (selectedIds.has(exercise.id)) continue
     if (isSpecificCardioExercise(exercise)) continue
@@ -781,6 +906,7 @@ function shouldIncludeSpecificCardio(context: StrengthContext, targetCount: numb
   const duration = context.sessionDurationMin ?? 50
   const goal = context.goal.toLowerCase()
   const explicitlyWantsCardio =
+    goal.includes('finisher') ||
     goal.includes('cardio') ||
     goal.includes('acondicion') ||
     goal.includes('puntos cortos') ||
@@ -790,11 +916,14 @@ function shouldIncludeSpecificCardio(context: StrengthContext, targetCount: numb
     goal.includes('bici de asalto') ||
     goal.includes('trotadora')
 
-  if (context.fatigueLevel >= 7 || context.competitionSoon || context.phase === 'taper') return false
+  if (context.fatigueLevel >= 7 || context.competitionSoon || context.requireExtraRecovery || context.strengthAcwr?.status === 'risk') return false
+  if (context.daysToCompetition != null && context.daysToCompetition >= 0 && context.daysToCompetition <= 4) return false
+  if (duration < 45 || !['base', 'build', 'peak'].includes(context.phase)) return false
   if (context.primarySport !== 'squash' && !explicitlyWantsCardio) return false
   if (duration < 55 && !explicitlyWantsCardio) return false
   if (targetCount < 5 && !explicitlyWantsCardio) return false
-  return context.phase === 'base' || context.phase === 'build' || context.phase === 'peak' || explicitlyWantsCardio
+  // La fase ya se resolvió arriba: un pedido explícito no la sobrepasa.
+  return true
 }
 
 function isSpecificCardioExercise(exercise: ExerciseDefinition): boolean {
@@ -802,12 +931,7 @@ function isSpecificCardioExercise(exercise: ExerciseDefinition): boolean {
 }
 
 function isMachineSpecificCardioExercise(exercise: ExerciseDefinition): boolean {
-  return (
-    exercise.equipment.includes('assault_bike') ||
-    exercise.equipment.includes('air_treadmill') ||
-    exercise.tags.includes('court_conditioning') ||
-    exercise.tags.includes('cardio_specific')
-  )
+  return isFinisherExercise(exercise)
 }
 
 function isFootworkSpecificCardioExercise(exercise: ExerciseDefinition): boolean {
@@ -823,9 +947,11 @@ function getSpecificCardioTarget(
 
   const goal = context.goal.toLowerCase()
   const wantsFootwork = goal.includes('footwork') || goal.includes('escalera') || goal.includes('coordinacion') || goal.includes('coordinación')
-  const wantsMachine = goal.includes('bici') || goal.includes('bike') || goal.includes('asalto') || goal.includes('trotadora') || goal.includes('runner') || goal.includes('cinta')
+  const wantsMachine = goal.includes('finisher') || goal.includes('bici') || goal.includes('bike') || goal.includes('asalto') || goal.includes('trotadora') || goal.includes('runner') || goal.includes('cinta')
   const hasFootwork = scored.some(({ exercise }) => isFootworkSpecificCardioExercise(exercise))
   const hasMachine = scored.some(({ exercise }) => isMachineSpecificCardioExercise(exercise))
+
+  if (wantsFootwork && wantsMachine && hasFootwork && hasMachine && targetCount >= 5) return 2
 
   if ((wantsFootwork || (!wantsMachine && !hasMachine)) && hasFootwork) {
     if (targetCount <= 5) return 1
@@ -842,16 +968,29 @@ function pickSpecificCardioBlock(
   selectedIds: Set<string>,
   targetCount: number,
 ): ExerciseDefinition[] {
+  if (targetCount <= 0) return []
   const goal = context.goal.toLowerCase()
   const prefersAirTreadmill = goal.includes('trotadora') || goal.includes('runner') || goal.includes('cinta')
   const prefersAssaultBike = goal.includes('bici') || goal.includes('bike') || goal.includes('asalto')
   const prefersFootwork = goal.includes('footwork') || goal.includes('escalera') || goal.includes('coordinacion') || goal.includes('coordinación')
 
+  // Un número suelto no elige intervalo: «trotadora curva, 30 min» pedía la
+  // curva y devolvía la cinta plana. Sólo la grafía del intervalo desempata.
+  // Dos números en secuencia, con o sin separador: cubre «30/30», «30 x 30» y
+  // «30 seg in 30 seg out». «30 min» —un solo número— ya no elige nada.
+  const asksThirtyThirty = /\b30\b[^0-9]{0,14}\b30\b/.test(goal)
+  const asksFifteenFortyFive = /\b15\b[^0-9]{0,14}\b45\b/.test(goal)
   const preferredId = prefersAirTreadmill
-    ? 'air_treadmill_20_20'
+    ? asksThirtyThirty ? 'treadmill_30_30' : 'air_treadmill_20_20'
     : prefersAssaultBike
-      ? 'assault_bike_30_30'
+      ? asksFifteenFortyFive ? 'assault_bike_15_45' : 'assault_bike_30_30'
       : undefined
+
+  if (prefersFootwork && (preferredId || goal.includes('finisher')) && targetCount >= 2) {
+    const finisher = scored.find(({ exercise }) => exercise.id === preferredId && !selectedIds.has(exercise.id))?.exercise
+      ?? scored.find(({ exercise }) => isFinisherExercise(exercise) && !selectedIds.has(exercise.id))?.exercise
+    if (finisher) return [...pickFootworkCardioBlock(scored, context, selectedIds, targetCount - 1), finisher]
+  }
 
   if (preferredId) {
     const preferred = scored.find(({ exercise }) => exercise.id === preferredId && !selectedIds.has(exercise.id))
@@ -988,6 +1127,7 @@ function scoreExercises(
   return exercises
     .map((exercise) => {
       let score = 0
+      score += athleticPreferenceScore(exercise, context.goal)
 
       if (context.sportProfile === 'strength_primary') {
         if (exercise.intensityType === 'strength') score += 6
@@ -1136,11 +1276,16 @@ export function deriveStrengthProgressionState(context: StrengthContext): Streng
   let mainPattern: MovementPattern | undefined
 
   strengthSessions.forEach((session, sessionIndex) => {
-    session.exercises?.forEach((exercise, index) => {
-      const definition = resolveStrengthExercise(exercise)?.definition
+    const definitions = (session.exercises ?? []).map((exercise) => resolveStrengthExercise(exercise)?.definition)
+    const mainIndex = definitions.findIndex((definition) => definition != null
+      && (definition.category === 'lower' || definition.category === 'upper')
+      && (definition.intensityType === 'strength' || definition.intensityType === 'hypertrophy')
+      && isMainLiftEligible(definition))
+    const seenPatterns = new Set<MovementPattern>()
+    definitions.forEach((definition, index) => {
       if (!definition) return
 
-      const role = getStrengthExerciseRole(definition, index)
+      const role = getStrengthExerciseRole(definition, index === mainIndex ? 0 : 1)
       const entry = patterns[definition.movement]
       if (!entry) {
         patterns[definition.movement] = {
@@ -1150,9 +1295,16 @@ export function deriveStrengthProgressionState(context: StrengthContext): Streng
           lastRole: role,
           lastDate: session.date,
         }
-      } else {
+      } else if (!seenPatterns.has(definition.movement)) {
         entry.frequency += 1
       }
+      // Frecuencia = sesiones expuestas, no número de variantes dentro de
+      // una sesión. El principal tiene precedencia sobre un core previo.
+      if (sessionIndex === 0 && role === 'main_lift') {
+        patterns[definition.movement]!.lastExerciseId = definition.id
+        patterns[definition.movement]!.lastRole = role
+      }
+      seenPatterns.add(definition.movement)
 
       if (sessionIndex === 0 && role === 'main_lift' && !mainPattern) {
         mainPattern = definition.movement
@@ -1211,45 +1363,63 @@ export function deriveProgressionIntent(
   return 'hold'
 }
 
+/**
+ * Un compuesto puede sostener la sesión aunque su etiqueta de dosis sea
+ * `hypertrophy`: el tipo describe el objetivo de la prescripción, no si el
+ * ejercicio es un principal. `deriveStrengthProgressionState` ya identificaba
+ * el principal con `strength || hypertrophy`; el selector exigía `strength` y
+ * ambos discrepaban. Con el nivel principiante acotado a `beginner` la
+ * discrepancia dejó de ser teórica: el único candidato `strength` del pool es
+ * `landmine_press`, así que una sesión de principiante salía sin ninguna
+ * sentadilla ni bisagra pese a haber ocho compuestos de pierna elegibles.
+ *
+ * `strength` conserva la prioridad: `hypertrophy` sólo entra si no hay ninguno.
+ */
+const MAIN_LIFT_TIERS: ReadonlyArray<IntensityType> = ['strength', 'hypertrophy']
+
 export function selectMainLiftWithProgression(
   scored: ScoredExercise[],
   context: StrengthContext,
   recentExercises: Set<string>,
   progressionState = deriveStrengthProgressionState(context),
 ): ExerciseDefinition | undefined {
-  // rotate: pick a main lift from a DIFFERENT pattern to break overload cycle
-  if (progressionState.intent === 'rotate' && progressionState.mainPattern) {
-    const alternative = scored.find(({ exercise }) =>
-      exercise.movement !== progressionState.mainPattern &&
-      exercise.intensityType === 'strength' &&
+  for (const tier of MAIN_LIFT_TIERS) {
+    const isCandidate = (exercise: ExerciseDefinition) =>
+      exercise.intensityType === tier &&
       exercise.category !== 'core' &&
-      isMainLiftEligible(exercise) &&
+      isMainLiftEligible(exercise)
+
+    // rotate: pick a main lift from a DIFFERENT pattern to break overload cycle
+    if (progressionState.intent === 'rotate' && progressionState.mainPattern) {
+      const alternative = scored.find(({ exercise }) =>
+        exercise.movement !== progressionState.mainPattern &&
+        isCandidate(exercise) &&
+        !recentExercises.has(normalizeStrengthExerciseKey(exercise.id)),
+      )
+      if (alternative) return alternative.exercise
+    }
+
+    if (progressionState.mainPattern) {
+      const preferred = scored.find(({ exercise }) =>
+        exercise.movement === progressionState.mainPattern &&
+        isCandidate(exercise) &&
+        (
+          progressionState.intent !== 'progress' ||
+          !recentExercises.has(normalizeStrengthExerciseKey(exercise.id)) ||
+          context.sportProfile === 'strength_primary'
+        ),
+      )
+      if (preferred) return preferred.exercise
+    }
+
+    const fallback = pickFirst(scored, context, (exercise) =>
+      isCandidate(exercise) &&
       !recentExercises.has(normalizeStrengthExerciseKey(exercise.id)),
     )
-    if (alternative) return alternative.exercise
+    if (fallback) return fallback
   }
 
-  if (progressionState.mainPattern) {
-    const preferred = scored.find(({ exercise }) =>
-      exercise.movement === progressionState.mainPattern &&
-      exercise.intensityType === 'strength' &&
-      exercise.category !== 'core' &&
-      isMainLiftEligible(exercise) &&
-      (
-        progressionState.intent !== 'progress' ||
-        !recentExercises.has(normalizeStrengthExerciseKey(exercise.id)) ||
-        context.sportProfile === 'strength_primary'
-      ),
-    )
-    if (preferred) return preferred.exercise
-  }
-
-  return pickFirst(scored, context, (exercise) =>
-    exercise.intensityType === 'strength' &&
-    exercise.category !== 'core' &&
-    isMainLiftEligible(exercise) &&
-    !recentExercises.has(normalizeStrengthExerciseKey(exercise.id)),
-  )
+  return undefined
 }
 
 function deriveStrengthFocus(
@@ -1337,7 +1507,9 @@ function orderStrengthExercisesForSession(
 
   const core = exercises.filter((exercise) => exercise.group === 'core')
   const strength = exercises.filter((exercise) => exercise.group !== 'core' && exercise.group !== 'cardio' && exercise.group !== 'mobility')
-  const cardio = exercises.filter((exercise) => exercise.group === 'cardio')
+  const cardio = exercises.filter((exercise) => exercise.group === 'cardio').sort((a, b) =>
+    Number(resolveStrengthExercise(a)?.definition?.athleticPrescription?.kind === 'finisher')
+    - Number(resolveStrengthExercise(b)?.definition?.athleticPrescription?.kind === 'finisher'))
   const mobility = exercises.filter((exercise) => exercise.group === 'mobility')
 
   return [...core, ...strength, ...cardio, ...mobility]
@@ -1354,21 +1526,18 @@ function getPrescription(
 } {
   const isLead = index === 0
 
-  if (exercise.id === 'assault_bike_30_30') {
-    return {
-      sets: context.phase === 'build' && context.fatigueLevel <= 4 && (context.sessionDurationMin ?? 50) >= 65 ? 2 : 1,
-      reps: '4 min: 30s fuerte / 30s suave',
-      intensity: 'explosive',
-    }
+  const athletic = exercise.athleticPrescription
+  if (athletic) {
+    return { sets: athletic.sets, reps: athletic.reps, intensity: athletic.kind === 'coordination' ? 'controlled' : 'explosive' }
   }
 
-  if (exercise.id === 'air_treadmill_20_20') {
-    return {
-      sets: context.phase === 'build' && context.fatigueLevel <= 4 && (context.sessionDurationMin ?? 50) >= 65 ? 2 : 1,
-      reps: '4 min: 20s fuerte / 20s suave',
-      intensity: 'explosive',
-    }
+  if (exercise.prescriptionUnit === 'seconds') {
+    return { sets: 3, reps: '30s', intensity: 'controlled' }
   }
+
+  // Los dos finishers antiguos ya no tienen rama propia: su dosis vive en
+  // `ATHLETIC_PRESCRIPTIONS`, que se resuelve arriba. La variante de 2 bloques
+  // para build largo se retiró a propósito — un finisher es un bloque.
 
   switch (exercise.intensityType) {
     case 'strength':
@@ -1420,7 +1589,7 @@ export function getProgressedPrescription(
         intensity: base.intensity === 'heavy' || base.intensity === 'moderate-heavy' ? 'moderate' : 'light',
       }
     }
-    return { ...base, sets: Math.max(2, base.sets - 1), intensity: 'controlled' }
+    return { ...base, sets: Math.max(1, base.sets - 1), intensity: 'controlled' }
   }
 
   if (progressionState.intent === 'progress' && isMainPattern && exercise.intensityType === 'strength') {
@@ -1463,6 +1632,10 @@ function buildExerciseNotes(
   if (context.fatigueLevel >= 7) {
     return 'Prioriza técnica limpia y detente mucho antes de llegar al fallo.'
   }
+  // Después de las notas de contexto: una escalera en semana de competencia
+  // necesita el aviso de competencia, no la guía genérica de apoyos.
+  const athleticNotes = athleticPrescriptionNotes(exercise)
+  if (athleticNotes) return athleticNotes
   if (exercise.intensityType === 'power') {
     if (exercise.tags.includes('court_conditioning')) {
       return 'Cardio específico al final: potencia corta y recuperación entre puntos; corta el bloque si cae la mecánica.'
@@ -1509,7 +1682,7 @@ export function summarizeStrengthProgression(context: StrengthContext): string {
     case 'deload':
       return `Patron principal ${state.mainPattern} en modo deload — reducir volumen e intensidad.${acwrLabel}`
     case 'rotate':
-      return `Patron ${state.mainPattern} sobreentrenado — rotar a patron distinto esta sesion.${acwrLabel}`
+      return `Patron ${state.mainPattern} repetido en sesiones recientes — alternar el estimulo esta sesion.${acwrLabel}`
   }
 }
 
@@ -1562,6 +1735,9 @@ function filterByExperience(
   context: StrengthContext,
 ): ExerciseDefinition[] {
   if (context.experienceLevel === 'advanced') return exercises
+  if (context.experienceLevel === 'beginner') {
+    return exercises.filter((exercise) => exercise.difficulty === 'beginner' && !exercise.tags.includes('advanced'))
+  }
   if (context.experienceLevel === 'intermediate') {
     return exercises.filter((exercise) => exercise.difficulty !== 'advanced')
   }

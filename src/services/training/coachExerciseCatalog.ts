@@ -1,4 +1,5 @@
 import { EQUIPMENT_LABELS } from './equipmentPresets'
+import { athleticPrescriptionNotes } from './athleticTraining'
 import type { SessionType, SquashSessionBlockKind } from '../../types'
 import type { ExerciseLibraryRef, ExerciseLibrarySource } from '../../types/exerciseLibraryRef'
 import { SQUASH_DRILL_LIBRARY, type DrillCategory } from './drillLibrary'
@@ -87,7 +88,12 @@ const STRENGTH_ENTRIES: CatalogEntry[] = STRENGTH_EXERCISE_LIBRARY.map((exercise
     exercise.name, ...(exercise.aliases ?? []), ...exercise.tags,
     ...exercise.equipment.flatMap(item => [item, EQUIPMENT_LABELS[item]]),
   ]),
-  defaults: { ...STRENGTH_DEFAULTS[exercise.intensityType] },
+  defaults: exercise.athleticPrescription ? {
+    sets: exercise.athleticPrescription.sets,
+    reps: String(exercise.athleticPrescription.reps),
+    notes: `${exercise.description} ${athleticPrescriptionNotes(exercise)}`,
+  } : exercise.prescriptionUnit === 'seconds' ? { sets: 3, reps: '30s' }
+    : { ...STRENGTH_DEFAULTS[exercise.intensityType] },
 }))
 
 /** Sesión de squash ve drills + fuerza (accesorio común); fuerza solo fuerza; el resto nada. */

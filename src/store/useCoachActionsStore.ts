@@ -25,7 +25,7 @@ import { fromISO, getWeekStart, toISO } from '../utils/date'
 import { v4 as uuid } from '../utils/uuid'
 import { useCoachMemoryStore } from './useCoachMemoryStore'
 import { useTrainingStore } from './useTrainingStore'
-import { BLOCKED_STRENGTH_COPY } from '../services/training/strengthSafetyCopy'
+import { blockedStrengthCopy, STRENGTH_TRAINING_CONTEXT_TRIM_WARNING } from '../services/training/strengthSafetyCopy'
 
 // Promise cache: repeated accept calls for the same proposal share the same work.
 const activeAcceptProposalPromises = new Map<string, Promise<AcceptProposalResult>>()
@@ -878,11 +878,14 @@ async function applyCoachAction(
           sealLocation: 'root',
         })
         if (prepared.status === 'blocked') {
-          throw new Error(BLOCKED_STRENGTH_COPY)
+          throw new Error(blockedStrengthCopy(prepared.reason))
         }
         verifiedExercises = prepared.session.exercises
-        if (prepared.removed.length > 0 || prepared.replaced.length > 0) {
+        if (prepared.replaced.length > 0 || prepared.removed.some((item) => item.reason !== 'training_context')) {
           warnings.push('Se excluyeron o reemplazaron ejercicios por tu restricción.')
+        }
+        if (prepared.removed.some((item) => item.reason === 'training_context')) {
+          warnings.push(STRENGTH_TRAINING_CONTEXT_TRIM_WARNING)
         }
       }
       const created = await store.addSession(ensureSessionProtocols({
@@ -992,11 +995,14 @@ async function applyCoachAction(
           sealLocation: 'root',
         })
         if (prepared.status === 'blocked') {
-          throw new Error(BLOCKED_STRENGTH_COPY)
+          throw new Error(blockedStrengthCopy(prepared.reason))
         }
         verifiedStrengthExercises = prepared.session.exercises
-        if (prepared.removed.length > 0 || prepared.replaced.length > 0) {
+        if (prepared.replaced.length > 0 || prepared.removed.some((item) => item.reason !== 'training_context')) {
           warnings.push('Se excluyeron o reemplazaron ejercicios por tu restricción.')
+        }
+        if (prepared.removed.some((item) => item.reason === 'training_context')) {
+          warnings.push(STRENGTH_TRAINING_CONTEXT_TRIM_WARNING)
         }
       }
 

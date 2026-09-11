@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 const allowed = new Set([
   'src/types/strengthSafety.ts',
   'src/services/training/exerciseLibrary.ts',
+  'src/services/training/athleticExerciseLibrary.ts', // Declaraciones de catálogo, sin política de restricciones.
   'src/services/training/strengthSafetyConstraints.ts',
 ])
 

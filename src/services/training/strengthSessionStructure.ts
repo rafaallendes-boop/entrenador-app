@@ -18,6 +18,7 @@ import {
 } from './strengthLoadPrescription'
 import { normalizeSupersetGroups, resolveSupersetLayout } from './supersetGroups'
 import { isExerciseAllowed } from './strengthSafetyConstraints'
+import { isFinisherExercise } from './athleticTraining'
 
 type StrengthExerciseLike = CoachExerciseProposal | Exercise
 
@@ -123,6 +124,11 @@ export function normalizeStrengthSessionExercises<T extends StrengthExerciseLike
 function compareStrengthExercises(a: StrengthExerciseLike, b: StrengthExerciseLike): number {
   const groupDelta = groupRank(a.group) - groupRank(b.group)
   if (groupDelta !== 0) return groupDelta
+  if (a.group === 'cardio') {
+    const left = resolveStrengthExercise(a)?.definition
+    const right = resolveStrengthExercise(b)?.definition
+    return Number(left != null && isFinisherExercise(left)) - Number(right != null && isFinisherExercise(right))
+  }
   return coreRank(a) - coreRank(b)
 }
 

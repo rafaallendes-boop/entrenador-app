@@ -25,7 +25,7 @@
       {
         "id": "side_plank_plate_press",
         "sets": 3,
-        "reps": 10,
+        "reps": "30s",
         "group": "core",
         "weight": null,
         "targetPercent1RM": null,
@@ -110,7 +110,7 @@
       {
         "id": "side_plank_plate_press",
         "sets": 3,
-        "reps": 10,
+        "reps": "30s",
         "group": "core",
         "weight": null,
         "targetPercent1RM": null,

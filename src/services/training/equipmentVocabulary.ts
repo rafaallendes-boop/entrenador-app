@@ -1,4 +1,9 @@
-import type { EquipmentType } from './exerciseLibrary'
+import type { EquipmentType, ExerciseDefinition } from './exerciseLibrary'
+
+export function hasExerciseEquipment(exercise: Pick<ExerciseDefinition, 'equipment' | 'requiredEquipment'>, available: readonly EquipmentType[]): boolean {
+  return exercise.equipment.some((item) => available.includes(item))
+    && (exercise.requiredEquipment ?? []).every((item) => available.includes(item))
+}
 
 /**
  * Vocabulario de equipamiento, con dos reconocedores deliberadamente separados.
@@ -27,6 +32,20 @@ const NEGATION_SEGMENTS: ReadonlySet<string> = new Set(['sin', 'without'])
  * con cualquier palabra que lo contenga.
  */
 const NAME_EQUIPMENT_TOKENS: ReadonlyArray<readonly [string, EquipmentType]> = [
+  ['trotadora_de_aire', 'air_treadmill'],
+  ['trotadora_curva', 'air_treadmill'],
+  ['cinta_curva', 'air_treadmill'],
+  ['curved_treadmill', 'air_treadmill'],
+  ['air_treadmill', 'air_treadmill'],
+  // `cinta` a secas NO entra: en español de Chile «cinta elástica» es una
+  // banda, y como token de nombre hacía que `filterCandidatesByNamedEquipment`
+  // exigiera `treadmill`, dejando sin resolver 79 ejercicios cuyo nombre la
+  // menciona. Sólo la secuencia completa nombra la máquina.
+  ['cinta_de_correr', 'treadmill'],
+  ['mini_vallas', 'mini_hurdles'],
+  ['mini_valla', 'mini_hurdles'],
+  ['mini_hurdle', 'mini_hurdles'],
+  ['mini_hurdles', 'mini_hurdles'],
   ['barra_hexagonal', 'trap_bar'],
   ['balon_medicinal', 'medball'],
   ['pelota_medicinal', 'medball'],
@@ -65,6 +84,8 @@ const NAME_EQUIPMENT_TOKENS: ReadonlyArray<readonly [string, EquipmentType]> = [
   ['barra', 'barbell'],
   ['disco', 'plate'],
   ['trx', 'trx'],
+  ['trotadora', 'treadmill'],
+  ['treadmill', 'treadmill'],
 ]
 
 const NAME_TOKENS_BY_LENGTH = [...NAME_EQUIPMENT_TOKENS].sort(
@@ -125,7 +146,7 @@ export function detectEquipmentMentionsInName(name: string): EquipmentMentions {
 export const ALL_EQUIPMENT: readonly EquipmentType[] = [
   'barbell', 'dumbbell', 'bodyweight', 'machine', 'smith', 'cable', 'kettlebell',
   'medball', 'bands', 'trap_bar', 'trx', 'box', 'ladder', 'plate', 'stability_ball',
-  'assault_bike', 'air_treadmill',
+  'assault_bike', 'air_treadmill', 'treadmill', 'mini_hurdles',
 ]
 
 /**
@@ -137,24 +158,32 @@ export const ALL_EQUIPMENT: readonly EquipmentType[] = [
  * prensa no acredita que el gimnasio tenga el resto de las máquinas, así que
  * se registran como no reconocidos en vez de ascender a `machine`.
  */
-const INVENTORY_EQUIPMENT_TOKENS: ReadonlyArray<readonly [readonly string[], EquipmentType]> = [
-  [['trap', 'hex'], 'trap_bar'],
-  [['trx', 'suspension'], 'trx'],
-  [['cajon', 'box'], 'box'],
-  [['escalera', 'ladder'], 'ladder'],
-  [['assault', 'asalto', 'air bike', 'bici'], 'assault_bike'],
-  [['air runner', 'trotadora', 'cinta', 'curved', 'curva'], 'air_treadmill'],
-  [['disco', 'plate'], 'plate'],
-  [['stability', 'swiss', 'fitball', 'balon suizo', 'pelota suiza'], 'stability_ball'],
-  [['smith', 'multipower'], 'smith'],
-  [['peso corporal', 'bodyweight', 'body weight', 'calistenia'], 'bodyweight'],
-  [['pesa rusa', 'kettle'], 'kettlebell'],
-  [['medicinal', 'medball', 'med ball'], 'medball'],
-  [['banda', 'elastico', 'band'], 'bands'],
-  [['maquina', 'machine', 'selectorizada'], 'machine'],
-  [['polea', 'cable'], 'cable'],
-  [['mancuerna', 'dumb'], 'dumbbell'],
-  [['barra', 'barbell', 'bar'], 'barbell'],
+const INVENTORY_EQUIPMENT_TOKENS: ReadonlyArray<readonly [readonly string[], readonly EquipmentType[]]> = [
+  [['trap', 'hex'], ['trap_bar']],
+  [['trx', 'suspension'], ['trx']],
+  [['cajon', 'box'], ['box']],
+  [['escalera', 'ladder'], ['ladder']],
+  [['assault', 'asalto', 'air bike', 'bici'], ['assault_bike']],
+  // Antes que cualquier fila de cinta: «cinta elástica» es una banda.
+  [['banda', 'elastico', 'elastica', 'band', 'goma'], ['bands']],
+  [['air runner', 'air treadmill', 'trotadora de aire', 'curved', 'curva'], ['air_treadmill']],
+  [['mini valla', 'minivalla', 'mini hurdle', 'vallas'], ['mini_hurdles']],
+  [['cinta de correr', 'cinta corredora', 'caminadora', 'treadmill'], ['treadmill']],
+  // «Trotadora» o «cinta» a secas es ambiguo y ya estaba guardado en perfiles
+  // anteriores, donde significaba la curva. Acreditar sólo `treadmill` le
+  // quitaría en silencio un ejercicio que el atleta ya tenía: se acreditan
+  // ambas y la desambiguación queda en la selección fina.
+  [['trotadora', 'cinta'], ['treadmill', 'air_treadmill']],
+  [['disco', 'plate'], ['plate']],
+  [['stability', 'swiss', 'fitball', 'balon suizo', 'pelota suiza'], ['stability_ball']],
+  [['smith', 'multipower'], ['smith']],
+  [['peso corporal', 'bodyweight', 'body weight', 'calistenia'], ['bodyweight']],
+  [['pesa rusa', 'kettle'], ['kettlebell']],
+  [['medicinal', 'medball', 'med ball'], ['medball']],
+  [['maquina', 'machine', 'selectorizada'], ['machine']],
+  [['polea', 'cable'], ['cable']],
+  [['mancuerna', 'dumb'], ['dumbbell']],
+  [['barra', 'barbell', 'bar'], ['barbell']],
 ]
 
 const CANONICAL_EQUIPMENT = new Map<string, EquipmentType>(
@@ -211,7 +240,7 @@ export function resolveDeclaredEquipment(values: readonly string[] | undefined):
     const match = INVENTORY_EQUIPMENT_TOKENS.find(([tokens]) =>
       tokens.some((token) => normalized.includes(token)),
     )
-    if (match) equipment.add(match[1])
+    if (match) for (const item of match[1]) equipment.add(item)
     else unrecognized.push(value)
   }
 

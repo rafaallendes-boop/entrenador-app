@@ -29,10 +29,10 @@ export const EQUIPMENT_PRESETS: readonly EquipmentPreset[] = [
   {
     id: 'full_gym',
     label: 'Gimnasio completo',
-    hint: 'Barra, mancuernas, máquinas, poleas y accesorios.',
+    hint: 'Barra, mancuernas, máquinas, poleas, cardio y accesorios.',
     equipment: [
       'barbell', 'dumbbell', 'kettlebell', 'machine', 'smith', 'cable', 'trap_bar', 'trx',
-      'assault_bike', 'air_treadmill', 'ladder', ...ACCESSORIES,
+      'assault_bike', 'air_treadmill', 'treadmill', 'ladder', 'mini_hurdles', ...ACCESSORIES,
     ],
   },
   {
@@ -74,6 +74,8 @@ export const EQUIPMENT_LABELS: Record<EquipmentType, string> = {
   stability_ball: 'Fitball',
   assault_bike: 'Bici de asalto',
   air_treadmill: 'Trotadora curva',
+  treadmill: 'Cinta de correr',
+  mini_hurdles: 'Mini vallas',
 }
 
 /** El preset cuyo inventario coincide exactamente, o `custom` si no hay ninguno. */

@@ -73,7 +73,7 @@ import {
   applyWeekCreatorEventContextToConfig,
   resolveWeekCreatorEventContext,
 } from './WeekCreatorEventContext'
-import { BLOCKED_STRENGTH_COPY } from '../training/strengthSafetyCopy'
+import { blockedStrengthCopy } from '../training/strengthSafetyCopy'
 import { CoachAccessRequiredError } from '../entitlements/coachAccessError'
 import { EntitlementRequiredError } from '../entitlements/entitlementError'
 import {
@@ -101,14 +101,12 @@ function isServerGateRejection(error: unknown): boolean {
 
 const WEEK_CREATOR_RESPONSE_SCHEMA_CHAR_COUNT = JSON.stringify(WEEK_CREATOR_RESPONSE_SCHEMA).length
 const WEEK_CREATOR_SKELETON_SCHEMA_CHAR_COUNT = JSON.stringify(WEEK_CREATOR_SKELETON_RESPONSE_SCHEMA).length
-const WEEK_CREATOR_SAFETY_DECLINE_COPY = BLOCKED_STRENGTH_COPY
-
 export class WeekCreatorSafeDecline extends Error {
   readonly isSafeDecline = true
   readonly reason: BlockedReason
 
   constructor(reason: BlockedReason) {
-    super(WEEK_CREATOR_SAFETY_DECLINE_COPY)
+    super(blockedStrengthCopy(reason))
     this.name = 'WeekCreatorSafeDecline'
     this.reason = reason
   }
@@ -604,6 +602,7 @@ export const WeekCreatorEngine = {
           tracker.flush('safety_blocked', { generationId, attempt, reason: error.reason })
           void persistSafetyBlockedOutcome(traceId)
           return buildWeekCreatorSafeDeclineResponse({
+            reason: error.reason,
             generationId,
             traceId,
             provider: raw?.provider ?? provider.name,
@@ -777,6 +776,7 @@ export const WeekCreatorEngine = {
         // que llevó al fallback mantiene `/ops` observable.
         void persistSafetyBlockedOutcome(failureTraceId)
         return buildWeekCreatorSafeDeclineResponse({
+          reason: error.reason,
           generationId,
           traceId: fallbackTraceId,
           provider: lastFailure?.provider ?? provider.name,
@@ -877,9 +877,10 @@ function buildWeekCreatorSafeDeclineResponse(input: {
   model?: string
   durationMs?: number
   retryUsed: boolean
+  reason: BlockedReason
 }): CoachNormalizedResponse {
   return {
-    message: WEEK_CREATOR_SAFETY_DECLINE_COPY,
+    message: blockedStrengthCopy(input.reason),
     actions: [],
     filteredCreateWeek: false,
     provider: input.provider,

@@ -1,0 +1,113 @@
+{
+  "catalog": {
+    "total": 117,
+    "category": {
+      "lower": 31,
+      "upper": 39,
+      "core": 12,
+      "full_body": 35
+    },
+    "intensity": {
+      "strength": 16,
+      "hypertrophy": 49,
+      "power": 27,
+      "stability": 22,
+      "recovery": 3
+    },
+    "missingRiskAndFatigue": [
+      "goblet_squat",
+      "deadlift",
+      "incline_dumbbell_press",
+      "push_press",
+      "assisted_pull_up",
+      "bent_over_row",
+      "chest_supported_row",
+      "lat_pulldown",
+      "plank",
+      "med_ball_rotational_throw",
+      "cable_chop",
+      "farmer_carry",
+      "jump_squat",
+      "med_ball_slam",
+      "rotational_med_ball_throw",
+      "kettlebell_swing",
+      "bodyweight_squat",
+      "push_up",
+      "glute_bridge",
+      "band_row",
+      "split_squat",
+      "inverted_row"
+    ]
+  },
+  "sessions": 720,
+  "violations": [],
+  "observations": {
+    "phaseMismatch": 116,
+    "noLowerStrength": 9,
+    "noUpperPull": 42,
+    "multipleConditioning": 12,
+    "overTwoCore": 37
+  },
+  "examples": {
+    "overTwoCore": {
+      "label": "base/beginner/gym/fatigue-3/scored",
+      "exercises": [
+        "dead_bug",
+        "pallof_press",
+        "cable_chop",
+        "landmine_press",
+        "half_kneeling_row",
+        "hip_thrust",
+        "step_up",
+        "trx_inverted_row"
+      ]
+    },
+    "multipleConditioning": {
+      "label": "base/beginner/undeclared/fatigue-3/scored",
+      "exercises": [
+        "dead_bug",
+        "half_kneeling_diagonal_plate_chop",
+        "landmine_press",
+        "half_kneeling_row",
+        "hip_thrust",
+        "lateral_band_walk",
+        "ladder_bipodal_lateral_1",
+        "ladder_bipodal_front_1"
+      ]
+    },
+    "noUpperPull": {
+      "label": "build/intermediate/gym/fatigue-3/scored",
+      "exercises": [
+        "side_plank_plate_press",
+        "pallof_press",
+        "z_press",
+        "half_kneeling_lateral_jump",
+        "back_squat",
+        "lateral_skater_jumps",
+        "landmine_press",
+        "front_squat"
+      ]
+    },
+    "phaseMismatch": {
+      "label": "peak/beginner/gym/fatigue-3/scored",
+      "exercises": [
+        "dead_bug",
+        "pallof_press",
+        "landmine_press",
+        "pogo_jumps",
+        "half_kneeling_row",
+        "hip_thrust",
+        "step_up",
+        "trx_inverted_row"
+      ]
+    },
+    "noLowerStrength": {
+      "label": "peak/beginner/bodyweight/fatigue-3/0",
+      "exercises": [
+        "dead_bug",
+        "side_plank",
+        "pogo_jumps"
+      ]
+    }
+  }
+}

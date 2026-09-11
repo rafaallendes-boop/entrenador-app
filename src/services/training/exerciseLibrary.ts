@@ -1,6 +1,7 @@
 import type { ExerciseGroup } from '../../types'
 import type { ExerciseSafetyProfile } from '../../types/strengthSafety'
 import type { ExerciseLibraryRef } from '../../types/exerciseLibraryRef'
+import { ATHLETIC_EXERCISES, ATHLETIC_PRESCRIPTIONS, ATHLETIC_REQUIRED_EQUIPMENT } from './athleticExerciseLibrary'
 import {
   detectEquipmentMentionsInName,
   normalizeStrengthExerciseKey as normalizeKey,
@@ -39,6 +40,8 @@ export type EquipmentType =
   | 'stability_ball'
   | 'assault_bike'
   | 'air_treadmill'
+  | 'treadmill'
+  | 'mini_hurdles'
 export type ExperienceLevel = 'beginner' | 'intermediate' | 'advanced'
 export type ExerciseRiskLevel = 'low' | 'medium' | 'high'
 export type ExerciseFatigueCost = 'low' | 'medium' | 'high'
@@ -84,6 +87,8 @@ export interface ExerciseDefinition {
   movement: MovementPattern
   intensityType: IntensityType
   equipment: EquipmentType[]
+  /** Material imprescindible, además de una alternativa de `equipment`. */
+  requiredEquipment?: EquipmentType[]
   unilateral?: boolean
   /**
    * Trabajo de una sola articulación, sin capacidad de sostener una sesión.
@@ -105,10 +110,20 @@ export interface ExerciseDefinition {
   loadReference?: StrengthLoadReference
   /** Cómo se prescribe el volumen. Ausente equivale a repeticiones. */
   prescriptionUnit?: 'reps' | 'seconds'
+  /** Dosis propia de saltos, coordinación e intervalos, compartida con la biblioteca manual. */
+  athleticPrescription?: AthleticPrescription
   appropriateForPhases?: ExercisePhase[]
   blockRotationGroup?: ExerciseRotationGroup
   /** Perfil declarativo de carga; obligatorio para impedir altas sin clasificar. */
   safety: ExerciseSafetyProfile
+}
+
+export interface AthleticPrescription {
+  kind: 'horizontal_power' | 'reactive_power' | 'coordination' | 'finisher'
+  sets: number
+  reps: number | string
+  restSeconds: number
+  cues: string
 }
 
 export type StrengthExerciseRole = 'main_lift' | 'accessory' | 'trunk' | 'power'
@@ -1156,6 +1171,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
     movement: 'locomotion',
     intensityType: 'power',
     equipment: ['assault_bike', 'machine'],
+    appropriateForPhases: ['base', 'build', 'peak'],
     tags: ['cardio_specific', 'court_conditioning', 'repeat_sprint', 'squash_specific'],
     description: 'Completa 4 minutos en bici de asalto alternando 30 segundos fuertes y 30 segundos suaves. Mantén potencia alta y una postura estable durante cada esfuerzo.',
     aliases: ['Bici de asalto', 'Assault bike', 'Air bike', 'Bicicleta de asalto', 'Bici assault 30/30'],
@@ -1173,6 +1189,7 @@ const RAW_STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [
     movement: 'locomotion',
     intensityType: 'power',
     equipment: ['air_treadmill', 'machine'],
+    appropriateForPhases: ['base', 'build', 'peak'],
     tags: ['cardio_specific', 'court_conditioning', 'repeat_sprint', 'squash_specific'],
     description: 'Completa 4 minutos en una trotadora curva alternando 20 segundos fuertes y 20 segundos suaves. Busca aceleraciones cortas y una técnica rápida sin prolongar el esfuerzo.',
     aliases: ['Trotadora de aire', 'Air runner', 'Curved treadmill', 'Trotadora curva', 'Cinta curva', 'Air treadmill', 'Trotadora de aire 20/20'],
@@ -1981,12 +1998,14 @@ function withExercisePhase2Metadata(exercise: ExerciseDefinition): ExerciseDefin
     ...exercise,
     loadReference: exercise.loadReference ?? EXERCISE_LOAD_REFERENCES[exercise.id],
     prescriptionUnit: exercise.prescriptionUnit ?? EXERCISE_PRESCRIPTION_UNITS[exercise.id],
+    athleticPrescription: exercise.athleticPrescription ?? ATHLETIC_PRESCRIPTIONS[exercise.id],
+    requiredEquipment: exercise.requiredEquipment ?? ATHLETIC_REQUIRED_EQUIPMENT[exercise.id],
     appropriateForPhases: exercise.appropriateForPhases ?? inferAppropriateForPhases(exercise),
     blockRotationGroup: exercise.blockRotationGroup ?? EXERCISE_ROTATION_GROUPS[exercise.id],
   }
 }
 
-export const STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = RAW_STRENGTH_EXERCISE_LIBRARY.map(withExercisePhase2Metadata)
+export const STRENGTH_EXERCISE_LIBRARY: ExerciseDefinition[] = [...RAW_STRENGTH_EXERCISE_LIBRARY, ...ATHLETIC_EXERCISES].map(withExercisePhase2Metadata)
 export const EXERCISE_LIBRARY = STRENGTH_EXERCISE_LIBRARY
 
 /**
@@ -2040,6 +2059,18 @@ export function getStrengthExerciseIdentityById(id: string): {
  */
 export function isMainLiftEligible(definition: ExerciseDefinition): boolean {
   return definition.isolation !== true
+}
+
+/**
+ * Trabajo de impacto: saltos, recepciones y carrera intensa.
+ *
+ * Vive acá, junto al catálogo, porque lee `safety.loadPatterns` y la biblioteca
+ * es una de las dos autoridades que pueden hacerlo. Es una clasificación
+ * declarativa, no una política de restricciones: quién la usa para frenar una
+ * sesión es `athleticTraining`.
+ */
+export function isImpactPowerExercise(definition: ExerciseDefinition): boolean {
+  return definition.intensityType === 'power' && definition.safety.loadPatterns.includes('impact')
 }
 
 export function getStrengthExerciseRole(definition: ExerciseDefinition, index = 0): StrengthExerciseRole {

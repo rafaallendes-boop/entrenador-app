@@ -1,4 +1,5 @@
-import { resolveDeclaredEquipment } from './equipmentVocabulary'
+import { hasExerciseEquipment, resolveDeclaredEquipment } from './equipmentVocabulary'
+import { isAthleticWorkAllowed, isFinisherExercise } from './athleticTraining'
 import type {
   CoachExerciseProposal,
   SessionMetadata,
@@ -40,12 +41,14 @@ export const STRENGTH_SAFETY_POLICY_VERSION = 1
 export type BlockedReason =
   | 'unresolved_medical_restriction'
   | 'insufficient_safe_pool'
+  /** Ventana competitiva, fatiga aguda o sesión demasiado corta. No es una restricción. */
+  | 'training_context_unavailable'
   | 'unresolvable_exercise_identity'
 
 export interface RemovedExercise {
   exerciseId?: string
   libraryRef?: ExerciseLibraryRef
-  reason: 'equipment_unavailable' | 'constraint_intersection' | 'unresolvable_identity' | 'ambiguous_identity'
+  reason: 'equipment_unavailable' | 'constraint_intersection' | 'unresolvable_identity' | 'ambiguous_identity' | 'training_context'
   matchedConstraints: readonly ConstraintKey[]
 }
 
@@ -100,16 +103,21 @@ export function finalizeStrengthExercisesForRestrictions(
   const removed: RemovedExercise[] = []
   const replaced: ReplacedExercise[] = []
   const kept: CoachExerciseProposal[] = []
+  const hasFinisher = () => kept.some((exercise) => {
+    const definition = resolveStrengthExercise(exercise)?.definition
+    return definition != null && isFinisherExercise(definition)
+  })
   // The finalizer owns the hard constraint set.  Callers may accidentally
   // carry an older selection context; never let that make replacement or
   // density selection broader than the constraints being finalized.
   const safetyContext: StrengthContext = {
     ...input.selectionContext,
     safetyConstraints: input.constraints,
+    sessionDurationMin: input.durationMin ?? input.selectionContext.sessionDurationMin,
   }
-  const availableEquipment = new Set(resolveDeclaredEquipment(safetyContext.availableEquipment).equipment)
+  const availableEquipment = resolveDeclaredEquipment(safetyContext.availableEquipment).equipment
   const hasEquipment = (definition: ExerciseDefinition | undefined) =>
-    definition != null && definition.equipment.some(item => availableEquipment.has(item))
+    definition != null && hasExerciseEquipment(definition, availableEquipment)
   const usedIds = new Set(
     input.exercises
       .map((exercise) => resolveStrengthExercise(exercise)?.definition?.id)
@@ -128,6 +136,11 @@ export function finalizeStrengthExercisesForRestrictions(
         reason: resolution?.matchKind === 'ambiguous' ? 'ambiguous_identity' : 'unresolvable_identity',
         matchedConstraints: [],
       })
+      continue
+    }
+
+    if (!isAthleticWorkAllowed(definition, safetyContext) || (isFinisherExercise(definition) && hasFinisher())) {
+      removed.push({ exerciseId: definition.id, reason: 'training_context', matchedConstraints: [] })
       continue
     }
 
@@ -172,6 +185,7 @@ export function finalizeStrengthExercisesForRestrictions(
   const addCandidate = (candidate: StrengthSelectionExercise): boolean => {
     const definition = resolveStrengthExercise(candidate)?.definition
     if (!definition || usedIds.has(definition.id) || (!isExerciseAllowed(definition, input.constraints) || !hasEquipment(definition))) return false
+    if (isFinisherExercise(definition) && hasFinisher()) return false
     const proposal = toProposal(candidate)
     kept.push(proposal)
     usedIds.add(definition.id)
@@ -206,6 +220,9 @@ export function finalizeStrengthExercisesForRestrictions(
     if (!isExerciseAllowed(definition, input.constraints) || !hasEquipment(definition)) {
       return { status: 'blocked', reason: 'insufficient_safe_pool', removed }
     }
+    if (!isAthleticWorkAllowed(definition, safetyContext)) {
+      return { status: 'blocked', reason: 'training_context_unavailable', removed }
+    }
   }
 
   const realStrengthWork = grouped.filter(isStrengthWorkExercise).length
@@ -213,7 +230,15 @@ export function finalizeStrengthExercisesForRestrictions(
     grouped.length < density.min ||
     realStrengthWork < minimumStrengthWork
   ) {
-    return { status: 'blocked', reason: 'insufficient_safe_pool', removed }
+    // Un déficit causado SÓLO por retiros de contexto no es un pool inseguro:
+    // no hay restricción que reportar y el copy médico mentiría.
+    return {
+      status: 'blocked',
+      reason: removed.length > 0 && removed.every((item) => item.reason === 'training_context')
+        ? 'training_context_unavailable'
+        : 'insufficient_safe_pool',
+      removed,
+    }
   }
 
   return { status: 'ok', exercises: grouped, removed, replaced }

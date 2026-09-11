@@ -12,3 +12,25 @@
  */
 export const BLOCKED_STRENGTH_COPY =
   'No pude verificar una sesión de fuerza compatible con la restricción registrada.'
+
+/**
+ * Copy de decline por contexto de entrenamiento, no por restricción médica.
+ *
+ * Existe porque la ventana competitiva, la fatiga aguda y la duración mínima de
+ * un finisher retiran ejercicios sin que haya ninguna restricción registrada.
+ * Reusar `BLOCKED_STRENGTH_COPY` ahí le decía a un atleta sano que su lesión
+ * impedía la sesión.
+ */
+export const BLOCKED_STRENGTH_TRAINING_CONTEXT_COPY =
+  'No pude armar esta sesión de fuerza con el trabajo de impacto o el finisher propuestos para este momento del calendario. Ajusta la duración o pídela sin ese bloque.'
+
+/** Aviso cuando se recortó impacto o finisher sin que exista restricción alguna. */
+export const STRENGTH_TRAINING_CONTEXT_TRIM_WARNING =
+  'Saqué el trabajo de impacto o el finisher por el momento del calendario y la duración de la sesión, no por una restricción.'
+
+/** Copy único por razón de bloqueo: productores y consumidores comparten módulo. */
+export function blockedStrengthCopy(reason?: string): string {
+  return reason === 'training_context_unavailable'
+    ? BLOCKED_STRENGTH_TRAINING_CONTEXT_COPY
+    : BLOCKED_STRENGTH_COPY
+}
