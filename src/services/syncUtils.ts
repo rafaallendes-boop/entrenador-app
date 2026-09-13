@@ -84,6 +84,19 @@ export function classifySyncError(error: unknown, table?: SupabaseTable): SyncEr
     }
   }
 
+  // Entrega 2: un UPDATE/DELETE de `athletes` que afecta cero filas significa
+  // que la RLS por membresía no reconoce al actor como coach de ese atleta.
+  // Reintentar no puede repararlo; la membresía se recupera con el siguiente pull.
+  if (isMissingCoachMembershipMessage(normalized)) {
+    return {
+      category: 'validation_error',
+      retriable: false,
+      autoRepairable: false,
+      userMessage: 'Este atleta ya no está en tu roster.',
+      technicalMessage: `Missing coach membership on ${table ?? 'unknown'}: ${message}`,
+      originalError: error,
+    }
+  }
   if (isMissingManagedAthleteMessage(normalized)) {
     return {
       category: 'validation_error',
@@ -909,4 +922,8 @@ export function getEntityIdFromPayload(
     && typeof payload.athlete_id === 'string'
     && payload.athlete_id.length > 0) return payload.athlete_id
   return null
+}
+
+function isMissingCoachMembershipMessage(normalized: string): boolean {
+  return normalized.includes('no coach membership')
 }

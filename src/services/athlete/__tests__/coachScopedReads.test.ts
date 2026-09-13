@@ -1,3 +1,4 @@
+import { markMembershipsHydrated } from '../membershipCache'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { db } from '../../../db/db'
 import type { Session } from '../../../types'
@@ -5,6 +6,7 @@ import { ATHLETE_PROFILE_LOCAL_ID, setSelfAthleteId } from '../activeAthlete'
 import {
   assertActiveRosterAthlete,
   assertRosterAthlete,
+  getRosterTriageData,
   getAthleteProfileForAthlete,
   getWeekSessionsForAthlete,
 } from '../coachScopedReads'
@@ -200,5 +202,60 @@ describe('getAthleteProfileForAthlete', () => {
   it('usa la PK histórica del gestionado como fallback', async () => {
     await db.athleteProfiles.put({ id: 'ath_m_a', updatedAt: now, primarySport: 'cycling' } as never)
     expect((await getAthleteProfileForAthlete('user-1', 'ath_m_a'))?.primarySport).toBe('cycling')
+  })
+})
+describe('roster por membresía', () => {
+  const now = Date.now()
+
+  beforeEach(async () => {
+    db.close()
+    await db.delete()
+    await db.open()
+    await db.athletes.bulkPut([
+      { id: 'ath_user-1', ownerAccountId: 'user-1', linkedAccountId: 'user-1', status: 'active', createdAt: now, updatedAt: now },
+      { id: 'ath_m_t', ownerAccountId: 'user-9', linkedAccountId: null, displayName: 'T', status: 'active', createdAt: now, updatedAt: now },
+      { id: 'ath_m_revoked', ownerAccountId: 'user-1', linkedAccountId: null, displayName: 'R', status: 'active', createdAt: now, updatedAt: now },
+    ] as never)
+    await db.athleteMemberships.bulkPut([
+      { athleteId: 'ath_user-1', accountId: 'user-1', role: 'self', createdAt: now, updatedAt: now },
+      { athleteId: 'ath_m_t', accountId: 'user-1', role: 'coach', createdAt: now, updatedAt: now },
+    ])
+    await markMembershipsHydrated('user-1')
+    await db.sessions.put(session({ id: 't-1', athleteId: 'ath_m_t', date: '2026-07-14' }))
+    setSelfAthleteId('ath_user-1')
+  })
+
+  afterEach(() => {
+    setSelfAthleteId(null)
+    db.close()
+  })
+
+  it('assertRosterAthlete acepta el transferido y rechaza el revocado', async () => {
+    await expect(assertRosterAthlete('user-1', 'ath_m_t')).resolves.toMatchObject({ id: 'ath_m_t' })
+    await expect(assertRosterAthlete('user-1', 'ath_m_revoked')).rejects.toThrow('El atleta no pertenece a tu roster.')
+  })
+
+  it('getWeekSessionsForAthlete lee la semana del transferido sin adoptar legacy', async () => {
+    await db.sessions.put(session({ id: 'legacy-1', date: '2026-07-15' }))
+
+    const rows = await getWeekSessionsForAthlete('user-1', 'ath_m_t', '2026-07-13')
+
+    expect(rows.map((row) => row.id)).toEqual(['t-1'])
+  })
+
+  it('getRosterTriageData salta al revocado y conserva al transferido', async () => {
+    const { rowsByAthlete, skippedAthleteIds } = await getRosterTriageData(
+      'user-1',
+      ['ath_user-1', 'ath_m_t', 'ath_m_revoked'],
+      'ath_user-1',
+      {
+        dayLogsFromISO: '2026-07-01', dayLogsToISO: '2026-07-20',
+        sessionsFromISO: '2026-07-01', sessionsToISO: '2026-07-20',
+        summariesFromISO: '2026-07-06', summariesToISO: '2026-07-06',
+      },
+    )
+
+    expect([...skippedAthleteIds]).toEqual(['ath_m_revoked'])
+    expect(rowsByAthlete.get('ath_m_t')?.sessionsInWindow.map((row) => row.id)).toEqual(['t-1'])
   })
 })

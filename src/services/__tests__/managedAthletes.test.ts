@@ -1,3 +1,4 @@
+import { acknowledgeLocalMembershipCreation, markMembershipsHydrated, replaceMembershipCache } from '../athlete/membershipCache'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../syncService', () => ({
@@ -8,8 +9,8 @@ import { db } from '../../db/db'
 import {
   archiveManagedAthlete,
   createManagedAthlete,
-  listArchivedAthletes,
-  listOwnedAthletes,
+  listArchivedRosterAthletes,
+  listRosterAthletes,
   restoreManagedAthlete,
 } from '../athlete/managedAthletes'
 import * as syncService from '../syncService'
@@ -45,7 +46,30 @@ describe('managedAthletes', () => {
     expect(await db.athletes.count()).toBe(0)
   })
 
-  it('listOwnedAthletes: solo activos del owner, self primero', async () => {
+  it('un pull anterior al replay conserva el alta pendiente; tras confirmarla, una revocación sí la retira', async () => {
+    await replaceMembershipCache('user-1', [])
+    const athlete = await createManagedAthlete('user-1', 'Creado offline')
+
+    await replaceMembershipCache('user-1', [])
+    expect((await listRosterAthletes('user-1')).map((row) => row.id)).toContain(athlete.id)
+
+    await acknowledgeLocalMembershipCreation('user-1', athlete.id)
+    await replaceMembershipCache('user-1', [])
+    expect(await listRosterAthletes('user-1')).toEqual([])
+  })
+
+  it('si falla el espejo de membresía, revierte el alta local sin empujar', async () => {
+    const write = vi.spyOn(db.athleteMemberships, 'bulkPut').mockRejectedValueOnce(new Error('sin espacio'))
+    try {
+      await expect(createManagedAthlete('user-1', 'Cliente')).rejects.toThrow('sin espacio')
+      expect(await db.athletes.count()).toBe(0)
+      expect(vi.mocked(syncService.pushAthlete)).not.toHaveBeenCalled()
+    } finally {
+      write.mockRestore()
+    }
+  })
+
+  it('listRosterAthletes: solo activos del owner, self primero', async () => {
     const now = Date.now()
     await db.athletes.bulkPut([
       { id: 'ath_m_b', ownerAccountId: 'user-1', linkedAccountId: null, displayName: 'Bruno', status: 'active', createdAt: now, updatedAt: now },
@@ -55,7 +79,7 @@ describe('managedAthletes', () => {
       { id: 'ath_m_x', ownerAccountId: 'user-1', linkedAccountId: null, displayName: 'X', status: 'archived', createdAt: now, updatedAt: now },
     ] as never)
 
-    const list = await listOwnedAthletes('user-1')
+    const list = await listRosterAthletes('user-1')
 
     expect(list.map((athlete) => athlete.id)).toEqual(['ath_user-1', 'ath_m_a', 'ath_m_b'])
   })
@@ -108,7 +132,7 @@ describe('managedAthletes', () => {
       expect((await db.athletes.get('ath_m_a'))?.status).toBe('active')
     })
 
-    it('listArchivedAthletes devuelve solo los archivados del owner por nombre', async () => {
+    it('listArchivedRosterAthletes devuelve solo los archivados del owner por nombre', async () => {
       await db.athletes.bulkPut([
         { ...managed, id: 'ath_m_b', displayName: 'Beto', status: 'archived' },
         { ...managed, status: 'archived' },
@@ -116,7 +140,49 @@ describe('managedAthletes', () => {
         { id: 'ath_other', ownerAccountId: 'user-2', status: 'archived', createdAt: now, updatedAt: now },
       ] as never)
 
-      expect((await listArchivedAthletes('user-1')).map((athlete) => athlete.id)).toEqual(['ath_m_a', 'ath_m_b'])
+      expect((await listArchivedRosterAthletes('user-1')).map((athlete) => athlete.id)).toEqual(['ath_m_a', 'ath_m_b'])
     })
   })
+  it('createManagedAthlete anticipa la membresía coach en el espejo local', async () => {
+    const athlete = await createManagedAthlete('user-1', 'Cliente 2')
+
+    expect(await db.athleteMemberships.get([athlete.id, 'user-1'])).toMatchObject({ role: 'coach' })
+    expect((await listRosterAthletes('user-1')).map((row) => row.id)).toContain(athlete.id)
+  })
+
+  it('listRosterAthletes con caché hidratada: incluye el transferido y excluye el propio revocado', async () => {
+    await markMembershipsHydrated('user-1')
+    const now = Date.now()
+    await db.athletes.bulkPut([
+      { id: 'ath_user-1', ownerAccountId: 'user-1', linkedAccountId: 'user-1', status: 'active', createdAt: now, updatedAt: now },
+      { id: 'ath_m_revoked', ownerAccountId: 'user-1', linkedAccountId: null, displayName: 'Revocado', status: 'active', createdAt: now, updatedAt: now },
+      { id: 'ath_m_t', ownerAccountId: 'user-9', linkedAccountId: null, displayName: 'Transferido', status: 'active', createdAt: now, updatedAt: now },
+      { id: 'ath_m_t_arch', ownerAccountId: 'user-9', linkedAccountId: null, displayName: 'Transferido archivado', status: 'archived', createdAt: now, updatedAt: now },
+    ] as never)
+    await db.athleteMemberships.bulkPut([
+      { athleteId: 'ath_user-1', accountId: 'user-1', role: 'self', createdAt: now, updatedAt: now },
+      { athleteId: 'ath_m_t', accountId: 'user-1', role: 'coach', createdAt: now, updatedAt: now },
+      { athleteId: 'ath_m_t_arch', accountId: 'user-1', role: 'coach', createdAt: now, updatedAt: now },
+    ])
+
+    expect((await listRosterAthletes('user-1')).map((row) => row.id)).toEqual(['ath_user-1', 'ath_m_t'])
+    expect((await listArchivedRosterAthletes('user-1')).map((row) => row.id)).toEqual(['ath_m_t_arch'])
+  })
+
+  it('archiveManagedAthlete acepta un transferido (membresía coach, owner ajeno) y rechaza uno revocado', async () => {
+    await markMembershipsHydrated('user-1')
+    const now = Date.now()
+    await db.athletes.bulkPut([
+      { id: 'ath_m_t', ownerAccountId: 'user-9', linkedAccountId: null, displayName: 'T', status: 'active', createdAt: now, updatedAt: now },
+      { id: 'ath_m_revoked', ownerAccountId: 'user-1', linkedAccountId: null, displayName: 'R', status: 'active', createdAt: now, updatedAt: now },
+    ] as never)
+    await db.athleteMemberships.put({ athleteId: 'ath_m_t', accountId: 'user-1', role: 'coach', createdAt: now, updatedAt: now })
+
+    const archived = await archiveManagedAthlete('user-1', 'ath_m_t')
+    expect(archived.status).toBe('archived')
+    expect(vi.mocked(syncService.pushAthlete)).toHaveBeenCalledWith(expect.objectContaining({ id: 'ath_m_t', status: 'archived' }))
+
+    await expect(archiveManagedAthlete('user-1', 'ath_m_revoked')).rejects.toThrow('El atleta no pertenece a esta cuenta.')
+  })
+
 })

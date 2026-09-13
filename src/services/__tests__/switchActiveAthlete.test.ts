@@ -1,3 +1,4 @@
+import { markMembershipsHydrated } from '../athlete/membershipCache'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../syncService', () => ({
@@ -31,7 +32,7 @@ import {
   setSelfAthleteId,
 } from '../athlete/activeAthlete'
 import { getPersistedAthleteSelection } from '../athlete/athleteSelection'
-import { switchActiveAthlete } from '../athlete/switchActiveAthlete'
+import { switchActiveAthlete, clearActiveAthleteSelection } from '../athlete/switchActiveAthlete'
 import { useAuthStore } from '../../store/useAuthStore'
 import { useCoachMemoryStore } from '../../store/useCoachMemoryStore'
 import { pullWorkouts } from '../readiness/pullWorkouts'
@@ -223,4 +224,40 @@ describe('switchActiveAthlete', () => {
     expect(getSwitchEpoch()).toBe(epochBefore)
     expect(getActiveAthleteId()).toBe(SELF)
   })
+  it('acepta un transferido: membresía coach sin ser propietario', async () => {
+    const now = Date.now()
+    await db.athletes.put({ id: 'ath_m_t', ownerAccountId: 'user-9', linkedAccountId: null, displayName: 'T', status: 'active', createdAt: now, updatedAt: now } as never)
+    await db.athleteMemberships.bulkPut([
+      { athleteId: SELF, accountId: OWNER, role: 'self', createdAt: now, updatedAt: now },
+      { athleteId: 'ath_m_t', accountId: OWNER, role: 'coach', createdAt: now, updatedAt: now },
+    ])
+
+    expect(await switchActiveAthlete(OWNER, 'ath_m_t')).toBe(true)
+    expect(getActiveAthleteId()).toBe('ath_m_t')
+    expect(getPersistedAthleteSelection(OWNER)).toBe('ath_m_t')
+  })
+
+  it('rechaza un atleta propio cuya membresía fue revocada (caché hidratada)', async () => {
+    const now = Date.now()
+    await markMembershipsHydrated(OWNER)
+    await db.athleteMemberships.put({ athleteId: SELF, accountId: OWNER, role: 'self', createdAt: now, updatedAt: now })
+    setActiveAthleteId(SELF)
+
+    expect(await switchActiveAthlete(OWNER, MANAGED)).toBe(false)
+    expect(getActiveAthleteId()).toBe(SELF)
+  })
+
+  it('clearActiveAthleteSelection deja la cuenta sin atleta y limpia la selección persistida', async () => {
+    await seedAthletes()
+    expect(await switchActiveAthlete(OWNER, MANAGED)).toBe(true)
+    const epochBefore = getSwitchEpoch()
+
+    await clearActiveAthleteSelection(OWNER)
+
+    expect(getActiveAthleteId()).toBeNull()
+    expect(useAuthStore.getState().activeAthleteId).toBeNull()
+    expect(getPersistedAthleteSelection(OWNER)).toBeNull()
+    expect(getSwitchEpoch()).toBe(epochBefore + 1)
+  })
+
 })

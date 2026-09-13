@@ -65,7 +65,7 @@ import { ATHLETE_PROFILE_LOCAL_ID, getActiveAthleteId, getSelfAthleteId } from '
 import { effectiveAthleteKey, isInAthleteScope, isScopedAthleteId } from './athlete/effectiveAthleteKey'
 import { hydrateActiveAthlete } from './athlete/hydrateActiveAthlete'
 import { athleteIdForOwner, backfillLocalAthleteScope } from './athlete/athleteScopeMigration'
-import { getMembershipAthleteIds, getRoleForAthlete, membershipFromRemoteRow, replaceMembershipCache } from './athlete/membershipCache'
+import { acknowledgeLocalMembershipCreation, getMembershipAthleteIds, getRoleForAthlete, hasCoachMembership, membershipFromRemoteRow, replaceMembershipCache } from './athlete/membershipCache'
 import { athleteToRow, rowToAthlete, type AthleteRow } from './athleteRows'
 import { resolveReadScope, type ReadScope } from './athlete/readScope'
 import { resolveAuthoredByRole } from './athlete/activeScopeFilter'
@@ -994,6 +994,69 @@ interface QueueRetryReplacement {
   errorInfo: SyncErrorInfo | null
 }
 
+/**
+ * Escritura remota de una fila de `athletes`. Única para el camino directo y el
+ * drenaje de cola: la op encolada conserva `action: 'upsert'`, pero la decisión
+ * de cómo empujarla se toma acá, al momento de enviar.
+ *
+ * Un atleta del roster que no es propio sólo admite UPDATE. PostgreSQL evalúa el
+ * `WITH CHECK` de `athletes_insert_bootstrap_owner` (`auth.uid() = owner_account_id`)
+ * ANTES de resolver `ON CONFLICT`, así que el upsert de una fila ajena se rechaza
+ * aunque exista (medido en `031`). `athletes_write_coach` autoriza el UPDATE por
+ * membresía. Sólo viajan las columnas mutables: owner/linked están protegidas por
+ * trigger y `created_at` no se reescribe.
+ */
+async function pushAthleteRowRemote(payload: Record<string, unknown>, userId: string): Promise<void> {
+  if (payload.owner_account_id === userId) {
+    const { error } = await getSupabase().from('athletes').upsert(payload as never)
+    if (error) throw error
+    await acknowledgeLocalMembershipCreation(userId, payload.id as string)
+    return
+  }
+  const id = payload.id as string
+  const patch = {
+    display_name: payload.display_name ?? null,
+    status: payload.status,
+    updated_at: payload.updated_at,
+  }
+  const { data, error } = await getSupabase()
+    .from('athletes')
+    .update(patch as never)
+    .eq('id', id)
+    .select('id')
+  if (error) throw error
+  if (!Array.isArray(data) || data.length === 0) {
+    throw new Error(`athletes update affected no rows: no coach membership over ${id}`)
+  }
+}
+
+type AthleteRemoteDeleteOutcome = 'deleted' | 'gone' | 'denied'
+
+/**
+ * Borrado remoto de un atleta por `id`; la autorización es la RLS
+ * (`athletes_delete_membership`), no un filtro por owner que para un atleta
+ * transferido borraría cero filas en silencio. Compartido por el camino directo,
+ * `deleteRow` y el drenaje de cola.
+ */
+async function deleteAthleteRowRemote(athleteId: string): Promise<AthleteRemoteDeleteOutcome> {
+  const deleted = await getSupabase().from('athletes').delete().eq('id', athleteId).select('id')
+  if (deleted.error) throw deleted.error
+  if (Array.isArray(deleted.data) && deleted.data.length > 0) return 'deleted'
+
+  const probe = await getSupabase().from('athletes').select('id').eq('id', athleteId)
+  if (probe.error) throw probe.error
+  return Array.isArray(probe.data) && probe.data.length > 0 ? 'denied' : 'gone'
+}
+
+function assertAthleteDeleteApplied(athleteId: string, outcome: AthleteRemoteDeleteOutcome): void {
+  if (outcome === 'denied') {
+    // `classifySyncError` lo reconoce (Step 3): validation_error, no reintentable.
+    throw new Error(`athletes delete denied: no coach membership over ${athleteId}`)
+  }
+}
+
+
+
 async function drainQueue(): Promise<boolean> {
   const userId = getUserId()
   if (!userId) {
@@ -1153,6 +1216,8 @@ async function drainQueue(): Promise<boolean> {
           }
           if (op.table === 'athlete_profiles') {
             await withRequestTimeout(upsertAthleteProfileRow(upsertPayload, op.userId), `${op.table}.upsert`)
+          } else if (op.table === 'athletes') {
+            await withRequestTimeout(pushAthleteRowRemote(upsertPayload, op.userId), 'athletes.push')
           } else {
             const { error } = await withRequestTimeout(
               getSupabase().from(op.table).upsert(upsertPayload as never),
@@ -1174,14 +1239,18 @@ async function drainQueue(): Promise<boolean> {
         } else {
           const payload = op.payload as { id: string; userId?: string }
           const targetUserId = payload.userId ?? op.userId
-          const deleteQuery = op.table === 'athletes'
-            ? getSupabase().from(op.table).delete().eq('id', payload.id).eq('owner_account_id', targetUserId)
-            : getSupabase().from(op.table).delete().eq('id', payload.id).eq('user_id', targetUserId)
-          const { error } = await withRequestTimeout(
-            deleteQuery,
-            `${op.table}.delete`,
-          )
-          if (error) throw error
+          if (op.table === 'athletes') {
+            assertAthleteDeleteApplied(
+              payload.id,
+              await withRequestTimeout(deleteAthleteRowRemote(payload.id), 'athletes.delete'),
+            )
+          } else {
+            const { error } = await withRequestTimeout(
+              getSupabase().from(op.table).delete().eq('id', payload.id).eq('user_id', targetUserId),
+              `${op.table}.delete`,
+            )
+            if (error) throw error
+          }
           rememberDeleteTombstoneForTable(op.table, op.userId, payload.id)
         }
       }))
@@ -1442,14 +1511,14 @@ async function upsertRow(
       }
       if (table === 'athlete_profiles') {
         await withRequestTimeout(upsertAthleteProfileRow(payload, userId), `athlete_profiles.upsert`)
+      } else if (table === 'athletes') {
+        await withRequestTimeout(pushAthleteRowRemote(payload, userId), 'athletes.push')
       } else {
         const { error } = await withRequestTimeout(
           getSupabase().from(table).upsert(payload as never),
           `${table}.upsert`,
         )
         if (error) {
-          // Natural-key (23505) conflicts on day_logs/week_summaries are reconciled by
-          // resolving the remote row and applying LWW; anything else rethrows as today.
           const handled = await reconcileNaturalKeyConflict(table, payload, userId, error)
           if (!handled) throw error
         }
@@ -1524,14 +1593,15 @@ async function deleteRow(table: SupabaseTable, id: string): Promise<void> {
     startSyncAttempt()
     const deleteStartedAt = Date.now()
     try {
-      const deleteQuery = table === 'athletes'
-        ? getSupabase().from(table).delete().eq('id', id).eq('owner_account_id', userId)
-        : getSupabase().from(table).delete().eq('id', id).eq('user_id', userId)
-      const { error } = await withRequestTimeout(
-        deleteQuery,
-        `${table}.delete`,
-      )
-      if (error) throw error
+      if (table === 'athletes') {
+        assertAthleteDeleteApplied(id, await withRequestTimeout(deleteAthleteRowRemote(id), 'athletes.delete'))
+      } else {
+        const { error } = await withRequestTimeout(
+          getSupabase().from(table).delete().eq('id', id).eq('user_id', userId),
+          `${table}.delete`,
+        )
+        if (error) throw error
+      }
       rememberDeleteTombstoneForTable(table, userId, id)
       clearQueuedOpsForEntityOlderThan(userId, table, payload, requestedAt)
       trackSyncEvent({
@@ -1614,11 +1684,14 @@ export async function deleteManagedAthleteRemote(
   if (typeof navigator !== 'undefined' && !navigator.onLine) return queueCanonicalDelete()
 
   try {
-    const { error } = await withRequestTimeout(
-      getSupabase().from('athletes').delete().eq('id', athleteId).eq('owner_account_id', ownerAccountId),
-      'athletes.delete',
-    )
-    if (error) throw error
+    const outcome = await withRequestTimeout(deleteAthleteRowRemote(athleteId), 'athletes.delete')
+    if (outcome === 'denied') {
+      // La RLS deja leer y no borrar: sin membresía coach, o el atleta conserva un
+      // self. Purgar local acá dejaría al siguiente pull resucitándolo; fail closed.
+      syncLog('deleteManagedAthleteRemote:denied', { athleteId }, 'warn')
+      return 'failed'
+    }
+    if (outcome === 'gone') syncLog('deleteManagedAthleteRemote:already_gone', { athleteId })
     return 'deleted'
   } catch (error) {
     const errorInfo = classifySyncError(error, 'athletes')
@@ -2356,14 +2429,18 @@ async function ensureRemoteManagedAthleteOnce(userId: string, athleteId: string)
   }
 
   const local = await db.athletes.get(athleteId)
-  if (!local || local.ownerAccountId !== userId) {
+  if (!local) {
+    throw new Error(`managed athlete ${athleteId} not found locally; deferring child push`)
+  }
+  if (local.ownerAccountId !== userId) {
+    // Un atleta del roster que no es propio (transferido) existe remotamente por
+    // construcción: la membresía lo referencia por FK. No hay nada que asegurar,
+    // y un upsert de una fila ajena se rechaza por `athletes_insert_bootstrap_owner`.
+    if (await hasCoachMembership(userId, athleteId)) return
     throw new Error(`managed athlete ${athleteId} not found locally; deferring child push`)
   }
 
-  const { error } = await getSupabase()
-    .from('athletes')
-    .upsert(athleteToRow(local) as never, { onConflict: 'id' })
-  if (error) throw error
+  await pushAthleteRowRemote({ ...athleteToRow(local) }, userId)
 }
 
 async function ensureRemoteAthlete(userId: string, athleteId?: string): Promise<void> {

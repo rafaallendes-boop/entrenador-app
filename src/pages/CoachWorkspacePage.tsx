@@ -1,3 +1,4 @@
+import { leaveActiveAthlete } from '../services/athlete/coachWorkspaceActions'
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { Users } from 'lucide-react'
@@ -5,14 +6,13 @@ import { useAuthStore, type SyncStatus } from '../store/useAuthStore'
 import { isCoachAccount } from '../services/athlete/coachAccess'
 import { useEntitlementStore } from '../store/useEntitlementStore'
 import { getSelfAthleteId } from '../services/athlete/activeAthlete'
-import { athleteIdForOwner } from '../services/athlete/athleteScopeMigration'
 import { resolveSelfAthleteIdForOwner } from '../services/athlete/athleteWeekScope'
 import {
   archiveManagedAthlete,
   createManagedAthlete,
   deleteManagedAthletePermanently,
-  listArchivedAthletes,
-  listOwnedAthletes,
+  listArchivedRosterAthletes,
+  listRosterAthletes,
   restoreManagedAthlete,
 } from '../services/athlete/managedAthletes'
 import {
@@ -22,7 +22,7 @@ import {
   createRosterTriageLoader,
   type RosterTriage,
 } from '../services/athlete/loadRosterTriage'
-import { switchActiveAthlete } from '../services/athlete/switchActiveAthlete'
+import { switchActiveAthlete, clearActiveAthleteSelection } from '../services/athlete/switchActiveAthlete'
 import {
   acquireAthleteActionLock,
   createAndActivateAthlete,
@@ -48,7 +48,7 @@ import { formatLastSync } from '../components/sync/syncNowFormat'
 import { todayISO } from '../utils/date'
 
 const rosterTriageLoader = createRosterTriageLoader({
-  listRoster: listOwnedAthletes,
+  listRoster: listRosterAthletes,
   resolveSelfAthleteId: resolveSelfAthleteIdForOwner,
   getRosterTriageData,
   currentOwnerAccountId: () => useAuthStore.getState().user?.id ?? null,
@@ -125,7 +125,7 @@ export default function CoachWorkspacePage({
     if (!isCoach || !user?.id) return
     let cancelled = false
     setStatus('loading')
-    Promise.all([listOwnedAthletes(user.id), listArchivedAthletes(user.id)])
+    Promise.all([listRosterAthletes(user.id), listArchivedRosterAthletes(user.id)])
       .then(([activeRows, archivedRows]) => {
         if (cancelled) return
         setAthletes(activeRows)
@@ -224,7 +224,7 @@ export default function CoachWorkspacePage({
   const assistantSelfAthleteId = triageSnapshot?.ownerAccountId === user.id
     ? triageSnapshot.result.selfAthleteId
     : ''
-  const selfId = getSelfAthleteId() ?? athleteIdForOwner(user.id)
+  const selfId = getSelfAthleteId()
   const athleteNames = Object.fromEntries(
     athletes.map((athlete) => [athlete.id, athlete.displayName ?? 'Atleta']),
   )
@@ -256,7 +256,7 @@ export default function CoachWorkspacePage({
       // A partir de aca el atleta YA existe en Dexie. Nada de lo que sigue puede
       // propagar: seria reportar como fallo una creacion que si ocurrio.
       try {
-        setAthletes(await listOwnedAthletes(user.id))
+        setAthletes(await listRosterAthletes(user.id))
         setStatus('ready')
       } catch {
         setStatus('error') // el panel muestra "Reintentar"
@@ -289,9 +289,13 @@ export default function CoachWorkspacePage({
     setPendingAthleteAction({ athleteId, kind })
     try {
       if ((kind === 'archive' || kind === 'delete') && athleteId === activeAthleteId) {
-        const ownAthleteId = getSelfAthleteId()
-        if (!ownAthleteId || !(await switchActiveAthlete(user.id, ownAthleteId))) {
-          setActionMessage('No se pudo volver a tu perfil antes de la acción. Intenta de nuevo.')
+        const left = await leaveActiveAthlete(
+          { switchActiveAthlete, clearActiveAthleteSelection },
+          user.id,
+          getSelfAthleteId(),
+        )
+        if (!left) {
+          setActionMessage('No se pudo soltar al atleta antes de la acción. Intenta de nuevo.')
           return
         }
       }

@@ -1,3 +1,4 @@
+import { markMembershipsHydrated, replaceMembershipCache } from '../membershipCache'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const hydrationMarks = vi.hoisted(() => new Set<string>())
@@ -296,4 +297,49 @@ describe('coach scoped writes', () => {
       { kind: 'scoped', athleteId: managed },
     )
   })
+describe('escrituras sobre un transferido', () => {
+  const transferred = 'ath_m_t'
+
+  beforeEach(async () => {
+    await markMembershipsHydrated(owner)
+    await db.athletes.put({ id: transferred, ownerAccountId: 'user-9', linkedAccountId: null, displayName: 'T', status: 'active', createdAt: now, updatedAt: now } as never)
+    await db.athleteMemberships.bulkPut([
+      { athleteId: self, accountId: owner, role: 'self', createdAt: now, updatedAt: now },
+      { athleteId: transferred, accountId: owner, role: 'coach', createdAt: now, updatedAt: now },
+    ])
+  })
+
+  it('crea una sesión con authoredByRole coach aunque el owner sea otra cuenta', async () => {
+    const created = await createSessionForAthlete(owner, transferred, draft)
+
+    expect(created.athleteId).toBe(transferred)
+    expect(created.authoredByRole).toBe('coach')
+    expect(syncMocks.pushSessionForTarget).toHaveBeenCalledWith(
+      expect.objectContaining({ id: created.id }),
+      { kind: 'scoped', athleteId: transferred },
+    )
+  })
+
+  it('la revalidación transaccional rechaza cuando la membresía ya no está', async () => {
+    const created = await createSessionForAthlete(owner, transferred, draft)
+    await db.athleteMemberships.delete([transferred, owner])
+
+    await expect(updateSessionForAthlete(owner, transferred, created.id, { title: 'x' }))
+      .rejects.toThrow('El atleta no pertenece a tu roster.')
+  })
+
+  it('revocar la última membresía entre la validación previa y la transacción impide crear', async () => {
+    leaseMock.run.mockImplementationOnce(async (_id: string, operation: () => Promise<void>) => {
+      await replaceMembershipCache(owner, [])
+      await operation()
+      return true
+    })
+
+    await expect(createSessionForAthlete(owner, transferred, draft))
+      .rejects.toThrow('El atleta no pertenece a tu roster.')
+    expect(await db.sessions.count()).toBe(0)
+    expect(syncMocks.pushSessionForTarget).not.toHaveBeenCalled()
+  })
+})
+
 })

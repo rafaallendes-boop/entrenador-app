@@ -82,7 +82,7 @@ export default function CoachSummaryPanel({
         const isPlanPending = isTarget && pendingAction?.kind === 'plan'
         return (
           // data-* : anclas estables para el smoke de Playwright (Task 8), que debe
-          // apuntar al atleta ACTIVO y no al primero de la lista (listOwnedAthletes
+          // apuntar al atleta ACTIVO y no al primero de la lista (listRosterAthletes
           // siempre ordena self primero, que no siempre es el activo).
           <div
             key={athlete.id}

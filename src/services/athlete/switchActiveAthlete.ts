@@ -1,4 +1,3 @@
-import { db } from '../../db/db'
 import { useAuthStore } from '../../store/useAuthStore'
 import { useChatStore } from '../../store/useChatStore'
 import { useCoachActionsStore } from '../../store/useCoachActionsStore'
@@ -7,26 +6,30 @@ import { usePlanBuilderStore } from '../../store/usePlanBuilderStore'
 import { useTrainingStore } from '../../store/useTrainingStore'
 import { bumpSwitchEpoch, getSelfAthleteId, setActiveAthleteId } from './activeAthlete'
 import { persistAthleteSelection } from './athleteSelection'
+import { resolveRosterEntry } from './coachRosterEligibility'
 
-/**
- * Switches the active athlete after validating ownership and active status.
- * Returning to self clears the persisted selection, keeping the single-athlete
- * path pristine.
- */
-export async function switchActiveAthlete(ownerAccountId: string, athleteId: string): Promise<boolean> {
-  const row = await db.athletes.get(athleteId)
-  const isValid = !!row && row.ownerAccountId === ownerAccountId && row.status === 'active'
-  if (!isValid) return false
-
+function resetStoresForSwitch(): void {
   bumpSwitchEpoch()
   useChatStore.getState().resetForAthleteSwitch()
   useTrainingStore.getState().resetForAthleteSwitch()
   usePlanBuilderStore.getState().resetForAthleteSwitch()
   useCoachActionsStore.getState().resetForAthleteSwitch()
   useCoachMemoryStore.getState().resetForAthleteSwitch()
+}
 
-  const isSelf = athleteId === getSelfAthleteId()
-  persistAthleteSelection(ownerAccountId, isSelf ? null : athleteId)
+/**
+ * Cambia el atleta activo tras validar elegibilidad (membresía, o clasificación
+ * legacy sin membresías en caché) y estado activo. Volver al self limpia la
+ * selección persistida, conservando prístino el camino de un solo atleta.
+ */
+export async function switchActiveAthlete(accountId: string, athleteId: string): Promise<boolean> {
+  const entry = await resolveRosterEntry(accountId, athleteId)
+  if (!entry || entry.athlete.status !== 'active') return false
+
+  resetStoresForSwitch()
+
+  const isSelf = entry.access === 'self' || athleteId === getSelfAthleteId()
+  persistAthleteSelection(accountId, isSelf ? null : athleteId)
   setActiveAthleteId(athleteId)
   useAuthStore.getState().setActiveAthleteId(athleteId)
   // Post-commit: el scope ya cambió. Un fallo de memoria no puede convertir un
@@ -45,4 +48,16 @@ export async function switchActiveAthlete(ownerAccountId: string, athleteId: str
     })().catch(() => undefined)
   }
   return true
+}
+
+/**
+ * Deja la cuenta sin atleta activo (scope `none`). Es el destino de una cuenta
+ * coach cuando archiva o borra al atleta que tenía seleccionado: no hay self al
+ * que volver. En una cuenta atleta el llamador debe volver al self, no usar esto.
+ */
+export async function clearActiveAthleteSelection(accountId: string): Promise<void> {
+  resetStoresForSwitch()
+  persistAthleteSelection(accountId, null)
+  setActiveAthleteId(null)
+  useAuthStore.getState().setActiveAthleteId(null)
 }

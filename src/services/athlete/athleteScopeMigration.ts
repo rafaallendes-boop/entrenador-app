@@ -2,7 +2,9 @@ import { db } from '../../db/db'
 import { getLegacyAthleteScopeBackfillTables } from '../../db/athleteScopedTables'
 import { isScopedAthleteId } from './effectiveAthleteKey'
 import { isClaimPending } from './claimGate'
-import { getSelfMembership } from './membershipCache'
+import { getAccountRole } from '../entitlements/accountRoleHolder'
+import { roleOwnsLegacySelfData } from './athleteScopeKind'
+import { getSelfMembership, putLocalMembership } from './membershipCache'
 
 const BACKFILL_MARKER_KEY_PREFIX = 'entrenador_athlete_scope_backfill_v2'
 const IMPORT_DIRTY_MARKER_KEY = 'entrenador_athlete_scope_import_dirty_v1'
@@ -136,16 +138,18 @@ async function patchScopableTables(athleteId: string): Promise<number> {
 
 /**
  * Idempotent local backfill: ensure the owner's athlete row exists and stamp
- * athleteId on legacy rows that lack it (or still hold ATHLETE_PROFILE_LOCAL_ID). Mirrors the
- * Supabase migration 007 for the local Dexie store. Forward-only and additive:
- * it never deletes data and never touches user_id.
+ * athleteId on legacy rows that lack it. Mirrors Supabase migration 007 for
+ * Dexie. Forward-only and additive: never deletes data, never touches user_id.
  *
- * The row-patching scan runs until a local completion marker is written. This
- * repairs partial beta backfills where the athlete row exists but legacy rows
- * are still unscoped, while keeping later startups O(1).
+ * Devuelve `null` cuando NO hay self que hidratar: claim pendiente, o cuenta
+ * coach confirmada (spec §6: un coach nunca tiene self; el trigger de 030
+ * rechazaría el push y `pullAthletes` abortaría el sync). Todo llamador trata
+ * `null` como «no hidrates el scope self» — `ensureRemoteAthleteOnce` ya lo
+ * hacía para el claim.
  */
 export async function backfillLocalAthleteScope(ownerAccountId: string): Promise<string | null> {
   if (isClaimPending()) return null
+  if (!roleOwnsLegacySelfData(getAccountRole())) return null
   const selfMembership = await getSelfMembership(ownerAccountId)
   if (selfMembership && selfMembership.athleteId !== athleteIdForOwner(ownerAccountId)) {
     return selfMembership.athleteId
@@ -161,6 +165,10 @@ export async function backfillLocalAthleteScope(ownerAccountId: string): Promise
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   })
+  // El servidor siembra `self` en el insert (013b) y `031` lo backfilleó para
+  // todas las cuentas; el espejo lo anticipa para que la elegibilidad local no
+  // dependa del primer pull.
+  await putLocalMembership(ownerAccountId, athleteId, 'self')
   if (!existing || !isBackfillMarkedComplete(ownerAccountId, athleteId)) {
     await patchScopableTables(athleteId)
     markBackfillComplete(ownerAccountId, athleteId)

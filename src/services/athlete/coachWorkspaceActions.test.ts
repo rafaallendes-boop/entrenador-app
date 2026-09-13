@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   acquireAthleteActionLock,
+  leaveActiveAthlete,
   createAndActivateAthlete,
   getCoachRosterRevision,
   isAthleteActionLocked,
@@ -139,5 +140,32 @@ describe('coach roster revision', () => {
     unsubscribe()
     notifyCoachRosterChanged()
     expect(listener).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('leaveActiveAthlete', () => {
+  it('con self vuelve al self por switch y reporta su resultado', async () => {
+    const switchActiveAthlete = vi.fn(async () => true)
+    const clearActiveAthleteSelection = vi.fn(async () => {})
+
+    await expect(leaveActiveAthlete({ switchActiveAthlete, clearActiveAthleteSelection }, 'user-1', 'ath_user-1')).resolves.toBe(true)
+    expect(switchActiveAthlete).toHaveBeenCalledWith('user-1', 'ath_user-1')
+    expect(clearActiveAthleteSelection).not.toHaveBeenCalled()
+  })
+
+  it('sin self (cuenta coach) deja la cuenta sin atleta', async () => {
+    const switchActiveAthlete = vi.fn(async () => true)
+    const clearActiveAthleteSelection = vi.fn(async () => {})
+
+    await expect(leaveActiveAthlete({ switchActiveAthlete, clearActiveAthleteSelection }, 'coach-1', null)).resolves.toBe(true)
+    expect(switchActiveAthlete).not.toHaveBeenCalled()
+    expect(clearActiveAthleteSelection).toHaveBeenCalledWith('coach-1')
+  })
+
+  it('un switch fallido se propaga como false', async () => {
+    const switchActiveAthlete = vi.fn(async () => false)
+    const clearActiveAthleteSelection = vi.fn(async () => {})
+
+    await expect(leaveActiveAthlete({ switchActiveAthlete, clearActiveAthleteSelection }, 'user-1', 'ath_user-1')).resolves.toBe(false)
   })
 })

@@ -28,7 +28,7 @@ const ROSTER: Athlete[] = [
 ]
 
 // renderToStaticMarkup no ejecuta efectos → initialAthletes inyecta el roster
-// que en runtime carga el useEffect (listOwnedAthletes).
+// que en runtime carga el useEffect (listRosterAthletes).
 function render(allowlist: string, initialAthletes: Athlete[] = []) {
   return renderToStaticMarkup(
     <MemoryRouter>
@@ -66,4 +66,23 @@ describe('CoachContextBar', () => {
     expect(html).toContain('Entrenando a Cliente 1')
     expect(html).toContain('Volver a ti')
   })
+  it('cuenta coach con gestionado activo: ofrece volver al Workspace, no "Volver a ti"', () => {
+    setSelfAthleteId(null)
+    useAuthStore.setState({ user: { id: 'coach-1', email: 'c@x.cl' } as User, activeAthleteId: 'ath_m_t' })
+    const html = render('c@x.cl', [{ id: 'ath_m_t', ownerAccountId: 'user-9', linkedAccountId: null, displayName: 'Transferido', status: 'active', createdAt: 1, updatedAt: 1 }])
+
+    expect(html).toContain('Entrenando a Transferido')
+    expect(html).toContain('Workspace')
+    expect(html).not.toContain('Volver a ti')
+  })
+
+  it('cuenta coach sin atleta activo: etiqueta "Sin atleta" y no muestra "Tú"', () => {
+    setSelfAthleteId(null)
+    useAuthStore.setState({ user: { id: 'coach-1', email: 'c@x.cl' } as User, activeAthleteId: null })
+    const html = render('c@x.cl', [{ id: 'ath_m_t', ownerAccountId: 'user-9', linkedAccountId: null, displayName: 'Transferido', status: 'active', createdAt: 1, updatedAt: 1 }])
+
+    expect(html).toContain('Sin atleta')
+    expect(html).not.toContain('Tú')
+  })
+
 })

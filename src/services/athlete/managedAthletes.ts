@@ -11,12 +11,16 @@ import {
   rememberAthleteDeleteTombstone,
 } from '../sync/athleteDeleteTombstones'
 import { clearQueuedOpsForAthlete } from '../sync/syncQueue'
-import { athleteIdForOwner } from './athleteScopeMigration'
 import { clearCoachPlanningHydrationRegistry } from './coachPlanningHydrationRegistry'
+import { listRosterEntries, resolveRosterAccess, resolveRosterEntry } from './coachRosterEligibility'
+import { putLocalMembership } from './membershipCache'
 
 /**
- * Create a coach-managed athlete (no login: linkedAccountId stays null).
- * Persists locally first and queues the remote push.
+ * Alta de un gestionado (sin login: linkedAccountId queda null). Persiste local,
+ * anticipa la membresía `coach` que `athletes_seed_membership` (013b) va a
+ * sembrar en el insert remoto, y encola el push. Sigue por el insert del
+ * cliente (`athletes_insert_bootstrap_owner`); el alta por RPC administrativa
+ * es otra entrega.
  */
 export async function createManagedAthlete(ownerAccountId: string, displayName: string): Promise<Athlete> {
   const name = displayName.trim()
@@ -33,36 +37,40 @@ export async function createManagedAthlete(ownerAccountId: string, displayName: 
     updatedAt: now,
   }
 
-  await db.athletes.put(athlete)
+  await db.transaction('rw', db.athletes, db.athleteMemberships, async () => {
+    await db.athletes.put(athlete)
+    await putLocalMembership(ownerAccountId, athlete.id, 'coach', true)
+  })
   void syncService.pushAthlete(athlete)
 
   return athlete
 }
 
-/** Active athletes owned by this account: self first, then by display name. */
-export async function listOwnedAthletes(ownerAccountId: string): Promise<Athlete[]> {
-  const selfId = athleteIdForOwner(ownerAccountId)
-  const rows = await db.athletes.toArray()
+/** Roster activo de la cuenta por membresía: self primero, luego por nombre. */
+export async function listRosterAthletes(accountId: string): Promise<Athlete[]> {
+  return (await listRosterEntries(accountId))
+    .filter((entry) => entry.athlete.status === 'active')
+    .map((entry) => entry.athlete)
+}
 
-  return rows
-    .filter((row) => row.ownerAccountId === ownerAccountId && row.status === 'active')
-    .sort((a, b) => {
-      if (a.id === selfId) return -1
-      if (b.id === selfId) return 1
-      return (a.displayName ?? '').localeCompare(b.displayName ?? '')
-    })
+/** Gestionados archivados sobre los que la cuenta tiene membresía coach. */
+export async function listArchivedRosterAthletes(accountId: string): Promise<Athlete[]> {
+  return (await listRosterEntries(accountId))
+    .filter((entry) => entry.access === 'coach' && entry.athlete.status === 'archived')
+    .map((entry) => entry.athlete)
 }
 
 /**
- * Hard eligibility gate for coach-managed lifecycle operations. A managed
- * athlete must belong to the owner, must not be the owner's self athlete, and
- * must not have been claimed by a linked account.
+ * Gate duro del ciclo de vida de un gestionado. Ya no pregunta por el
+ * propietario: pregunta por la membresía. Un self (propio) y un atleta con
+ * cuenta vinculada quedan fuera, igual que antes.
  */
-export function assertEligibleManagedAthlete(ownerAccountId: string, athlete: Athlete): void {
-  if (athlete.ownerAccountId !== ownerAccountId) {
+export async function assertEligibleManagedAthlete(accountId: string, athlete: Athlete): Promise<void> {
+  const access = await resolveRosterAccess(accountId, athlete)
+  if (!access) {
     throw new Error('El atleta no pertenece a esta cuenta.')
   }
-  if (athlete.id === athleteIdForOwner(ownerAccountId)) {
+  if (access === 'self') {
     throw new Error('No puedes archivar ni eliminar tu propio perfil.')
   }
   if (athlete.linkedAccountId != null) {
@@ -70,11 +78,14 @@ export function assertEligibleManagedAthlete(ownerAccountId: string, athlete: At
   }
 }
 
-async function getEligibleManagedAthlete(ownerAccountId: string, athleteId: string): Promise<Athlete> {
-  const athlete = await db.athletes.get(athleteId)
-  if (!athlete) throw new Error('Atleta no encontrado.')
-  assertEligibleManagedAthlete(ownerAccountId, athlete)
-  return athlete
+async function getEligibleManagedAthlete(accountId: string, athleteId: string): Promise<Athlete> {
+  const entry = await resolveRosterEntry(accountId, athleteId)
+  if (!entry) {
+    const exists = await db.athletes.get(athleteId)
+    throw new Error(exists ? 'El atleta no pertenece a esta cuenta.' : 'Atleta no encontrado.')
+  }
+  await assertEligibleManagedAthlete(accountId, entry.athlete)
+  return entry.athlete
 }
 
 async function setManagedAthleteStatus(
@@ -106,13 +117,6 @@ export async function restoreManagedAthlete(ownerAccountId: string, athleteId: s
   return setManagedAthleteStatus(ownerAccountId, athleteId, 'active')
 }
 
-/** Archived managed athletes owned by this account, sorted by display name. */
-export async function listArchivedAthletes(ownerAccountId: string): Promise<Athlete[]> {
-  const rows = await db.athletes.toArray()
-  return rows
-    .filter((row) => row.ownerAccountId === ownerAccountId && row.status === 'archived')
-    .sort((a, b) => (a.displayName ?? '').localeCompare(b.displayName ?? ''))
-}
 
 /**
  * Permanently deletes an archived managed athlete in two phases.
@@ -135,7 +139,7 @@ export async function deleteManagedAthletePermanently(
     if (hasAthleteDeleteTombstone(ownerAccountId, athleteId)) return
     throw new Error('Atleta no encontrado.')
   }
-  assertEligibleManagedAthlete(ownerAccountId, athlete)
+  await assertEligibleManagedAthlete(ownerAccountId, athlete)
   if (athlete.status !== 'archived') {
     throw new Error('Solo se puede eliminar un atleta archivado.')
   }

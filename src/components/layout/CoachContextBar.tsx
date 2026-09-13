@@ -5,7 +5,7 @@ import { useAuthStore } from '../../store/useAuthStore'
 import { isCoachAccount } from '../../services/athlete/coachAccess'
 import { useEntitlementStore } from '../../store/useEntitlementStore'
 import { getSelfAthleteId } from '../../services/athlete/activeAthlete'
-import { listOwnedAthletes } from '../../services/athlete/managedAthletes'
+import { listRosterAthletes } from '../../services/athlete/managedAthletes'
 import { switchActiveAthlete } from '../../services/athlete/switchActiveAthlete'
 import { ROUTES } from '../../constants/routes'
 import type { Athlete } from '../../types'
@@ -37,7 +37,7 @@ export default function CoachContextBar({ allowlistOverride, initialAthletes }: 
   useEffect(() => {
     if (!isCoach || !user?.id) return
     let cancelled = false
-    listOwnedAthletes(user.id)
+    listRosterAthletes(user.id)
       .then((rows) => {
         if (!cancelled) setAthletes(rows)
       })
@@ -50,9 +50,10 @@ export default function CoachContextBar({ allowlistOverride, initialAthletes }: 
   if (!isCoach || !user?.id) return null
 
   const selfId = getSelfAthleteId()
-  const isManagedActive = activeAthleteId != null && selfId != null && activeAthleteId !== selfId
+  const isManagedActive = activeAthleteId != null && activeAthleteId !== selfId
   const activeAthlete = athletes.find((athlete) => athlete.id === activeAthleteId)
-  const activeLabel = isManagedActive ? (activeAthlete?.displayName ?? 'Atleta') : 'Tú'
+  const idleLabel = selfId ? 'Tú' : 'Sin atleta'
+  const activeLabel = isManagedActive ? (activeAthlete?.displayName ?? 'Atleta') : idleLabel
 
   async function handleSwitch(athleteId: string) {
     setIsOpen(false)
@@ -67,16 +68,27 @@ export default function CoachContextBar({ allowlistOverride, initialAthletes }: 
           <Zap size={14} className="flex-shrink-0 text-[#ff7a33]" />
           <span className="truncate">Entrenando a {activeLabel}</span>
         </span>
-        <button
-          type="button"
-          onClick={() => { if (selfId) void handleSwitch(selfId) }}
-          className="flex-shrink-0 rounded-lg border border-white/15 bg-white/5 px-3 py-1 text-xs font-semibold text-white transition-colors hover:bg-white/10"
-        >
-          Volver a ti
-        </button>
+        {selfId ? (
+          <button
+            type="button"
+            onClick={() => void handleSwitch(selfId)}
+            className="flex-shrink-0 rounded-lg border border-white/15 bg-white/5 px-3 py-1 text-xs font-semibold text-white transition-colors hover:bg-white/10"
+          >
+            Volver a ti
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => navigate(ROUTES.COACH)}
+            className="flex-shrink-0 rounded-lg border border-white/15 bg-white/5 px-3 py-1 text-xs font-semibold text-white transition-colors hover:bg-white/10"
+          >
+            Workspace
+          </button>
+        )}
       </div>
     )
   }
+
 
   return (
     <div className="relative z-40 flex justify-end px-4 pt-2">

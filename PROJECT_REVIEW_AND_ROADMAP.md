@@ -144,6 +144,14 @@ Lo que falta, y todo depende del mismo hecho:
 - Equivalencia *general* de predicados: el cero de hoy acredita los datos de
   hoy, no la equivalencia en abstracto.
 
+**Evidencia que se debe registrar después del smoke de Entrega 2:** días de uso
+real de chat/sesiones y una generación cuando el saldo lo permita; logs
+`[coach-authz]` con `wouldDeny = 0` para peticiones legítimas del coach al
+transferido y `wouldGrant = 0`; lectura/escritura desde la híbrida ya revocada
+rechazadas por membresía. La revocación del transferido no sustituye el R3 del
+atleta reclamado: ese caso conserva su precondición SP1b. El cambio a enforce
+requiere su propio smoke de cinco casos de la spec.
+
 ### 6. Entrega 2 — cuenta coach y roster
 
 Es lo que genera el sujeto del punto 5. Sin esto, 1b cortaría con una regla que
@@ -192,29 +200,51 @@ Dos asimetrías que el cableado obligó a resolver, ambas del mismo tipo —
   el holder no es reactivo y la UI no volvería a renderizar al confirmarse la
   identidad.
 
-#### Pendiente de la Entrega 2
+#### Implementación local de Entrega 2 — 2026-09-12
 
-**Revisión 2026-09-09:** la transferencia tiene un bloqueo adicional: roster,
-selector y accesos scoped del cliente aún exigen propietario. También falta
-resolver archivo/borrado del seleccionado sin self. Ver
-[hallazgos y secuencia restante](docs/reviews/2026-09-09-coach-entrega-2-review.md).
+El cliente ya resuelve roster, selección, hidratación y accesos scoped por
+membresía. Dexie v21 conserva un marcador por cuenta junto al snapshot: una
+revocación total no reactiva el fallback por owner. El alta offline conserva
+su membresía provisional únicamente hasta confirmar el INSERT remoto. Las escrituras scoped
+revalidan membresía y estado dentro de la transacción. Un coach confirmado no
+crea ni adopta self y puede dejar la selección en `none` al archivar/eliminar.
 
-1. **Cuenta coach definitiva**: crearla vacía (rol `coach`, sin self) y
-   transferirle la membresía `coach` del gestionado que hoy cuelga de la cuenta
-   híbrida.
-2. **Onboarding sin atleta self** — implementado localmente (2026-09-09):
-   espera identidad, entrada a Workspace y formulario deportivo sólo con atleta
-   seleccionado para coach. Pendiente smoke con cuenta coach real.
-3. **Rutas `/coach/*` fuera del shell de atleta.** `/coach` ya tiene shell
-   propio localmente; faltan las vistas deportivas del gestionado.
-4. **Retiro de `VITE_COACH_ACCOUNTS`**: cuando el punto 1 esté probado, el gate
-   pasa a ser sólo por rol y se eliminan la variable y `parseCoachAllowlist`.
-   Condición explícita acordada con el owner el 2026-09-09.
-5. Recién entonces, `enforce` (§5).
+Sync comparte el UPDATE de atletas ajenos entre push y replay offline; los
+pushes hijos no reinsertan al transferido. Los tres DELETE usan la misma
+operación por ID y distinguen fila visible no borrable de fila ya ausente o
+inaccesible. `037_coach_account_provisioning.sql` está escrita con pruebas
+SQL ejecutables de provisión, transferencia, atomicidad, grants y RLS.
 
-Se descartó a propósito marcar `coach` la cuenta del owner: el trigger de `030`
-prohíbe que una cuenta coach tenga self, así que exigiría sacarle su atleta self
-—la migración de datos más delicada del proyecto— sólo para cambiar un gate.
+**Pendiente operativo, sin declarar producción validada:**
+
+1. Desplegar el cliente y aplicar manualmente `037`.
+2. Provisionar una cuenta coach nueva antes de su primer login y ejecutar el
+   [runbook de Entrega 2](docs/superpowers/smokes/2026-09-12-coach-entrega-2-runbook.md),
+   incluida la prueba de borrado de un transferido desechable.
+3. Transferir la membresía del gestionado real conservando owner/linked y
+   verificar persistencia, reingreso y revocación en la cuenta híbrida.
+4. Retirar `VITE_COACH_ACCOUNTS` **sólo** con smoke APROBADO y sin gestionados
+   pendientes en la cuenta híbrida. Task 9 del
+   [plan corregido](docs/superpowers/plans/2026-09-12-coach-role-separation-entrega-2.md).
+5. Acumular evidencia de auditoría de la cuenta coach y decidir `enforce` por
+   separado (§5). No se cambió ese modo.
+
+No se convierte ni se elimina la cuenta híbrida. Los perfiles de navegador
+permanecen separados durante el piloto por los tombstones cross-usuario.
+
+#### Entrega posterior — alta administrativa definitiva
+
+Mover el alta managed desde el insert del cliente a un endpoint administrativo
+con autorización propia que invoque `admin_create_managed_athlete`; luego
+retirar `athletes_insert_bootstrap_owner`, adaptando también los re-upserts de
+padres propios que hoy requieren INSERT. La entrega actual conserva ese camino.
+
+#### Entrega posterior — vistas deportivas bajo `/coach/*`
+
+Mover Dashboard, semana, día, chat y Plan Builder del gestionado al árbol coach,
+con navegación interna consciente del prefijo y pruebas de enlaces directos y
+retorno al Workspace. `/coach` tiene shell propio; por ahora las vistas
+deportivas siguen dentro de AppShell con contexto del gestionado.
 
 ---
 

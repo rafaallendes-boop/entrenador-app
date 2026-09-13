@@ -893,6 +893,8 @@ export interface AthleteMembership {
   role: MembershipRole
   createdAt: number
   updatedAt: number
+  /** Sólo local: alta managed aún no confirmada por el servidor. */
+  pendingCreation?: boolean
 }
 
 export interface AthleteCoachNote {

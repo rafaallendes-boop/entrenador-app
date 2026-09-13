@@ -40,7 +40,7 @@ export function getAllAthleteScopedTables() {
  * athlete. They must not participate in an athlete purge.
  */
 export function getAccountScopedTables() {
-  return [db.sessionTemplates, db.consentAcceptances]
+  return [db.sessionTemplates, db.consentAcceptances, db.membershipSnapshots]
 }
 
 /** Complete manifest used by account switches, full resets and replace imports. */

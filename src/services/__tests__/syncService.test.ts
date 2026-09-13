@@ -64,7 +64,7 @@ let chatMessageRows: unknown[] = []
 let coachProposalRows: unknown[] = []
 let athleteProfileRows: unknown[] = []
 let athleteCoachNoteRows: Array<{ athleteId: string; updatedAt: number; [key: string]: unknown }> = []
-let athleteMembershipRows: Array<{ athleteId: string; accountId: string; role: string; createdAt: number; updatedAt: number }> = []
+let athleteMembershipRows: Array<{ athleteId: string; accountId: string; role: string; createdAt: number; updatedAt: number; pendingCreation?: boolean }> = []
 let athleteRows: Array<{ id: string; [key: string]: unknown }> = []
 let planGenerationJobRows: unknown[] = []
 let readinessDailyRows: unknown[] = []
@@ -1379,7 +1379,7 @@ describe('syncService', () => {
   })
 
   describe('athlete delete drain and membership pull', () => {
-    it('drena el delete canónico por owner_account_id y deja un tombstone durable', async () => {
+    it('drena el delete canónico por id y deja un tombstone durable', async () => {
       vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
       localStorageState.set('entrenador_sync_queue_v1', JSON.stringify([{
         userId: 'user-1',
@@ -1396,7 +1396,6 @@ describe('syncService', () => {
         table: 'athletes',
         filters: [
           { op: 'eq', column: 'id', value: 'ath-managed' },
-          { op: 'eq', column: 'owner_account_id', value: 'user-1' },
         ],
       })
       expect(deleteCalls.at(-1)?.filters.some((filter) => filter.column === 'user_id')).toBe(false)
@@ -1481,7 +1480,7 @@ describe('syncService', () => {
       expect(JSON.parse(localStorageState.get('entrenador_sync_queue_v1') ?? '[]')).toEqual([])
     })
 
-    it('online elimina por id+owner y no altera el tombstone del caller', async () => {
+    it('online elimina por id y no altera el tombstone del caller', async () => {
       vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
       const tombstones = await import('../sync/athleteDeleteTombstones')
       const token = tombstones.rememberAthleteDeleteTombstone('user-1', 'ath-managed')
@@ -1493,7 +1492,6 @@ describe('syncService', () => {
         table: 'athletes',
         filters: [
           { op: 'eq', column: 'id', value: 'ath-managed' },
-          { op: 'eq', column: 'owner_account_id', value: 'user-1' },
         ],
       })
       expect(localStorageState.get(key)).toBe('1')
@@ -3732,4 +3730,189 @@ describe('syncService', () => {
       expect(updateCalls.find((c) => c.table === 'day_logs')).toBeDefined()
     })
   })
+    it('cero filas + el SELECT no lo ve = gone: reintento de un borrado ya aplicado, cuenta como deleted', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      const tombstones = await import('../sync/athleteDeleteTombstones')
+      tombstones.rememberAthleteDeleteTombstone('user-1', 'ath-managed')
+      actionResults.set('delete:athletes', { data: [], error: null })
+      actionResults.set('select:athletes', { data: [], error: null })
+      const sync = await import('../syncService')
+
+      await expect(sync.deleteManagedAthleteRemote('user-1', 'ath-managed')).resolves.toBe('deleted')
+      expect(selectCalls).toContainEqual({ table: 'athletes', filters: [{ op: 'eq', column: 'id', value: 'ath-managed' }] })
+    })
+
+    it('cero filas + el SELECT lo ve = denied: la RLS deja leer y no borrar; failed y sin purga local', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      const tombstones = await import('../sync/athleteDeleteTombstones')
+      tombstones.rememberAthleteDeleteTombstone('user-1', 'ath-managed')
+      actionResults.set('delete:athletes', { data: [], error: null })
+      actionResults.set('select:athletes', { data: [{ id: 'ath-managed' }], error: null })
+      const sync = await import('../syncService')
+
+      await expect(sync.deleteManagedAthleteRemote('user-1', 'ath-managed')).resolves.toBe('failed')
+      expect(JSON.parse(localStorageState.get('entrenador_sync_queue_v1') ?? '[]')).toEqual([])
+    })
+    it('drenaje: cero filas y visible descarta la op como validation_error, sin reintento', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      localStorageState.set('entrenador_sync_queue_v1', JSON.stringify([{
+        userId: 'user-1', table: 'athletes', action: 'delete', payload: { id: 'ath-managed' }, enqueuedAt: Date.now(),
+      }]))
+      actionResults.set('delete:athletes', { data: [], error: null })
+      actionResults.set('select:athletes', { data: [{ id: 'ath-managed' }], error: null })
+      const sync = await import('../syncService')
+
+      await sync.drainQueue()
+
+      expect(JSON.parse(localStorageState.get('entrenador_sync_queue_v1') ?? '[]')).toEqual([])
+      expect(warn).toHaveBeenCalledWith('[sync]', 'queue:op_dropped', expect.objectContaining({ reason: 'validation_error' }))
+      warn.mockRestore()
+    })
+
+    it('drenaje: cero filas y no visible es éxito', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      localStorageState.set('entrenador_sync_queue_v1', JSON.stringify([{
+        userId: 'user-1', table: 'athletes', action: 'delete', payload: { id: 'ath-managed' }, enqueuedAt: Date.now(),
+      }]))
+      actionResults.set('delete:athletes', { data: [], error: null })
+      actionResults.set('select:athletes', { data: [], error: null })
+      const sync = await import('../syncService')
+
+      await expect(sync.drainQueue()).resolves.toBe(true)
+      expect(JSON.parse(localStorageState.get('entrenador_sync_queue_v1') ?? '[]')).toEqual([])
+    })
+  describe('atletas no propios (membresía coach, owner ajeno)', () => {
+    const transferredRow = { id: 'ath_m_t', ownerAccountId: 'user-9', linkedAccountId: null, displayName: 'T', status: 'active', createdAt: 1, updatedAt: 1 }
+    const coachMembership = { athleteId: 'ath_m_t', accountId: 'user-1', role: 'coach', createdAt: 1, updatedAt: 1 }
+
+    it('el replay confirma una alta propia pendiente y un pull posterior puede revocarla', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      const ownRow = { ...transferredRow, ownerAccountId: 'user-1' }
+      athleteRows = [ownRow]
+      athleteMembershipRows = [{ ...coachMembership, pendingCreation: true }]
+      Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false } })
+      const sync = await import('../syncService')
+
+      await sync.pushAthlete(ownRow)
+      await sync.pullMemberships('user-1')
+      expect(athleteMembershipRows).toEqual([expect.objectContaining({ pendingCreation: true })])
+      Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: true } })
+      await expect(sync.drainQueue()).resolves.toBe(true)
+      expect(athleteMembershipRows).toEqual([expect.objectContaining({ pendingCreation: false })])
+
+      await sync.pullMemberships('user-1')
+      expect(athleteMembershipRows).toEqual([])
+    })
+
+    it('el sync completo de un coach vacío no fabrica ni empuja un self', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      athleteRows = []
+      athleteMembershipRows = []
+      const { setAccountRole } = await import('../entitlements/accountRoleHolder')
+      setAccountRole('coach')
+      const sync = await import('../syncService')
+
+      try {
+        await sync.runFullSync('user-1')
+        expect(athleteRows).toEqual([])
+        expect(athleteMembershipRows).toEqual([])
+        expect(upsertCalls.filter((call) => call.table === 'athletes')).toEqual([])
+        expect(storeState.syncDetails.lastErrorCategory).toBeNull()
+      } finally {
+        setAccountRole('unknown')
+      }
+    })
+
+    it('pushAthlete hace UPDATE por id (nunca upsert) y no encola', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      athleteRows = [transferredRow]
+      athleteMembershipRows = [coachMembership]
+      actionResults.set('update:athletes', { data: [{ id: 'ath_m_t' }], error: null })
+      const sync = await import('../syncService')
+
+      await sync.pushAthlete({ ...transferredRow, status: 'archived', updatedAt: 2 })
+
+      expect(upsertCalls.filter((call) => call.table === 'athletes')).toEqual([])
+      expect(updateCalls).toContainEqual({
+        table: 'athletes',
+        payload: { display_name: 'T', status: 'archived', updated_at: 2 },
+        filters: [{ op: 'eq', column: 'id', value: 'ath_m_t' }],
+      })
+      expect(JSON.parse(localStorageState.get('entrenador_sync_queue_v1') ?? '[]')).toEqual([])
+    })
+
+    it('offline/red caída: el UPDATE se encola y el drenaje lo reproduce como UPDATE, nunca como upsert', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      athleteRows = [transferredRow]
+      athleteMembershipRows = [coachMembership]
+      // Primer intento: red caída → retriable → encolado como action 'upsert' (el tipo de op no cambia).
+      actionResults.set('update:athletes', [
+        { data: null, error: { message: 'Network request failed' } },
+        { data: [{ id: 'ath_m_t' }], error: null },
+      ])
+      const sync = await import('../syncService')
+
+      await sync.pushAthlete({ ...transferredRow, status: 'archived', updatedAt: 2 })
+
+      const queued = JSON.parse(localStorageState.get('entrenador_sync_queue_v1') ?? '[]')
+      expect(queued).toEqual([expect.objectContaining({
+        table: 'athletes',
+        action: 'upsert',
+        payload: expect.objectContaining({ id: 'ath_m_t', owner_account_id: 'user-9', status: 'archived' }),
+      })])
+      expect(upsertCalls.filter((call) => call.table === 'athletes')).toEqual([])
+
+      // Reconexión: drainQueue debe tomar la MISMA operación remota que el camino directo.
+      await expect(sync.drainQueue()).resolves.toBe(true)
+
+      expect(updateCalls.filter((call) => call.table === 'athletes')).toHaveLength(2)
+      expect(upsertCalls.filter((call) => call.table === 'athletes')).toEqual([])
+      expect(JSON.parse(localStorageState.get('entrenador_sync_queue_v1') ?? '[]')).toEqual([])
+    })
+
+    it('UPDATE con cero filas es validation_error: no reintenta ni encola', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      athleteRows = [transferredRow]
+      athleteMembershipRows = [coachMembership]
+      actionResults.set('update:athletes', { data: [], error: null })
+      const sync = await import('../syncService')
+
+      await sync.pushAthlete({ ...transferredRow, status: 'archived', updatedAt: 2 })
+
+      expect(JSON.parse(localStorageState.get('entrenador_sync_queue_v1') ?? '[]')).toEqual([])
+      expect(syncDetailsMock).toHaveBeenCalledWith(expect.objectContaining({ lastErrorCategory: 'validation_error' }))
+    })
+
+    it('un push hijo no re-inserta al atleta ajeno ni difiere la escritura', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      athleteRows = [transferredRow]
+      athleteMembershipRows = [coachMembership]
+      const sync = await import('../syncService')
+
+      await sync.pushSession({
+        id: 's-t', athleteId: 'ath_m_t', date: '2026-09-14', weekStartDate: '2026-09-14', timeBlock: 'am',
+        type: 'squash', status: 'planned', title: 'x', durationMin: 60, createdAt: 1, updatedAt: 1,
+      } as never)
+
+      expect(upsertCalls.filter((call) => call.table === 'athletes')).toEqual([])
+      expect(upsertCalls.some((call) => call.table === 'sessions')).toBe(true)
+      expect(JSON.parse(localStorageState.get('entrenador_sync_queue_v1') ?? '[]')).toEqual([])
+    })
+
+    it('sin membresía, el atleta ajeno sigue difiriendo el push hijo (fail closed)', async () => {
+      vi.stubEnv('VITE_SUPABASE_URL', 'https://example.test')
+      athleteRows = [transferredRow]
+      athleteMembershipRows = []
+      const sync = await import('../syncService')
+
+      await sync.pushSession({
+        id: 's-t', athleteId: 'ath_m_t', date: '2026-09-14', weekStartDate: '2026-09-14', timeBlock: 'am',
+        type: 'squash', status: 'planned', title: 'x', durationMin: 60, createdAt: 1, updatedAt: 1,
+      } as never)
+
+      expect(upsertCalls.some((call) => call.table === 'sessions')).toBe(false)
+    })
+  })
+
 })

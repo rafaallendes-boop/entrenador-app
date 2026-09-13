@@ -111,3 +111,23 @@ export function notifyCoachRosterChanged(): void {
   rosterRevision += 1
   for (const listener of rosterRevisionListeners) listener()
 }
+
+export interface LeaveActiveAthleteDeps {
+  switchActiveAthlete: (accountId: string, athleteId: string) => Promise<boolean>
+  clearActiveAthleteSelection: (accountId: string) => Promise<void>
+}
+
+/**
+ * Antes de archivar o borrar al atleta activo hay que soltarlo. Una cuenta con
+ * self vuelve al self; una cuenta coach no tiene adónde volver y queda sin
+ * atleta (scope `none`), que es exactamente lo que el Workspace espera.
+ */
+export async function leaveActiveAthlete(
+  deps: LeaveActiveAthleteDeps,
+  accountId: string,
+  selfAthleteId: string | null,
+): Promise<boolean> {
+  if (selfAthleteId) return deps.switchActiveAthlete(accountId, selfAthleteId)
+  await deps.clearActiveAthleteSelection(accountId)
+  return true
+}

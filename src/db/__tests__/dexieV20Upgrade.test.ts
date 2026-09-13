@@ -73,6 +73,7 @@ describe('Dexie v20 — upgrade real desde v19', () => {
       confirmedAt: 1,
     })
     expect(await db.entitlements.get('u1')).toMatchObject({ tier: 'weekly' })
-    expect(db.verno).toBe(20)
+    expect(db.verno).toBe(21)
+    expect(await db.membershipSnapshots.count()).toBe(0)
   })
 })

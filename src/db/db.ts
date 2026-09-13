@@ -25,6 +25,7 @@ export class EntrenadorDB extends Dexie {
   athletes!: Table<Athlete>
   readinessDaily!: Table<ReadinessDaily, string>
   whoopWorkouts!: Table<WhoopWorkout, string>
+  membershipSnapshots!: Table<{ accountId: string; hydratedAt: number }, string>
   athleteMemberships!: Table<AthleteMembership, [string, string]>
   athleteCoachNotes!: Table<AthleteCoachNote, string>
   sessionTemplates!: Table<StoredSessionTemplate, string>
@@ -256,6 +257,9 @@ export class EntrenadorDB extends Dexie {
     this.version(20).stores({
       entitlements: 'userId',
     })
+
+    // v21 — distingue una revocación total de una caché aún no hidratada.
+    this.version(21).stores({ membershipSnapshots: 'accountId' })
   }
 }
 

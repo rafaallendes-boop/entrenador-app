@@ -241,4 +241,15 @@ describe('deleteManagedAthletePermanently', () => {
 
     expect(syncService.deleteManagedAthleteRemote).toHaveBeenCalledTimes(1)
   })
+  it('elimina un transferido archivado: membresía coach sin ser propietario', async () => {
+    const transferred = { ...archived, id: 'ath_m_t', ownerAccountId: 'user-9' }
+    await db.athletes.put(transferred as never)
+    await seedAthleteData('ath_m_t')
+
+    await deleteManagedAthletePermanently('user-1', 'ath_m_t')
+
+    expect(vi.mocked(syncService.deleteManagedAthleteRemote)).toHaveBeenCalledWith('user-1', 'ath_m_t')
+    expect(await db.athletes.get('ath_m_t')).toBeUndefined()
+  })
+
 })

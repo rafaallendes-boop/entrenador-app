@@ -46,6 +46,7 @@ describe('athlete-scoped Dexie manifest', () => {
     expect(getAccountScopedTables().map((table) => table.name)).toEqual([
       'sessionTemplates',
       'consentAcceptances',
+      'membershipSnapshots',
     ])
 
     const athleteNames = getAllAthleteScopedTables().map((table) => table.name)
@@ -56,6 +57,7 @@ describe('athlete-scoped Dexie manifest', () => {
       ...athleteNames,
       'sessionTemplates',
       'consentAcceptances',
+      'membershipSnapshots',
     ])
     expect(new Set(allLocalNames).size).toBe(allLocalNames.length)
   })

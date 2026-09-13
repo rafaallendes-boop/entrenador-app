@@ -26,6 +26,33 @@ Etapa: preparando piloto premium acompañado (1-3 clientes fundadores). Coach Mo
 - `public/sw.js` — service worker para notificaciones
 - `supabase/00X_*.sql` — migraciones remotas numeradas, de aplicación manual
 
+## Coach — Entrega 2 implementada localmente (2026-09-12)
+
+`coachRosterEligibility.ts` es la autoridad local del roster. Tras un pull
+exitoso, las membresías son autoritativas incluso si son cero; Dexie v21
+persiste ese estado en `membershipSnapshots` en la misma transacción que el
+snapshot. Las altas managed offline llevan `pendingCreation` local hasta confirmar
+el INSERT; sólo esos vínculos sobreviven al pull previo al replay. Tras la
+confirmación, un snapshot vacío sí los revoca. El alta local es atómica con su
+membresía. La tabla es de cuenta: se limpia en reset/cambio de cuenta/import,
+pero nunca al purgar un atleta. Las transacciones scoped incluyen `athletes`,
+`athleteMemberships` y `membershipSnapshots` y revalidan antes de escribir.
+
+Un coach confirmado no backfillea ni hidrata self. Roster/switch/UI operan con
+membresías de owner ajeno y pueden salir a scope `none`. Sync usa
+`pushAthleteRowRemote` tanto directo como en replay: UPDATE para ajenos, upsert
+para propios. Los tres DELETE comparten `deleteAthleteRowRemote`: `denied`
+(visible pero no borrable) falla; `gone` (ausente o ya invisible) converge local.
+
+`037_coach_account_provisioning.sql` está escrita y probada con PGlite 0.5.8,
+con funciones y policies reales de 007/013b/031. **No está aplicada por este
+trabajo**. Deploy, provisión y transferencia reales siguen el
+[runbook](docs/superpowers/smokes/2026-09-12-coach-entrega-2-runbook.md).
+`VITE_COACH_ACCOUNTS` se conserva hasta smoke APROBADO; `enforce` sigue fuera.
+Alta administrativa definitiva y rutas deportivas `/coach/*` tienen entradas
+propias en el roadmap. No borrar una cuenta para reutilizar su identidad como
+coach: su owner todavía puede sostener atletas transferidos por cascada.
+
 ## Estado actual del producto
 `PROJECT_REVIEW_AND_ROADMAP.md` contiene **sólo el trabajo pendiente** desde el
 2026-09-06. El estado histórico completo —y las secciones numeradas §1–§35 que

@@ -6,6 +6,7 @@
  * atleta self del owner.
  */
 import { addDays, format, parseISO } from 'date-fns'
+import { listRosterEntries, resolveRosterEntry } from './coachRosterEligibility'
 import { db } from '../../db/db'
 import type { Athlete, AthleteProfile, DayLog, Session, WeekSummary } from '../../types'
 import { ATHLETE_PROFILE_LOCAL_ID } from './activeAthlete'
@@ -14,14 +15,14 @@ import { resolveSelfAthleteIdForOwner } from './athleteWeekScope'
 import { isScopedAthleteId } from './effectiveAthleteKey'
 
 export async function assertRosterAthlete(
-  ownerAccountId: string,
+  accountId: string,
   athleteId: string,
 ): Promise<Athlete> {
-  const athlete = await db.athletes.get(athleteId)
-  if (!athlete || athlete.ownerAccountId !== ownerAccountId) {
+  const entry = await resolveRosterEntry(accountId, athleteId)
+  if (!entry) {
     throw new Error('El atleta no pertenece a tu roster.')
   }
-  return athlete
+  return entry.athlete
 }
 
 export async function assertActiveRosterAthlete(
@@ -170,15 +171,11 @@ export async function getRosterTriageData(
   windows: RosterTriageReadWindows,
 ): Promise<RosterTriageReadResult> {
   const uniqueAthleteIds = [...new Set(athleteIds)]
-  const currentAthletes = await db.athletes.bulkGet(uniqueAthleteIds)
+  const rosterStatusById = new Map(
+    (await listRosterEntries(ownerAccountId)).map((entry) => [entry.athlete.id, entry.athlete.status]),
+  )
   const activeIds = new Set(
-    currentAthletes
-      .filter((athlete): athlete is Athlete => Boolean(
-        athlete
-        && athlete.ownerAccountId === ownerAccountId
-        && athlete.status === 'active',
-      ))
-      .map((athlete) => athlete.id),
+    uniqueAthleteIds.filter((athleteId) => rosterStatusById.get(athleteId) === 'active'),
   )
   const skippedAthleteIds = new Set(
     uniqueAthleteIds.filter((athleteId) => !activeIds.has(athleteId)),

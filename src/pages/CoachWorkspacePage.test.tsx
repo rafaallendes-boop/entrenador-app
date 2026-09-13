@@ -47,7 +47,7 @@ const MANAGED: Athlete = { id: 'ath_m_abc', ownerAccountId: 'user-1', linkedAcco
 const ARCHIVED: Athlete = { id: 'ath_m_old', ownerAccountId: 'user-1', linkedAccountId: null, displayName: 'Cliente antigua', status: 'archived', createdAt: 1, updatedAt: 1 }
 
 // renderToStaticMarkup no ejecuta efectos → initialAthletes inyecta el roster
-// que en runtime carga el useEffect (listOwnedAthletes).
+// que en runtime carga el useEffect (listRosterAthletes).
 function render(
   allowlist: string,
   initialAthletes: Athlete[] = [],
@@ -176,4 +176,18 @@ describe('CoachWorkspacePage', () => {
     expect(html).toContain(`id="${coachTabPanelId('alumnos')}"`)
     expect(html).toContain(`aria-labelledby="${coachTabId('alumnos')}"`)
   })
+  it('cuenta coach sin self: el roster no muestra "Tú" y lista al transferido', () => {
+    entitlementState.accountRole = 'coach'
+    entitlementState.hydrated = true
+    setSelfAthleteId(null)
+    setActiveAthleteId(null)
+    useAuthStore.setState({ user: { id: 'coach-1', email: 'c@x.cl' } as User, activeAthleteId: null })
+    const transferred: Athlete = { id: 'ath_m_t', ownerAccountId: 'user-9', linkedAccountId: null, displayName: 'Transferido', status: 'active', createdAt: 1, updatedAt: 1 }
+
+    const html = render('', [transferred], 'alumnos')
+
+    expect(html).toContain('Transferido')
+    expect(html).not.toContain('>Tú<')
+  })
+
 })

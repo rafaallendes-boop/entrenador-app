@@ -1,3 +1,4 @@
+import { resolveRosterEntry } from './coachRosterEligibility'
 import { db } from '../../db/db'
 import { recalculateWeekSummaryCore } from '../../db/queries'
 import { reflectCoachScopedSessionWrite } from '../../store/useTrainingStore'
@@ -37,15 +38,20 @@ const RETRY_MESSAGE = 'La sesión cambió mientras la actualizábamos. Volvé a 
 
 class HydrationScopeChangedError extends Error {}
 
+/**
+ * Corre DENTRO de la transacción Dexie: por eso `db.athleteMemberships` va en
+ * la lista de tablas de cada `db.transaction` de este módulo. Una revocación
+ * que llegue por pull entre la validación previa y el commit se detecta acá.
+ */
 async function revalidateActiveAthleteInTx(
-  ownerAccountId: string,
+  accountId: string,
   athleteId: string,
 ): Promise<void> {
-  const row = await db.athletes.get(athleteId)
-  if (!row || row.ownerAccountId !== ownerAccountId) {
+  const entry = await resolveRosterEntry(accountId, athleteId)
+  if (!entry) {
     throw new Error('El atleta no pertenece a tu roster.')
   }
-  if (row.status !== 'active') {
+  if (entry.athlete.status !== 'active') {
     throw new Error('Este atleta está archivado; restauralo para editar su semana.')
   }
 }
@@ -91,10 +97,10 @@ async function createSessionCoreForAthlete(
       const wrote = await runAthleteWrite(athleteId, async () => {
         await db.transaction(
           'rw',
-          db.sessions,
-          db.dayLogs,
-          db.weekSummaries,
-          db.athletes,
+          [
+            db.sessions, db.dayLogs, db.weekSummaries,
+            db.athletes, db.athleteMemberships, db.membershipSnapshots,
+          ],
           async () => {
             await revalidateActiveAthleteInTx(ownerAccountId, athleteId)
             if (!isWeekHydrated(ownerAccountId, athleteId, week)) {
@@ -190,10 +196,10 @@ export async function updateSessionForAthlete(
       const wrote = await runAthleteWrite(athleteId, async () => {
         await db.transaction(
           'rw',
-          db.sessions,
-          db.dayLogs,
-          db.weekSummaries,
-          db.athletes,
+          [
+            db.sessions, db.dayLogs, db.weekSummaries,
+            db.athletes, db.athleteMemberships, db.membershipSnapshots,
+          ],
           async () => {
             await revalidateActiveAthleteInTx(ownerAccountId, athleteId)
             const current = await loadOwnedSession(scope, sessionId)
@@ -276,10 +282,10 @@ export async function deleteSessionForAthlete(
       const wrote = await runAthleteWrite(athleteId, async () => {
         await db.transaction(
           'rw',
-          db.sessions,
-          db.dayLogs,
-          db.weekSummaries,
-          db.athletes,
+          [
+            db.sessions, db.dayLogs, db.weekSummaries,
+            db.athletes, db.athleteMemberships, db.membershipSnapshots,
+          ],
           async () => {
             await revalidateActiveAthleteInTx(ownerAccountId, athleteId)
             const current = await loadOwnedSession(scope, sessionId)
