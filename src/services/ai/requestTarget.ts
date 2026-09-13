@@ -9,7 +9,9 @@ import { getActiveAthleteId, getSelfAthleteId } from '../athlete/activeAthlete'
  * como `wouldDeny` y arruinaría la evidencia de la ventana de auditoría.
  */
 export function resolveRequestTargetAthleteId(explicit?: string | null): string | null {
-  const target = explicit ?? getActiveAthleteId()
+  // Solo omitir el argumento permite consultar el holder vivo. Un null
+  // capturado antes de hidratar no puede adoptar luego otro atleta.
+  const target = explicit === undefined ? getActiveAthleteId() : explicit
   if (!target) return null
   const self = getSelfAthleteId()
   if (self && target === self) return null

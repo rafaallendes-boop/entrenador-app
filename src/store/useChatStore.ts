@@ -1,17 +1,18 @@
 import { create } from 'zustand'
 import { db } from '../db/db'
-import type { ChatMessage, ChatContext, ChatContextMetadata, AIRequestClass } from '../types'
+import type { ChatMessage, ChatContext, ChatContextMetadata, AIRequestClass, CoachAction, Session } from '../types'
 import { CoachEngine } from '../services/ai/CoachEngine'
 import { optimizeChatContext } from '../services/ai/contextOptimizer'
 import { useCoachActionsStore } from './useCoachActionsStore'
 import { v4 as uuid } from '../utils/uuid'
 import { AIProviderError } from '../services/ai/types'
 import type { CoachNormalizedResponse } from '../services/ai/types'
+import { describeMissing, pendingIntentFromEvents, type PendingIntent } from '../services/chat/pendingIntent'
 import { getOrCreateChatSessionId, isLocalOnlyChatSessionId, setStoredChatSessionId } from '../utils/chatSession'
 import { isRowInActiveScope, filterRowsToActiveScope, withActiveAthleteStamp } from '../services/athlete/activeScopeFilter'
 import * as syncService from '../services/syncService'
 import { useAIDebugStore } from './useAIDebugStore'
-import { resolveChatRoute, type ChatRouteKind } from '../services/chatRouting'
+import { resolveChatRoute, mapChatRouteToRequestClass, type ChatRouteKind } from '../services/chatRouting'
 import { WeekCreatorEngine } from '../services/weekCreator/WeekCreatorEngine'
 import { buildAIGenerationId } from '../services/ai/requestPolicy'
 import { shouldRotateConversation } from '../services/chat/dailyRotation'
@@ -22,6 +23,7 @@ import {
   getSelfAthleteId,
   getSwitchEpoch,
 } from '../services/athlete/activeAthlete'
+import { captureRequestScope, isRequestScopeCurrent, type RequestScope } from '../services/athlete/requestScope'
 import {
   buildEntitlementDetail,
   toChatEntitlementOffer,
@@ -55,11 +57,17 @@ interface ChatState {
   rotationSuspended: boolean
   /** Oferta de plan bajo el hilo. Efimera: no se persiste ni sincroniza. */
   entitlementOffer: EntitlementRequiredDetail | null
+  /** Oferta o aclaración a la espera de la próxima respuesta (A4.4). Efímera: no se persiste ni sincroniza. */
+  pendingIntent: PendingIntent | null
 
   loadHistory: () => Promise<void>
   loadConversations: () => Promise<void>
   openConversation: (sessionId: string) => Promise<void>
-  sendMessage: (content: string, context?: ChatContext) => Promise<{ route: ChatRouteKind }>
+  sendMessage: (
+    content: string,
+    context?: ChatContext,
+    scope?: RequestScope,
+  ) => Promise<{ route: ChatRouteKind; droppedForScopeChange?: boolean }>
   /** Muestra una oferta sin crear una burbuja, una propuesta ni una llamada a IA. */
   showEntitlementOffer: (requestClass: AIRequestClass) => void
   newSession: () => Promise<void>
@@ -80,6 +88,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   conversationsDirty: true,
   rotationSuspended: false,
   entitlementOffer: null,
+  pendingIntent: null,
 
   showEntitlementOffer: (requestClass) => {
     const currentTier = getEntitlementTier()
@@ -261,7 +270,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  sendMessage: async (content, context) => {
+  sendMessage: async (content, context, scope) => {
     // Debe suceder antes de las DOS derivaciones de historial (routing y
     // proveedor). No hay await antes de adquirir el lock de isLoading.
     if (!get().isLoading && !get().rotationSuspended) {
@@ -272,11 +281,48 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (shouldRotateConversation(lastAt, Date.now())) startFreshSessionSync()
     }
     const requestStartedAt = Date.now()
+    const requestScope = scope ?? captureRequestScope(get().currentSessionId)
+    const intentScope = { athleteId: requestScope.athleteId, conversationId: get().currentSessionId }
     const routeRecentMessages = get().messages.map(m => ({ role: m.role, content: m.content }))
     const routeContext = context
       ? { ...context, recentMessages: context.recentMessages ?? routeRecentMessages }
       : { recentSessions: [], plannedSessions: [], historicalSessions: [], recentMessages: routeRecentMessages }
-    const route = resolveChatRoute(content, routeContext)
+    const route = resolveChatRoute(content, routeContext, { pendingIntent: get().pendingIntent, scope: intentScope })
+    const decision = route.pendingDecision
+    // Ninguna rama local puede consumir intención ni persistir mientras otro
+    // envío tiene el lock, o si la preparación pertenece a otro atleta.
+    if (!isRequestScopeCurrent(requestScope)) return { route: route.kind, droppedForScopeChange: true }
+    if (get().isLoading) return { route: route.kind }
+    if (decision?.kind === 'already_consumed') {
+      await appendLocalCoachMessage(get, set, requestScope, content, 'Esa generación ya quedó en marcha con tu confirmación anterior; no la repito. Si quieres otra, pídemela con el cambio que necesitas.')
+      return { route: route.kind }
+    }
+    if (decision?.kind === 'fill' && get().pendingIntent) {
+      const intent = get().pendingIntent!
+      // Guardar el avance parcial: lo resuelto y los candidatos quedan en la
+      // intención para que el turno siguiente ("PM") parta de ahí.
+      set({ pendingIntent: { ...intent, operation: decision.operation } })
+      // La fecha va siempre en el candidato, aunque hoy comparta valor entre
+      // todos: el horizonte de planificación cubre 2-3 semanas, así que un
+      // futuro ensanche de la resolución (título, deporte) puede volver a
+      // mezclar fechas distintas bajo el mismo "lunes" y esto ya lo soporta.
+      const candidates = decision.candidates.length > 0
+        ? ` Ese día tienes: ${decision.candidates.map(c => `${c.title} (${c.date} ${c.timeBlock})`).join(', ')}. Dime cuál.`
+        : ''
+      await appendLocalCoachMessage(get, set, requestScope, content, `Todavía me falta un dato para ${intent.summary.toLowerCase()}: ${describeMissing(decision.missing)}.${candidates}`)
+      return { route: route.kind }
+    }
+    if (decision?.kind === 'cancel') set({ pendingIntent: null })
+    if (route.consumedIntentId) {
+      set(state => {
+        const intent = state.pendingIntent
+        if (!intent || intent.id !== route.consumedIntentId) return {}
+        return { pendingIntent: { ...intent, status: 'consumed' as const } }
+      })
+    } else if (route.kind !== 'chat_general' && get().pendingIntent?.status === 'open') {
+      // Empezó otra operación: la oferta anterior deja de estar vigente.
+      set({ pendingIntent: null })
+    }
     if (route.kind === 'plan_builder_redirect') {
       return { route: route.kind }
     }
@@ -291,13 +337,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const weekCreatorGenerationId = requestClass === 'week_creator'
       ? buildAIGenerationId('week_creator')
       : undefined
+
+    if (!isRequestScopeCurrent(requestScope)) {
+      // La operación se inició para otro atleta. No se persiste nada en el
+      // scope nuevo; la página conserva el borrador para que el usuario decida.
+      return { route: route.kind, droppedForScopeChange: true }
+    }
+
     const userMsg: ChatMessage = withActiveAthleteStamp<ChatMessage>({
       id: uuid(),
       role: 'user',
       content,
       timestamp: Date.now(),
       chatSessionId: sessionId,
-      contextMeta: buildChatContextMetadata(context),
+      contextMeta: buildChatContextMetadata(context, route.kind),
+      athleteId: requestScope.athleteId ?? undefined,
     })
     set(state => ({
       messages: [...state.messages, userMsg],
@@ -328,6 +382,47 @@ export const useChatStore = create<ChatState>((set, get) => ({
       ...(context ?? { recentSessions: [], plannedSessions: [], historicalSessions: [] }),
       recentMessages,
     }, requestClass)
+
+    if (route.pendingOperation && route.pendingOperation.type !== 'create_week') {
+      const resolvedSessionId = typeof route.pendingOperation.known.sessionId === 'string'
+        ? route.pendingOperation.known.sessionId
+        : undefined
+      const sourceSession = resolvedSessionId
+        ? (context?.plannedSessions ?? enrichedContext.plannedSessions ?? []).find(s => s.id === resolvedSessionId)
+        : undefined
+      const local = buildDeterministicActionFromOperation(route.pendingOperation, sourceSession)
+      if (local) {
+        // move_session / delete_session con todos sus datos: no hace falta IA.
+        // Se crea la PROPUESTA (nunca se aplica): la tarjeta sigue siendo la aceptación.
+        // Misma disciplina que la ruta con IA: comprobar scope Y conversación
+        // después de CADA await, y deshacer lo escrito si cambió. `addProposal`
+        // estampa con el atleta activo del momento, así que sin esta
+        // comprobación mensaje y propuesta podrían quedar en scopes distintos.
+        const stillOwns = () => isRequestScopeCurrent(requestScope) && isActiveChatRequest(get().currentSessionId, sessionId, abortController)
+        // El atleta pudo cambiar sin que el hilo/sesión cambiara: la UI sigue
+        // siendo dueña de ese spinner aunque el contenido no se publique.
+        const releaseLoadingIfStillOwner = () => {
+          if (isCurrentChatRequestOwner(get().currentSessionId, sessionId, abortController)) {
+            set({ isLoading: false, streamingText: '', responsePhase: 'idle' })
+          }
+        }
+        if (!stillOwns()) { releaseLoadingIfStillOwner(); return { route: route.kind, droppedForScopeChange: true } }
+        const coachMsg = buildCoachMessage({ ...emptyNormalizedResponse('chat_action'), message: local.message }, sessionId)
+        await db.chatMessages.add(coachMsg)
+        if (!stillOwns()) { await discardLateCoachArtifacts(coachMsg); releaseLoadingIfStillOwner(); return { route: route.kind, droppedForScopeChange: true } }
+        const proposal = await useCoachActionsStore.getState().addProposal(local.message, [local.action], coachMsg.id, { source: 'chat' })
+        if (!stillOwns()) { await discardLateCoachArtifacts(coachMsg, proposal.id); releaseLoadingIfStillOwner(); return { route: route.kind, droppedForScopeChange: true } }
+        coachMsg.proposalId = proposal.id
+        await db.chatMessages.update(coachMsg.id, { proposalId: proposal.id })
+        if (!stillOwns()) { await discardLateCoachArtifacts(coachMsg, proposal.id); releaseLoadingIfStillOwner(); return { route: route.kind, droppedForScopeChange: true } }
+        void syncService.pushChatMessage(coachMsg)
+        set(state => ({ messages: [...state.messages, coachMsg], isLoading: false, streamingText: '', responsePhase: 'idle', conversationsDirty: true }))
+        return { route: route.kind }
+      }
+      // update_session / add_session: necesitan IA. La operación viaja en el contexto
+      // como dato estructurado, no como texto libre.
+      enrichedContext.pendingOperation = route.pendingOperation
+    }
 
     let receivedFirstChunk = false
     let rawStreamingText = ''
@@ -370,28 +465,32 @@ export const useChatStore = create<ChatState>((set, get) => ({
           targetWeekStart: route.targetWeekStart ?? enrichedContext.currentWeekSummary?.weekStartDate ?? '',
           generationId: weekCreatorGenerationId,
           signal: abortController.signal,
+          targetAthleteId: requestScope.athleteId,
         })
         : requestClass === 'chat_general'
         ? CoachEngine.sendChat(content, enrichedContext, {
             surface: 'chat',
             onChunk: handleChunk,
             signal: abortController.signal,
+            targetAthleteId: requestScope.athleteId,
           })
         : requestClass === 'chat_action'
           ? CoachEngine.sendAction(content, enrichedContext, {
               surface: 'chat',
               onChunk: handleChunk,
               signal: abortController.signal,
+              targetAthleteId: requestScope.athleteId,
             })
           : CoachEngine.send(content, enrichedContext, {
               requestClass,
               surface: 'chat',
               onChunk: handleChunk,
               signal: abortController.signal,
+              targetAthleteId: requestScope.athleteId,
             })
 
       const response = await Promise.race([enginePromise, watchdogPromise])
-      if (!isActiveChatRequest(get().currentSessionId, sessionId, abortController)) {
+      if (!isRequestScopeCurrent(requestScope) || !isActiveChatRequest(get().currentSessionId, sessionId, abortController)) {
         return { route: route.kind }
       }
       const currentTier = getEntitlementTier()
@@ -401,18 +500,37 @@ export const useChatStore = create<ChatState>((set, get) => ({
         ? buildEntitlementDetail('week_creator', weekCreatorRequiredTier, currentTier)
         : null
 
+      if (!isRequestScopeCurrent(requestScope)) {
+        // El atleta activo cambió mientras el proveedor respondía. El texto
+        // pertenece al atleta original: no se persiste en el scope nuevo.
+        if (isCurrentChatRequestOwner(get().currentSessionId, sessionId, abortController)) {
+          set({ isLoading: false, streamingText: '', responsePhase: 'idle' })
+        }
+        return { route: route.kind }
+      }
+
       const coachMsg = buildCoachMessage(response, sessionId)
       await db.chatMessages.add(coachMsg)
       set({ conversationsDirty: true })
       persistedCoachMsg = coachMsg
-      if (!isActiveChatRequest(get().currentSessionId, sessionId, abortController)) {
+      if (!isRequestScopeCurrent(requestScope) || !isActiveChatRequest(get().currentSessionId, sessionId, abortController)) {
         await discardLateCoachArtifacts(coachMsg)
         return { route: route.kind }
+      }
+      // La intención pertenece a esta conversación/atleta: si cambiaron durante
+      // el `await` de arriba, no se le atribuye a la que quedó visible.
+      if (isRequestScopeCurrent(requestScope)) {
+        const nextIntent = pendingIntentFromEvents(response.conversationEvents, intentScope, Date.now())
+        if (nextIntent) set({ pendingIntent: nextIntent })
       }
       void syncService.pushChatMessage(coachMsg)
 
       let proposalId: string | undefined
-      if (shouldCreateProposal(response, requestClass) && isActiveChatRequest(get().currentSessionId, sessionId, abortController)) {
+      if (
+        shouldCreateProposal(response, requestClass)
+        && isActiveChatRequest(get().currentSessionId, sessionId, abortController)
+        && isRequestScopeCurrent(requestScope)
+      ) {
         expectedProposal = true
         const normWarnings = buildNormalizationWarnings(response)
         const proposal = await useCoachActionsStore.getState().addProposal(
@@ -423,7 +541,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         )
         proposalId = proposal.id
         persistedProposalId = proposal.id
-        if (!isActiveChatRequest(get().currentSessionId, sessionId, abortController)) {
+        if (!isRequestScopeCurrent(requestScope) || !isActiveChatRequest(get().currentSessionId, sessionId, abortController)) {
           await discardLateCoachArtifacts(coachMsg, proposalId)
           return { route: route.kind }
         }
@@ -457,7 +575,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         useAIDebugStore.getState().completeRequest(response.traceId, terminalPatch)
       }
 
-      if (!isActiveChatRequest(get().currentSessionId, sessionId, abortController)) {
+      if (!isRequestScopeCurrent(requestScope) || !isActiveChatRequest(get().currentSessionId, sessionId, abortController)) {
         await discardLateCoachArtifacts(coachMsg, proposalId)
         return { route: route.kind }
       }
@@ -469,6 +587,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
         entitlementOffer,
       }))
     } catch (e) {
+      if (!isRequestScopeCurrent(requestScope)) {
+        if (persistedCoachMsg) await discardLateCoachArtifacts(persistedCoachMsg, persistedProposalId)
+        return { route: route.kind, droppedForScopeChange: true }
+      }
       if (!abortedByWatchdog && (abortController.signal.aborted || (e instanceof DOMException && e.name === 'AbortError'))) {
         if (isCurrentChatRequestOwner(get().currentSessionId, sessionId, abortController)) {
           set({ isLoading: false, streamingText: '', responsePhase: 'idle' })
@@ -481,7 +603,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         // La oferta pertenece al request que la produjo. Un switch de hilo o
         // atleta aborta/libera su controller, por lo que una respuesta tardía
         // no puede publicar metadata en el scope que quedó visible.
-        if (!isActiveChatRequest(get().currentSessionId, sessionId, abortController)) {
+        if (!isRequestScopeCurrent(requestScope) || !isActiveChatRequest(get().currentSessionId, sessionId, abortController)) {
           return { route: route.kind }
         }
         if (weekCreatorGenerationId) {
@@ -520,7 +642,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         // Cambiar de conversación aborta y libera el controller. Si ocurrió
         // mientras Dexie persistía el error, no se lo puede anexar al hilo
         // recién abierto.
-        if (!isCurrentChatRequestOwner(get().currentSessionId, sessionId, abortController)) {
+        if (!isRequestScopeCurrent(requestScope) || !isCurrentChatRequestOwner(get().currentSessionId, sessionId, abortController)) {
           if (persisted) await discardLateCoachArtifacts(coachErrorMsg)
           return { route: route.kind }
         }
@@ -543,6 +665,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
         error: errorMsg,
       }))
     } finally {
+      if (isCurrentChatRequestOwner(get().currentSessionId, sessionId, abortController)) {
+        set({ isLoading: false, streamingText: '', responsePhase: 'idle' })
+      }
       window.clearTimeout(processingTimeout)
       if (watchdogTimeout != null) window.clearTimeout(watchdogTimeout)
       if (activeChatAbortController === abortController) activeChatAbortController = null
@@ -647,6 +772,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       conversationsDirty: true,
       rotationSuspended: false,
       entitlementOffer: null,
+      pendingIntent: null,
     })
   },
 }))
@@ -834,19 +960,6 @@ function startFreshSessionSync(): string {
   return newId
 }
 
-function mapChatRouteToRequestClass(route: ChatRouteKind): AIRequestClass {
-  switch (route) {
-    case 'chat_action':
-      return 'chat_action'
-    case 'weekly_summary':
-      return 'weekly_summary'
-    case 'week_creator':
-      return 'week_creator'
-    case 'chat_general':
-    default:
-      return 'chat_general'
-  }
-}
 // ─── Response handling (extracted from sendMessage) ───────────────────────────────
 
 function isActiveChatRequest(
@@ -927,10 +1040,11 @@ function markWeekCreatorGenerationFailed(generationId: string, requestStartedAt:
   })
 }
 
-function buildChatContextMetadata(context?: ChatContext): ChatContextMetadata {
+function buildChatContextMetadata(context?: ChatContext, route?: ChatRouteKind): ChatContextMetadata {
   return {
-    contextVersion: 1,
+    contextVersion: route ? 2 : 1,
     intent: context?.intent,
+    route,
     plannedSessionCount: context?.plannedSessions?.length,
     historicalSessionCount: context?.historicalSessions?.length,
     recentSessionCount: context?.recentSessions?.length,
@@ -949,6 +1063,81 @@ async function discardLateCoachArtifacts(coachMsg: ChatMessage, proposalId?: str
   }
   await db.chatMessages.delete(coachMsg.id)
   void syncService.deleteChatMessages([coachMsg.id])
+}
+
+// ─── Intención pendiente (A4.4) ─────────────────────────────────────────────────
+
+/**
+ * `move_session`/`delete_session` con todos sus datos resueltos no necesitan
+ * IA: la operación ya es determinista. `update_session`/`add_session` siguen
+ * necesitando al modelo (contenido no trivial) y `null` los deja seguir por
+ * ese camino.
+ */
+function buildDeterministicActionFromOperation(
+  op: Exclude<PendingIntent['operation'], { type: 'create_week' }>,
+  // Sesión de origen resuelta contra `plannedSessions` en el call site. Sin
+  // esto, un referente ambiguo entre semanas ("la del lunes" con 2-3 lunes en
+  // el horizonte) queda invisible en la tarjeta: sólo se veía la fecha
+  // DESTINO, nunca cuál sesión concreta se iba a mover — un match a la semana
+  // equivocada no tenía forma de detectarse antes de aceptar.
+  sourceSession?: Pick<Session, 'date' | 'timeBlock' | 'title'>,
+): { action: CoachAction; message: string } | null {
+  const sessionId = typeof op.known.sessionId === 'string' ? op.known.sessionId : undefined
+  const targetDate = typeof op.known.targetDate === 'string' ? op.known.targetDate : undefined
+  const sessionLabel = sourceSession
+    ? `la sesión "${sourceSession.title}" del ${sourceSession.date} (${sourceSession.timeBlock})`
+    : 'esa sesión'
+  if (op.type === 'move_session' && sessionId && targetDate) {
+    return { action: { type: 'move_session', sessionId, targetDate, reason: 'Confirmado por el atleta en el chat.' }, message: `Propongo mover ${sessionLabel} al ${targetDate}. Revisa y aplica cuando quieras.` }
+  }
+  if (op.type === 'delete_session' && sessionId) {
+    return { action: { type: 'delete_session', sessionId, reason: 'Confirmado por el atleta en el chat.' }, message: `Propongo eliminar ${sessionLabel}. Revisa y aplica cuando quieras.` }
+  }
+  return null
+}
+
+function emptyNormalizedResponse(requestClass: AIRequestClass): CoachNormalizedResponse {
+  return { message: '', provider: 'mock', traceId: `local-${uuid()}`, requestClass, timestamp: Date.now(), filteredCreateWeek: false }
+}
+
+/** Turno local completo, con las mismas garantías de scope y de conversación. */
+async function appendLocalCoachMessage(
+  get: () => ChatState,
+  set: (partial: Partial<ChatState> | ((state: ChatState) => Partial<ChatState>)) => void,
+  requestScope: RequestScope,
+  userContent: string,
+  content: string,
+): Promise<void> {
+  const sessionId = get().currentSessionId
+  const owns = () => isRequestScopeCurrent(requestScope) && sessionId === get().currentSessionId
+  if (!owns()) return
+  const userMessage = withActiveAthleteStamp<ChatMessage>({
+    id: uuid(), role: 'user', content: userContent, timestamp: Date.now(), chatSessionId: sessionId,
+    contextMeta: buildChatContextMetadata(undefined, 'chat_general'),
+  })
+  const message = withActiveAthleteStamp<ChatMessage>({
+    id: uuid(), role: 'coach', content, timestamp: Date.now(), chatSessionId: sessionId, provider: 'mock',
+  })
+  set({ isLoading: true })
+  try {
+    await db.chatMessages.add(userMessage)
+    if (!owns()) { await db.chatMessages.delete(userMessage.id); return }
+    await db.chatMessages.add(message)
+    if (!owns()) {
+      await db.chatMessages.delete(userMessage.id)
+      await db.chatMessages.delete(message.id)
+      return
+    }
+    void syncService.pushChatMessage(userMessage)
+    void syncService.pushChatMessage(message)
+    set(state => ({ messages: [...state.messages, userMessage, message], conversationsDirty: true }))
+  } catch {
+    await db.chatMessages.delete(userMessage.id)
+    await db.chatMessages.delete(message.id)
+    if (owns()) set({ error: 'No se pudo guardar el mensaje. Verifica el espacio de almacenamiento.' })
+  } finally {
+    if (sessionId === get().currentSessionId) set({ isLoading: false })
+  }
 }
 
 // ─── Normalization warnings ────────────────────────────────────────────────────

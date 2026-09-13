@@ -105,6 +105,8 @@ export interface AITechnicalResult {
   responsePreview?: string
   finishReason?: string
   actionCount?: number
+  /** Structured conversational events (offer_generation/ask_clarification), never counted as actions. */
+  conversationEventCount?: number
   warnings?: string[]
   stageTimings?: StageTiming[]
   repairStats?: {
@@ -150,6 +152,8 @@ export interface AITechnicalResult {
   /** Versioned provider boundary used by Week Creator. */
   weekCreatorContract?: 'skeleton_v2' | 'detailed'
   firstChunkAt?: number
+  /** Llamadas al proveedor en esta solicitud lógica, contando la que respondió. */
+  transientAttempts?: number
   startedAt: number
   completedAt?: number
 }
@@ -221,6 +225,23 @@ export interface WarmupSet {
   percent1RM?: number
 }
 
+export type RunningMaterializationIntent = 'progress' | 'hold' | 'deload' | 'rotate'
+
+/**
+ * Procedencia de la dosis materializada. Permite explicar un recalculado
+ * (qué cambió: duración, perfil, receta o materializador) y conservar la
+ * intención al rematerializar. Registros anteriores no la tienen: se muestran
+ * como "versión original desconocida" y se recalculan con `hold`.
+ */
+export interface RunningMaterialization {
+  intent: RunningMaterializationIntent
+  recipeVersion: number
+  materializerVersion: number
+  /** `AthleteProfile.updatedAt` con el que se resolvieron los ritmos. */
+  profileRevision?: number
+  at: number
+}
+
 export interface RunningDetails {
   templateRef?: RunningTemplateRef
   selectionReason?: string
@@ -230,6 +251,7 @@ export interface RunningDetails {
   targetHrMin?: number
   targetHrMax?: number
   intervalStructure?: RunningIntervalStructure
+  materialization?: RunningMaterialization
 }
 
 export interface CyclingDetails {
@@ -975,8 +997,10 @@ export interface ChatMessage {
 }
 
 export interface ChatContextMetadata {
-  contextVersion: 1
+  contextVersion: 1 | 2
   intent?: ChatContext['intent']
+  /** Ruta resuelta por `resolveChatRoute` al enviar (v2). */
+  route?: 'chat_general' | 'chat_action' | 'week_creator' | 'weekly_summary' | 'plan_builder_redirect'
   traceId?: string
   likelyTruncated?: boolean
   plannedSessionCount?: number
@@ -1021,6 +1045,18 @@ export interface ChatContext {
   intent?: 'general_chat' | 'plan_week' | 'adjust_session' | 'weekly_summary'
   /** Multi-week load analytics — optional, computed async before sending */
   loadAnalytics?: import('../services/loadAnalytics').LoadAnalytics
+  /**
+   * Operación de una `PendingIntent` (A4.4) ya confirmada por el usuario en un
+   * turno anterior, pendiente de ejecutar con IA (`update_session`/`add_session`).
+   * Sólo datos escalares — `known` nunca lleva identidad de contenido, igual
+   * que el resto de lo que el modelo puede recibir sobre acciones. Efímero: no
+   * se persiste en `ChatMessage.context`.
+   */
+  pendingOperation?: {
+    type: 'update_session' | 'add_session' | 'move_session' | 'delete_session'
+    known: Record<string, string | number>
+    missing: string[]
+  }
 }
 
 // ─── Nutrition ────────────────────────────────────────────────────────────────

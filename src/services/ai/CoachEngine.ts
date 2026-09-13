@@ -25,6 +25,8 @@ type CoachSendOptions = {
   onChunk?: (chunk: string) => void
   signal?: AbortSignal
   surface?: AITechnicalSurface
+  /** Atleta capturado al inicio de la operación; evita leer el holder global tras un await. */
+  targetAthleteId?: string | null
 }
 type CoachDispatcherOptions = CoachSendOptions & {
   requestClass?: AIRequestClass
@@ -193,7 +195,7 @@ async function sendTrackedCoachRequest(
         userMessage,
         requestClass,
         traceId,
-        targetAthleteId: resolveRequestTargetAthleteId(),
+        targetAthleteId: resolveRequestTargetAthleteId(options?.targetAthleteId),
         conversation: (context.recentMessages ?? []).map(message => ({
           role: message.role === 'coach' ? 'assistant' : 'user',
           content: message.content,
@@ -259,7 +261,8 @@ async function sendTrackedCoachRequest(
             },
           }
         : postProcessedResult
-      if (requestClass === 'chat_action' && !safetyBlocked && (finalResult.actions?.length ?? 0) === 0) {
+      const hasConversationEvents = (finalResult.conversationEvents?.length ?? 0) > 0
+      if (requestClass === 'chat_action' && !safetyBlocked && !hasConversationEvents && (finalResult.actions?.length ?? 0) === 0) {
         throw createProviderError(
           provider.name,
           'parse_error',
@@ -272,7 +275,9 @@ async function sendTrackedCoachRequest(
         outcome: normalizedOutcome,
         responseCharCount: finalResult.message.length,
         actionCount: finalResult.actions?.length ?? 0,
+        conversationEventCount: finalResult.conversationEvents?.length ?? 0,
         warnings: finalResult.meta?.warnings,
+        transientAttempts: finalResult.transientAttempts,
         ...(safetyBlocked
           ? {
               proposalCreated: false,
@@ -298,6 +303,9 @@ async function sendTrackedCoachRequest(
             : error.code === 'rate_limit' ? 'rate_limit'
             : error.code === 'parse_error' ? 'parse_fail'
             : 'error'
+        if (error.transientAttempts !== undefined) {
+          useAIDebugStore.getState().updateRequest(traceId, { transientAttempts: error.transientAttempts })
+        }
       }
       throw error
     } finally {

@@ -254,6 +254,23 @@ Nada de esto justifica comprar una generación completa sólo para verificarlo.
 Aprovechar la próxima corrida real. Confirmar saldo de API con el owner antes de
 cualquier corrida pagada.
 
+### Fase A del refactor de inteligencia de coaching — cerrada localmente (2026-09-12)
+
+Las 11 tareas de `docs/superpowers/specs/2026-09-12-coaching-intelligence-refactor-design.md`
+(§4, entregas A1–A7) están implementadas, sin migraciones propias de esta fase.
+El probe original se volvió a correr sobre el árbol completo y su salida quedó
+en `docs/reviews/fixtures/coaching-refactor-2026-09-08/probe-after-phase-a.json`;
+F03 (squash), F05 (running) y F07 (routing del chat) quedan además fijados
+como regresión permanente en `src/services/__tests__/coachingRefactorProbes.test.ts`,
+y F04 en `src/services/training/__tests__/sessionDoseFinalizerZ2.test.ts`. Suite
+completa, lint, `tsc -b`, build y `git diff --check` en verde. Pendiente:
+deploy y smoke manual del formulario de running (persistencia de plantilla e
+`intent`) y del chat con oferta estructurada (intención pendiente y su
+resolución de referente). La edición de running requiere una cuenta coach
+operativa tras el smoke de Entrega 2 (§6), por la limitación de UI de §25.
+Revisión adicional del 2026-09-13 y correcciones:
+[hallazgos de cierre](docs/reviews/2026-09-13-coaching-phase-a-review.md).
+
 ### 7. Efecto deportivo de la precisión de Plan Builder (`36f5570`)
 
 Desplegado y sin observar: la única generación real posterior fue de 2 semanas

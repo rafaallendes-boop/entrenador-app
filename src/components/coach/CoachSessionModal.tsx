@@ -106,6 +106,8 @@ export default function CoachSessionModal({
       <div className="relative w-full max-h-[92vh] overflow-y-auto rounded-t-2xl border-t border-surface-border bg-surface-card md:max-w-3xl md:rounded-2xl md:border md:max-h-[88vh]">
         <SessionForm
           athleteProfile={athleteProfile}
+          origin={template ? 'template' : session ? 'existing' : 'new'}
+          sessionStatus={session?.status}
           initialValues={templateDraftState?.draft ?? (session ? sessionToDraft(session) : undefined)}
           defaultSport={defaultSport}
           defaultDate={defaultDate}

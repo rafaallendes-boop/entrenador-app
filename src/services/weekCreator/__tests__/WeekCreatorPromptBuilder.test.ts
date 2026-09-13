@@ -257,6 +257,22 @@ describe('buildWeekCreatorPrompt quality blocks', () => {
     expect(prompt).toContain('REDUCIR CARGA REAL — el último registro marca energía 4/10')
   })
 
+  it('uses the log with the latest date, not positional order, when several day logs are present', () => {
+    // Regression guard for the final-review finding: buildWeekCreatorExecutionSignals
+    // must pick the log by MAX date, never by array position — this caller pre-sorts
+    // its own copy DESCENDING (recentLogs above) while the hydrator's call site passes
+    // context.weekDayLogs ASCENDING; a positional pick (`[0]` or `.at(-1)`) is correct
+    // for exactly one of the two and silently wrong for the other.
+    const prompt = buildPrompt({
+      weekDayLogs: [
+        { id: 'log-old', date: '2026-06-10', energyLevel: 8, painLevel: 0, updatedAt: 0 },
+        { id: 'log-new', date: '2026-06-12', energyLevel: 4, painLevel: 2, updatedAt: 0 },
+      ],
+    }, { currentFatigue: 'fresh' })
+
+    expect(prompt).toContain('REDUCIR CARGA REAL — el último registro marca energía 4/10')
+  })
+
   it('uses conservative or high-load directives from recent history', () => {
     const noHistoryPrompt = buildPrompt({}, { currentFatigue: 'normal' })
     expect(noHistoryPrompt).toContain('INICIAR CON CARGA CONSERVADORA')

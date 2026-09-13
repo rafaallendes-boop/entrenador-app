@@ -23,7 +23,8 @@ const REQUEST_CLASSES = [
 ] as const
 
 const TOKEN_BASELINES: Record<typeof REQUEST_CLASSES[number], { target: number; tolerancePct: number }> = {
-  chat_general: { target: 562, tolerancePct: 10 },
+  // Fase A: contrato de ofertas y aclaraciones estructuradas (+168 tokens).
+  chat_general: { target: 730, tolerancePct: 10 },
   chat_action: { target: 3988, tolerancePct: 10 },
   // Phase 3: the provider coordinates a compact weekly skeleton and local
   // selectors hydrate the executable sport details.

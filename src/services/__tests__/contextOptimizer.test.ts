@@ -71,12 +71,24 @@ describe('contextOptimizer budgets by request class', () => {
     expect(detectChatIntent('pon descanso el lunes')).toBe('adjust_session')
     expect(detectChatIntent('borra el entreno del jueves')).toBe('adjust_session')
     expect(detectChatIntent('Resumeme la semana y dejame un balance corto')).toBe('weekly_summary')
+    // A4.2: la UI ya no clasifica por su cuenta.
+    expect(detectChatIntent('Créame una sesión de pesas')).toBe('adjust_session')
+    expect(detectChatIntent('¿Cómo estuvo mi sesión del lunes?')).toBe('general_chat')
   })
 
   it('maps weekly summary intent to the matching request class', () => {
     expect(inferRequestClassFromIntent('weekly_summary')).toBe('weekly_summary')
-    expect(inferRequestClassFromIntent('plan_week')).toBe('chat_action')
+    expect(inferRequestClassFromIntent('plan_week')).toBe('week_creator')
     expect(inferRequestClassFromIntent('general_chat')).toBe('chat_general')
+  })
+
+  it('A4.4: no recorta pendingOperation al optimizar el contexto', () => {
+    const withPending: ChatContext = {
+      ...context,
+      pendingOperation: { type: 'move_session', known: { sessionId: 's-mon', targetDate: '2026-09-18' }, missing: [] },
+    }
+    expect(optimizeChatContext(withPending, 'chat_action').pendingOperation).toEqual(withPending.pendingOperation)
+    expect(optimizeChatContext(context, 'chat_action').pendingOperation).toBeUndefined()
   })
 })
 

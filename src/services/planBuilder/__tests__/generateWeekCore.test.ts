@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { AthleteProfile, PlanWizardConfig } from '../../../types'
 import type { AIRawResponse } from '../../ai/types'
 import type { TrainingPlan, TrainingPlanWeek } from '../../../types/planBuilder'
+import { createStageTracker } from '../../ai/stageLogger'
 import { generateWeekCore } from '../generateWeekCore'
 import { PLAN_BUILDER_WEEK_RESPONSE_SCHEMA } from '../planBuilderResponseSchema'
 
@@ -230,4 +231,15 @@ describe('week generation error summaries', () => {
     expect(summary).toContain('trainingFocus en {technical, tactical, physical, conditioned_games}')
     expect(summary).toContain('timeBlock debe ser exactamente "AM" o "PM"')
   })
+})
+
+
+it('no registra una reparación inexistente cuando el proveedor no devuelve acciones', async () => {
+  const tracker = createStageTracker('invalid', 'plan_builder_week')
+  await generateWeekCore({
+    plan: makePlan(), week: makeWeek(), profile: makeProfile(), traceId: 'invalid',
+    wizardConfig: makeWizardConfig(), planWeekDescriptors: [{ weekIndex: 0, phase: 'build' }],
+    callLLM: async () => makeRaw('No hay acciones'), stageTracker: tracker,
+  })
+  expect(tracker.timings().map(t => t.stage)).toEqual(['prompt_build', 'provider_call', 'normalize'])
 })

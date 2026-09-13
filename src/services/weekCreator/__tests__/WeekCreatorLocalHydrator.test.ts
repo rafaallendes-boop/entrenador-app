@@ -3,11 +3,14 @@ import { describe, expect, it } from 'vitest'
 import type { ChatContext, CoachAction } from '../../../types'
 import type { CoachNormalizedResponse } from '../../ai/types'
 import { findSquashDrillByName } from '../../training/drillLibrary'
+import { decideLoadDirective } from '../../training/loadDirectivePolicy'
+import { hasSquashCompetitiveExposureContent } from '../../training/squashMatchRole'
 import type { WeekCreatorEffectiveConfig } from '../WeekCreatorConfig'
 import {
   hydrateWeekCreatorSkeleton,
   hydrateWeekCreatorResponse,
   overlayWeekCreatorSkeletonIntent,
+  buildWeekCreatorHydrationRepairContext,
   type WeekCreatorHydrationResult,
 } from '../WeekCreatorLocalHydrator'
 import type { WeekCreatorSkeleton } from '../weekCreatorSkeleton'
@@ -379,5 +382,81 @@ describe('WeekCreatorLocalHydrator', () => {
     // The model objective has no trailing punctuation; the append must add it
     // instead of running the two sentences together.
     expect(objective).toContain('Sostener el ritmo de la semana. Foco:')
+  })
+})
+
+describe('A1 — señales de ejecución en el contexto de reparación', () => {
+  it('transporta el dolor declarado al RepairContext', () => {
+    const context = makeContext()
+    context.weekDayLogs = [{ id: 'log-1', date: '2026-07-19', painLevel: 8, updatedAt: 0 }]
+    const repairContext = buildWeekCreatorHydrationRepairContext({
+      context,
+      config: makeConfig(),
+      targetWeekStart: TARGET_WEEK,
+    })
+    expect(repairContext.executionSignals?.latestPainLevel).toBe(8)
+    expect(decideLoadDirective(repairContext.executionSignals ?? {}).verdict).toBe('reduce')
+  })
+
+  it('con varios day logs, transporta el más reciente (no el primero del arreglo ascendente)', () => {
+    const context = makeContext()
+    context.weekDayLogs = [
+      { id: 'log-old', date: '2026-07-13', painLevel: undefined, updatedAt: 0 },
+      { id: 'log-new', date: '2026-07-19', painLevel: 8, updatedAt: 0 },
+    ]
+    const repairContext = buildWeekCreatorHydrationRepairContext({
+      context,
+      config: makeConfig(),
+      targetWeekStart: TARGET_WEEK,
+    })
+    expect(repairContext.executionSignals?.latestPainLevel).toBe(8)
+    expect(decideLoadDirective(repairContext.executionSignals ?? {}).verdict).toBe('reduce')
+  })
+
+  it('con dolor 8/10 la semana hidratada no materializa la meta de partidos duros', () => {
+    // Fase build a ~5 semanas del evento; el test imprime la fase resuelta
+    // para que quien lo ejecute confirme `build` antes de leer el resultado.
+    const buildContext = (painLevel?: number) => {
+      const context = makeContext()
+      context.athleteProfile!.goalEvents = [{
+        id: 'squash-event', title: 'Open objetivo', date: '2026-08-22', sport: 'squash',
+        priority: 'primary', competitiveLevel: 'competitive',
+      }]
+      context.athleteProfile!.planWizardConfig = {
+        goalEventId: 'squash-event', trainingDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
+        sessionsPerWeek: 6, sessionDurationMins: 60, allowDoubleSession: false,
+        currentFitnessLevel: 'fit', currentFatigue: 'normal', partnerAvailability: 'partner',
+        targetHardPrimaryMatches: 3, createdAt: '2026-07-01T00:00:00.000Z', updatedAt: '2026-07-01T00:00:00.000Z',
+      }
+      context.weekDayLogs = painLevel != null ? [{ id: 'log-1', date: '2026-07-19', painLevel, updatedAt: 0 }] : []
+      return context
+    }
+    const config = makeConfig({
+      trainingDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
+      sessionsPerWeek: 6, maxSessionsPerWeek: 6, targetHardPrimaryMatches: 3,
+    })
+    const skeleton: WeekCreatorSkeleton = {
+      type: 'create_week', reason: 'Semana build', targetDate: TARGET_WEEK,
+      sessions: [
+        { ...session('2026-07-20', 'AM', 'squash', 'Squash técnico'), focusKey: 'squash_technical' },
+        { ...session('2026-07-21', 'AM', 'squash', 'Squash control', undefined, 'control'), focusKey: 'squash_control' },
+        { ...session('2026-07-22', 'AM', 'strength', 'Fuerza base'), focusKey: 'strength_lower' },
+        { ...session('2026-07-23', 'AM', 'squash', 'Squash técnico 2'), focusKey: 'squash_technical' },
+      ],
+    }
+    const hydrate = (painLevel?: number) => hydrateWeekCreatorSkeleton({
+      skeleton, response: response(), context: buildContext(painLevel), config, targetWeekStart: TARGET_WEEK,
+    })
+    const phase = buildWeekCreatorHydrationRepairContext({ context: buildContext(), config, targetWeekStart: TARGET_WEEK }).week.phase
+    expect(phase, 'el caso dirigido necesita fase build; ajusta la fecha del evento si cambia el calendario de fases').toBe('build')
+
+    const countMatches = (result: WeekCreatorHydrationResult) => (result.response.actions?.[0]?.sessions ?? [])
+      .filter((candidate) => candidate.sessionType === 'squash' && hasSquashCompetitiveExposureContent(candidate.squashDetails))
+      .length
+    const withoutPain = countMatches(hydrate())
+    const withPain = countMatches(hydrate(8))
+    expect(withoutPain).toBeGreaterThanOrEqual(2)
+    expect(withPain).toBeLessThan(withoutPain)
+    expect(withPain).toBeLessThanOrEqual(1)
   })
 })

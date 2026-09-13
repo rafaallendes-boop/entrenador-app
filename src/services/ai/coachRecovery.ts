@@ -39,7 +39,7 @@ export function shouldRetryAction(response: CoachNormalizedResponse): boolean {
   return (
     response.meta?.actionParseFailed === true
     || response.meta?.likelyTruncated === true
-    || (response.actions?.length ?? 0) === 0
+    || ((response.actions?.length ?? 0) === 0 && (response.conversationEvents?.length ?? 0) === 0)
   )
 }
 
@@ -86,21 +86,29 @@ export async function sendWithRecovery(
     temperature: Math.min(request.temperature ?? 0.7, 0.3),
     signal: request.signal,
     onChunk: undefined,
+  }).catch((error: unknown) => {
+    if (error instanceof AIProviderError) {
+      error.transientAttempts = (firstNormalized.transientAttempts ?? 1) + 1
+    }
+    throw error
   })
   const retryNormalized = normalizeResponse(retryRaw)
 
   if (shouldRejectAfterRetry(retryNormalized)) {
-    throw createProviderError(
+    const error = createProviderError(
       provider.name,
       'parse_error',
       'No pude crear la propuesta de forma segura. Intenta de nuevo.',
       true,
     )
+    error.transientAttempts = (firstNormalized.transientAttempts ?? 1) + 1
+    throw error
   }
 
   return {
     ...retryNormalized,
     retryUsed: true,
+    transientAttempts: (firstNormalized.transientAttempts ?? 1) + 1,
     fallbackUsed: retryNormalized.fallbackUsed || firstNormalized.fallbackUsed,
     meta: {
       hadActionsMarkup: retryNormalized.meta?.hadActionsMarkup ?? false,
@@ -153,14 +161,25 @@ async function callWithTransientRetry(
   for (let attempt = 0; attempt <= RETRY_BACKOFF_MS.length; attempt++) {
     try {
       const raw = await provider.call(request)
-      return normalizeResponse(raw)
+      const normalized = normalizeResponse(raw)
+      return { ...normalized, retryUsed: normalized.retryUsed || attempt > 0, transientAttempts: attempt + 1 }
     } catch (error) {
       lastError = error
       if (!isRetryableProviderError(error) || attempt === RETRY_BACKOFF_MS.length) {
+        // Stamp the attempt count on the error before rethrowing, even if exhausted/non-retryable
+        if (error instanceof AIProviderError) {
+          error.transientAttempts = attempt + 1
+        }
         throw error
       }
       await delay(RETRY_BACKOFF_MS[attempt], request.signal)
-      if (request.signal?.aborted) throw error
+      if (request.signal?.aborted) {
+        // Stamp before aborting too
+        if (error instanceof AIProviderError) {
+          error.transientAttempts = attempt + 1
+        }
+        throw error
+      }
     }
   }
   // Unreachable, but TS needs it.

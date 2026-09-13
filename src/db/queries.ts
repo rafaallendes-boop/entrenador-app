@@ -71,7 +71,7 @@ function resolveCurrentAthleteScopeKind(): AthleteScopeKind {
   })
 }
 
-function captureActiveWeekScope(): AthleteWeekScope | null {
+export function captureActiveWeekScope(): AthleteWeekScope | null {
   const kind = resolveCurrentAthleteScopeKind()
   // `none` is an empty scope, not the legacy pre-hydration mode. Returning
   // null here is safe because every fallback below first checks
@@ -322,8 +322,9 @@ async function upsertWeekSummaryLegacy(
 export const upsertWeekSummary = async (
   weekStartISO: string,
   patch: WeekSummaryPatch,
+  explicitScope?: AthleteWeekScope | null,
 ): Promise<WeekSummary> => {
-  const scope = captureActiveWeekScope()
+  const scope = explicitScope ?? captureActiveWeekScope()
   const result = scope
     ? await upsertWeekSummaryCore(scope, weekStartISO, patch)
     : await upsertWeekSummaryLegacy(weekStartISO, patch)

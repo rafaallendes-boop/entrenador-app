@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "networkAttempts": [],
+  "squashCases": [
+    {
+      "requestedKind": "technical",
+      "returnedKind": "technical",
+      "blocks": [
+        "technical"
+      ],
+      "warnings": [
+        {
+          "code": "accessory_dropped",
+          "message": "Se retiró el bloque de shadows: no queda tiempo para un drill viable de 3 min sin recortar el objetivo principal (technical)."
+        }
+      ]
+    },
+    {
+      "requestedKind": "control",
+      "returnedKind": "control",
+      "blocks": [
+        "control"
+      ],
+      "warnings": [
+        {
+          "code": "accessory_dropped",
+          "message": "Se retiró el bloque de shadows: no queda tiempo para un drill viable de 3 min sin recortar el objetivo principal (control)."
+        }
+      ]
+    }
+  ],
+  "runningConversion": {
+    "ok": true,
+    "type": "z2",
+    "targetPaceMin": "6:00",
+    "targetPaceMax": "6:30",
+    "blockPaces": [
+      "6:30 /km",
+      "6:30 /km",
+      "6:30 /km"
+    ]
+  },
+  "repetitionCases": [
+    {
+      "intent": "progress",
+      "repetitions": 11
+    },
+    {
+      "intent": "submit_default",
+      "repetitions": 9
+    }
+  ],
+  "routeCases": [
+    {
+      "message": "¿Cómo estuvo mi sesión del lunes?",
+      "uiClass": "chat_general",
+      "effectiveRoute": "chat_general"
+    },
+    {
+      "message": "Dame feedback de mi sesión del lunes",
+      "uiClass": "chat_general",
+      "effectiveRoute": "chat_general"
+    },
+    {
+      "message": "Créame una sesión de pesas",
+      "uiClass": "chat_action",
+      "effectiveRoute": "chat_action"
+    },
+    {
+      "message": "¿Cómo me prepararías para tres semanas de vacaciones?",
+      "uiClass": "chat_general",
+      "effectiveRoute": "chat_general"
+    },
+    {
+      "message": "Genera un plan completo hasta el torneo",
+      "uiClass": "chat_general",
+      "effectiveRoute": "plan_builder_redirect"
+    }
+  ],
+  "retainedSessionIds": [
+    "session-0",
+    "session-1",
+    "session-2",
+    "session-3",
+    "session-4",
+    "session-5"
+  ]
+}

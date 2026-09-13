@@ -7,6 +7,7 @@ import {
   shouldRetryAction as shouldRetry,
 } from '../ai/coachRecovery'
 import type { AIProvider, CoachNormalizedResponse } from '../ai/types'
+import { AIProviderError } from '../ai/types'
 
 function makeResponse(overrides: Partial<CoachNormalizedResponse> = {}): CoachNormalizedResponse {
   return {
@@ -100,6 +101,16 @@ describe('CoachEngine recovery heuristics', () => {
     })
 
     expect(shouldRetry(response)).toBe(true)
+  })
+
+  it('no reintenta una respuesta que sólo trae una aclaración estructurada', () => {
+    const response = makeResponse({
+      requestClass: 'chat_action',
+      message: '¿Qué sesión quieres mover?',
+      conversationEvents: [{ kind: 'ask_clarification', operation: 'move_session', missing: ['sessionId'], known: {}, summary: 'Mover' }],
+      meta: { hadActionsMarkup: true, actionParseFailed: false, likelyTruncated: false },
+    })
+    expect(shouldRetry(response)).toBe(false)
   })
 
   it('fails safely when both action attempts are truncated', async () => {
@@ -217,4 +228,61 @@ describe('CoachEngine recovery heuristics', () => {
     expect(response.retryUsed).toBe(true)
     expect(response.meta?.likelyTruncated).toBe(false)
   })
+
+  it('marca retryUsed y cuenta intentos cuando hubo timeouts transitorios', async () => {
+    let calls = 0
+    const provider: AIProvider = {
+      name: 'mock',
+      call: async () => {
+        calls += 1
+        if (calls < 3) throw new AIProviderError('mock', 'timeout', 'timeout', true)
+        return { text: 'ok <actions>[{"type":"skip_session","sessionId":"s1","reason":"x"}]</actions>', provider: 'mock', requestClass: 'chat_action' }
+      },
+    }
+    const response = await sendWithRecovery(provider, { systemPrompt: '', userMessage: 'salta la sesión', requestClass: 'chat_action', traceId: 't' })
+    expect(calls).toBe(3)
+    expect(response.retryUsed).toBe(true)
+    expect(response.transientAttempts).toBe(3)
+  })
+
+  it('cuenta el intento de formato aunque falle', async () => {
+    let calls = 0
+    const provider: AIProvider = {
+      name: 'mock',
+      call: async () => { calls += 1; return { text: 'sin acciones <actions>{no es json</actions>', provider: 'mock', requestClass: 'chat_action' } },
+    }
+    await expect(sendWithRecovery(provider, { systemPrompt: '', userMessage: 'salta la sesión', requestClass: 'chat_action', traceId: 't' }))
+      .rejects.toMatchObject({ code: 'parse_error', transientAttempts: 2 })
+    expect(calls).toBe(2)
+  })
+
+  it('stampa transientAttempts cuando todos los intentos de timeout fallan', async () => {
+    let calls = 0
+    const provider: AIProvider = {
+      name: 'mock',
+      call: async () => {
+        calls += 1
+        throw new AIProviderError('mock', 'timeout', 'timeout on all attempts', true)
+      },
+    }
+    await expect(sendWithRecovery(provider, { systemPrompt: '', userMessage: 'salta la sesión', requestClass: 'chat_action', traceId: 't' }))
+      .rejects.toMatchObject({ code: 'timeout', transientAttempts: 3 })
+    expect(calls).toBe(3)
+  })
+})
+
+
+it('cuenta el retry de formato cuando el proveedor falla antes de responder', async () => {
+  let calls = 0
+  const provider: AIProvider = {
+    name: 'mock',
+    call: async () => {
+      calls += 1
+      if (calls === 2) throw new AIProviderError('mock', 'timeout', 'timeout', true)
+      return { text: 'sin acciones <actions>{no es json</actions>', provider: 'mock', requestClass: 'chat_action' }
+    },
+  }
+  await expect(sendWithRecovery(provider, { systemPrompt: '', userMessage: 'salta la sesión', requestClass: 'chat_action', traceId: 't' }))
+    .rejects.toMatchObject({ code: 'timeout', transientAttempts: 2 })
+  expect(calls).toBe(2)
 })

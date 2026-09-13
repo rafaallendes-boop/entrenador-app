@@ -223,6 +223,7 @@ export default function CoachLibraryPanel() {
           <div className="relative max-h-[92vh] w-full overflow-y-auto rounded-t-2xl border-t border-surface-border bg-surface-card md:max-w-3xl md:rounded-2xl md:border">
             <SessionForm
               mode="template"
+              origin={editor.mode === 'edit' ? 'existing' : 'new'}
               initialName={editor.mode === 'edit' ? editor.opened.name : undefined}
               initialValues={editor.mode === 'edit' ? editor.draft : undefined}
               defaultSport={editor.mode === 'edit' ? editor.opened.payload.type : 'squash'}

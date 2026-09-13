@@ -272,4 +272,44 @@ describe('promptBuilder request class branching', () => {
     expect(prompt).toContain('rejected: <<user-text>>Agregar running el viernes PM<</user-text>>')
     expect(prompt).toContain('No digas que una propuesta rechazada fue aplicada')
   })
+
+  it('A4.4: incluye la sección de operación confirmada cuando el contexto trae pendingOperation', () => {
+    const prompt = buildCoachSystemPrompt({
+      ...makeContext(),
+      pendingOperation: { type: 'move_session', known: { sessionId: 's-mon', targetDate: '2026-09-18' }, missing: [] },
+    }, {
+      requestClass: 'chat_action',
+      userMessage: 'la del lunes',
+    })
+
+    expect(prompt).toContain('OPERACIÓN CONFIRMADA POR EL USUARIO')
+    expect(prompt).toContain('Tipo: move_session')
+    // Los valores de `known` pasan por el mismo saneador que cualquier otro
+    // texto no confiable del archivo: envueltos en marcadores <<user-text>>.
+    expect(prompt).toContain('sessionId=<<user-text>>s-mon<</user-text>>')
+    expect(prompt).toContain('targetDate=<<user-text>>2026-09-18<</user-text>>')
+    expect(prompt).toContain('Emite exactamente UNA acción de ese tipo')
+  })
+
+  it('A4.4: omite la sección de operación confirmada cuando no hay pendingOperation', () => {
+    const prompt = buildCoachSystemPrompt(makeContext(), { requestClass: 'chat_action', userMessage: 'ajusta eso' })
+
+    expect(prompt).not.toContain('OPERACIÓN CONFIRMADA POR EL USUARIO')
+  })
+
+  it('A4.4: un valor de known inesperadamente largo se acota, no puede desplazar el resto del prompt', () => {
+    const longValue = 'x'.repeat(500)
+    const prompt = buildCoachSystemPrompt({
+      ...makeContext(),
+      pendingOperation: { type: 'update_session', known: { sessionId: longValue }, missing: [] },
+    }, { requestClass: 'chat_action', userMessage: 'ajusta eso' })
+
+    expect(prompt).toContain('OPERACIÓN CONFIRMADA POR EL USUARIO')
+    // sanitizeUserText corta a 80 chars (más los marcadores <<user-text>>…<</user-text>>).
+    expect(prompt).not.toContain(longValue)
+    const section = prompt.slice(prompt.indexOf('OPERACIÓN CONFIRMADA POR EL USUARIO'))
+    const knownLine = section.split('\n').find(line => line.startsWith('- Datos ya resueltos'))
+    expect(knownLine).toBeDefined()
+    expect((knownLine ?? '').length).toBeLessThan(150)
+  })
 })

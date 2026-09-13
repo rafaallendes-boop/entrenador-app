@@ -1482,3 +1482,109 @@ describe('responseNormalizer', () => {
     })
   })
 })
+
+describe('A4.3 — eventos conversacionales', () => {
+  const raw = (text: string, requestClass: 'chat_general' | 'chat_action' = 'chat_general') => ({
+    text, provider: 'mock' as const, requestClass, traceId: 't',
+  })
+
+  it('extrae offer_generation a conversationEvents y no lo cuenta como acción', () => {
+    const response = normalizeResponse(raw(
+      'Puedo armarte la semana completa.\n<actions>[{"type":"offer_generation","route":"week_creator","targetWeekStart":"2026-09-14","summary":"Armar la semana del 14"}]</actions>',
+    ))
+    expect(response.actions).toBeUndefined()
+    expect(response.conversationEvents).toEqual([
+      { kind: 'offer_generation', route: 'week_creator', targetWeekStart: '2026-09-14', summary: 'Armar la semana del 14' },
+    ])
+    expect(response.meta?.outcome).toBe('ok')
+    expect(response.meta?.invalidActionCount).toBe(0)
+    expect(response.message).toBe('Puedo armarte la semana completa.')
+  })
+
+  it('extrae ask_clarification con datos conocidos y faltantes', () => {
+    const response = normalizeResponse(raw(
+      '¿Qué sesión quieres mover?\n<actions>[{"type":"ask_clarification","operation":"move_session","missing":["sessionId"],"known":{"targetDate":"2026-09-18"},"summary":"Mover una sesión al viernes"}]</actions>',
+      'chat_action',
+    ))
+    expect(response.actions).toBeUndefined()
+    expect(response.conversationEvents?.[0]).toMatchObject({ kind: 'ask_clarification', operation: 'move_session', missing: ['sessionId'], known: { targetDate: '2026-09-18' } })
+    expect(response.meta?.actionParseFailed).toBe(false)
+  })
+
+  it('convive con acciones reales sin mezclarse', () => {
+    const response = normalizeResponse(raw(
+      'Listo.\n<actions>[{"type":"move_session","sessionId":"s1","targetDate":"2026-09-18","reason":"pedido"},{"type":"offer_generation","route":"week_creator","summary":"Después te armo la semana"}]</actions>',
+      'chat_action',
+    ))
+    expect(response.actions).toHaveLength(1)
+    expect(response.conversationEvents).toHaveLength(1)
+  })
+
+  it('descarta eventos malformados sin contaminar el conteo de acciones inválidas', () => {
+    const response = normalizeResponse(raw('<actions>[{"type":"offer_generation","route":"otra_cosa","summary":"x"}]</actions>'))
+    expect(response.conversationEvents).toBeUndefined()
+    expect(response.meta?.invalidActionCount).toBe(0)
+    expect(response.meta?.outcome).toBe('ok')
+  })
+
+  it('un evento-solo por el fallback de JSON inline (sin <actions>) no deja el JSON crudo en el mensaje', () => {
+    // Gemini a veces omite el wrapper <actions> y deja el JSON suelto junto al
+    // texto narrativo. Mismo shape que el test de "parses inline JSON actions
+    // even when the model omits the actions tag", pero con un evento en vez de
+    // una acción real — I1: sin acciones ni parseFailed, nada forzaba antes el
+    // stripping del JSON del mensaje visible.
+    const response = normalizeResponse(raw(
+      [
+        'Puedo armarte la semana completa.',
+        JSON.stringify([
+          { type: 'offer_generation', route: 'week_creator', summary: 'Armar la semana del 14' },
+        ]),
+      ].join('\n'),
+    ))
+    expect(response.actions).toBeUndefined()
+    expect(response.conversationEvents).toEqual([
+      { kind: 'offer_generation', route: 'week_creator', summary: 'Armar la semana del 14' },
+    ])
+    expect(response.message).toBe('Puedo armarte la semana completa.')
+    expect(response.message).not.toContain('offer_generation')
+    expect(response.message).not.toContain('{')
+  })
+
+  it('un evento-solo por el fallback de JSON de respuesta completa no deja el JSON crudo en el mensaje', () => {
+    // Toda la respuesta es JSON, sin texto narrativo y sin <actions>. Un array
+    // de dos objetos impreso con indentación (`null, 2`) rompe las dos rutas
+    // de extracción "inline" — el array no arranca literalmente en "[{" (hay
+    // salto de línea entre ambos) y el rango primer-"{" a último-"}" abarca
+    // los dos objetos separados por coma, que no es JSON válido por sí solo—
+    // así que sólo `extractWholeResponseActionsJson` puede resolverlo.
+    const text = JSON.stringify(
+      [
+        { type: 'offer_generation', route: 'week_creator', summary: 'Puedo armar la semana' },
+        { type: 'ask_clarification', operation: 'move_session', missing: ['sessionId'], summary: '¿Qué sesión mover?' },
+      ],
+      null,
+      2,
+    )
+    const response = normalizeResponse(raw(text))
+    expect(response.actions).toBeUndefined()
+    expect(response.conversationEvents).toHaveLength(2)
+    expect(response.conversationEvents).toEqual([
+      { kind: 'offer_generation', route: 'week_creator', summary: 'Puedo armar la semana' },
+      { kind: 'ask_clarification', operation: 'move_session', missing: ['sessionId'], known: {}, summary: '¿Qué sesión mover?' },
+    ])
+    expect(response.message).toBe('')
+    expect(response.message).not.toContain('offer_generation')
+  })
+})
+
+
+it('normaliza múltiples eventos con el discriminador alternativo action sin retry', () => {
+  const response = normalizeResponse({
+    text: 'Puedo ayudarte. <actions>[{"action":"offer_generation","route":"week_creator","summary":"Crear semana"},{"action":"ask_clarification","operation":"move_session","known":{},"missing":["sessionId"],"summary":"Mover sesión"}]</actions>',
+    provider: 'mock', requestClass: 'chat_action',
+  })
+  expect(response.conversationEvents?.map(event => event.kind)).toEqual(['offer_generation', 'ask_clarification'])
+  expect(response.actions).toBeUndefined()
+  expect(response.meta?.actionParseFailed).toBe(false)
+  expect(response.meta?.invalidActionCount).toBe(0)
+})

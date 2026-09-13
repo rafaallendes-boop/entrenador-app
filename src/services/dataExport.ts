@@ -21,6 +21,7 @@ import type {
   MacroWeekCoherenceSummary,
   PhaseSportTargetRole,
   ReadinessDaily,
+  RunningMaterializationIntent,
   Session,
   SupportedSport,
   TrainingPriority,
@@ -1706,6 +1707,20 @@ function optionalRunningIntervalStructure(value: unknown, path: string): NonNull
   }
 }
 
+const RUNNING_MATERIALIZATION_INTENTS = ['progress', 'hold', 'deload', 'rotate'] as const
+
+function optionalRunningMaterialization(value: unknown, path: string): NonNullable<Session['runningDetails']>['materialization'] {
+  if (value == null) return undefined
+  const row = ensureRecord(value, path)
+  return {
+    intent: requireEnum(row.intent, RUNNING_MATERIALIZATION_INTENTS, `${path}.intent`) as RunningMaterializationIntent,
+    recipeVersion: requireFiniteNumber(row.recipeVersion, `${path}.recipeVersion`),
+    materializerVersion: requireFiniteNumber(row.materializerVersion, `${path}.materializerVersion`),
+    profileRevision: optionalFiniteNumber(row.profileRevision, `${path}.profileRevision`),
+    at: requireFiniteNumber(row.at, `${path}.at`),
+  }
+}
+
 function optionalRunningDetails(value: unknown, path: string): Session['runningDetails'] {
   if (value == null) return undefined
   const row = ensureRecord(value, path)
@@ -1719,6 +1734,7 @@ function optionalRunningDetails(value: unknown, path: string): Session['runningD
     targetPaceMax: optionalString(row.targetPaceMax, `${path}.targetPaceMax`),
     targetHrMin: optionalFiniteNumber(row.targetHrMin, `${path}.targetHrMin`),
     targetHrMax: optionalFiniteNumber(row.targetHrMax, `${path}.targetHrMax`),
+    materialization: optionalRunningMaterialization(row.materialization, `${path}.materialization`),
   }
 }
 

@@ -12,6 +12,8 @@ import { repairGeneratedWeek, type RepairContext } from './repairWeek'
 import { summarizeTaxonomy, type RepairTaxonomySummary } from './repairTaxonomy'
 import { validatePlanWeek } from './validator'
 import type { PlanWeekDescriptor } from './blockIdentity'
+import type { StageTracker } from '../ai/stageLogger'
+import { trackStage } from '../ai/stageLogger'
 
 const EMPTY_REPAIR_TAXONOMY: RepairTaxonomySummary = {
   hydrationActionCount: 0,
@@ -113,6 +115,7 @@ export interface GenerateWeekCoreInput {
   maxTokens?: number
   traceId: string
   callLLM: WeekLLMCaller
+  stageTracker?: StageTracker
 }
 
 export function pickCreateWeekAction(actions: CoachAction[] | undefined, weekStartDate: string): CoachAction | undefined {
@@ -212,6 +215,7 @@ export function validateGeneratedWeekAction(
   previousWeek?: TrainingPlanWeek,
   planWeekDescriptors: readonly PlanWeekDescriptor[] = [{ weekIndex: week.weekIndex, phase: week.phase }],
   recentContext?: PlanBuilderRecentContext,
+  stageTracker?: StageTracker,
 ): WeekActionEvaluation {
   const rawSessionCount = diagnostic?.rawSessions ?? (Array.isArray(action?.sessions) ? action.sessions.length : undefined)
   let normalizedSessionCount = diagnostic?.validSessions ?? (Array.isArray(action?.sessions) ? action.sessions.length : undefined)
@@ -252,7 +256,15 @@ export function validateGeneratedWeekAction(
     planWeekDescriptors,
   }
 
-  const repairResult = repairGeneratedWeek(action.sessions, context)
+  const repairStage = stageTracker?.stage('repair')
+  let repairResult: ReturnType<typeof repairGeneratedWeek>
+  try {
+    repairResult = repairGeneratedWeek(action.sessions, context)
+    repairStage?.end({ ok: !repairResult.failure, error: repairResult.failure?.message })
+  } catch (error) {
+    repairStage?.end({ ok: false, error: error instanceof Error ? error.message : String(error) })
+    throw error
+  }
   if (repairResult.failure) {
     return {
       sessions: [],
@@ -368,6 +380,10 @@ function isProviderTruncated(raw: AIRawResponse): boolean {
 
 export async function generateWeekCore(input: GenerateWeekCoreInput): Promise<GenerateWeekResult> {
   const requestClass = 'plan_builder_week' as const
+  const tracker = input.stageTracker
+
+  // Stage 1: prompt_build — system prompt and user message construction
+  const promptStage = tracker?.stage('prompt_build')
   const systemPrompt = buildWeekStructuredSystemPromptMinimal()
   const userMessage = buildWeekUserPrompt({
     plan: input.plan,
@@ -380,21 +396,39 @@ export async function generateWeekCore(input: GenerateWeekCoreInput): Promise<Ge
     outputFormat: 'json',
     recentContext: input.recentContext as never,
   })
+  promptStage?.end({ ok: true })
 
-  const raw = await input.callLLM({
-    requestClass,
-    traceId: input.traceId,
-    systemPrompt,
-    userMessage,
-    maxTokens: input.maxTokens,
-    temperature: input.temperature,
-    responseMimeType: 'application/json',
-    responseSchema: PLAN_BUILDER_WEEK_RESPONSE_SCHEMA,
-  })
+  // Stage 2: provider_call — LLM call
+  const raw = tracker
+    ? await trackStage(tracker, 'provider_call', () => input.callLLM({
+        requestClass,
+        traceId: input.traceId,
+        systemPrompt,
+        userMessage,
+        maxTokens: input.maxTokens,
+        temperature: input.temperature,
+        responseMimeType: 'application/json',
+        responseSchema: PLAN_BUILDER_WEEK_RESPONSE_SCHEMA,
+      }))
+    : await input.callLLM({
+        requestClass,
+        traceId: input.traceId,
+        systemPrompt,
+        userMessage,
+        maxTokens: input.maxTokens,
+        temperature: input.temperature,
+        responseMimeType: 'application/json',
+        responseSchema: PLAN_BUILDER_WEEK_RESPONSE_SCHEMA,
+      })
 
+  // Stage 3: normalize — parse and validate response structure
+  const normalizeStage = tracker?.stage('normalize')
   const normalized = normalizeResponse(raw)
   const action = pickCreateWeekAction(normalized.actions, input.week.weekStartDate)
   const diagnostic = pickCreateWeekDiagnostic(normalized, input.week.weekStartDate, action)
+  normalizeStage?.end({ ok: !!action })
+
+  // La evaluación mide repair sólo si llega a ejecutar la reparación real.
   const evaluation = validateGeneratedWeekAction(
     input.plan,
     input.week,
@@ -404,7 +438,9 @@ export async function generateWeekCore(input: GenerateWeekCoreInput): Promise<Ge
     input.previousWeek,
     input.planWeekDescriptors,
     input.recentContext as PlanBuilderRecentContext | undefined,
+    tracker,
   )
+
   const wasTruncated = isProviderTruncated(raw)
   const lastError = evaluation.error && wasTruncated
     ? `La respuesta del modelo fue truncada por presupuesto de tokens antes de devolver sesiones válidas para la semana ${input.week.weekIndex + 1}.`

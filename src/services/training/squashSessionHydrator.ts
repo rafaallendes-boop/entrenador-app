@@ -32,6 +32,7 @@ export type SquashHydrationWarningCode =
   | 'pool_insufficient'
   | 'shadows_accessory_unavailable'
   | 'match_requires_partner'
+  | 'accessory_dropped'
 
 export interface SquashHydrationWarning {
   code: SquashHydrationWarningCode
@@ -192,5 +193,6 @@ export function hydrateSquashSession(input: SquashHydrationInput): SquashHydrati
 
   const dose = doseSquashSession(details, input.durationMin)
   if (!dose.ok) warnings.push({ code: 'duration_infeasible', message: dose.message })
+  else for (const message of dose.warnings) warnings.push({ code: 'accessory_dropped', message })
   return { subtype: projectSquashSubtype(kind, input.competitive), details: dose.ok ? dose.details : { ...details, drills: [], blocks: [] }, warnings, fallback }
 }

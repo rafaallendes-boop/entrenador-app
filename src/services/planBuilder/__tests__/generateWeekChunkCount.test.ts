@@ -99,6 +99,78 @@ describe('generateWeek streaming chunk accounting', () => {
     expect(onChunk).toHaveBeenCalledTimes(2)
     expect(onChunk).toHaveBeenNthCalledWith(1, 'hello')
     expect(result.meta.chunkCount).toBe(2)
+    const stages = result.meta.stageTimings?.map((timing) => timing.stage) ?? []
+    expect(stages.slice(0, 3)).toEqual(['prompt_build', 'provider_call', 'normalize'])
+    expect(stages).toContain('repair')
+    const providerCall = result.meta.stageTimings?.find((timing) => timing.stage === 'provider_call')
+    const total = result.meta.stageTimings?.reduce((n, timing) => n + timing.durationMs, 0) ?? 0
+    expect(providerCall!.durationMs).toBeLessThanOrEqual(total)
+  })
+
+  it('verifies stage boundaries: provider_call time is NOT inflated with local CPU', async () => {
+    // Use a provider with an artificial delay to verify provider_call duration matches that delay
+    const PROVIDER_DELAY_MS = 35
+    const delayedProvider: AIProvider = {
+      name: 'mock',
+      async call(request) {
+        // Artificial delay simulating network/provider latency
+        await new Promise(r => setTimeout(r, PROVIDER_DELAY_MS))
+        return {
+          text: JSON.stringify({
+            actions: [{
+              type: 'create_week',
+              targetDate: '2026-06-01',
+              reason: 'ok',
+              weekObjectives: [],
+              sessions: [{
+                date: '2026-06-01',
+                timeBlock: 'AM',
+                sessionType: 'squash',
+                title: 'Squash control',
+                objective: 'Control tecnico',
+                durationMin: 45,
+                rpe: 5,
+              }],
+            }],
+          }),
+          provider: 'mock',
+          model: 'mock-1',
+          durationMs: PROVIDER_DELAY_MS,
+          traceId: request.traceId,
+          requestClass: request.requestClass,
+          retryUsed: false,
+          fallbackUsed: false,
+          finishReason: 'stop',
+        }
+      },
+    }
+
+    const wizardConfig = makeWizard()
+    const result = await generateWeek({
+      provider: delayedProvider,
+      plan: makePlan(wizardConfig),
+      week: makeWeek(),
+      profile: { id: 'a1', updatedAt: 0, sportContext: { primarySport: 'squash' } } as AthleteProfile,
+      wizardConfig,
+    })
+
+    const timings = result.meta.stageTimings ?? []
+    const providerCall = timings.find((timing) => timing.stage === 'provider_call')
+    const promptBuild = timings.find((timing) => timing.stage === 'prompt_build')
+    const normalize = timings.find((timing) => timing.stage === 'normalize')
+    const repair = timings.find((timing) => timing.stage === 'repair')
+
+    // Provider call should capture most of the artificial delay (allowing 5ms margin for timing variations)
+    expect(providerCall!.durationMs).toBeGreaterThanOrEqual(PROVIDER_DELAY_MS - 5)
+
+    // Local stages should be nonzero and clearly separate from provider_call
+    const localCPUMs = (promptBuild?.durationMs ?? 0) + (normalize?.durationMs ?? 0) + (repair?.durationMs ?? 0)
+    expect(localCPUMs).toBeGreaterThan(0)
+
+    // The provider_call should NOT absorb all the time — verify local stages took nonzero time
+    const totalMs = timings.reduce((n, timing) => n + timing.durationMs, 0)
+    expect(totalMs).toBeGreaterThan(providerCall!.durationMs)
+    expect(localCPUMs).toBeLessThanOrEqual(totalMs)
   })
 
   it('reports chunkCount=0 when provider emits no chunks', async () => {

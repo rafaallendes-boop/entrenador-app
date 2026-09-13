@@ -12,6 +12,7 @@ import {
   getAllWeekSummaries,
   getAthleteProfile,
   upsertWeekSummary,
+  captureActiveWeekScope,
 } from '../db/queries'
 import type { Session, DayLog, WeekSummary, SessionStatus } from '../types'
 import { CoachEngine } from '../services/ai/CoachEngine'
@@ -24,6 +25,7 @@ import { getActiveAthleteId } from '../services/athlete/activeAthlete'
 import { isWeeklyReviewWindowOpen } from '../services/weeklyReviewWindow'
 import { buildWeeklyCoachNoteSnapshot } from '../services/weeklyCoachNote'
 import { getCoachMemoryText } from '../services/athlete/coachNotes'
+import { captureRequestScope, isRequestScopeCurrent } from '../services/athlete/requestScope'
 
 const STATUS_CYCLE: SessionStatus[] = ['planned', 'completed', 'adjusted', 'skipped']
 
@@ -286,6 +288,8 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
     }
     set({ isLoading: true })
     try {
+      const requestScope = captureRequestScope()
+      const weekScope = captureActiveWeekScope()
       await recalculateWeekSummary(weekStart)
       const [sessions, weekDayLogs, currentWeekSummary, athleteProfile, coachMemoryText] = await Promise.all([
         getSessionsForWeek(weekStart),
@@ -295,6 +299,9 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
         getCoachMemoryText(),
       ])
 
+      if (!isRequestScopeCurrent(requestScope)) {
+        throw new Error('El atleta activo cambió mientras se preparaba la nota. Vuelve a generarla.')
+      }
       const response = await CoachEngine.send(
         'Genera un resumen semanal corto y concreto. Evalua adherencia, carga, sensaciones, riesgos y foco para la siguiente semana. No propongas acciones ni uses <actions>.',
         optimizeChatContext({
@@ -308,7 +315,7 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
           athleteProfile: athleteProfile ?? undefined,
           intent: 'weekly_summary',
         }, 'weekly_summary'),
-        { maxTokens: 700, temperature: 0.4, requestClass: 'weekly_summary', surface: 'weekly_summary' },
+        { maxTokens: 700, temperature: 0.4, requestClass: 'weekly_summary', surface: 'weekly_summary', targetAthleteId: requestScope.athleteId },
       )
 
       const coachNote = response.message.trim()
@@ -316,11 +323,14 @@ export const useTrainingStore = create<TrainingState>((set, get) => ({
         throw new Error('El coach devolvio una nota vacia. Intenta nuevamente.')
       }
 
+      if (!isRequestScopeCurrent(requestScope)) {
+        throw new Error('El atleta activo cambió mientras se generaba la nota. No se guardó nada; vuelve a generarla.')
+      }
       const summary = await upsertWeekSummary(weekStart, {
         coachNote,
         coachNoteGeneratedAt: Date.now(),
         ...(currentWeekSummary ? { coachNoteSnapshot: buildWeeklyCoachNoteSnapshot(currentWeekSummary) } : {}),
-      })
+      }, weekScope)
       const activeWeekStart = getActiveWeekStart(get())
       if (activeWeekStart === weekStart) {
         set({ currentWeekSummary: summary })

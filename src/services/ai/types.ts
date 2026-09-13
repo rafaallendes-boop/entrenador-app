@@ -102,6 +102,21 @@ export interface CreateWeekNormalizationDiagnostic {
   droppedSessionReasons?: Array<{ index: number; reason: string }>
 }
 
+/**
+ * Eventos conversacionales estructurados que el modelo puede emitir dentro del
+ * bloque `<actions>` como pure transport. NUNCA son `CoachAction`: no crean
+ * propuestas, no pasan por el postprocesador y no cuentan como acción.
+ */
+export type CoachConversationEvent =
+  | { kind: 'offer_generation'; route: 'week_creator' | 'plan_builder_redirect'; targetWeekStart?: string; summary: string }
+  | {
+      kind: 'ask_clarification'
+      operation: 'move_session' | 'update_session' | 'delete_session' | 'add_session'
+      missing: string[]
+      known: Record<string, string | number>
+      summary: string
+    }
+
 // ─── Normalized coach response (what the app consumes) ────────────────────────
 
 export interface CoachNormalizedResponse {
@@ -109,6 +124,12 @@ export interface CoachNormalizedResponse {
   message: string
   /** Structured actions extracted from the response, if any */
   actions?: CoachAction[]
+  /**
+   * Eventos conversacionales estructurados (ofertas, aclaraciones). Viajan en
+   * el bloque <actions> sólo como transporte: NUNCA son acciones de
+   * entrenamiento, no entran al postprocesador ni crean propuestas.
+   */
+  conversationEvents?: CoachConversationEvent[]
   /**
    * Diagnostico neutro: la respuesta traia `create_week` en un turno de chat y
    * se descarto. NO es una decision comercial: el normalizador no conoce el
@@ -130,6 +151,8 @@ export interface CoachNormalizedResponse {
   requestClass: AIRequestClass
   retryUsed?: boolean
   fallbackUsed?: boolean
+  /** Llamadas al proveedor en esta solicitud lógica, contando la que respondió. */
+  transientAttempts?: number
   finishReason?: string
   promptTokens?: number
   completionTokens?: number
@@ -187,6 +210,7 @@ export class AIProviderError extends Error {
   readonly provider: AIProviderName
   readonly code: AIErrorCode
   readonly retryable: boolean
+  transientAttempts?: number
 
   constructor(
     provider: AIProviderName,

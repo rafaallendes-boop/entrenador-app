@@ -1,7 +1,21 @@
-import type { RunningIntervalBlock, RunningProfile } from '../../types'
+import type { RunningIntervalBlock, RunningMaterializationIntent, RunningProfile } from '../../types'
 import type { RunningEffort } from '../../types/runningTemplate'
 import { findRunningSessionById, type RunningSessionDefinition } from './runningSessionLibrary'
 import { sessionBudget } from './sessionTimeBudget'
+
+export const RUNNING_MATERIALIZER_VERSION = 1
+
+/**
+ * Labels de los dos bloques de relleno que absorben el remanente de tiempo
+ * antes de las repeticiones/cuestas o del tramo continuo. Van a ritmo fácil y
+ * se etiquetan `role: 'work'` porque cuentan para el presupuesto total de la
+ * sesión, no porque sean trabajo exigente — por eso consumidores como
+ * `runningDoseDiff.ts` necesitan poder excluirlos por nombre. Exportados como
+ * constante (no duplicados como literales) para que un futuro renombre de
+ * copy los rompa en compilación, no en silencio.
+ */
+export const FILLER_BLOCK_LABEL = 'Rodaje suave'
+export const FILLER_BLOCK_LABEL_WALK = 'Caminata suave'
 
 function paceFromElapsed(value: string | undefined, km: number): number | undefined {
   const parts = value?.split(':').map(Number)
@@ -38,7 +52,8 @@ export function materializeRunningTemplate(input: {
   template: string | RunningSessionDefinition
   durationMin: number
   profile?: RunningProfile
-  intent?: 'progress' | 'hold' | 'deload' | 'rotate'
+  intent?: RunningMaterializationIntent
+  profileRevision?: number
 }) {
   const definition = typeof input.template === 'string' ? findRunningSessionById(input.template) : input.template
   const failed = (message: string) => ({ ok: false as const, message })
@@ -65,7 +80,7 @@ export function materializeRunningTemplate(input: {
     const work = p.kind === 'progressive' ? Math.min(p.workSeconds ?? Math.floor(main * 0.35), main)
       : Math.min(p.workSeconds ?? main, main)
     const adjusted = input.intent === 'deload' && p.effort !== 'easy' ? Math.floor(work * 0.7) : work
-    if (main > adjusted) push('Rodaje suave', main - adjusted, 'work')
+    if (main > adjusted) push(FILLER_BLOCK_LABEL, main - adjusted, 'work')
     push(p.kind === 'progressive' ? 'Cierre progresivo controlado' : definition.name, adjusted, 'work', p.effort)
   } else {
     const baseSeconds = p.kind === 'run_walk' && input.profile?.experienceLevel === 'beginner' ? Math.min(p.workSeconds!, 60) : p.workSeconds!
@@ -77,7 +92,7 @@ export function materializeRunningTemplate(input: {
     if (maximum < p.repetitions!.min) return failed(`No caben trabajo y recuperaciones de ${definition.name} en ${input.durationMin} min.`)
     const count = Math.max(p.repetitions!.min, Math.floor(maximum * (input.intent === 'deload' ? 0.7 : input.intent === 'progress' ? 1 : 0.85)))
     const remainder = main - sec * count - rest * (count - 1)
-    push(p.kind === 'run_walk' ? 'Caminata suave' : 'Rodaje suave', remainder, p.kind === 'run_walk' ? 'recovery' : 'work', 'easy', p.kind === 'run_walk' ? { targetPace: undefined } : {})
+    push(p.kind === 'run_walk' ? FILLER_BLOCK_LABEL_WALK : FILLER_BLOCK_LABEL, remainder, p.kind === 'run_walk' ? 'recovery' : 'work', 'easy', p.kind === 'run_walk' ? { targetPace: undefined } : {})
     for (let i = 0; i < count; i++) {
       push(`${p.kind === 'run_walk' ? 'Trote suave' : p.terrain === 'hill' ? 'Cuesta' : 'Repetición'} ${i + 1}`, sec, 'work', p.effort, {
         distanceKm: p.distanceKm, durationKind: p.distanceKm ? 'estimated' : 'prescribed',
@@ -88,5 +103,12 @@ export function materializeRunningTemplate(input: {
   }
   push('Enfriamiento Z2', budget.cooldownSec, 'cooldown')
   return { ok: true as const, structure: { blocks }, durationMin: input.durationMin,
-    templateRef: { source: 'running_template' as const, id: definition.id, version: definition.version } }
+    templateRef: { source: 'running_template' as const, id: definition.id, version: definition.version },
+    materialization: {
+      intent: input.intent ?? 'hold',
+      recipeVersion: definition.version,
+      materializerVersion: RUNNING_MATERIALIZER_VERSION,
+      ...(input.profileRevision != null ? { profileRevision: input.profileRevision } : {}),
+      at: Date.now(),
+    } }
 }

@@ -40,8 +40,8 @@ describe('resolveRequestTargetAthleteId', () => {
     expect(resolveRequestTargetAthleteId()).toBe('ath_m_1')
   })
 
-  it('un explícito null cae al scope activo, no fuerza null', () => {
+  it('un null capturado no adopta al atleta activo posterior', () => {
     scope('ath_self', 'ath_m_1')
-    expect(resolveRequestTargetAthleteId(null)).toBe('ath_m_1')
+    expect(resolveRequestTargetAthleteId(null)).toBeNull()
   })
 })

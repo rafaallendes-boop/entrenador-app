@@ -253,6 +253,7 @@ function buildAdjustActionPromptResult(context: ChatContext, userMessage?: strin
       content: shouldIncludeNutritionContextSection(context, userMessage) ? buildNutritionContextSection(context) : '',
     },
     { key: 'week_logs', content: buildWeekDayLogsSection(context) },
+    { key: 'pending_operation', content: buildPendingOperationSection(context), required: true },
     { key: 'hybrid', content: hasCompetitionSoon ? buildHybridSection(context) : '' },
     { key: 'competition', content: hasCompetitionSoon ? buildCompetitionSection(context) : '' },
     { key: 'competition_load', content: hasCompetitionSoon ? buildCompetitionLoadSection(context) : '' },
@@ -1713,6 +1714,27 @@ function buildWeekDayLogsSection(context: ChatContext): string {
   }
 
   return lines.join('\n')
+}
+
+/**
+ * A4.4: cuando el atleta ya confirmó una operación (`update_session` /
+ * `add_session`) en un turno anterior — vía `PendingIntent` — la operación
+ * viaja estructurada en `context.pendingOperation`, no como texto libre a
+ * reinterpretar. Sólo scalars en `known`: nunca identidad de contenido.
+ */
+function buildPendingOperationSection(context: ChatContext): string {
+  const op = context.pendingOperation
+  if (!op) return ''
+  // La sección es `required: true` (nunca se recorta por presupuesto), así
+  // que un valor inesperadamente largo no puede desplazar el resto del
+  // prompt. `known` en principio sólo lleva scalars acotados (sessionId,
+  // fechas, minutos), pero su origen último es un evento que el modelo
+  // emite: mismo tratamiento que cualquier otro texto no confiable del
+  // archivo.
+  const known = Object.entries(op.known)
+    .map(([key, value]) => `${key}=${sanitizeUserText(String(value), 80)}`)
+    .join(', ')
+  return `═══ OPERACIÓN CONFIRMADA POR EL USUARIO ═══\n- Tipo: ${op.type}\n- Datos ya resueltos: ${known || 'ninguno'}\n- Emite exactamente UNA acción de ese tipo usando esos datos; no pidas de nuevo lo que ya está resuelto.`
 }
 
 // ─── Response instructions (large section — uses all sport modules) ─────────

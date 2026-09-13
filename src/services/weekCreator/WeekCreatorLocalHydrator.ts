@@ -22,6 +22,7 @@ import type { WeekCreatorSkeleton, WeekCreatorSkeletonSession } from './weekCrea
 import { resolveWeekCreatorEventContext } from './WeekCreatorEventContext'
 import type { StrengthConstraint } from '../../types/strengthSafety'
 import { resolveStrengthSafetyConstraints } from '../training/strengthSafetyConstraints'
+import { buildWeekCreatorExecutionSignals } from './weekCreatorExecutionSignals'
 
 export type WeekCreatorHydrationStatus =
   | 'hydrated'
@@ -515,13 +516,19 @@ export function buildWeekCreatorHydrationRepairContext(
     updatedAt: now,
   }
 
+  const historicalSessions = input.context.historicalSessions ?? input.context.recentSessions
   return {
     plan,
     week,
     profile,
     wizardConfig,
     planWeekDescriptors: [{ weekIndex: week.weekIndex, phase: week.phase }],
-    historicalSessions: input.context.historicalSessions ?? input.context.recentSessions,
+    historicalSessions,
+    executionSignals: buildWeekCreatorExecutionSignals(
+      input.config,
+      historicalSessions,
+      input.context.weekDayLogs,
+    ),
   }
 }
 

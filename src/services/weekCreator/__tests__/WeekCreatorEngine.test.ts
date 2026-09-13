@@ -8,6 +8,7 @@ import { buildWeekCreatorPrompt } from '../WeekCreatorPromptBuilder'
 import { useAIDebugStore } from '../../../store/useAIDebugStore'
 import { db } from '../../../db/db'
 import { findSquashDrillByName, SQUASH_DRILL_LIBRARY } from '../../training/drillLibrary'
+import { setActiveAthleteId } from '../../athlete/activeAthlete'
 
 const mockProviderCall = vi.hoisted(() => vi.fn())
 
@@ -810,6 +811,63 @@ describe('WeekCreatorEngine', () => {
       'repair',
       'validate',
     ])
+  })
+
+  it('uses the athlete captured at request start, not the global holder, as targetAthleteId', async () => {
+    setActiveAthleteId('ath_other')
+    try {
+      mockProviderCall.mockImplementation(async (request: { requestClass: string; traceId: string; generationId?: string; targetAthleteId?: string | null }) => ({
+        text: '<actions>' + JSON.stringify([
+          {
+            type: 'create_week',
+            reason: 'Semana base conservadora',
+            targetDate: '2026-05-04',
+            sessions: [
+              {
+                date: '2026-05-04',
+                timeBlock: 'AM',
+                sessionType: 'squash',
+                title: 'Squash tecnico base',
+                durationMin: 60,
+                objective: 'sesión planificada',
+                squashDetails: {
+                  trainingFocus: 'technical',
+                  sessionMode: 'drill_session',
+                  drills: [{ name: 'Drives paralelos', durationMin: 20 }],
+                },
+              },
+            ],
+          },
+        ]) + '</actions>',
+        provider: 'mock',
+        streamed: true,
+        model: 'mock-week-creator',
+        traceId: request.traceId,
+        generationId: request.generationId,
+        requestClass: request.requestClass,
+      }))
+
+      const context: ChatContext = {
+        athleteProfile: makeProfile({
+          scheduleProfile: { availableDays: ['lun', 'mié', 'vie'] },
+        }),
+        recentSessions: [],
+        plannedSessions: [],
+        historicalSessions: [],
+      }
+
+      await WeekCreatorEngine.sendWeekCreate(
+        'Créame la semana',
+        context,
+        { surface: 'chat', targetWeekStart: '2026-05-04', targetAthleteId: 'ath_managed' },
+      )
+
+      expect(mockProviderCall.mock.calls[0][0]).toMatchObject({
+        targetAthleteId: 'ath_managed',
+      })
+    } finally {
+      setActiveAthleteId(null)
+    }
   })
 
   it('accepts a schema-mode raw JSON create_week response without actions markup', async () => {

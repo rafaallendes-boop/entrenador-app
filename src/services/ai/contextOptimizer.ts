@@ -2,6 +2,7 @@ import { differenceInCalendarDays } from 'date-fns'
 import type { AIRequestClass, ChatContext, DayLog, Session } from '../../types'
 import { todayISO, toISO } from '../../utils/date'
 import { getDayName } from './promptModules/shared'
+import { resolveChatRoute, type ChatRouteKind } from '../chatRouting'
 
 const DEFAULT_MAX_RECENT_MESSAGES = 8
 const DEFAULT_MAX_RECENT_MESSAGE_CHARS = 1400
@@ -45,51 +46,25 @@ export function optimizeChatContext(context: ChatContext, requestClass?: AIReque
   }
 }
 
-export function detectChatIntent(message: string): ChatContext['intent'] {
-  const normalized = message.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-  const weekDayPattern = /\b(lunes|martes|miercoles|jueves|viernes|sabado|domingo|hoy|manana)\b/
-  const planningVerbPattern = /\b(cr[eé]a(?:r|me)?|haz(?:me)?|arma(?:me)?|genera(?:r|me)?|planifica(?:r)?|organiza(?:r)?|programa(?:r)?)\b/
-  const planningTargetPattern = /\b(semana|microciclo|plan(?:\s+de\s+entrenamiento)?|rutina)\b/
-  const adjustmentVerbPattern = /\b(ajusta(?:r|me)?|ajustame|cambia(?:r|me)?|cambiame|cambie|modifica(?:r|me)?|modificame|mueve|mueveme|reordena(?:r|me)?|actualiza(?:r|me)?|quit(?:a|ar|ame)|borra(?:r|me)?|borrame|elimina(?:r|me)?|eliminame|saca(?:r|me)?|sacame|pon(?:er|me)?|agrega(?:r|me)?|reemplaza(?:r|me)?|reduce|baja|sube|incorpora)\b/
-  const adjustmentTargetPattern = /\b(semana|sesion(?:es)?|entreno|entrenamiento|descanso|libre|off|plan|carga|running|squash|fuerza|cycling|ciclismo|movilidad)\b/
-  const specificSessionPattern = /\b(sesion(?:es)?|entreno|entrenamiento|descanso|libre|off|running|squash|fuerza|cycling|ciclismo|movilidad|am|pm)\b/
-
-  if (
-    /\b(resumen\s+semanal|coach\s+note|resume\s+mi\s+semana|resumeme\s+la\s+semana|cierre\s+de\s+semana|balance\s+semanal)\b/.test(normalized)
-  ) {
-    return 'weekly_summary'
+/** Proyección del router único hacia el `intent` legacy de `ChatContext`. */
+export function intentFromRoute(kind: ChatRouteKind): ChatContext['intent'] {
+  switch (kind) {
+    case 'weekly_summary': return 'weekly_summary'
+    case 'week_creator': return 'plan_week'
+    case 'chat_action': return 'adjust_session'
+    case 'plan_builder_redirect':
+    case 'chat_general':
+    default:
+      return 'general_chat'
   }
+}
 
-  if (
-    adjustmentVerbPattern.test(normalized)
-    && (
-      adjustmentTargetPattern.test(normalized)
-      || weekDayPattern.test(normalized)
-    )
-  ) {
-    return 'adjust_session'
-  }
-
-  if (
-    planningVerbPattern.test(normalized)
-    && weekDayPattern.test(normalized)
-    && specificSessionPattern.test(normalized)
-    && !planningTargetPattern.test(normalized)
-  ) {
-    return 'adjust_session'
-  }
-
-  if (
-    (
-      planningVerbPattern.test(normalized)
-      && planningTargetPattern.test(normalized)
-    )
-    || /\b(plan\s+semanal|plan\s+para\s+esta\s+semana)\b/.test(normalized)
-  ) {
-    return 'plan_week'
-  }
-
-  return 'general_chat'
+/**
+ * Ya no tiene regex propias: es una proyección de `resolveChatRoute`, que es
+ * la autoridad. Se conserva por compatibilidad con `ChatContext.intent`.
+ */
+export function detectChatIntent(message: string, context?: ChatContext): ChatContext['intent'] {
+  return intentFromRoute(resolveChatRoute(message, context).kind)
 }
 
 function trimRecentMessages(
@@ -204,13 +179,10 @@ function trimAthleteMemory(memory?: string): string | undefined {
 
 export function inferRequestClassFromIntent(intent: ChatContext['intent'] | undefined): AIRequestClass {
   switch (intent) {
-    case 'plan_week':
-    case 'adjust_session':
-      return 'chat_action'
-    case 'weekly_summary':
-      return 'weekly_summary'
-    default:
-      return 'chat_general'
+    case 'plan_week': return 'week_creator'
+    case 'adjust_session': return 'chat_action'
+    case 'weekly_summary': return 'weekly_summary'
+    default: return 'chat_general'
   }
 }
 

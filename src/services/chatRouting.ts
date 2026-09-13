@@ -1,5 +1,11 @@
-import type { ChatContext } from '../types'
+import type { AIRequestClass, ChatContext } from '../types'
 import { currentWeekStartISO, fromISO, nextWeek, toISO } from '../utils/date'
+import {
+  resolvePendingIntentDecision,
+  type PendingIntent,
+  type PendingIntentDecision,
+  type PendingIntentScope,
+} from './chat/pendingIntent'
 
 export type ChatRouteKind =
   | 'chat_general'
@@ -11,6 +17,12 @@ export type ChatRouteKind =
 export interface ChatRouteResolution {
   kind: ChatRouteKind
   targetWeekStart?: string
+  /** Id de la `PendingIntent` que esta ruta consumió, si corresponde. */
+  consumedIntentId?: string
+  /** Operación completada por la intención pendiente: el ejecutor la usa en vez de volver a interpretar el mensaje libre. */
+  pendingOperation?: PendingIntent['operation']
+  /** Decisión completa cuando no se consume nada (falta un dato, se cancela o ya estaba consumida). */
+  pendingDecision?: Extract<PendingIntentDecision, { kind: 'fill' | 'cancel' | 'already_consumed' }>
 }
 
 const WEEKDAY_PATTERN = /\b(lunes|martes|miercoles|jueves|viernes|sabado|domingo|hoy|manana)\b/
@@ -23,6 +35,15 @@ const ADJUSTMENT_VERB_PATTERN = /\b(ajusta(?:r|me)?|ajustame|cambia(?:r|me)?|cam
 const SESSION_TARGET_PATTERN = /\b(sesion(?:es)?|entreno|entrenamiento|descanso|libre|off|running|squash|fuerza|pesas|gym|gimnasio|strength|cycling|ciclismo|bici|movilidad|recovery|recuperacion|am|pm)\b/
 const NEXT_WEEK_PATTERN = /\b(proxima\s+semana|siguiente\s+semana)\b/
 const CURRENT_WEEK_PATTERN = /\b(esta\s+semana|semana\s+actual)\b/
+// Preguntas sobre lo que YA pasó: nombran sesión y día, pero no piden cambiar
+// nada. Sin este desvío, "¿cómo estuvo mi sesión del lunes?" exigía una
+// propuesta estructurada que no existe.
+const HISTORY_QUESTION_PATTERN = /\b(estuvo|fue|salio|anduvo|me\s+fue|resulto|rindio)\b/
+// Pedidos de valoración. `dame feedback de mi sesión` comparte verbo con
+// `dame una sesión`, pero el objeto es DEFINIDO y el sustantivo es evaluativo.
+const FEEDBACK_REQUEST_PATTERN = /\b(feedback|opinion|analisis|evaluacion|comentarios?|valoracion|retroalimentacion)\b/
+// Condicionales de asesoría: piden un criterio hipotético, no una acción.
+const CONDITIONAL_ADVISORY_PATTERN = /\b(prepararias|planificarias|organizarias|armarias|harias|recomendarias|priorizarias|ajustarias|cambiarias)\b/
 // "lunes de la próxima semana" is a temporal qualifier, not a request to
 // generate the whole week. Treat a week word as scope only when it follows the
 // planning verb directly ("créame una semana", "arma el plan").
@@ -43,17 +64,11 @@ const SOFT_CREATION_VERB_PATTERN = /\b(quiero|necesito|dame|damelo|entregame)\b/
 const INDEFINITE_SESSION_OBJECT_PATTERN = /\b(?:una|un|otra|otro)\s+(?:\w+\s+){0,2}(?:sesion|entreno|entrenamiento|running|squash|fuerza|pesas|gym|gimnasio|cycling|ciclismo|bici|movilidad|rutina)\b/
 const PLURAL_SESSION_PATTERN = /\b(sesiones|entrenamientos|entrenos|rutinas)\b/
 const SESSION_CREATION_VERB_PATTERN = /\b(crea(?:r|me)?|haz(?:me)?|arma(?:me)?|genera(?:r|me)?|programa(?:r|me)?|agenda(?:me)?|agrega(?:r|me)?|pon(?:er|me)?|incorpora(?:me)?)\b/
-// Include short object-pronoun imperatives ("créala", "hazlo") because users
-// commonly confirm the session the coach just described with a one-word reply.
-// Without this, those replies fall through to chat_general and can only produce
-// prose, even though the preceding turn was asking to create a session.
-const ACTION_CONFIRMATION_PATTERN = /\b(si|sí|ok|okay|dale|confirmo|correcto|hazlo|hacelo|crea(?:la|lo)?|aplica(?:lo)?|aplicar|realiza(?:r)?(?:\s+el)?\s+cambio|procede|adelante)\b/
-const RECENT_ACTION_DISCUSSION_PATTERN = /\b(confirmas?|quieres?|quiero|cambio|cambiar|reemplaza(?:r)?|reemplazo|elimina(?:r)?|eliminar|borra(?:r)?|borrar|saca(?:r)?|sacar|ajusta(?:r)?|modifica(?:r)?|sesion|entreno|entrenamiento|running|corrida|trote|squash|zona\s*2|z2)\b/
 // Una pregunta que pide criterio no debe escalar a `chat_action` sólo porque
 // nombra una sesión y un día. Ese camino exige una propuesta estructurada; al
 // forzarlo sobre una consulta como "¿Qué debería priorizar hoy?" se descarta
 // una respuesta de asesoría perfectamente válida por no traer `<actions>`.
-const ADVISORY_QUESTION_PATTERN = /^[¿?\s]*(?:que|como|cual|cuanto|cuando|donde|por que|para que)\b.*\b(?:deberia|recomiendas?|priorizar|conviene|mejor)\b/
+const ADVISORY_QUESTION_PATTERN = /^[¿?\s]*(?:que|como|cual|cuanto|cuando|donde|por que|para que)\b.*\b(?:deberia|recomiendas?|priorizar|conviene|mejor|prepararias|planificarias|organizarias|armarias|harias|recomendarias|priorizarias|ajustarias|cambiarias)\b/
 // `conviene` y `mejor` también aparecen en peticiones de acción ("¿qué sesión me
 // conviene mover al jueves?"), así que la forma interrogativa por sí sola no
 // basta para desviar a prosa: sin este guard, "sacar", "mover" y "cambio"
@@ -82,6 +97,7 @@ const MUTATION_INTENT_PATTERN = new RegExp([
 export function resolveChatRoute(
   message: string,
   context?: ChatContext,
+  options?: { pendingIntent?: PendingIntent | null; scope?: PendingIntentScope; now?: number },
 ): ChatRouteResolution {
   const normalized = normalizeRoutingText(message)
   const targetWeekStart = resolveRequestedWeekStart(normalized)
@@ -90,15 +106,40 @@ export function resolveChatRoute(
     return { kind: 'weekly_summary' }
   }
 
-  if (FULL_PLAN_PATTERN.test(normalized) || MULTI_WEEK_PATTERN.test(normalized)) {
+  if (
+    FULL_PLAN_PATTERN.test(normalized)
+    || (MULTI_WEEK_PATTERN.test(normalized) && WEEK_PLANNING_VERB_PATTERN.test(normalized) && !CONDITIONAL_ADVISORY_PATTERN.test(normalized))
+  ) {
     return { kind: 'plan_builder_redirect', targetWeekStart }
   }
 
-  if (isActionConfirmation(normalized) && hasRecentActionDiscussion(context)) {
-    return { kind: 'chat_action' }
+  if (options?.pendingIntent && options.scope) {
+    const decision = resolvePendingIntentDecision(
+      normalized, options.pendingIntent, options.scope, options.now ?? Date.now(), context?.plannedSessions ?? [],
+    )
+    if (decision.kind === 'consume') {
+      return {
+        kind: decision.route,
+        targetWeekStart: decision.targetWeekStart ?? targetWeekStart,
+        consumedIntentId: options.pendingIntent.id,
+        ...(decision.operation ? { pendingOperation: decision.operation } : {}),
+      }
+    }
+    if (decision.kind === 'fill' || decision.kind === 'cancel' || decision.kind === 'already_consumed') {
+      return { kind: 'chat_general', pendingDecision: decision }
+    }
   }
+  // Sin intención pendiente estructurada, una confirmación corta es conversación:
+  // no hay nada concreto que confirmar. (Antes: regex sobre los últimos ocho
+  // mensajes; retirada en A4.4.)
 
   if (ADVISORY_QUESTION_PATTERN.test(normalized) && !MUTATION_INTENT_PATTERN.test(normalized)) {
+    return { kind: 'chat_general' }
+  }
+
+  const asksAboutHistory = /^[¿?\s]*(?:como|que\s+tal|que)\b/.test(normalized) && HISTORY_QUESTION_PATTERN.test(normalized)
+  const asksForFeedback = FEEDBACK_REQUEST_PATTERN.test(normalized) && /\b(mi|mis|la|el|del|de\s+la)\s+(?:\w+\s+){0,2}(?:sesion|entreno|entrenamiento|semana|partido)\b/.test(normalized)
+  if ((asksAboutHistory || asksForFeedback) && !MUTATION_INTENT_PATTERN.test(normalized)) {
     return { kind: 'chat_general' }
   }
 
@@ -176,18 +217,6 @@ export function resolveChatRoute(
   return { kind: 'chat_general' }
 }
 
-function isActionConfirmation(normalized: string): boolean {
-  if (!ACTION_CONFIRMATION_PATTERN.test(normalized)) return false
-  return normalized.length <= 80 && !/\b(porque|pero|aunque|opino|creo|pregunta|duda)\b/.test(normalized)
-}
-
-function hasRecentActionDiscussion(context?: ChatContext): boolean {
-  const recent = context?.recentMessages?.slice(-8) ?? []
-  if (recent.length === 0) return false
-  const text = normalizeRoutingText(recent.map(message => message.content).join('\n'))
-  return RECENT_ACTION_DISCUSSION_PATTERN.test(text)
-}
-
 export function resolveRequestedWeekStart(message: string): string {
   const normalized = normalizeRoutingText(message)
   const currentWeekStart = currentWeekStartISO()
@@ -207,4 +236,18 @@ function normalizeRoutingText(message: string): string {
     .replace(/\bahoy\b/g, 'hoy')
     .replace(/\bmanan[ao]\b/g, 'manana')
     .replace(/\bsabado\b/g, 'sabado')
+}
+
+export function mapChatRouteToRequestClass(route: ChatRouteKind): AIRequestClass {
+  switch (route) {
+    case 'chat_action':
+      return 'chat_action'
+    case 'weekly_summary':
+      return 'weekly_summary'
+    case 'week_creator':
+      return 'week_creator'
+    case 'chat_general':
+    default:
+      return 'chat_general'
+  }
 }

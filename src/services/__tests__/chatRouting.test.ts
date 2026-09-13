@@ -84,7 +84,7 @@ describe('chatRouting', () => {
     ).kind).toBe('chat_action')
   })
 
-  it('routes short confirmations to chat_action when the recent thread is an action discussion', () => {
+  it('routes short confirmations without a pendingIntent estructurada to chat_general (chatRoutingCorpus.ts#confirm-1)', () => {
     const route = resolveChatRoute('si, realiza el cambio', {
       recentSessions: [],
       plannedSessions: [],
@@ -95,10 +95,10 @@ describe('chatRouting', () => {
       ],
     })
 
-    expect(route.kind).toBe('chat_action')
+    expect(route.kind).toBe('chat_general')
   })
 
-  it('routes "créala" to chat_action after the coach has described a session', () => {
+  it('routes "créala" sin intención pendiente estructurada es conversación (chatRoutingCorpus.ts#confirm-1)', () => {
     const route = resolveChatRoute('créala', {
       recentSessions: [],
       plannedSessions: [],
@@ -109,7 +109,7 @@ describe('chatRouting', () => {
       ],
     })
 
-    expect(route.kind).toBe('chat_action')
+    expect(route.kind).toBe('chat_general')
   })
 
   it('routes single-session creation to chat_action when the week is only a temporal qualifier', () => {

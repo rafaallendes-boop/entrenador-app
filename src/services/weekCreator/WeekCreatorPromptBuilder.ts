@@ -17,6 +17,7 @@ import {
   resolveWeekCreatorEventContext,
   type WeekCreatorEventContext,
 } from './WeekCreatorEventContext'
+import { buildWeekCreatorExecutionSignals, computeRecentRpeStats } from './weekCreatorExecutionSignals'
 
 export interface WeekCreatorPromptInput {
   userMessage: string
@@ -557,7 +558,7 @@ function buildProgressionContext(
 
   return [
     '## PROGRESIÓN Y DIRECTIVA DE CARGA',
-    `Directiva de carga: ${buildLoadDirective(config, sessions, logs, rpeStats)}`,
+    `Directiva de carga: ${buildLoadDirective(config, sessions, logs)}`,
     'Historial de sesiones:',
     ...sessionLines,
     rpeStats.count > 0
@@ -572,22 +573,8 @@ function buildLoadDirective(
   config: WeekCreatorEffectiveConfig,
   sessions: ChatContext['historicalSessions'],
   logs: ChatContext['weekDayLogs'],
-  rpeStats: { average: number; count: number },
 ): string {
-  const latestLog = logs?.[0]
-  const decision = decideLoadDirective({
-    declaredFatigue: config.currentFatigue,
-    // `formatDayLogLine` ya excluye prefill Whoop en este módulo; se aplica el
-    // mismo criterio acá para no introducir la contaminación que la política
-    // prohíbe.
-    latestEnergyLevel: latestLog && !isWhoopPrefilled(latestLog, 'energyLevel')
-      ? latestLog.energyLevel ?? undefined
-      : undefined,
-    latestPainLevel: latestLog?.painLevel ?? undefined,
-    avgActualRpe: rpeStats.count > 0 ? rpeStats.average : undefined,
-    rpeSampleCount: rpeStats.count,
-  })
-
+  const decision = decideLoadDirective(buildWeekCreatorExecutionSignals(config, sessions, logs))
   const rendered = renderLoadDirective(decision)
   if (rendered) return rendered
 
@@ -599,17 +586,6 @@ function buildLoadDirective(
   return 'MANTENER PROGRESIÓN NORMAL — fatiga normal, sin señales de alerta.'
 }
 
-function computeRecentRpeStats(sessions: ChatContext['historicalSessions']): { average: number; count: number } {
-  const values = (sessions ?? [])
-    .filter((session) => session.status === 'completed' || session.status === 'adjusted')
-    .map((session) => session.actualRpe)
-    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
-  if (values.length === 0) return { average: 0, count: 0 }
-  return {
-    average: values.reduce((sum, value) => sum + value, 0) / values.length,
-    count: values.length,
-  }
-}
 
 function formatDayLogLine(log: NonNullable<ChatContext['weekDayLogs']>[number]): string {
   const parts = [

@@ -25,6 +25,7 @@ const h = vi.hoisted(() => ({
  */
 vi.mock('../../services/athlete/activeAthlete', () => ({
   getActiveAthleteId: () => h.athleteId,
+  getSelfAthleteId: () => h.athleteId ?? 'ath_a',
   getSwitchEpoch: () => h.switchEpoch,
 }))
 
@@ -50,7 +51,7 @@ vi.mock('../../hooks/useEntitlement', () => ({
   useEntitlement: () => ({
     canUse: () => true,
     decide: (requestClass: string) => ({
-      allowed: requestClass !== 'chat_action' || h.chatActionAllowed,
+      allowed: !['chat_action', 'week_creator'].includes(requestClass) || h.chatActionAllowed,
     }),
     pending: h.entitlementPending,
   }),
@@ -71,7 +72,7 @@ vi.mock('../../store/useChatStore', () => {
     deleteCurrentSession: vi.fn(),
     openConversation: vi.fn(),
   })
-  useChatStore.getState = () => ({ currentSessionId: 's1', error: null, messages: [] })
+  useChatStore.getState = () => ({ currentSessionId: 's1', error: null, messages: [], pendingIntent: null })
   return { useChatStore }
 })
 
@@ -176,6 +177,9 @@ describe('ChatCoach — scope del bloque de Whoop', () => {
 
     expect(h.sendMessage).toHaveBeenCalledTimes(1)
     expect(sentContext().whoopWorkoutBlock).toBe(BLOCK)
+    const scopeArg = h.sendMessage.mock.calls[0][2]
+    expect(scopeArg).toMatchObject({ athleteId: h.athleteId, epoch: h.switchEpoch })
+    expect(typeof scopeArg.requestId).toBe('string')
   })
 
   it('manda igual el mensaje cuando la hidratación resuelve el atleta a mitad del envío', async () => {
@@ -201,10 +205,14 @@ describe('ChatCoach — scope del bloque de Whoop', () => {
     expect(sentContext().whoopWorkoutBlock).toBeUndefined()
   })
 
-  it('manda igual el mensaje cuando la hidratación se resuelve con el bloque ya leído', async () => {
+  it('no envía y conserva el borrador si el atleta capturado pasa por null antes de enviar', async () => {
     // Variante con atleta presente al arrancar: la re-hidratación republica el
     // MISMO id pero pasando por null, y `getActiveAthleteId` puede leerse en ese
-    // instante. El epoch nunca se mueve.
+    // instante. El epoch nunca se mueve. A diferencia de la hidratación inicial
+    // `null → self` (que sí se tolera), acá se capturó un atleta CONCRETO y
+    // ahora se lee `null`: `isRequestScopeCurrent` no puede distinguir un
+    // transitorio de una salida real, así que trata cualquier divergencia desde
+    // una identidad concreta como cambio real y no envía nada.
     h.loadWhoopWorkoutBlock.mockImplementation(async () => {
       h.athleteId = null
       return BLOCK
@@ -212,12 +220,12 @@ describe('ChatCoach — scope del bloque de Whoop', () => {
 
     await send('hola')
 
-    expect(h.sendMessage).toHaveBeenCalledTimes(1)
-    expect(h.sendMessage.mock.calls[0][0]).toBe('hola')
-    expect(sentContext().whoopWorkoutBlock).toBeUndefined()
+    expect(h.sendMessage).not.toHaveBeenCalled()
+    expect(screen.getByRole('status').textContent).toContain('Cambió el atleta activo')
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('hola')
   })
 
-  it('descarta el bloque —no el mensaje— cuando el atleta cambia durante las consultas', async () => {
+  it('no envía y conserva el borrador si el atleta cambia durante las lecturas', async () => {
     h.loadWhoopWorkoutBlock.mockImplementation(async () => {
       h.athleteId = 'ath_managed'
       h.switchEpoch = 1
@@ -226,8 +234,16 @@ describe('ChatCoach — scope del bloque de Whoop', () => {
 
     await send('hola')
 
-    expect(h.sendMessage).toHaveBeenCalledTimes(1)
-    expect(sentContext().whoopWorkoutBlock).toBeUndefined()
+    expect(h.sendMessage).not.toHaveBeenCalled()
+    expect(screen.getByRole('status').textContent).toContain('Cambió el atleta activo')
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('hola')
+  })
+
+  it('bloquea Crear semana con la misma política del gate de acciones', async () => {
+    h.chatActionAllowed = false
+    await send('creame una semana')
+    expect(h.showEntitlementOffer).toHaveBeenCalledWith('week_creator')
+    expect(h.sendMessage).not.toHaveBeenCalled()
   })
 
   it('no consulta workouts sin atleta resuelto y manda el mensaje igual', async () => {

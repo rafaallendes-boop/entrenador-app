@@ -8,7 +8,8 @@ import { useCoachActionsStore } from '../store/useCoachActionsStore'
 import { useCoachMemoryStore } from '../store/useCoachMemoryStore'
 import { useTrainingStore } from '../store/useTrainingStore'
 import { useAuthStore } from '../store/useAuthStore'
-import { detectChatIntent, inferRequestClassFromIntent } from '../services/ai/contextOptimizer'
+import { intentFromRoute } from '../services/ai/contextOptimizer'
+import { mapChatRouteToRequestClass, resolveChatRoute } from '../services/chatRouting'
 import { currentWeekStartISO, fromISO, todayISO, toISO } from '../utils/date'
 import { getAthleteFirstName, getEnabledSports, getProfileCompleteness } from '../utils/athlete'
 import ChatBubble from '../components/chat/ChatBubble'
@@ -22,7 +23,8 @@ import { ROUTES } from '../constants/routes'
 import { useLoadAnalytics } from '../hooks/useWeeklySnapshot'
 import { useWeeklyLaunchIntent } from '../hooks/useWeeklyLaunchIntent'
 import { buildWeeklyActionComposerDraft } from '../services/weeklyLaunchIntent'
-import { getActiveAthleteId, getSwitchEpoch } from '../services/athlete/activeAthlete'
+import { getActiveAthleteId } from '../services/athlete/activeAthlete'
+import { captureRequestScope, isRequestScopeCurrent } from '../services/athlete/requestScope'
 import { getLocalReadinessForDate } from '../services/readiness/localReadiness'
 import { pullReadiness } from '../services/readiness/pullReadiness'
 import { loadWhoopWorkoutBlock } from '../services/readiness/whoopWorkoutBlock'
@@ -146,6 +148,8 @@ export default function ChatCoach() {
   const [profileBannerDismissed, setProfileBannerDismissed] = useState(false)
   const [profileNudgeDismissed, setProfileNudgeDismissed] = useState(false)
   const [readiness, setReadiness] = useState<ReadinessDaily | undefined>(undefined)
+  const [restoredDraft, setRestoredDraft] = useState<string | null>(null)
+  const [scopeNotice, setScopeNotice] = useState<string | null>(null)
   const locationState = (location.state as { showProfileNudge?: boolean; composerDraft?: string; fromPlanBuilder?: boolean } | null)
   const loadAnalytics = useLoadAnalytics(currentWeekStartISO(), sessions)
   const composerDraft = locationState?.composerDraft ?? buildWeeklyActionComposerDraft(launchIntent)
@@ -270,20 +274,49 @@ export default function ChatCoach() {
           message: proposal.message,
           actions: proposal.actions,
         })),
-      intent: detectChatIntent(message),
+      // `plannedSessions` real (no `[]`): la resolución de referentes ("la del
+      // lunes") lee `context.plannedSessions`, y el store va a decidir con la
+      // lista real. Si acá se pasa vacío, el gate de la página clasifica
+      // "chat_general" (fill) mientras el store ya resuelve y ejecuta
+      // "chat_action" (consume) — el gate de entitlement quedaría salteado
+      // justo para los mensajes que terminan en una propuesta local.
+      intent: intentFromRoute(resolveChatRoute(message, {
+        recentSessions: [],
+        plannedSessions,
+        historicalSessions: [],
+        recentMessages: messages.map((item) => ({ role: item.role, content: item.content })),
+      }, {
+        pendingIntent: useChatStore.getState().pendingIntent,
+        scope: { athleteId: getActiveAthleteId(), conversationId: useChatStore.getState().currentSessionId },
+      }).kind),
       loadAnalytics: loadAnalytics ?? undefined,
     }
-  }, [sessions, currentWeekSummary, dayLogs, readiness, coachMemory, athleteProfile, proposals, loadAnalytics])
+  }, [sessions, currentWeekSummary, dayLogs, readiness, coachMemory, athleteProfile, proposals, loadAnalytics, messages])
 
   const submitMessage = useCallback(async (message: string) => {
-    const requestClass = inferRequestClassFromIntent(detectChatIntent(message))
+    // El fetch de `planningSessions` (más abajo) todavía no corrió: se usa la
+    // mejor lista sincrónica disponible (el estado de sesiones ya cargado) en
+    // vez de `[]`, por la misma razón que en `buildContext` — sin esto, el
+    // gate de entitlement de esta función podía clasificar distinto de lo que
+    // el store termina ejecutando.
+    const declaredPlannedSessions = sessions.filter(session => session.status === 'planned' && session.date >= todayISO())
+    const route = resolveChatRoute(message, {
+      recentSessions: [],
+      plannedSessions: declaredPlannedSessions,
+      historicalSessions: [],
+      recentMessages: messages.map((item) => ({ role: item.role, content: item.content })),
+    }, {
+      pendingIntent: useChatStore.getState().pendingIntent,
+      scope: { athleteId: getActiveAthleteId(), conversationId: useChatStore.getState().currentSessionId },
+    })
+    const requestClass = mapChatRouteToRequestClass(route.kind)
     // Prevención de UX para las acciones que mutan el plan. Es sólo una
     // cortesía de cliente: mientras el tier está pendiente dejamos pasar y el
     // servidor sigue siendo la autoridad. Las demás capacidades mantienen sus
     // flujos existentes (chips y oferta reactiva del servidor).
     if (
       !entitlementPending
-      && requestClass === 'chat_action'
+      && (requestClass === 'chat_action' || requestClass === 'week_creator')
       && !decideEntitlement(requestClass).allowed
     ) {
       showEntitlementOffer(requestClass)
@@ -292,8 +325,8 @@ export default function ChatCoach() {
 
     const today = todayISO()
     const planningHorizonEnd = toISO(addDays(fromISO(today), 20))
-    const athleteIdAtStart = getActiveAthleteId()
-    const epochAtStart = getSwitchEpoch()
+    const requestScope = captureRequestScope(useChatStore.getState().currentSessionId)
+    const athleteIdAtStart = requestScope.athleteId
 
     const planningSessions = await getSessionsForDateRange(today, planningHorizonEnd)
       .catch(() => sessions)
@@ -303,32 +336,25 @@ export default function ChatCoach() {
       ? await loadWhoopWorkoutBlock(athleteIdAtStart, today).catch(() => null)
       : null
 
-    // Si el atleta activo cambió mientras corrían las consultas, el bloque
-    // pertenece al scope anterior. Se descarta EL BLOQUE, no el envío: mandar
-    // el mensaje sin bloque es exactamente el comportamiento previo a esta
-    // entrega, así que no puede filtrar nada, y abortar el envío sí perdería el
-    // texto del usuario sin dejar rastro —`ChatInput` ya limpió el textarea y
-    // el auto-submit ya se marcó consumido, así que no hay burbuja ni reintento.
-    //
-    // El caso frecuente además no es un switch real: `hydrateActiveAthlete`
-    // publica el atleta con `setActiveAthleteId` SIN tocar el epoch, así que un
-    // arranque que resuelve `null → ath_x` mientras el mensaje viaja llega acá
-    // con la identidad cambiada y el epoch intacto.
-    //
-    // Se comprueba epoch E identidad, mismo patrón que `pullWorkouts.ts:96`:
-    // un cambio de holder que no incremente el epoch pasaría el primer check.
-    const scopeChanged =
-      getSwitchEpoch() !== epochAtStart
-      || getActiveAthleteId() !== athleteIdAtStart
-
+    if (!isRequestScopeCurrent(requestScope)) {
+      // Cambió el atleta mientras se preparaba el contexto. El texto era para el
+      // atleta anterior: no se envía a nadie. Se devuelve al compositor para que
+      // el usuario decida a quién va.
+      setRestoredDraft(message)
+      setScopeNotice('Cambió el atleta activo mientras preparaba tu mensaje. Revisa a quién va y vuelve a enviarlo.')
+      return
+    }
+    setScopeNotice(null)
     const result = await sendMessage(
       message,
-      buildContext(
-        message,
-        planningSessions,
-        scopeChanged ? undefined : whoopWorkoutBlock ?? undefined,
-      ),
+      buildContext(message, planningSessions, whoopWorkoutBlock ?? undefined),
+      requestScope,
     )
+    if (result.droppedForScopeChange) {
+      setRestoredDraft(message)
+      setScopeNotice('Cambió el atleta activo mientras preparaba tu mensaje. Revisa a quién va y vuelve a enviarlo.')
+      return
+    }
     if (result.route === 'plan_builder_redirect') {
       // Navigate straight to the V2 Plan Builder. Going through the legacy
       // /plan-builder route forwards location.state through <Navigate replace>,
@@ -344,6 +370,7 @@ export default function ChatCoach() {
     buildContext,
     decideEntitlement,
     entitlementPending,
+    messages,
     navigate,
     sendMessage,
     sessions,
@@ -352,6 +379,7 @@ export default function ChatCoach() {
 
   const handleSend = useCallback(async (message: string) => {
     setMenuOpen(false)
+    setRestoredDraft(null)
     await submitMessage(message)
   }, [submitMessage])
 
@@ -365,7 +393,7 @@ export default function ChatCoach() {
 
     markAutoSubmitConsumed(composerDraftKey)
     autoSentRef.current = true
-    void submitMessage(draft)
+    queueMicrotask(() => { void submitMessage(draft) })
     navigate(location.pathname, { replace: true, state: null })
   }, [composerDraft, composerDraftKey, location.pathname, locationState?.fromPlanBuilder, navigate, submitMessage])
 
@@ -682,6 +710,15 @@ export default function ChatCoach() {
             </div>
           )}
 
+          {scopeNotice && (
+            <div
+              role="status"
+              className="flex items-start gap-2 rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2"
+            >
+              <span className="text-xs leading-relaxed text-amber-400">{scopeNotice}</span>
+            </div>
+          )}
+
           <Suspense fallback={<div className="h-8" />}>
             <QuickActionChips
               onSelect={handleSend}
@@ -692,7 +729,12 @@ export default function ChatCoach() {
             />
           </Suspense>
 
-          <ChatInput key={composerDraftKey} onSend={handleSend} disabled={isLoading} initialValue={composerDraft} />
+          <ChatInput
+            key={restoredDraft ? `restored:${restoredDraft}` : composerDraftKey}
+            onSend={handleSend}
+            disabled={isLoading}
+            initialValue={restoredDraft ?? composerDraft}
+          />
         </div>
       </div>
 

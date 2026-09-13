@@ -5,14 +5,15 @@ import { materializeRunningTemplate } from '../../services/training/runningTempl
 import { formatRunningBlockDuration } from '../../services/training/runningBlockDisplay'
 import { runningProfileWithRestrictions } from '../../services/training/runningPolicy'
 
-export default function RunningTemplatePicker({ durationMin, athleteProfile, value, onChange }: {
+export default function RunningTemplatePicker({ durationMin, athleteProfile, value, onChange, preserveStructure = false }: {
   durationMin: number; athleteProfile?: AthleteProfile | null; value?: RunningDetails
+  preserveStructure?: boolean
   onChange: (value?: RunningDetails) => void
 }) {
   const [query, setQuery] = useState('')
   const profile = runningProfileWithRestrictions(athleteProfile)
-  const preview = value?.templateRef ? materializeRunningTemplate({ template: value.templateRef.id, durationMin, profile }) : undefined
-  const structure = value?.templateRef ? preview?.ok ? preview.structure : undefined : value?.intervalStructure
+  const preview = !preserveStructure && value?.templateRef ? materializeRunningTemplate({ template: value.templateRef.id, durationMin, profile, intent: value.materialization?.intent ?? 'hold' }) : undefined
+  const structure = preserveStructure ? value?.intervalStructure : value?.templateRef ? preview?.ok ? preview.structure : undefined : value?.intervalStructure
   return <div className="space-y-2 rounded-xl border border-surface-border p-3">
     <label className="block text-sm">Buscar plantilla de running
       <input aria-label="Buscar plantilla de running" value={query} onChange={e => setQuery(e.target.value)} className="mt-1 w-full rounded border bg-surface-raised px-2 py-1" />
@@ -21,7 +22,7 @@ export default function RunningTemplatePicker({ durationMin, athleteProfile, val
       const definition = RUNNING_SESSION_LIBRARY.find(d => d.id === e.target.value)
       if (!definition) { onChange(undefined); return }
       const dose = materializeRunningTemplate({ template: definition, durationMin, profile })
-      if (dose.ok) onChange({ runningType: definition.runningType, templateRef: dose.templateRef, intervalStructure: dose.structure, selectionReason: `Elección manual: ${definition.description}` })
+      if (dose.ok) onChange({ runningType: definition.runningType, templateRef: dose.templateRef, intervalStructure: dose.structure, materialization: dose.materialization, selectionReason: `Elección manual: ${definition.description}` })
     }}>
       <option value="">Sesión personalizada</option>
       {RUNNING_SESSION_LIBRARY.filter(d => `${d.name} ${d.family} ${d.description}`.toLowerCase().includes(query.toLowerCase()) || d.id === value?.templateRef?.id).map(d => {

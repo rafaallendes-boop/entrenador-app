@@ -173,9 +173,13 @@ vi.mock('../../services/syncService', () => ({
   deleteCoachProposals: mocks.deleteCoachProposals,
 }))
 
-vi.mock('../../services/chatRouting', () => ({
-  resolveChatRoute: () => ({ kind: mocks.routeKind }),
-}))
+vi.mock('../../services/chatRouting', async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    resolveChatRoute: () => ({ kind: mocks.routeKind }),
+  }
+})
 
 vi.mock('../../utils/chatSession', () => ({
   getOrCreateChatSessionId: () => mocks.sessionId,
@@ -416,7 +420,11 @@ describe('useChatStore.sendMessage', () => {
     expect(state.messages[0]).toMatchObject({
       role: 'user',
       contextMeta: {
-        contextVersion: 1,
+        // El mensaje del usuario ahora siempre lleva la ruta resuelta
+        // (A6/F07): buildChatContextMetadata sube a contextVersion 2 cuando
+        // hay `route`, que sendMessage siempre calcula. Ver
+        // useChatStoreRequestScope.test.ts, que ya fija este mismo valor.
+        contextVersion: 2,
         plannedSessionCount: 1,
         hasAthleteProfile: true,
         hasAthleteMemory: true,
@@ -504,7 +512,9 @@ describe('useChatStore.sendMessage', () => {
     await useChatStore.getState().sendMessage('añade running hoy', makeContext())
 
     const state = useChatStore.getState()
-    expect(mocks.deletedMessageIds).toContain('id-2')
+    // id-1 lo consume ahora captureRequestScope (requestId) antes del mensaje
+    // del usuario (id-2); el mensaje del coach que se limpia es id-3.
+    expect(mocks.deletedMessageIds).toContain('id-3')
     expect(state.messages.map(message => message.role)).toEqual(['user'])
     expect(state.error).toBe('Proposal failed')
   })

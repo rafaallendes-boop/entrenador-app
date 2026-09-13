@@ -1,7 +1,7 @@
 import { sanitizeSquashTrainingContext } from '../../types/squashTrainingContext'
 import { sanitizeRunningTemplateRef } from '../../types/runningTemplate'
 import type { CoachAction, CoachActionType, CoachExerciseProposal, CoachSessionProposal, CyclingDetails, GeneratedProtocol, MobilityDetails, RunningIntervalStructure, RunningType, SessionType, SquashDetails, SquashDrill, SquashDrillExecutionMode, SquashDrillExecutionModeLegacy, SquashSessionBlock, SquashSessionBlockKind, SquashSessionKind, SquashSessionMode, SquashSubtype, SquashTrainingFocus, TimeBlock, WarmupSet } from '../../types'
-import type { AIRawResponse, CoachNormalizedResponse, CreateWeekNormalizationDiagnostic } from './types'
+import type { AIRawResponse, CoachConversationEvent, CoachNormalizedResponse, CreateWeekNormalizationDiagnostic } from './types'
 import {
   findSquashDrillByName,
   isSquashMatchDrill,
@@ -43,6 +43,9 @@ const VALID_SQUASH_BLOCK_KINDS = new Set<SquashSessionBlockKind>(['technical', '
 const VALID_SQUASH_EXECUTION_MODES = new Set<SquashDrillExecutionModeLegacy>(['solo', 'partner', 'either', 'match'])
 const VALID_SQUASH_TRAINING_FOCUS = new Set(['technical', 'tactical', 'physical', 'conditioned_games'])
 const VALID_MOBILITY_CONTEXTS = new Set(['post_run', 'post_cycling', 'post_squash', 'post_strength', 'pre_training_activation', 'recovery', 'full_body', 'sport_specific'])
+const CONVERSATION_EVENT_TYPES = new Set(['offer_generation', 'ask_clarification'])
+const VALID_OFFER_ROUTES = new Set(['week_creator', 'plan_builder_redirect'])
+const VALID_CLARIFICATION_OPERATIONS = new Set(['move_session', 'update_session', 'delete_session', 'add_session'])
 const DEFAULT_SESSION_DURATION_MIN: Partial<Record<CoachSessionProposal['sessionType'], number>> = {
   squash: 60,
   running: 45,
@@ -172,6 +175,7 @@ export function normalizeResponse(raw: AIRawResponse): CoachNormalizedResponse {
   message = message.replace(/```[a-z]*\n?\s*\n?```/g, '')
 
   let actions: CoachAction[] | undefined
+  let conversationEvents: CoachConversationEvent[] = []
   let actionParseFailed = false
   let hadActionsMarkup = false
   let likelyTruncated = raw.truncated === true || isMaxTokenFinishReason(raw.finishReason)
@@ -182,6 +186,7 @@ export function normalizeResponse(raw: AIRawResponse): CoachNormalizedResponse {
     hadActionsMarkup = true
     const parseResult = parseActionsBlock(extraction.actionsText)
     actions = parseResult.actions
+    conversationEvents = parseResult.conversationEvents
     actionParseFailed = parseResult.parseFailed
     likelyTruncated = extraction.openOnly || parseResult.likelyTruncated
     invalidActionCount = parseResult.invalidActionCount
@@ -192,11 +197,12 @@ export function normalizeResponse(raw: AIRawResponse): CoachNormalizedResponse {
     if (inlineJson) {
       const parseResult = parseActionsBlock(inlineJson.actionsText)
       actions = parseResult.actions
+      conversationEvents = parseResult.conversationEvents
       actionParseFailed = parseResult.parseFailed
       likelyTruncated = parseResult.likelyTruncated
       invalidActionCount = parseResult.invalidActionCount
       createWeekDiagnostics = parseResult.createWeekDiagnostics
-      if (parseResult.actions.length > 0) {
+      if (parseResult.actions.length > 0 || parseResult.conversationEvents.length > 0) {
         message = inlineJson.messageWithoutActions
       }
     } else {
@@ -204,11 +210,12 @@ export function normalizeResponse(raw: AIRawResponse): CoachNormalizedResponse {
       if (wholeJson) {
         const parseResult = parseActionsBlock(wholeJson.actionsText)
         actions = parseResult.actions
+        conversationEvents = parseResult.conversationEvents
         actionParseFailed = parseResult.parseFailed
         likelyTruncated = parseResult.likelyTruncated
         invalidActionCount = parseResult.invalidActionCount
         createWeekDiagnostics = parseResult.createWeekDiagnostics
-        if (parseResult.actions.length > 0 || parseResult.parseFailed) {
+        if (parseResult.actions.length > 0 || parseResult.conversationEvents.length > 0 || parseResult.parseFailed) {
           message = wholeJson.messageWithoutActions
         }
       }
@@ -248,6 +255,7 @@ export function normalizeResponse(raw: AIRawResponse): CoachNormalizedResponse {
   return {
     message,
     actions: actions && actions.length > 0 ? actions : undefined,
+    conversationEvents: conversationEvents.length > 0 ? conversationEvents : undefined,
     filteredCreateWeek,
     provider: raw.provider,
     streamed: raw.streamed,
@@ -340,6 +348,7 @@ function classifyOutcome(input: {
 
 function parseActionsBlock(jsonText: string): {
   actions: CoachAction[]
+  conversationEvents: CoachConversationEvent[]
   parseFailed: boolean
   likelyTruncated: boolean
   invalidActionCount: number
@@ -356,6 +365,7 @@ function parseActionsBlock(jsonText: string): {
     if (!fixedJson) {
       return {
         actions: [],
+        conversationEvents: [],
         parseFailed: true,
         likelyTruncated: isLikelyTruncatedJson(jsonText),
         invalidActionCount: 0,
@@ -367,6 +377,7 @@ function parseActionsBlock(jsonText: string): {
     } catch {
       return {
         actions: [],
+        conversationEvents: [],
         parseFailed: true,
         likelyTruncated: isLikelyTruncatedJson(jsonText),
         invalidActionCount: 0,
@@ -379,6 +390,7 @@ function parseActionsBlock(jsonText: string): {
   if (!actionCandidates) {
     return {
       actions: [],
+      conversationEvents: [],
       parseFailed: true,
       likelyTruncated: isLikelyTruncatedJson(jsonText),
       invalidActionCount: 0,
@@ -386,19 +398,26 @@ function parseActionsBlock(jsonText: string): {
     }
   }
 
+  const eventCandidates = actionCandidates.filter(isConversationEventCandidate)
+  const actionOnlyCandidates = actionCandidates.filter((item) => !isConversationEventCandidate(item))
+  const conversationEvents = eventCandidates
+    .map(validateConversationEvent)
+    .filter((event): event is CoachConversationEvent => event != null)
+
   const createWeekDiagnostics: CreateWeekNormalizationDiagnostic[] = []
-  const actions = actionCandidates.reduce<CoachAction[]>((acc, item) => {
+  const actions = actionOnlyCandidates.reduce<CoachAction[]>((acc, item) => {
     const result = validateAction(item)
     if (result.action) acc.push(result.action)
     if (result.createWeekDiagnostic) createWeekDiagnostics.push(result.createWeekDiagnostic)
     return acc
   }, [])
-  const invalidActionCount = actionCandidates.length - actions.length
+  const invalidActionCount = actionOnlyCandidates.length - actions.length
   const droppedCreateWeekSessions = createWeekDiagnostics.some((diagnostic) => diagnostic.droppedSessions > 0)
 
   return {
     actions,
-    parseFailed: actions.length === 0 && actionCandidates.length > 0,
+    conversationEvents,
+    parseFailed: actions.length === 0 && actionOnlyCandidates.length > 0,
     likelyTruncated: invalidActionCount > 0 || droppedCreateWeekSessions || isLikelyTruncatedJson(jsonText),
     invalidActionCount,
     createWeekDiagnostics,
@@ -407,6 +426,7 @@ function parseActionsBlock(jsonText: string): {
 
 function recoverPartialCreateWeekActions(jsonText: string): {
   actions: CoachAction[]
+  conversationEvents: CoachConversationEvent[]
   parseFailed: boolean
   likelyTruncated: boolean
   invalidActionCount: number
@@ -443,6 +463,7 @@ function recoverPartialCreateWeekActions(jsonText: string): {
   const diagnostics = result.createWeekDiagnostic ? [result.createWeekDiagnostic] : []
   return {
     actions,
+    conversationEvents: [],
     parseFailed: actions.length === 0,
     likelyTruncated: true,
     invalidActionCount: actions.length > 0 ? 0 : rawSessions.length,
@@ -457,12 +478,12 @@ function unwrapActionCandidates(parsed: unknown): unknown[] | null {
     const record = parsed as Record<string, unknown>
     if (Array.isArray(record.actions)) return record.actions
 
-    if (typeof record.type === 'string' && VALID_ACTION_TYPES.has(record.type as CoachActionType)) {
+    if (typeof record.type === 'string' && (VALID_ACTION_TYPES.has(record.type as CoachActionType) || CONVERSATION_EVENT_TYPES.has(record.type))) {
       return [record]
     }
 
     // Fallback: model may use "action" as discriminator instead of "type"
-    if (typeof record.action === 'string' && VALID_ACTION_TYPES.has(record.action as CoachActionType)) {
+    if (typeof record.action === 'string' && (VALID_ACTION_TYPES.has(record.action as CoachActionType) || CONVERSATION_EVENT_TYPES.has(record.action))) {
       return [record]
     }
 
@@ -491,6 +512,47 @@ function unwrapNamedActionPayloads(record: Record<string, unknown>): unknown[] {
   }
   return actions
 }
+
+function validateConversationEvent(obj: unknown): CoachConversationEvent | null {
+  if (!obj || typeof obj !== 'object') return null
+  const record = obj as Record<string, unknown>
+  const summary = typeof record.summary === 'string' ? record.summary.trim() : ''
+  if (!summary) return null
+  const eventType = record.type ?? record.action
+  if (eventType === 'offer_generation') {
+    if (typeof record.route !== 'string' || !VALID_OFFER_ROUTES.has(record.route)) return null
+    return {
+      kind: 'offer_generation',
+      route: record.route as 'week_creator' | 'plan_builder_redirect',
+      ...(isValidDate(record.targetWeekStart) ? { targetWeekStart: record.targetWeekStart } : {}),
+      summary,
+    }
+  }
+  if (eventType === 'ask_clarification') {
+    if (typeof record.operation !== 'string' || !VALID_CLARIFICATION_OPERATIONS.has(record.operation)) return null
+    const missing = Array.isArray(record.missing) ? record.missing.filter((item): item is string => typeof item === 'string') : []
+    const known: Record<string, string | number> = {}
+    if (record.known && typeof record.known === 'object') {
+      for (const [key, value] of Object.entries(record.known as Record<string, unknown>)) {
+        if (typeof value === 'string' || typeof value === 'number') known[key] = value
+      }
+    }
+    return {
+      kind: 'ask_clarification',
+      operation: record.operation as 'move_session' | 'update_session' | 'delete_session' | 'add_session',
+      missing, known, summary,
+    }
+  }
+  return null
+}
+
+function isConversationEventCandidate(item: unknown): boolean {
+  if (!item || typeof item !== 'object') return false
+  const record = item as Record<string, unknown>
+  const type = record.type ?? record.action
+  return typeof type === 'string' && CONVERSATION_EVENT_TYPES.has(type)
+}
+
 
 function validateAction(obj: unknown): {
   action: CoachAction | null

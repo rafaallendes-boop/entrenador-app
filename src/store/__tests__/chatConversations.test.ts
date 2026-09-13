@@ -141,9 +141,13 @@ vi.mock('../../services/syncService', () => ({
   deleteCoachProposals: mocks.deleteCoachProposals,
 }))
 
-vi.mock('../../services/chatRouting', () => ({
-  resolveChatRoute: () => ({ kind: 'chat_general' }),
-}))
+vi.mock('../../services/chatRouting', async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    resolveChatRoute: () => ({ kind: 'chat_general' }),
+  }
+})
 
 vi.mock('../../services/ai/contextOptimizer', () => ({
   optimizeChatContext: (context: unknown) => context,

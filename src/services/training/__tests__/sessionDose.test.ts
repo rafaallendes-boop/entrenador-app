@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { hydrateSquashSession } from '../squashSessionHydrator'
 import { materializeRunningSession } from '../runningSessionMaterializer'
-import { sumTimedBlocks } from '../sessionTimeBudget'
+import { sumTimedBlocks, SESSION_COMPOSITION_MINUTES } from '../sessionTimeBudget'
 import { doseSquashSession } from '../squashSessionDose'
 import { finalizeSessionDose } from '../sessionDoseFinalizer'
 
@@ -56,7 +56,9 @@ describe('E1: presupuesto de sesión', () => {
       drills: [{ name: 'Paralela', durationMin: 52, notes: 'Mantener profundidad.' }] }
     const first = doseSquashSession(details, 20)
     if (!first.ok) throw new Error('composición factible')
-    expect(doseSquashSession(first.details, 20)).toEqual(first)
+    const second = doseSquashSession(first.details, 20)
+    if (!second.ok) throw new Error('composición factible')
+    expect(second.details).toEqual(first.details)
     expect(doseSquashSession(details, 5).ok).toBe(false)
     expect(doseSquashSession(details, NaN).ok).toBe(false)
   })
@@ -68,5 +70,51 @@ describe('E1: presupuesto de sesión', () => {
       { label: 'Series', repetitions: 5, durationMin: 4, notes: 'Recupera 2 minutos entre series.' },
     ] } }).ok).toBe(false)
     expect(finalizeSessionDose({ ...session, intervalStructure: { blocks: [{ label: 'Trabajo', durationMin: 25 }] } }).ok).toBe(false)
+  })
+})
+
+describe('A2: el objetivo principal se dosifica antes que el accesorio', () => {
+  it.each(['technical', 'control'] as const)('%s a 15 min con sombras accesorias conserva el bloque principal y avisa', (kind) => {
+    const result = hydrateSquashSession({
+      kind, durationMin: 15, phase: 'base', fatigueLevel: 3, goal: '', recentDrills: [],
+      competitionSoon: false, withShadowsAccessory: true, partnerAvailability: 'either',
+    })
+    const kinds = result.details.blocks?.map(block => block.kind) ?? []
+    expect(kinds).toContain(kind)
+    expect(kinds).not.toContain('shadows')
+    expect(result.warnings.some(warning => warning.code === 'accessory_dropped')).toBe(true)
+    expect(result.details.drills.reduce((n, d) => n + (d.durationMin ?? 0), 0)).toBe(15)
+  })
+
+  it('a 45 min entran el bloque principal y las sombras', () => {
+    const result = hydrateSquashSession({
+      kind: 'technical', durationMin: 45, phase: 'base', fatigueLevel: 3, goal: '', recentDrills: [],
+      competitionSoon: false, withShadowsAccessory: true, partnerAvailability: 'either',
+    })
+    const kinds = result.details.blocks?.map(block => block.kind) ?? []
+    expect(kinds).toContain('technical')
+    expect(kinds).toContain('shadows')
+    expect(result.warnings.some(warning => warning.code === 'accessory_dropped')).toBe(false)
+  })
+
+  it.each(['technical', 'control', 'shadows', 'match'] as const)('%s en su duración mínima conserva su modalidad', (kind) => {
+    const partnerAvail = kind === 'control' || kind === 'shadows' ? 'solo' : 'partner'
+    const result = hydrateSquashSession({
+      kind, durationMin: SESSION_COMPOSITION_MINUTES[kind], phase: 'build', fatigueLevel: 4, goal: 'trabajo técnico', recentDrills: [],
+      competitionSoon: false, partnerAvailability: partnerAvail,
+    })
+    expect(result.details.sessionKind).toBe(kind)
+    expect(result.details.blocks?.some(block => block.kind === kind)).toBe(true)
+  })
+
+  it('el ciclo trabajo/pausa se resuelve por bloque, no por la modalidad global', () => {
+    const result = hydrateSquashSession({
+      kind: 'technical', durationMin: 45, phase: 'base', fatigueLevel: 3, goal: '', recentDrills: [],
+      competitionSoon: false, withShadowsAccessory: true, partnerAvailability: 'either',
+    })
+    const shadows = result.details.blocks?.find(block => block.kind === 'shadows')
+    const technical = result.details.blocks?.find(block => block.kind === 'technical')
+    expect(shadows?.drills[0]?.notes).toContain('hasta 30 s de trabajo')
+    expect(technical?.drills[0]?.notes).toContain('hasta 120 s de trabajo')
   })
 })

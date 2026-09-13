@@ -11,6 +11,7 @@ import type {
   RunningDetails,
   MatchResult,
   RunningType,
+  SessionStatus,
   SessionType,
   SquashSessionBlockKind,
   SquashSubtype,
@@ -21,6 +22,10 @@ import {
   EXERCISE_TYPES,
   resolveCoachSquashKind,
 } from '../../services/athlete/coachSessionSerializer'
+import { isExecutedStatus } from '../../services/training/executedSessions'
+import { findRunningSessionById } from '../../services/training/runningSessionLibrary'
+import { RUNNING_MATERIALIZER_VERSION } from '../../services/training/runningTemplateMaterializer'
+import { describeRunningDoseDiff, validateManualPaceAgainstStructure } from '../../services/training/runningDoseDiff'
 import {
   getCatalogForSport,
   toLibraryRef,
@@ -52,6 +57,14 @@ export interface SessionFormProps {
   mode?: 'session' | 'template'
   initialName?: string
   allowMatchResult?: boolean
+  /**
+   * `new`: alta manual. `template`: alta desde plantilla. `existing`: edición de
+   * una sesión persistida. `initialValues` NO distingue alta de edición
+   * (crear desde plantilla también lo usa), por eso el origen es explícito.
+   */
+  origin?: 'new' | 'template' | 'existing'
+  /** Estado de la sesión editada; `completed`/`adjusted` bloquean cambios de dosis. */
+  sessionStatus?: SessionStatus
   onSubmit: (values: CoachSessionDraft, meta?: { templateName: string }) => Promise<void>
   onCancel: () => void
 }
@@ -204,6 +217,8 @@ export default function SessionForm({
   mode = 'session',
   initialName,
   allowMatchResult = true,
+  origin = 'new',
+  sessionStatus,
   onSubmit,
   onCancel,
   athleteProfile,
@@ -233,6 +248,47 @@ export default function SessionForm({
   const [paceMax, setPaceMax] = useState(initialValues?.runningTargets?.targetPaceMax ?? '')
   const [hrMin, setHrMin] = useState(String(initialValues?.runningTargets?.targetHrMin ?? ''))
   const [hrMax, setHrMax] = useState(String(initialValues?.runningTargets?.targetHrMax ?? ''))
+
+  const isExecuted = sessionStatus != null && isExecutedStatus(sessionStatus)
+  const initialRunning = initialValues?.runningTargets
+  /** Receta elegida en el picker durante esta edición (rematerializa al guardar sólo en alta). */
+  const [pickerTouched, setPickerTouched] = useState(false)
+  /** Preview pendiente de aprobación: qué cambia y la receta resultante. */
+  const [recalcPreview, setRecalcPreview] = useState<{ lines: string[]; recipe: RunningDetails; key: string } | null>(null)
+  /** Receta aprobada por el usuario; el submit la persiste TAL CUAL mientras `key` siga vigente. */
+  const [approvedRecipe, setApprovedRecipe] = useState<{ recipe: RunningDetails; key: string } | null>(null)
+
+  /** Identifica las entradas de una materialización: si cambia, la aprobación caduca. */
+  const rematerializationKey = (recipe: RunningDetails | undefined) =>
+    `${recipe?.templateRef?.id ?? ''}|${Number(duration)}|${athleteProfile?.updatedAt ?? ''}|${recipe?.materialization?.intent ?? 'hold'}`
+
+  const buildRecalcPreview = (recipe: RunningDetails): { lines: string[]; recipe: RunningDetails; key: string } | { error: string } => {
+    const profile = runningProfileWithRestrictions(athleteProfile)
+    if (profile.impactRestriction === 'no_running' || profile.impactRestriction === 'no_fast_running' && ['tempo', 'intervals'].includes(runningType)) {
+      return { error: 'Plantilla incompatible con las restricciones activas.' }
+    }
+    const previous = recipe.materialization
+    const dose = materializeRunningTemplate({
+      template: recipe.templateRef!.id, durationMin: Number(duration), profile,
+      intent: previous?.intent ?? 'hold', profileRevision: athleteProfile?.updatedAt,
+    })
+    if (!dose.ok) return { error: dose.message }
+    const causes: string[] = []
+    if (Number(duration) !== initialValues?.durationMin) causes.push(`duración: ${initialValues?.durationMin} → ${Number(duration)} min`)
+    if (recipe.templateRef!.id !== initialRunning?.templateRef?.id) causes.push(`plantilla: ${initialRunning?.templateRef?.id ?? 'ninguna'} → ${recipe.templateRef!.id}`)
+    if (!previous) causes.push('versión original desconocida: la receta no guardó su procedencia')
+    if (previous && previous.profileRevision !== athleteProfile?.updatedAt) causes.push('ritmos de referencia del perfil: cambiaron desde la última materialización')
+    if (!previous && athleteProfile?.updatedAt != null) causes.push('ritmos de referencia del perfil: se usan los vigentes')
+    if (previous && previous.recipeVersion !== dose.materialization.recipeVersion) causes.push(`versión de la receta: ${previous.recipeVersion} → ${dose.materialization.recipeVersion}`)
+    if (previous && previous.materializerVersion !== RUNNING_MATERIALIZER_VERSION) causes.push(`versión del materializador: ${previous.materializerVersion} → ${RUNNING_MATERIALIZER_VERSION}`)
+    causes.push(previous ? `intención: ${previous.intent}` : 'intención asumida: mantener')
+    const doseLines = initialRunning?.intervalStructure
+      ? describeRunningDoseDiff(initialRunning.intervalStructure, dose.structure)
+      : ['la receta no tenía bloques guardados; se materializa completa']
+    const next = { ...recipe, intervalStructure: dose.structure, materialization: dose.materialization }
+    return { lines: [...causes, ...doseLines], recipe: next, key: rematerializationKey(next) }
+  }
+
   const [squashSubtype, setSquashSubtype] = useState<SquashSubtype>(
     initialValues?.subtype ?? projectSquashSubtype(initialSquashKind),
   )
@@ -444,13 +500,65 @@ export default function SessionForm({
         setError('Un drill requiere compañero, cancha o material que no está disponible. Ajusta el contenido o la disponibilidad.'); return
       }
     }
+    if (origin === 'existing' && isExecuted && initialValues?.type === 'running'
+      && (type !== 'running' || Number(duration) !== initialValues.durationMin || pickerTouched)) {
+      setError('Esta sesión ya fue realizada: se puede corregir lo ejecutado, pero no cambiar su duración ni su receta.')
+      return
+    }
     let submittedRunning = runningRecipe
     if (type === 'running' && runningRecipe?.templateRef) {
-      const profile = runningProfileWithRestrictions(athleteProfile)
-      if (profile.impactRestriction === 'no_running' || profile.impactRestriction === 'no_fast_running' && ['tempo', 'intervals'].includes(runningType)) { setError('Plantilla incompatible con las restricciones activas.'); return }
-      const dose = materializeRunningTemplate({ template: runningRecipe.templateRef.id, durationMin: Number(duration), profile })
-      if (!dose.ok) { setError(dose.message); return }
-      submittedRunning = { ...runningRecipe, intervalStructure: dose.structure }
+      const definition = findRunningSessionById(runningRecipe.templateRef.id)
+      if (definition && definition.runningType !== runningType) {
+        setError('El tipo de running elegido no corresponde a la plantilla. Elige otra plantilla o vuelve al tipo de la receta.')
+        return
+      }
+      if (origin !== 'existing') {
+        // Alta manual o desde plantilla: se materializa al slot y duración elegidos,
+        // conservando la intención de la plantilla si la trae.
+        const profile = runningProfileWithRestrictions(athleteProfile)
+        if (profile.impactRestriction === 'no_running' || profile.impactRestriction === 'no_fast_running' && ['tempo', 'intervals'].includes(runningType)) { setError('Plantilla incompatible con las restricciones activas.'); return }
+        const dose = materializeRunningTemplate({
+          template: runningRecipe.templateRef.id, durationMin: Number(duration), profile,
+          intent: runningRecipe.materialization?.intent ?? 'hold', profileRevision: athleteProfile?.updatedAt,
+        })
+        if (!dose.ok) { setError(dose.message); return }
+        submittedRunning = { ...runningRecipe, intervalStructure: dose.structure, materialization: dose.materialization }
+      } else {
+        const durationChanged = Number(duration) !== initialValues?.durationMin
+        const templateChanged = runningRecipe.templateRef.id !== initialRunning?.templateRef?.id
+        // Un recálculo aprobado también cuenta como intención de rematerializar,
+        // aunque duración y plantilla sigan siendo las originales (p. ej. cambió el perfil).
+        const wantsRematerialize = pickerTouched || templateChanged || durationChanged || approvedRecipe != null
+        if (isExecuted && wantsRematerialize) {
+          setError('Esta sesión ya fue realizada: se puede corregir lo ejecutado, pero no cambiar su duración ni su receta.')
+          return
+        }
+        if (wantsRematerialize) {
+          // La vigencia de la aprobación se comprueba SIEMPRE que exista una,
+          // no sólo cuando cambió duración o plantilla: si el perfil cambió
+          // después de aprobar, la receta aprobada ya no describe la dosis actual.
+          const currentKey = rematerializationKey(runningRecipe)
+          if (!approvedRecipe || approvedRecipe.key !== currentKey) {
+            setApprovedRecipe(null)
+            const preview = buildRecalcPreview(runningRecipe)
+            if ('error' in preview) { setError(preview.error); return }
+            setRecalcPreview(preview)
+            setError('Revisa qué cambia en la dosis y confirma el recálculo antes de guardar.')
+            return
+          }
+          // Se persiste EXACTAMENTE lo aprobado; no se vuelve a materializar.
+          submittedRunning = approvedRecipe.recipe
+        }
+        // Edición de metadatos: `runningRecipe` es el objeto de `initialValues` y
+        // viaja byte a byte. No se toca la estructura ni la procedencia.
+      }
+    }
+    if (type === 'running' && origin === 'existing') {
+      const paceChanged = paceMin.trim() !== (initialRunning?.targetPaceMin ?? '') || paceMax.trim() !== (initialRunning?.targetPaceMax ?? '')
+      if (paceChanged || approvedRecipe != null) {
+        const check = validateManualPaceAgainstStructure(paceMin.trim() || undefined, paceMax.trim() || undefined, submittedRunning?.intervalStructure)
+        if (!check.ok) { setError(check.message); return }
+      }
     }
     const values: CoachSessionDraft = {
       date,
@@ -627,10 +735,45 @@ export default function SessionForm({
             </div>
           )}
 
-          {type === 'running' && <RunningTemplatePicker durationMin={Number(duration)} athleteProfile={athleteProfile} value={runningRecipe} onChange={value => {
+          {type === 'running' && <RunningTemplatePicker durationMin={Number(duration)} athleteProfile={athleteProfile} preserveStructure={origin === 'existing'} value={runningRecipe} onChange={value => {
             setRunningRecipe(value)
+            setPickerTouched(true)
+            setRecalcPreview(null)
+            setApprovedRecipe(null)
             if (value) setRunningType(value.runningType)
           }} />}
+
+          {type === 'running' && origin === 'existing' && !isExecuted && runningRecipe?.templateRef && (
+            <div className="space-y-2 rounded-xl border border-surface-border p-3">
+              <button type="button" className="text-sm underline" onClick={() => {
+                const preview = buildRecalcPreview(runningRecipe)
+                if ('error' in preview) { setError(preview.error); return }
+                setRecalcPreview(preview)
+              }}>Recalcular dosis</button>
+              {recalcPreview && (
+                <div data-testid="running-recalc-diff" className="space-y-1 text-xs text-ink-muted">
+                  <p>Qué cambia al recalcular:</p>
+                  <ul className="list-disc pl-4">{recalcPreview.lines.map((line, index) => <li key={index}>{line}</li>)}</ul>
+                  <div className="flex gap-2 pt-1">
+                    <button type="button" className="rounded border px-2 py-1" onClick={() => {
+                      // Aprobar NO vuelve a materializar: guarda la receta ya calculada.
+                      setApprovedRecipe({ recipe: recalcPreview.recipe, key: recalcPreview.key })
+                      setRunningRecipe(recalcPreview.recipe)
+                      setPickerTouched(false)
+                      setRecalcPreview(null)
+                      setError(null)
+                    }}>Aplicar recálculo</button>
+                    <button type="button" className="rounded border px-2 py-1" onClick={() => setRecalcPreview(null)}>Descartar</button>
+                  </div>
+                </div>
+              )}
+              {approvedRecipe && (
+                <p data-testid="running-approved-structure" data-signature={JSON.stringify(approvedRecipe.recipe.intervalStructure)} className="text-xs text-ink-muted">
+                  Recálculo aprobado; se guardará al confirmar.
+                </p>
+              )}
+            </div>
+          )}
 
           {isTemplate && (
             <label className="block text-xs font-medium uppercase tracking-wider text-ink-muted">

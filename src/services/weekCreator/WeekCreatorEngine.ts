@@ -166,6 +166,8 @@ type WeekCreatorOptions = {
   provider?: AIProvider
   /** ID estable opcional para correlacionar una generación controlada. */
   generationId?: string
+  /** Atleta capturado al inicio de la operación. */
+  targetAthleteId?: string | null
 }
 
 type WeekCreatorCohort = Pick<
@@ -386,7 +388,7 @@ export const WeekCreatorEngine = {
             userMessage: prompt.userPrompt,
             requestClass: 'week_creator',
             traceId,
-            targetAthleteId: resolveRequestTargetAthleteId(),
+            targetAthleteId: resolveRequestTargetAthleteId(options.targetAthleteId),
             generationId,
             logicalAttempt: attempt,
             maxTokens: effectiveMaxTokens,
