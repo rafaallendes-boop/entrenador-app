@@ -18,7 +18,7 @@ Las familias de máquinas se contrastaron con catálogos del fabricante [Life Fi
 
 Ejecutar `node scripts/benchmark-strength.mjs ruta-del-reporte.json`. No invoca proveedores de IA ni bases de datos. Usa un calentamiento y tres mediciones, con mediana, huella de contenido y perfil de CPU. Normaliza únicamente los UUID de superseries para conservar sus agrupaciones en la comparación.
 
-La comparación se hizo en una exportación aislada de `b82a603`, primero sin cambios, luego con el índice sobre los mismos 93 ejercicios y finalmente con E7 y el límite de aislamientos. Los archivos están en `strength-benchmarks/`.
+La comparación se hizo en una exportación aislada de `b82a603`, primero sin cambios, luego con el índice sobre los mismos 93 ejercicios y finalmente con E7 y el límite de aislamientos. Los reportes JSON históricos se retiraron el 2026-09-12 al depurar el trabajo ya implementado; la tabla siguiente conserva el resumen de esas mediciones.
 
 | Trabajo | Antes (93) | Sólo índice (93) | Entrega completa (108) |
 |---|---:|---:|---:|
