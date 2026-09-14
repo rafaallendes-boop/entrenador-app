@@ -218,9 +218,21 @@ function keyRank(key: ConstraintKey): number {
   return 200 + (reason === 'medical_marker_without_supported_constraint' ? 0 : 1)
 }
 export function resolveStrengthSafetyConstraints(input: SafetyConstraintInput): readonly StrengthConstraint[] {
-  const raw = [
+  const profile = [
     ...parseField(input.currentInjuries, 'current_injuries'), ...parseField(input.restrictions, 'restrictions'),
-    ...parseField(input.injuryNotes, 'injury_notes'), ...(input.userMessages ?? []).flatMap((text) => parseField(text, 'user_message')),
+    ...parseField(input.injuryNotes, 'injury_notes'),
+  ]
+  // Decisión del owner (2026-09-14): con una zona ya identificada en el perfil,
+  // "considerando mi lesión de espalda" o "el kine aún no me da permiso" hablan
+  // de esa misma lesión. Sin esta lectura, la marca sin zona del mensaje
+  // bloqueaba toda la fuerza aunque la restricción real ya estuviera resuelta.
+  // Sólo se absorbe la marca sin zona del MENSAJE: una zona nueva se suma, y
+  // una marca sin zona del propio perfil o `return_to_play` siguen bloqueando.
+  const profileHasRegion = profile.some((item) => item.constraint.kind === 'region')
+  const message = (input.userMessages ?? []).flatMap((text) => parseField(text, 'user_message'))
+    .filter((item) => !(profileHasRegion && item.constraint.kind === 'unresolved_medical_restriction'))
+  const raw = [
+    ...profile, ...message,
     ...(input.trainingPriority === 'return_to_play' ? [{ key: 'unresolved:structured_priority_without_detail' as const, constraint: { kind: 'unresolved_medical_restriction' as const, reason: 'structured_priority_without_detail' as const }, source: 'training_priority' as const }] : []),
   ]
   const merged = new Map<ConstraintKey, { constraint: ConstraintPayload; sources: Set<ConstraintSource> }>()

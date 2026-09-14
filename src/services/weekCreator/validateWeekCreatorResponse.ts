@@ -28,6 +28,12 @@ export interface WeekCreatorValidationInput {
   config: WeekCreatorEffectiveConfig
   targetWeekStart: string
   planningStartDate?: string
+  /**
+   * Bloques de fuerza retirados por seguridad. Siguen ocupando su cupo para el
+   * conteo y la presencia de deportes: la semana es parcial a propósito, no
+   * incompleta por un error del modelo.
+   */
+  safetyDroppedSlots?: readonly { date: string; timeBlock: CoachSessionProposal['timeBlock'] }[]
 }
 
 export interface WeekCreatorValidationResult {
@@ -96,13 +102,19 @@ export function validateWeekCreatorResponse(
     ? eventContext.anchorDate
     : undefined
 
-  if (sessions.length !== input.config.sessionsPerWeek) {
+  const quotaSessions: CoachSessionProposal[] = [
+    ...sessions,
+    ...(input.safetyDroppedSlots ?? []).map((slot) => ({
+      date: slot.date, timeBlock: slot.timeBlock, sessionType: 'strength' as const, title: '', durationMin: 0,
+    })),
+  ]
+  if (quotaSessions.length !== input.config.sessionsPerWeek) {
     const droppedInfo = droppedSessionCount && droppedSessionCount > 0
       ? ` Se descartaron ${droppedSessionCount} sesión(es) inválidas durante la normalización.`
       : ''
     return fail(
       'session_count_mismatch',
-      `La semana debe traer exactamente ${input.config.sessionsPerWeek} sesiones válidas y llegó con ${sessions.length}.${droppedInfo}`,
+      `La semana debe traer exactamente ${input.config.sessionsPerWeek} sesiones válidas y llegó con ${quotaSessions.length}.${droppedInfo}`,
       rawSessionCount, validSessionCount, droppedSessionCount,
     )
   }
@@ -134,10 +146,10 @@ export function validateWeekCreatorResponse(
   const detailsError = validateRequiredDetails(sessions)
   if (detailsError) return fail('missing_sport_details', detailsError, rawSessionCount, validSessionCount, droppedSessionCount)
 
-  const primarySportError = validatePrimarySportPresence(sessions, input.config)
+  const primarySportError = validatePrimarySportPresence(quotaSessions, input.config)
   if (primarySportError) return fail('missing_primary_sport', primarySportError, rawSessionCount, validSessionCount, droppedSessionCount)
 
-  const supportSportError = validateSupportSportPresence(sessions, input.config)
+  const supportSportError = validateSupportSportPresence(quotaSessions, input.config)
   if (supportSportError) return fail('missing_support_sport', supportSportError, rawSessionCount, validSessionCount, droppedSessionCount)
 
   const sportWarnings = collectSportDetailWarnings(sessions)

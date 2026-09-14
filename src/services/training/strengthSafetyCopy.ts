@@ -28,9 +28,18 @@ export const BLOCKED_STRENGTH_TRAINING_CONTEXT_COPY =
 export const STRENGTH_TRAINING_CONTEXT_TRIM_WARNING =
   'Saqué el trabajo de impacto o el finisher por el momento del calendario y la duración de la sesión, no por una restricción.'
 
+/**
+ * Copy de bloqueo por restricción sin zona identificable.
+ *
+ * El genérico no decía qué faltaba. Sin zona el filtro no puede elegir
+ * ejercicios compatibles, y lo único que destraba la sesión es precisarla.
+ */
+export const BLOCKED_STRENGTH_UNRESOLVED_COPY =
+  'No pude identificar la zona de la lesión o restricción, así que no incluí trabajo de fuerza. Dime qué zona es (por ejemplo: espalda baja, rodilla u hombro) o regístrala en tu perfil.'
+
 /** Copy único por razón de bloqueo: productores y consumidores comparten módulo. */
 export function blockedStrengthCopy(reason?: string): string {
-  return reason === 'training_context_unavailable'
-    ? BLOCKED_STRENGTH_TRAINING_CONTEXT_COPY
-    : BLOCKED_STRENGTH_COPY
+  if (reason === 'training_context_unavailable') return BLOCKED_STRENGTH_TRAINING_CONTEXT_COPY
+  if (reason === 'unresolved_medical_restriction') return BLOCKED_STRENGTH_UNRESOLVED_COPY
+  return BLOCKED_STRENGTH_COPY
 }

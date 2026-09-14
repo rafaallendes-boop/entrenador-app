@@ -139,7 +139,7 @@ describe('applyCreateWeek no borra planned sessions de otro atleta', () => {
         recoveryProfile: { currentInjuries: 'me operaron hace dos semanas' },
       },
       store: storeAdapter,
-    })).rejects.toThrow('No pude verificar una sesión de fuerza')
+    })).rejects.toThrow('No pude identificar la zona')
 
     expect(await db.sessions.get('existing-planned')).toBeDefined()
     expect(storeAdapter.addSession).not.toHaveBeenCalled()

@@ -309,7 +309,7 @@ describe('acceptProposal - switch guard', () => {
 
     const result = await useCoachActionsStore.getState().acceptProposal('late-restriction')
 
-    expect(result.errors.join(' ')).toContain('No pude verificar')
+    expect(result.errors.join(' ')).toContain('No pude identificar la zona')
     expect(await db.sessions.toArray()).toEqual([])
   })
 

@@ -132,7 +132,7 @@ describe('Week Creator strength safety', () => {
     expect(calls).toHaveBeenCalledTimes(1)
     expect(response.actions).toEqual([])
     expect(response.meta?.outcome).toBe('safety_blocked')
-    expect(response.message).toBe('No pude verificar una sesión de fuerza compatible con la restricción registrada.')
+    expect(response.message).toBe('No pude identificar la zona de la lesión o restricción, así que no incluí trabajo de fuerza. Dime qué zona es (por ejemplo: espalda baja, rodilla u hombro) o regístrala en tu perfil.')
     const request = useAIDebugStore.getState().requests[0]
     expect(request).toMatchObject({
       status: 'completed',

@@ -68,7 +68,7 @@ describe('seguridad de fuerza en el postprocesador', () => {
     }]), context('me operaron hace dos semanas'), 'agrega fuerza el viernes')
 
     expect(output.actions ?? []).toHaveLength(0)
-    expect(output.message).toBe('No pude verificar una sesión de fuerza compatible con la restricción registrada.')
+    expect(output.message).toBe('No pude identificar la zona de la lesión o restricción, así que no incluí trabajo de fuerza. Dime qué zona es (por ejemplo: espalda baja, rodilla u hombro) o regístrala en tu perfil.')
     expect(output.meta?.warnings).toContain('chat_action_strength_safety_blocked')
   })
 
