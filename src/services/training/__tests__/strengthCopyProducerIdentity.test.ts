@@ -24,6 +24,21 @@ vi.mock('../../ai/providerResolver', () => ({
  *
  * NO correr `vitest -u` sobre este archivo: la firma de prescripción del
  * fallback es un guard de regresión, no un valor a regenerar.
+ *
+ * Excepción revisada manualmente (Fase B, Tarea 8, 2026-09-13): el fallback
+ * del Week Creator pasó a resolver sus campos de atleta con
+ * `buildWeekCreatorStrengthSelectionContext`/`toStrengthContextAthleteFields`,
+ * que SIEMPRE estampa `rpeAdjustment` (0 ó -1, nunca `undefined`). Eso activa
+ * `shouldUseBlockTemplateSelection` en `strengthSelector.ts` (dispara con
+ * `rpeAdjustment != null`, y 0 no es `null`), así que el relleno de densidad
+ * pasa de la selección por puntaje a la selección por plantilla de bloque
+ * (semana 0 por defecto, sin `weekIndexInBlock`). Es el mismo camino que ya
+ * usa `buildStrengthSelectionContextForAction` en `actionPostProcessor.ts`
+ * para sesiones de fuerza del chat — no es una regresión nueva, es que el
+ * Week Creator ahora comparte el mismo resolver y por lo tanto el mismo
+ * comportamiento. El snapshot se actualizó una sola vez: `side_plank_plate_press`
+ * → `cable_chop` (30s → 10 reps) en ambas variantes; identidad, catálogo y
+ * cobertura de variantes se siguen verificando arriba sin cambios.
  */
 
 function idFor(exerciseId: string): { name: string; id: string } {

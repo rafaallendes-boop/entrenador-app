@@ -99,6 +99,13 @@ export interface ExerciseDefinition {
    * cambia ningún ejercicio anterior.
    */
   isolation?: boolean
+  /**
+   * Exige técnica aprendida: olímpicos, saltos reactivos y cargas complejas con
+   * barra. Sólo lo consume la elegibilidad de experiencia `unknown` (D2). Se
+   * declara por id en `TECHNIQUE_DEMANDING_EXERCISE_IDS`; no se deriva de
+   * `difficulty` ni de `tags`.
+   */
+  requiresTechnique?: true
   tags: string[]
   description: string
   aliases?: string[]
@@ -1993,6 +2000,12 @@ function inferAppropriateForPhases(exercise: ExerciseDefinition): ExercisePhase[
   return ['base', 'build']
 }
 
+/** D2, owner 2026-09-13. Append-only; auditado en strengthTechniqueDemand.test.ts. */
+export const TECHNIQUE_DEMANDING_EXERCISE_IDS: ReadonlySet<string> = new Set([
+  'back_squat', 'barbell_jump_squat', 'clean', 'clean_high_pull', 'deadlift',
+  'depth_jump', 'drop_jump', 'front_squat', 'push_press', 'split_jerk',
+])
+
 function withExercisePhase2Metadata(exercise: ExerciseDefinition): ExerciseDefinition {
   return {
     ...exercise,
@@ -2002,6 +2015,7 @@ function withExercisePhase2Metadata(exercise: ExerciseDefinition): ExerciseDefin
     requiredEquipment: exercise.requiredEquipment ?? ATHLETIC_REQUIRED_EQUIPMENT[exercise.id],
     appropriateForPhases: exercise.appropriateForPhases ?? inferAppropriateForPhases(exercise),
     blockRotationGroup: exercise.blockRotationGroup ?? EXERCISE_ROTATION_GROUPS[exercise.id],
+    ...(TECHNIQUE_DEMANDING_EXERCISE_IDS.has(exercise.id) ? { requiresTechnique: true as const } : {}),
   }
 }
 

@@ -271,6 +271,117 @@ operativa tras el smoke de Entrega 2 (§6), por la limitación de UI de §25.
 Revisión adicional del 2026-09-13 y correcciones:
 [hallazgos de cierre](docs/reviews/2026-09-13-coaching-phase-a-review.md).
 
+### Fase B del refactor de inteligencia de coaching — cerrada localmente (2026-09-14)
+
+Las 15 tareas de
+`docs/superpowers/plans/2026-09-13-coaching-intelligence-phase-b.md`
+(B1–B4, tabla I1–I16) están implementadas, sin migraciones propias de esta
+fase. `resolveStrengthAthleteContext` es ahora la autoridad compartida de
+fatiga, experiencia, recuperación, 1RM, RPE y equipamiento, adoptada por el
+chat, Week Creator y Plan Builder; la vigencia de lo declarado (7 días de
+fatiga, 14 de retorno) fue decidida por el owner el 2026-09-13. El chat
+resuelve objetivos por mensaje (`resolveMessageTargets`) con aclaración
+explícita ante ambigüedad, cardinalidad o exceso, y separa el `ChatContext`
+de dominio de la proyección de prompt (`PromptContext`). La paridad de las
+tres rutas queda fijada en `src/services/__tests__/strengthContextParity.test.ts`,
+con la divergencia I8 (el Plan Builder sólo ve la última semana completamente
+vivida) documentada como caso explícito, no como bug. F06 y F10 quedan
+fijados como regresión permanente en `coachingRefactorProbes.test.ts`, junto
+a F03/F05/F07 de la Fase A. El probe pareado (`probe-phase-b-before.json` /
+`probe-phase-b-after.json`, cinco arquetipos × tres rutas) confirma
+byte-identidad entre rutas por arquetipo. Como el resolver compartido
+siempre estampa `available1RM` y `rpeAdjustment`, `shouldUseBlockTemplateSelection`
+(`strengthSelector.ts`) pasa a activarse también en chat, en el prompt de
+fuerza del chat general y en Week Creator: las tres rutas usan ahora
+selección por plantilla de bloque, igual que el Plan Builder ya usaba. El
+probe pareado (`probe-phase-b-before.json` / `probe-phase-b-after.json`)
+muestra el efecto completo por arquetipo. Suite completa (629 archivos /
+5550 tests), lint, `tsc -b`, build y `git diff --check` en verde el
+2026-09-14.
+
+**B no garantiza** (declarado en el spec §2): paridad en cycling ni
+movilidad; el horizonte local del Plan Builder (Fase C); revalidación de
+seguridad al aceptar un plan (Fase D); ni vigencia de lo declarado en el
+texto/ramas de instrucciones del generador de prompt del Plan Builder
+(residual I11, caracterizado en
+`src/services/planBuilder/__tests__/phaseBPromptFatigueResidual.test.ts`).
+
+**Pendiente, incluidos los smokes manuales — nada de esto se verifica con
+tests:**
+
+- Ajustes → Perfil: declarar experiencia en fuerza persiste en Dexie y
+  sincroniza a Supabase.
+- Chat: «¿cómo me fue ayer?» sobre datos reales trae los hechos de la sesión
+  consultada (F10 en producción, no sólo en el probe).
+- Chat: una acción sobre una sesión lejana del calendario (fuera de la
+  ventana de seis) se resuelve sin ampliar el presupuesto del prompt (F06 en
+  producción).
+- Chat: «bórrala» sin contexto previo, y «mueve la sesión del jueves» con dos
+  sesiones candidatas, piden aclaración en vez de adivinar (B4).
+- Plan Builder: un plan con fatiga declarada por el atleta la aplica sólo en
+  la primera semana generada, no en las siguientes (I7 — vigencia de 7 días
+  agotada para semanas posteriores).
+- Deploy de la Fase B y observación del primer bloque real de Plan Builder
+  con experiencia `unknown` (ver §8 de este documento, "Diversidad de fuerza
+  en el primer bloque real").
+
+### Week Creator — restricciones del chat y semana parcial (2026-09-14, local)
+
+Origen: smoke de producción. «Créame una semana… considerando mi lesión de
+espalda» y «semana sin squash, el kine aún no me da permiso» bloquearon la
+semana completa con lesión lumbar ya registrada: la marca médica sin zona del
+mensaje producía `unresolved_medical_restriction`, y una sola sesión de fuerza
+bloqueada descartaba también el squash. Decisiones del owner, implementadas:
+
+- **A:** con una zona identificada en el perfil, la marca sin zona del
+  **mensaje** se lee como la misma lesión (`resolveStrengthSafetyConstraints`).
+  Una zona nueva se suma; marca sin zona del perfil y `return_to_play` siguen
+  bloqueando.
+- **B:** Week Creator retira la sesión de fuerza no verificable con aviso y
+  entrega el resto; el retiro no redistribuye la semana ni consume la
+  validación de conteo. Rechazo completo sólo si no sobrevive ninguna sesión.
+- Copy de `unresolved_medical_restriction` pide la zona (también en chat y al
+  aceptar). El prompt del Week Creator incluye `currentInjuries`.
+
+Sin migraciones. Pendiente: deploy y repetir las dos peticiones del smoke. La
+causa del RPE 4-5 de la primera semana no está atribuida: requiere el export
+Beta Quality de esa generación. Lo que quedó fuera de alcance vive en §28.
+
+### 28. Week Creator — intención estructurada del mensaje (mejora futura)
+
+La entrega del 2026-09-14 quita el bloqueo, pero el Week Creator sigue leyendo
+del mensaje sólo la cantidad de sesiones (`extractRequestedSessionsPerWeek`).
+Todo lo demás depende de que el modelo lo respete, y la seguridad sólo mira
+fuerza. Casos reales del smoke que motivan esto: «hazme una semana sin squash»
+y «el kine aún no me da permiso».
+
+- **Exclusión de deporte determinista.** «Sin squash», «sólo gimnasio», «nada
+  de running» → la config efectiva excluye el deporte antes del prompt, y la
+  validación rechaza una semana que lo incluya. Hoy sólo viaja como texto al
+  modelo.
+- **Alta médica pendiente como señal estructurada.** «El kine aún no me da
+  permiso», «todavía sin alta» → sin partidos ni impacto y squash restringido,
+  con la regla vigente de restricción médica de squash
+  (`hasActiveSquashMedicalRestriction`). Hoy esa frase sólo sirve para bloquear
+  fuerza.
+- **Aclaración en vez de rechazo.** Cuando falta la zona, preguntar «¿qué
+  zona?» y retomar la misma petición con la respuesta, reutilizando la
+  intención pendiente del chat (B4 de la Fase B), en vez de rechazar o de
+  entregar la semana sin fuerza.
+- **Semana parcial también en el chat.** El `create_week` que arma el chat
+  fuera del Week Creator sigue siendo atómico (`actionPostProcessor.ts`: «si
+  falla una de sus sesiones, se descarta completa»). Alinearlo con el Week
+  Creator o documentar por qué difieren.
+- **Decisión abierta:** `return_to_play` sin detalle bloquea toda la fuerza
+  aunque el perfil ya tenga una zona identificada. La absorción A no lo cubre a
+  propósito; decidir si la zona del perfil basta como detalle.
+- **Diagnóstico previo, sin costo de API:** atribuir el RPE 4-5 de la semana
+  del smoke con su export Beta Quality antes de tocar la directiva de carga.
+
+**Done:** «sin squash» y «sin alta del kine» producen una semana válida sin
+squash y sin impacto, verificada por tests del engine con esas frases, y una
+lesión sin zona abre aclaración en vez de retirar la fuerza.
+
 ### 7. Efecto deportivo de la precisión de Plan Builder (`36f5570`)
 
 Desplegado y sin observar: la única generación real posterior fue de 2 semanas
@@ -575,3 +686,8 @@ atleta no puede borrar lo que creó— es de una línea y bloquea la higiene de
 cualquier prueba futura, así que conviene antes del piloto. §27 —dev y prod
 comparten proyecto Supabase— es una decisión de infraestructura que hay que
 tomar **antes** de invitar al primer cliente.
+
+§28 —intención estructurada del Week Creator— conviene antes del piloto por el
+perfil del cliente fundador: squash-first y con lesiones declaradas es
+justamente quien va a escribir «sin squash» o «sin alta del kine». Antes,
+desplegar la entrega del 2026-09-14 y repetir las dos peticiones del smoke.

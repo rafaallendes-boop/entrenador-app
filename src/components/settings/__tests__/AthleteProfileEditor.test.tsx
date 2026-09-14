@@ -158,3 +158,20 @@ describe('AthleteProfileEditor performance limiter', () => {
     }))
   })
 })
+
+describe('AthleteProfileEditor experiencia en fuerza', () => {
+  afterEach(() => cleanup())
+
+  it('guarda la experiencia declarada dentro de strengthProfile', async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined)
+    render(<AthleteProfileEditor profile={makeProfile(undefined)} isSaving={false} onSave={onSave} />)
+
+    await userEvent.click(screen.getByRole('button', { name: /Fuerza/ }))
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Experiencia en fuerza' }), 'advanced')
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar perfil' }))
+
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+      strengthProfile: expect.objectContaining({ experienceLevel: 'advanced' }),
+    }))
+  })
+})

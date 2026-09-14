@@ -1,0 +1,466 @@
+{
+  "mode": "before",
+  "output": [
+    {
+      "archetype": "sin-datos-normal",
+      "slot": {
+        "date": "2026-09-14",
+        "timeBlock": "AM"
+      },
+      "route": "chat",
+      "resolution": null,
+      "athlete": {
+        "fatigueLevel": 5,
+        "experienceLevel": "intermediate",
+        "requireExtraRecovery": null,
+        "returningFromBreak": null,
+        "rpeAdjustment": null,
+        "available1RM": null,
+        "availableEquipment": [
+          "barbell",
+          "dumbbell",
+          "kettlebell"
+        ]
+      },
+      "exercises": [
+        "farmer_carry",
+        "bird_dog_renegade_row",
+        "z_press",
+        "half_kneeling_row",
+        "back_squat",
+        "bb_side_lunge",
+        "landmine_press",
+        "bulgarian_split_squat"
+      ]
+    },
+    {
+      "archetype": "sin-datos-normal",
+      "slot": {
+        "date": "2026-09-14",
+        "timeBlock": "AM"
+      },
+      "route": "week_creator",
+      "resolution": null,
+      "athlete": {
+        "fatigueLevel": 4,
+        "experienceLevel": null,
+        "requireExtraRecovery": false,
+        "returningFromBreak": null,
+        "rpeAdjustment": null,
+        "available1RM": null,
+        "availableEquipment": null
+      },
+      "exercises": [
+        "side_plank_plate_press",
+        "half_kneeling_diagonal_plate_chop",
+        "z_press",
+        "half_kneeling_row",
+        "bulgarian_split_squat",
+        "bb_side_lunge",
+        "landmine_press",
+        "air_treadmill_20_20"
+      ]
+    },
+    {
+      "archetype": "sin-datos-normal",
+      "slot": {
+        "date": "2026-09-14",
+        "timeBlock": "AM"
+      },
+      "route": "plan_builder",
+      "resolution": null,
+      "athlete": {
+        "fatigueLevel": 5,
+        "experienceLevel": "intermediate",
+        "requireExtraRecovery": false,
+        "returningFromBreak": null,
+        "rpeAdjustment": 0,
+        "available1RM": [],
+        "availableEquipment": [
+          "barbell",
+          "dumbbell",
+          "kettlebell"
+        ]
+      },
+      "exercises": [
+        "farmer_carry",
+        "back_squat",
+        "barbell_single_leg_inverted_row",
+        "bulgarian_split_squat",
+        "incline_bench_press",
+        "bb_reverse_lunge",
+        "bb_side_lunge",
+        "single_leg_hip_thrust"
+      ]
+    },
+    {
+      "archetype": "fresco-declarado",
+      "slot": {
+        "date": "2026-09-14",
+        "timeBlock": "AM"
+      },
+      "route": "chat",
+      "resolution": null,
+      "athlete": {
+        "fatigueLevel": 5,
+        "experienceLevel": "intermediate",
+        "requireExtraRecovery": null,
+        "returningFromBreak": null,
+        "rpeAdjustment": null,
+        "available1RM": null,
+        "availableEquipment": [
+          "barbell",
+          "dumbbell",
+          "kettlebell"
+        ]
+      },
+      "exercises": [
+        "farmer_carry",
+        "bird_dog_renegade_row",
+        "z_press",
+        "half_kneeling_row",
+        "back_squat",
+        "bb_side_lunge",
+        "landmine_press",
+        "bulgarian_split_squat"
+      ]
+    },
+    {
+      "archetype": "fresco-declarado",
+      "slot": {
+        "date": "2026-09-14",
+        "timeBlock": "AM"
+      },
+      "route": "week_creator",
+      "resolution": null,
+      "athlete": {
+        "fatigueLevel": 2,
+        "experienceLevel": null,
+        "requireExtraRecovery": false,
+        "returningFromBreak": null,
+        "rpeAdjustment": null,
+        "available1RM": null,
+        "availableEquipment": null
+      },
+      "exercises": [
+        "side_plank_plate_press",
+        "half_kneeling_diagonal_plate_chop",
+        "pallof_press",
+        "z_press",
+        "front_squat",
+        "bb_side_lunge",
+        "half_kneeling_row",
+        "air_treadmill_20_20"
+      ]
+    },
+    {
+      "archetype": "fresco-declarado",
+      "slot": {
+        "date": "2026-09-14",
+        "timeBlock": "AM"
+      },
+      "route": "plan_builder",
+      "resolution": null,
+      "athlete": {
+        "fatigueLevel": 2,
+        "experienceLevel": "intermediate",
+        "requireExtraRecovery": false,
+        "returningFromBreak": null,
+        "rpeAdjustment": 0,
+        "available1RM": [
+          "squat"
+        ],
+        "availableEquipment": [
+          "barbell",
+          "dumbbell",
+          "kettlebell"
+        ]
+      },
+      "exercises": [
+        "farmer_carry",
+        "back_squat",
+        "barbell_single_leg_inverted_row",
+        "bulgarian_split_squat",
+        "incline_bench_press",
+        "front_squat",
+        "goblet_squat",
+        "bb_reverse_lunge"
+      ]
+    },
+    {
+      "archetype": "masters-squash",
+      "slot": {
+        "date": "2026-09-14",
+        "timeBlock": "AM"
+      },
+      "route": "chat",
+      "resolution": null,
+      "athlete": {
+        "fatigueLevel": 5,
+        "experienceLevel": "intermediate",
+        "requireExtraRecovery": null,
+        "returningFromBreak": null,
+        "rpeAdjustment": null,
+        "available1RM": null,
+        "availableEquipment": [
+          "barbell",
+          "dumbbell",
+          "kettlebell"
+        ]
+      },
+      "exercises": [
+        "farmer_carry",
+        "bird_dog_renegade_row",
+        "z_press",
+        "half_kneeling_row",
+        "back_squat",
+        "bb_side_lunge",
+        "landmine_press",
+        "bulgarian_split_squat"
+      ]
+    },
+    {
+      "archetype": "masters-squash",
+      "slot": {
+        "date": "2026-09-14",
+        "timeBlock": "AM"
+      },
+      "route": "week_creator",
+      "resolution": null,
+      "athlete": {
+        "fatigueLevel": 4,
+        "experienceLevel": null,
+        "requireExtraRecovery": false,
+        "returningFromBreak": null,
+        "rpeAdjustment": null,
+        "available1RM": null,
+        "availableEquipment": null
+      },
+      "exercises": [
+        "side_plank_plate_press",
+        "half_kneeling_diagonal_plate_chop",
+        "z_press",
+        "half_kneeling_row",
+        "bulgarian_split_squat",
+        "bb_side_lunge",
+        "landmine_press",
+        "air_treadmill_20_20"
+      ]
+    },
+    {
+      "archetype": "masters-squash",
+      "slot": {
+        "date": "2026-09-14",
+        "timeBlock": "AM"
+      },
+      "route": "plan_builder",
+      "resolution": null,
+      "athlete": {
+        "fatigueLevel": 5,
+        "experienceLevel": "advanced",
+        "requireExtraRecovery": true,
+        "returningFromBreak": null,
+        "rpeAdjustment": 0,
+        "available1RM": [
+          "squat",
+          "deadlift"
+        ],
+        "availableEquipment": [
+          "barbell",
+          "dumbbell",
+          "kettlebell"
+        ]
+      },
+      "exercises": [
+        "farmer_carry",
+        "back_squat",
+        "barbell_single_leg_inverted_row",
+        "bulgarian_split_squat",
+        "incline_bench_press",
+        "romanian_deadlift",
+        "deadlift"
+      ]
+    },
+    {
+      "archetype": "sobrecargado-con-dolor-miercoles",
+      "slot": {
+        "date": "2026-09-16",
+        "timeBlock": "PM"
+      },
+      "route": "chat",
+      "resolution": null,
+      "athlete": {
+        "fatigueLevel": 5,
+        "experienceLevel": "intermediate",
+        "requireExtraRecovery": null,
+        "returningFromBreak": null,
+        "rpeAdjustment": null,
+        "available1RM": null,
+        "availableEquipment": [
+          "barbell",
+          "dumbbell",
+          "kettlebell"
+        ]
+      },
+      "exercises": [
+        "farmer_carry",
+        "bird_dog_renegade_row",
+        "z_press",
+        "half_kneeling_row",
+        "back_squat",
+        "bb_side_lunge",
+        "landmine_press",
+        "bulgarian_split_squat"
+      ]
+    },
+    {
+      "archetype": "sobrecargado-con-dolor-miercoles",
+      "slot": {
+        "date": "2026-09-16",
+        "timeBlock": "PM"
+      },
+      "route": "week_creator",
+      "resolution": null,
+      "athlete": {
+        "fatigueLevel": 8,
+        "experienceLevel": null,
+        "requireExtraRecovery": true,
+        "returningFromBreak": null,
+        "rpeAdjustment": null,
+        "available1RM": null,
+        "availableEquipment": null
+      },
+      "exercises": [
+        "side_plank_plate_press",
+        "half_kneeling_diagonal_plate_chop",
+        "half_kneeling_row",
+        "lateral_band_walk",
+        "bb_side_lunge"
+      ]
+    },
+    {
+      "archetype": "sobrecargado-con-dolor-miercoles",
+      "slot": {
+        "date": "2026-09-16",
+        "timeBlock": "PM"
+      },
+      "route": "plan_builder",
+      "resolution": null,
+      "athlete": {
+        "fatigueLevel": 9,
+        "experienceLevel": "intermediate",
+        "requireExtraRecovery": false,
+        "returningFromBreak": null,
+        "rpeAdjustment": -1,
+        "available1RM": [
+          "squat",
+          "deadlift",
+          "benchPress",
+          "overheadPress"
+        ],
+        "availableEquipment": [
+          "barbell",
+          "dumbbell",
+          "kettlebell"
+        ]
+      },
+      "exercises": [
+        "farmer_carry",
+        "goblet_squat",
+        "barbell_single_leg_inverted_row",
+        "bulgarian_split_squat",
+        "incline_dumbbell_press",
+        "bb_reverse_lunge"
+      ]
+    },
+    {
+      "archetype": "retorno-45-loaded-vencido",
+      "slot": {
+        "date": "2026-09-16",
+        "timeBlock": "AM"
+      },
+      "route": "chat",
+      "resolution": null,
+      "athlete": {
+        "fatigueLevel": 5,
+        "experienceLevel": "intermediate",
+        "requireExtraRecovery": null,
+        "returningFromBreak": null,
+        "rpeAdjustment": null,
+        "available1RM": null,
+        "availableEquipment": [
+          "barbell",
+          "dumbbell",
+          "kettlebell"
+        ]
+      },
+      "exercises": [
+        "farmer_carry",
+        "bird_dog_renegade_row",
+        "z_press",
+        "half_kneeling_row",
+        "back_squat",
+        "bb_side_lunge",
+        "landmine_press",
+        "bulgarian_split_squat"
+      ]
+    },
+    {
+      "archetype": "retorno-45-loaded-vencido",
+      "slot": {
+        "date": "2026-09-16",
+        "timeBlock": "AM"
+      },
+      "route": "week_creator",
+      "resolution": null,
+      "athlete": {
+        "fatigueLevel": 6,
+        "experienceLevel": null,
+        "requireExtraRecovery": false,
+        "returningFromBreak": null,
+        "rpeAdjustment": null,
+        "available1RM": null,
+        "availableEquipment": null
+      },
+      "exercises": [
+        "side_plank_plate_press",
+        "half_kneeling_diagonal_plate_chop",
+        "z_press",
+        "half_kneeling_row",
+        "bulgarian_split_squat",
+        "bb_side_lunge",
+        "landmine_press",
+        "air_treadmill_20_20"
+      ]
+    },
+    {
+      "archetype": "retorno-45-loaded-vencido",
+      "slot": {
+        "date": "2026-09-16",
+        "timeBlock": "AM"
+      },
+      "route": "plan_builder",
+      "resolution": null,
+      "athlete": {
+        "fatigueLevel": 7,
+        "experienceLevel": "beginner",
+        "requireExtraRecovery": true,
+        "returningFromBreak": null,
+        "rpeAdjustment": 0,
+        "available1RM": [],
+        "availableEquipment": [
+          "barbell",
+          "dumbbell",
+          "kettlebell"
+        ]
+      },
+      "exercises": [
+        "farmer_carry",
+        "split_squat",
+        "half_kneeling_row",
+        "step_up",
+        "incline_dumbbell_press"
+      ]
+    }
+  ]
+}

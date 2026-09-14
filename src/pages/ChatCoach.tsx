@@ -30,6 +30,7 @@ import { pullReadiness } from '../services/readiness/pullReadiness'
 import { loadWhoopWorkoutBlock } from '../services/readiness/whoopWorkoutBlock'
 import { getSessionsForDateRange } from '../db/queries'
 import { useEntitlement } from '../hooks/useEntitlement'
+import { CHAT_HISTORY_LOOKBACK_DAYS } from '../services/ai/chatSourceCapture'
 
 const QuickActionChips = lazy(() => import('../components/chat/QuickActionChips'))
 const ProposalDrawer = lazy(() => import('../components/chat/ProposalDrawer'))
@@ -328,7 +329,8 @@ export default function ChatCoach() {
     const requestScope = captureRequestScope(useChatStore.getState().currentSessionId)
     const athleteIdAtStart = requestScope.athleteId
 
-    const planningSessions = await getSessionsForDateRange(today, planningHorizonEnd)
+    const historyStart = toISO(addDays(fromISO(today), -CHAT_HISTORY_LOOKBACK_DAYS))
+    const planningSessions = await getSessionsForDateRange(historyStart, planningHorizonEnd)
       .catch(() => sessions)
 
     // Best-effort: un fallo de lectura local no debe impedir mandar el mensaje.

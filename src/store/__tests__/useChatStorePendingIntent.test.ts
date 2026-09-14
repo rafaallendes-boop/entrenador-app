@@ -48,7 +48,11 @@ vi.mock('../../services/ai/CoachEngine', () => ({
 vi.mock('../../services/weekCreator/WeekCreatorEngine', () => ({
   WeekCreatorEngine: { sendWeekCreate: (...args: unknown[]) => mocks.sendWeekCreate(...args) },
 }))
-vi.mock('../../services/ai/contextOptimizer', () => ({ optimizeChatContext: (c: unknown) => c }))
+vi.mock('../../services/ai/contextOptimizer', () => ({
+  optimizeChatContext: (c: unknown) => c,
+  selectDomainRecentMessages: (messages: { role: string; content: string; timestamp?: number }[]) =>
+    messages.map(m => ({ role: m.role, content: m.content, timestamp: m.timestamp })),
+}))
 vi.mock('../useCoachActionsStore', () => ({
   useCoachActionsStore: { getState: () => ({ addProposal: mocks.addProposal, loadProposals: vi.fn() }) },
 }))

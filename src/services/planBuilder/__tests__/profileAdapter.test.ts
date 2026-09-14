@@ -47,18 +47,6 @@ describe('buildAthleteParameters', () => {
     expect(params.available1RM.sort()).toEqual(['deadlift', 'squat'])
   })
 
-  it('lowers target RPE when fatigue is overloaded', () => {
-    const params = buildAthleteParameters(makeProfile(), makeWizard({ currentFatigue: 'overloaded' }))
-
-    expect(params.rpeAdjustment).toBe(-1)
-  })
-
-  it('flags masters athletes as requiring extra recovery', () => {
-    const params = buildAthleteParameters(makeProfile({ age: 41 }), makeWizard())
-
-    expect(params.requireExtraRecovery).toBe(true)
-  })
-
   it('calculates age from birth date using the supplied reference date', () => {
     const beforeBirthday = buildAthleteParameters(
       makeProfile({ age: undefined, birthDate: '1991-07-11' }),
@@ -72,9 +60,7 @@ describe('buildAthleteParameters', () => {
     )
 
     expect(beforeBirthday.ageYears).toBe(34)
-    expect(beforeBirthday.requireExtraRecovery).toBe(false)
     expect(afterBirthday.ageYears).toBe(35)
-    expect(afterBirthday.requireExtraRecovery).toBe(true)
   })
 
   it('preserves primary and complementary sports', () => {

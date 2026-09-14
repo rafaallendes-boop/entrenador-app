@@ -1,5 +1,5 @@
 import type { ExecutionSignals } from '../training/loadDirectivePolicy'
-import type { Session, SessionType } from '../../types'
+import type { DayLog, Session, SessionType } from '../../types'
 
 export interface PlanBuilderRecentWeekContext {
   weekStartDate: string
@@ -40,6 +40,16 @@ export interface PlanBuilderWeeklyStructureDay {
 
 export interface PlanBuilderRecentContext {
   executedSessions?: Session[]
+  /** Instante de la captura (B2). Ausente en payloads anteriores a la Fase B. */
+  capturedAt?: number
+  /** Hasta 5 sesiones de fuerza ejecutadas antes del corte: historial de progresión de B1. */
+  executedStrengthSessions?: Session[]
+  /**
+   * Filas crudas de la última semana vivida con datos (sólo en recalibración).
+   * Alimentan `buildExecutionSignals`; `adherencePct` conserva el valor que ya
+   * calculaba el contexto (WeekSummary si existe).
+   */
+  signalRows?: { weekStartDate: string; sessions: Session[]; dayLogs: DayLog[]; adherencePct?: number }
   referenceDate: string
   lookbackWeeks: number
   hasHistory: boolean

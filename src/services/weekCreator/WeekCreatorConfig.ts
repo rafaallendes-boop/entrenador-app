@@ -10,6 +10,7 @@ import type {
 import { getAllowedPlanningSports } from '../planningConstraints'
 import { getEnabledSports, getPrimarySportNormalized, normalizeSport } from '../../utils/athlete'
 import { MAX_WEEKLY_SESSIONS } from '../../utils/schedule'
+import { resolveDeclaredAthleteState } from '../training/strengthAthleteContext'
 
 export interface WeekCreatorEffectiveConfig {
   trainingDays: DayOfWeek[]
@@ -313,6 +314,26 @@ export function resolveWeekCreatorConfig(profile: AthleteProfile | null | undefi
     currentFatigue: DEFAULT_FATIGUE_LEVEL,
     fromWizard: false,
     configSource: hasScheduleSignal ? 'schedule' : 'defaults',
+  }
+}
+
+/**
+ * I6/I7: la fatiga y el retorno del wizard sólo valen dentro de su vigencia.
+ * Fuera de ella la config vuelve a los defaults del Week Creator, para que
+ * prompt, tier y composición local lean lo mismo.
+ */
+export function applyDeclarationValidityToConfig(
+  config: WeekCreatorEffectiveConfig,
+  profile: AthleteProfile | undefined,
+  planningStartDate: string,
+): WeekCreatorEffectiveConfig {
+  const declared = resolveDeclaredAthleteState(profile?.planWizardConfig, planningStartDate)
+  return {
+    ...config,
+    currentFatigue: declared.declaredFatigue ?? DEFAULT_FATIGUE_LEVEL,
+    currentFitnessLevel: config.currentFitnessLevel === 'returning' && !declared.returningWindowActive
+      ? 'normal'
+      : config.currentFitnessLevel,
   }
 }
 

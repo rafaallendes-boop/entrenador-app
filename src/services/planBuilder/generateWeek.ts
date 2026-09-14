@@ -1,4 +1,4 @@
-import { executionSignalsFromLivedWeeks } from './recentContextRender'
+import { buildPlanBuilderRepairSources } from './planBuilderSourceCapture'
 import type { CoachAction, CoachSessionProposal, AthleteProfile, PlanWizardConfig, StageTiming } from '../../types'
 import type { StrengthAllocatorMetrics, StrengthSafetyBlockedSlot, TrainingPlan, TrainingPlanWeek } from '../../types/planBuilder'
 import { AIProviderError, type AIRawResponse, type AIProvider, type CreateWeekNormalizationDiagnostic } from '../ai/types'
@@ -211,8 +211,7 @@ export function validateGeneratedWeekAction(
     week,
     profile,
     wizardConfig: plan.wizardConfig,
-    executionSignals: executionSignalsFromLivedWeeks(recentContext),
-    historicalSessions: recentContext?.executedSessions,
+    ...buildPlanBuilderRepairSources(plan, profile, recentContext),
     previousWeek,
     planWeekDescriptors,
   }

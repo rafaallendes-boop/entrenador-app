@@ -149,6 +149,8 @@ vi.mock('../../services/ai/CoachEngine', () => ({
 
 vi.mock('../../services/ai/contextOptimizer', () => ({
   optimizeChatContext: mocks.optimizeContext,
+  selectDomainRecentMessages: (messages: { role: string; content: string; timestamp?: number }[]) =>
+    messages.map(m => ({ role: m.role, content: m.content, timestamp: m.timestamp })),
 }))
 
 vi.mock('../../services/weekCreator/WeekCreatorEngine', () => ({

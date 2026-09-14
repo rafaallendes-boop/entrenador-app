@@ -30,6 +30,12 @@ import { athleticPreferenceScore, athleticPrescriptionNotes, isAthleticReplaceme
 export type StrengthPhase = 'base' | 'build' | 'peak' | 'taper' | 'transition' | 'race'
 export type StrengthSportProfile = 'strength_primary' | 'hybrid' | 'sport_support'
 
+/** `unknown` = el atleta no declaró experiencia y no hay 1RM que la infiera (D2). */
+export type StrengthExperienceLevel = ExperienceLevel | 'unknown'
+
+/** Nivel de `loaded` en la escala única de fatiga de la Fase B (I1). */
+export const LOADED_FATIGUE_LEVEL = 6
+
 export interface StrengthContext {
   fatigueLevel: number
   phase: StrengthPhase
@@ -37,7 +43,7 @@ export interface StrengthContext {
   goal: string
   sportProfile: StrengthSportProfile
   primarySport?: string
-  experienceLevel?: ExperienceLevel
+  experienceLevel?: StrengthExperienceLevel
   availableEquipment?: string[]
   sessionDurationMin?: number
   competitionSoon?: boolean
@@ -49,6 +55,8 @@ export interface StrengthContext {
   available1RM?: Exercise1RMReference[]
   rpeAdjustment?: number
   requireExtraRecovery?: boolean
+  /** Retorno tras pausa (D3): mantiene en vez de progresar y baja un ejercicio. No cambia elegibilidad. */
+  returningFromBreak?: boolean
   /** Hard constraints: every caller must consciously supply an empty set or resolved restrictions. */
   safetyConstraints: readonly StrengthConstraint[]
 }
@@ -743,7 +751,12 @@ function filterBySafetyMetadata(
     }
 
     if (context.fatigueLevel >= 7) {
-      return !isHighRisk
+      return !isHighRisk && !isHighFatigue
+    }
+
+    // I2: `loaded` filtra sólo alto costo de fatiga.
+    if (context.fatigueLevel >= LOADED_FATIGUE_LEVEL) {
+      return !isHighFatigue
     }
 
     return true
@@ -1326,6 +1339,20 @@ export function deriveProgressionIntent(
   mainPattern?: MovementPattern,
   mainPatternFrequency?: number,
 ): StrengthProgressionIntent {
+  const intent = deriveUncappedProgressionIntent(context, mainPattern, mainPatternFrequency)
+  // I2/I6: `loaded` y el retorno tras pausa mantienen. El tope sólo baja
+  // `progress`; nunca convierte `deload` ni `rotate` en otra cosa.
+  if (intent === 'progress' && (context.returningFromBreak || context.fatigueLevel >= LOADED_FATIGUE_LEVEL)) {
+    return 'hold'
+  }
+  return intent
+}
+
+function deriveUncappedProgressionIntent(
+  context: StrengthContext,
+  mainPattern?: MovementPattern,
+  mainPatternFrequency?: number,
+): StrengthProgressionIntent {
   if (context.competitionSoon || context.phase === 'taper' || context.fatigueLevel >= 7) return 'deload'
 
   // ACWR risk override: objective load signal takes priority
@@ -1700,6 +1727,7 @@ export function getTargetExerciseDensity(context: StrengthContext): StrengthExer
   if (context.competitionSoon || context.phase === 'taper') modifier -= 3
   if (context.fatigueLevel >= 7) modifier -= 2
   if (context.requireExtraRecovery) modifier -= 1
+  if (context.returningFromBreak) modifier -= 1
   if (
     context.sportProfile === 'strength_primary' &&
     (context.phase === 'base' || context.phase === 'build') &&
@@ -1730,18 +1758,29 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value))
 }
 
+export function isExperienceEligible(
+  exercise: ExerciseDefinition,
+  level: StrengthExperienceLevel | undefined,
+): boolean {
+  switch (level) {
+    case 'advanced':
+      return true
+    case 'beginner':
+      return exercise.difficulty === 'beginner' && !exercise.tags.includes('advanced')
+    case 'intermediate':
+      return exercise.difficulty !== 'advanced'
+    case 'unknown':
+      return exercise.difficulty !== 'advanced' && exercise.requiresTechnique !== true
+    default:
+      return exercise.difficulty !== 'advanced' && !exercise.tags.includes('advanced')
+  }
+}
+
 function filterByExperience(
   exercises: ExerciseDefinition[],
   context: StrengthContext,
 ): ExerciseDefinition[] {
-  if (context.experienceLevel === 'advanced') return exercises
-  if (context.experienceLevel === 'beginner') {
-    return exercises.filter((exercise) => exercise.difficulty === 'beginner' && !exercise.tags.includes('advanced'))
-  }
-  if (context.experienceLevel === 'intermediate') {
-    return exercises.filter((exercise) => exercise.difficulty !== 'advanced')
-  }
-  return exercises.filter((exercise) => exercise.difficulty !== 'advanced' && !exercise.tags.includes('advanced'))
+  return exercises.filter((exercise) => isExperienceEligible(exercise, context.experienceLevel))
 }
 
 function pickFirst(

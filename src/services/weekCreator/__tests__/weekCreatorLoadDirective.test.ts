@@ -1,7 +1,22 @@
 import { describe, expect, it } from 'vitest'
-import type { ChatContext, Session } from '../../../types'
+import type { AthleteProfile, ChatContext, PlanWizardConfig, Session } from '../../../types'
 import { buildWeekCreatorPrompt } from '../WeekCreatorPromptBuilder'
 import type { WeekCreatorEffectiveConfig } from '../WeekCreatorConfig'
+
+/**
+ * I7: la fatiga declarada ahora se lee con vigencia desde `planWizardConfig`,
+ * no directamente desde `config.currentFatigue` — ver
+ * `resolveWeekCreatorStrengthSources`/`resolveDeclaredAthleteState`. El
+ * `targetWeekStart` fijo de este archivo es `2026-06-15`; `updatedAt` queda un
+ * día antes, dentro de la ventana de 7 días.
+ */
+function declaredFatigueProfile(currentFatigue: PlanWizardConfig['currentFatigue']): AthleteProfile {
+  return {
+    id: 'athlete-1',
+    updatedAt: 0,
+    planWizardConfig: { currentFatigue, updatedAt: '2026-06-14T12:00:00.000Z' } as PlanWizardConfig,
+  }
+}
 
 /**
  * Tarea 11 — migración de `buildLoadDirective` de Week Creator al policy
@@ -103,7 +118,8 @@ describe('buildLoadDirective de Week Creator (post-migración al policy comparti
     // ANTES: 'REDUCIR CARGA — atleta llega con fatiga acumulada. Baja volumen e
     // intensidad. RPE máximo 6-7.'
     const directive = buildDirective(
-      { historicalSessions: [makeHistoricalSession()], weekDayLogs: [] },
+      // I7: fatiga vigente vía `athleteProfile.planWizardConfig`.
+      { historicalSessions: [makeHistoricalSession()], weekDayLogs: [], athleteProfile: declaredFatigueProfile('overloaded') },
       { currentFatigue: 'overloaded' },
     )
     expect(directive).toBe(
@@ -150,7 +166,8 @@ describe('buildLoadDirective de Week Creator (post-migración al policy comparti
     // los estímulos de calidad, recorta volumen accesorio y no agregues
     // intensidad extra esta semana.' (con "esta semana" al final)
     const directive = buildDirective(
-      { historicalSessions: [makeHistoricalSession()], weekDayLogs: [] },
+      // I7: fatiga vigente vía `athleteProfile.planWizardConfig`.
+      { historicalSessions: [makeHistoricalSession()], weekDayLogs: [], athleteProfile: declaredFatigueProfile('loaded') },
       { currentFatigue: 'loaded' },
     )
     expect(directive).toBe(
@@ -162,7 +179,8 @@ describe('buildLoadDirective de Week Creator (post-migración al policy comparti
     // ANTES: 'SUBIR CARGA — atleta está fresco. Puedes incrementar volumen o
     // intensidad un escalón, no ambos a la vez.'
     const directive = buildDirective(
-      { historicalSessions: [makeHistoricalSession()], weekDayLogs: [] },
+      // I7: fatiga vigente vía `athleteProfile.planWizardConfig`.
+      { historicalSessions: [makeHistoricalSession()], weekDayLogs: [], athleteProfile: declaredFatigueProfile('fresh') },
       { currentFatigue: 'fresh' },
     )
     expect(directive).toBe(

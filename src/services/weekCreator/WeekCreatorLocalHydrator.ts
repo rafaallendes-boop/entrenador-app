@@ -22,7 +22,8 @@ import type { WeekCreatorSkeleton, WeekCreatorSkeletonSession } from './weekCrea
 import { resolveWeekCreatorEventContext } from './WeekCreatorEventContext'
 import type { StrengthConstraint } from '../../types/strengthSafety'
 import { resolveStrengthSafetyConstraints } from '../training/strengthSafetyConstraints'
-import { buildWeekCreatorExecutionSignals } from './weekCreatorExecutionSignals'
+import { resolveWeekCreatorStrengthSources, type WeekCreatorStrengthSources } from './weekCreatorExecutionSignals'
+import { resolveCapturedStrengthAthleteContext } from '../ai/chatSourceCapture'
 
 export type WeekCreatorHydrationStatus =
   | 'hydrated'
@@ -53,6 +54,8 @@ export interface WeekCreatorHydrationInput {
    * typed semantic-intent field.
    */
   skeleton?: WeekCreatorSkeleton
+  /** Fuentes de fuerza de esta operación; si falta, se derivan del dominio. */
+  strengthSources?: WeekCreatorStrengthSources
 }
 
 export interface WeekCreatorSkeletonHydrationInput {
@@ -63,6 +66,8 @@ export interface WeekCreatorSkeletonHydrationInput {
   config: WeekCreatorEffectiveConfig
   targetWeekStart: string
   planningStartDate?: string
+  /** Fuentes de fuerza de esta operación; si falta, se derivan del dominio. */
+  strengthSources?: WeekCreatorStrengthSources
 }
 
 /**
@@ -93,6 +98,7 @@ export function hydrateWeekCreatorSkeleton(
     config: input.config,
     targetWeekStart: input.targetWeekStart,
     planningStartDate: input.planningStartDate,
+    strengthSources: input.strengthSources,
   })
   return { ...result, focusOverlayCount: mapped.appliedCount }
 }
@@ -155,6 +161,7 @@ export function hydrateWeekCreatorResponse(
     config: scheduleAwareConfig,
     targetWeekStart: input.targetWeekStart,
     planningStartDate: input.planningStartDate,
+    strengthSources: input.strengthSources,
   })
   const repairResult = repairGeneratedWeek(initiallyAligned.sessions, repairContext)
   if (repairResult.failure) {
@@ -204,7 +211,11 @@ export function hydrateWeekCreatorResponse(
   return {
     response,
     status: changed ? 'hydrated' : 'unchanged',
-    warnings: repairResult.meta.warnings.map((warning) => warning.message),
+    // La razón cruda de un retiro por seguridad no es copy de usuario; el
+    // engine lo avisa con su propio texto (`buildWeekCreatorSafetyDroppedNotice`).
+    warnings: repairResult.meta.warnings
+      .filter((warning) => warning.code !== 'strength.safety_blocked')
+      .map((warning) => warning.message),
     repairMeta: repairResult.meta,
     focusOverlayCount: overlay.appliedCount,
   }
@@ -417,6 +428,7 @@ interface BuildRepairContextInput {
   config: WeekCreatorEffectiveConfig
   targetWeekStart: string
   planningStartDate?: string
+  strengthSources?: WeekCreatorStrengthSources
 }
 
 /** Public adapter needed by the Phase 3 Week Creator pipeline. */
@@ -475,8 +487,10 @@ export function buildWeekCreatorHydrationRepairContext(
     // texto resolvía sin restricción arriba y como restricción sin resolver en
     // la reparación, produciendo safe declines sin reintento ni fallback.
     injuryNotes: profile.planWizardConfig?.injuryNotes,
-    createdAt: new Date(now).toISOString(),
-    updatedAt: new Date(now).toISOString(),
+    // I6/I7: la vigencia se mide desde la declaración real, no desde esta
+    // hidratación. Un timestamp "ahora" haría vigente para siempre lo declarado.
+    createdAt: profile.planWizardConfig?.createdAt ?? '',
+    updatedAt: profile.planWizardConfig?.updatedAt ?? '',
   }
   const plan: TrainingPlan = {
     id: 'week-creator-hydration-plan',
@@ -517,6 +531,8 @@ export function buildWeekCreatorHydrationRepairContext(
   }
 
   const historicalSessions = input.context.historicalSessions ?? input.context.recentSessions
+  const strengthSources = input.strengthSources
+    ?? resolveWeekCreatorStrengthSources(input.context, input.planningStartDate ?? input.targetWeekStart, Date.now())
   return {
     plan,
     week,
@@ -524,11 +540,9 @@ export function buildWeekCreatorHydrationRepairContext(
     wizardConfig,
     planWeekDescriptors: [{ weekIndex: week.weekIndex, phase: week.phase }],
     historicalSessions,
-    executionSignals: buildWeekCreatorExecutionSignals(
-      input.config,
-      historicalSessions,
-      input.context.weekDayLogs,
-    ),
+    executionSignals: strengthSources.executionSignals,
+    sourceCapture: strengthSources.capture,
+    strengthAthleteForSlot: (slot) => resolveCapturedStrengthAthleteContext(strengthSources.capture, slot),
   }
 }
 

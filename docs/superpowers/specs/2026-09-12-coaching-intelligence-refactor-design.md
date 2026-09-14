@@ -1,7 +1,7 @@
 # Refactor de inteligencia del coaching — diseño
 
 **Fecha:** 12 de septiembre de 2026. Revisión 2 del mismo día.
-**Estado:** borrador para revisión del owner. Sin implementación.
+**Estado:** Fases A y B implementadas localmente (2026-09-12 / 2026-09-13), sin deploy. Decisiones deportivas de §9 cerradas con el owner el 2026-09-13.
 **Fuentes:** [revisión del 8 de septiembre](../../reviews/2026-09-08-coaching-planning-refactor-review.md)
 (hallazgos F01–F15) y [propuesta del 10 de septiembre](../../reviews/2026-09-10-onboarding-athlete-programming-proposal.md)
 (onboarding y programación). Este documento fusiona ambas en un solo plan y
@@ -55,6 +55,42 @@ correr sobre el árbol de las Tareas 1–10 y su salida quedó en
 F03, F04, F05 y F07 quedan además fijados como regresión permanente en
 `src/services/__tests__/coachingRefactorProbes.test.ts` y
 `src/services/training/__tests__/sessionDoseFinalizerZ2.test.ts`.
+
+**Cierre de Fase B (2026-09-13/14, local, sin deploy):** B1–B4 quedan
+implementadas según §9 y la tabla I1–I16 del plan de Fase B
+(`docs/superpowers/plans/2026-09-13-coaching-intelligence-phase-b.md`). La
+vigencia de lo declarado por el atleta —7 días para la fatiga, 14 para el
+retorno tras pausa— fue decidida por el owner el 2026-09-13
+(`DECLARED_FATIGUE_VALID_DAYS` / `RETURNING_WINDOW_DAYS` en
+`strengthAthleteContext.ts`). La paridad de las tres rutas (chat, Week
+Creator, Plan Builder) queda integrada como regresión en
+`src/services/__tests__/strengthContextParity.test.ts`, con la divergencia
+I8 fijada de forma explícita: el Plan Builder sólo ve la última semana
+**completamente vivida**, así que un dolor de la semana en curso es visible
+para el chat/Week Creator y no para el Plan Builder hasta la semana
+siguiente. F06 (recorte a seis sesiones sin ampliar el presupuesto) y F10
+(hechos de la sesión consultada en el prompt de chat general) quedan
+fijados como regresión permanente junto a F03/F05/F07 en
+`coachingRefactorProbes.test.ts`. El probe pareado de Fase B —cinco
+arquetipos × tres rutas— quedó en `probe-phase-b-before.json` y
+`probe-phase-b-after.json`, con las 15 filas de "after" byte-idénticas por
+arquetipo entre rutas. Como el resolver compartido siempre estampa
+`available1RM` y `rpeAdjustment`, `shouldUseBlockTemplateSelection`
+(`strengthSelector.ts`) pasa a activarse también en chat, en el prompt de
+fuerza del chat general y en Week Creator: las tres rutas usan ahora
+selección por plantilla de bloque, igual que el Plan Builder ya usaba. El
+probe pareado (`probe-phase-b-before.json` / `probe-phase-b-after.json`)
+muestra el efecto completo por arquetipo.
+
+**B no garantiza:** paridad de contexto en cycling ni movilidad (fuera de
+alcance, ver §11/C1); el horizonte local del Plan Builder, que sigue
+limitado a la última semana vivida (Fase C); revalidación de las
+restricciones de seguridad al momento de aceptar un plan (Fase D); ni la
+vigencia de lo declarado en el **texto** del prompt ni en las ramas de
+instrucciones del generador del Plan Builder — el selector local de fuerza
+(B1/I7) ya aplica vigencia, pero el generador de prompt del Plan Builder
+todavía no, residual documentado en I11
+(`src/services/planBuilder/__tests__/phaseBPromptFatigueResidual.test.ts`).
 
 Hechos del código que condicionan el diseño:
 
@@ -338,6 +374,10 @@ retire.
 Una operación (una petición de chat, una semana del Week Creator, un job del
 Plan Builder) hace **una** captura inmutable y deriva de ella tantos contextos
 como slots necesite.
+La captura copia en profundidad el perfil, las sesiones y los day logs y
+congela recursivamente esa copia privada. Ninguna mutación posterior de los
+registros originales ni de sus objetos anidados altera la operación; no se
+congelan objetos propiedad del store.
 
 ```ts
 type SourceCapture = {
@@ -404,19 +444,31 @@ del constructor, no del llamador.
   turnos recientes y la intención pendiente. Devuelve objetivos resueltos con
   confianza o una necesidad de clarificación cuando hay más de un candidato
   plausible.
-- **Los objetivos explícitos nunca se pierden por presupuesto.** Entran al
-  `PromptContext` en representación compacta (id, fecha, franja, tipo, título
-  truncado), que cabe para decenas de sesiones. El objetivo y sus vecinos
-  llevan el detalle completo primero; el resto del historial rellena hasta el
-  límite total, que no cambia. Si el pedido supera un umbral de objetivos
-  (propuesta: 12), la operación se procesa por lotes o se pide al usuario que
-  acote, **y la respuesta dice qué parte quedó fuera**. `contextMeta` lo
-  registra además, pero la metadata interna no sustituye avisar.
+- **Objetivos y cardinalidad (plan B, I13):** id, título, fecha, deporte y
+  franja se combinan. Se aceptan fechas ISO, DD/MM y DD/MM/YYYY; DD/MM usa el
+  año local de la operación. Las fechas imposibles se aclaran y el destino
+  de un movimiento no filtra la sesión origen. Singular exige una sesión;
+  plural con cantidad exige esa cantidad y, si supera 12, pide acotar sin
+  selección parcial. Sólo plural sin cantidad o cardinalidad no especificada
+  procesa los primeros 12 y avisa cuáles quedaron fuera. Toda aclaración
+  conserva cardinalidad: sólo singular con fecha válida abre intención
+  pendiente; plural pregunta localmente sin IA ni intención. El chat general
+  conserva las candidatas como referencias de lectura sin interrumpirse.
+- **Presupuesto (I15):** el detalle conserva los valores actuales de límites
+  de sesiones y caracteres estimados, con prioridad objetivos → vecinos →
+  resto. Si una sesión no cabe, incluso la primera, se omite y se continúa.
+  El índice compacto de hasta 12 objetivos va aparte y marca los que no
+  tienen detalle. Esto no promete un límite exacto de tokens ni del texto
+  serializado. La validación y ejecución siempre usan el dominio completo.
+  Las sesiones del exceso siguen identificadas y sus acciones se descartan;
+  la metadata no sustituye el aviso visible.
 - Chat general: cuando el mensaje referencia sesiones pasadas, el prompt
   incluye título, feedback, RPE real y resultado de las sesiones resueltas,
   reutilizando el render que ya existe para acciones y resumen. La memoria
   libre se conserva; las restricciones estructuradas del perfil se fijan fuera
-  del truncado de texto.
+  del truncado de texto. Ausencia de sesiones se determina antes del recorte
+  (incluyendo objetivos excedentes), nunca por falta de detalle. El RPE real
+  se muestra incluso si no existe RPE planificado.
 - **Garantía B4:** una acción sobre una sesión fuera de las primeras seis se
   resuelve sin ampliar el historial enviado al modelo; "¿cómo me fue ayer?"
   responde con los hechos de ayer; "mueve estas ocho sesiones" mueve ocho o
@@ -425,11 +477,26 @@ del constructor, no del llamador.
 
 ### Criterio de salida de B
 
-Test de paridad: el mismo atleta, `SourceCapture` y fatiga declarada produce
-el mismo `StrengthContext` numérico en chat, Week Creator y Plan Builder.
-Casos rojos de F06 y F10 en verde. Fixture pareado para revisión del owner.
-**B no garantiza** paridad en cycling/movilidad ni horizonte correcto en la
-ruta local del Plan Builder: eso es C.
+Misma captura, declaración y slot completo producen los mismos campos de
+atleta en chat, finalizador e hidratador del Week Creator. La extracción y
+resolución de fuerza se cachean por captura y slot; incluyen la sesión AM al
+resolver PM del mismo día. La directiva semanal del Week Creator conserva
+su ancla `planningStartDate` AM y no sustituye esa resolución por sesión.
+Plan Builder conserva la ventana de la última semana vivida (I8), única
+divergencia de ventana admitida, con test explícito desde Dexie. La paridad
+se exige cuando las ventanas aportan los mismos datos.
+
+La fatiga declarada vence a los 7 días y el retorno a los 14, evaluados por
+fecha del slot desde `wizard.updatedAt` local; sin fecha válida no están
+vigentes. Chat/Week Creator usan la declaración capturada del perfil y
+Plan Builder la del plan. Las fuentes deben representar la misma declaración
+para exigir paridad (plan B I6/I7).
+
+Casos rojos F06/F10 en verde, fixture pareado y gate de seis semanas sin
+alertas. **B no garantiza** paridad en cycling/movilidad, horizonte correcto
+en la ruta local del Plan Builder ni vigencia de la declaración en el texto
+y las ramas de instrucciones del generador de Plan Builder: eso queda en C.
+El residual del generador debe quedar caracterizado por tests locales en B.
 
 ## 6. Fase C — paridad, horizonte y durabilidad
 
@@ -578,6 +645,20 @@ Cuando el owner decida, la fila pasa a "decidido" con fecha y B1 la
 implementa. Los fixtures de fuerza que cambien por estas decisiones se revisan
 uno a uno; ese cambio es el efecto esperado, no una regresión.
 
+### Decisiones del owner — 13 de septiembre de 2026
+
+La tabla anterior se conserva como registro de las opciones. Lo que B1
+implementa es esto:
+
+| # | Estado | Qué implementa B1 |
+|---|---|---|
+| D1 | **Decidido: alternativa.** | El campo declarado `strengthProfile.experienceLevel` gana cuando existe. Sin campo declarado se conserva la inferencia por 1RM como fallback con procedencia `inferred`. **Sin fecha de retiro**: el retiro queda diferido (§11). Supuesto de implementación: el resolver aplica **una sola** inferencia, la de 1RM, igual en las tres rutas; la de fitness + nivel competitivo (Plan Builder) y el `intermediate` fijo (chat) se retiran, porque conservarlas rompe la invariante de B «mismo atleta y captura, mismo contexto en las tres rutas». |
+| D2 | **Decidido: propuesta.** | Estado `unknown` explícito cuando no hay experiencia declarada ni inferible por 1RM. Elegibilidad intermedia menos los ejercicios con `requiresTechnique`; dosis intermedia. El flag es metadata append-only auditada por id. La lista inicial es la del spec (olímpicos, saltos de profundidad, cargas complejas); el owner prevé afinarla con criterio más técnico a medida que avance, siempre como cambio auditado por id. |
+| D3 | **Decidido: propuesta, 2 semanas.** | `returning` deja de mapear a `beginner`: técnica y elegibilidad intactas, volumen e intensidad reducidos durante **2 semanas** (owner, 2026-09-13). En Plan Builder cuentan las dos primeras semanas del plan; en Week Creator, la semana configurada con `returning`. Magnitud: no se inventan números nuevos; se reutilizan las palancas existentes de reducción —directiva `hold` (sin progresión), `rpeAdjustment -1` y densidad −1—, sin los filtros de intensidad que D6 reserva a `overloaded`. `low` es señal de condición, no de experiencia. |
+| D4 | **Decidido: propuesta más el disparador de edad actual.** | La recuperación extra sale de señales agudas —`overloaded`, dolor ≥ 6, energía ≤ 4— **o** de `ageYears >= 35`, con la misma regla en las tres rutas (aclarado con el owner el 2026-09-13, ver D5). Efecto esperado: Week Creator y chat, que hoy no aplican la edad, dejan de dar trabajo atlético a mayores de 35 y bajan la densidad igual que Plan Builder. Los fixtures que cambien por eso se revisan uno a uno. |
+| D5 | **Diferido; se conserva la regla vigente.** | No se agregan las modulaciones por edad propuestas (descanso de potencia, tope pliométrico, `rpeAdjustment`). Se conserva `ageYears >= 35 → requireExtraRecovery`, que excluye todo trabajo atlético (`athleticTraining.ts`), penaliza ejercicios de alto costo de fatiga y olímpicos y baja la densidad en uno (`strengthSelector.ts`). Pasa de regla exclusiva de Plan Builder a regla del resolver, compartida por las tres rutas. |
+| D6 | **Decidido: propuesta.** | Significados: `fresh` habilita progresión; `normal` la habilita en base y build; `loaded` mantiene (sin progresión, sin `deload` forzado, filtra sólo alto costo de fatiga); `overloaded` reduce. Precedencia: seguridad y restricciones → fase y competición → señales de ejecución → fatiga declarada. B1 elige el mapeo numérico que preserve esos significados frente a los umbrales del selector y revisa la rama que hoy devuelve `deload` a `>= 7`. |
+
 ## 10. Pendientes explícitos para cerrar durante A
 
 Detalles de B, C y D que no bloquean A y se cierran antes de que empiece la
@@ -591,7 +672,7 @@ fase que los usa:
 | Quién dispara la recuperación sin cliente activo (cron de Netlify) | C5 | Confirmar costo y frecuencia. |
 | Regla de C6 tras el probe de consumidores de `previousWeek` | C6 | Depende del probe. |
 | Fórmula del `contextHash` (qué versiones entran) | D | Debe cambiar cuando cambie cualquier política o catálogo. |
-| Las seis decisiones de §9 | B1 | Confirmación del owner. |
+| Las seis decisiones de §9 | B1 | Decididas el 2026-09-13. |
 
 ## 11. Diferido con motivo
 
@@ -600,7 +681,10 @@ fase que los usa:
 | F14 doble reparación / E6 velocidad | Sin instrumentación estable (A6 es lo mínimo) no se puede aceptar una mejora; el control-contra-control del 2026-08-09 ya mostró que la regla actual rechaza controles idénticos. | Después de D, con recalibración de barras y cálculo de potencia. |
 | E7 experimentos de modelo | Sin baseline de contexto corregido, compara ruido. | Después de D y de una ventana de uso real. |
 | F12 cycling y movilidad | Sin demanda en el piloto squash-first. | Si un cliente del piloto los usa. |
+| Vigencia en instrucciones del generador Plan Builder (B I11) | `src/services/week/prompts/weekPrompt.ts` conserva fatiga del wizard en texto y condiciones que eligen instrucciones, aunque la selección local de fuerza ya aplica vigencia. B caracteriza el efecto con escenarios vigente/vencido, sin equipararlo a un cambio cosmético. | Fase C, al alinear instrucciones con la declaración vigente por slot. |
 | Onboarding breve | Es UI y captura; consume B pero no lo condiciona. | Plan propio después de B. |
+| Retiro de la inferencia de experiencia por 1RM (D1) | El owner la mantiene temporalmente. | Cuando haya dato de cuántos atletas declaran `experienceLevel`, o con el onboarding breve. |
+| Modulación por edad (D5) | Sin evidencia individual; el owner la difiere. | Con evidencia de uso real de atletas masters. |
 | Dosis por serie | Cambio de modelo de `Exercise`, Dexie, serializadores, backup y sync. | Plan propio después de B; requiere E2 del documento del 10 de septiembre. |
 
 ## 12. Migración y compatibilidad

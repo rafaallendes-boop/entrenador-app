@@ -469,11 +469,16 @@ export default function AthleteProfileEditor({ profile, isSaving, onSave, onDirt
       </SectionPanel>
 
       <SectionPanel
-        title="Fuerza - 1RM de referencia"
+        title="Fuerza - experiencia y 1RM"
         open={open === 'strength'}
         onToggle={() => toggle('strength')}
-        filled={!!(strength.benchPress1RM || strength.squat1RM)}
+        filled={!!(strength.benchPress1RM || strength.squat1RM || strength.experienceLevel)}
       >
+        <Field label="Experiencia en fuerza" className="mb-3">
+          <select aria-label="Experiencia en fuerza" value={strength.experienceLevel ?? ''} onChange={(e) => setStrength((s) => ({ ...s, experienceLevel: (e.target.value || undefined) as StrengthProfile['experienceLevel'] }))} className={inputCls}>
+            <option value="">Sin declarar</option><option value="beginner">Principiante</option><option value="intermediate">Intermedio</option><option value="advanced">Avanzado</option>
+          </select>
+        </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Press banca (kg)">
             <input

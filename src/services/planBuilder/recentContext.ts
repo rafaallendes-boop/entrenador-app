@@ -46,6 +46,16 @@ export interface PlanBuilderWeeklyStructureDay {
 
 export interface PlanBuilderRecentContext {
   executedSessions?: Session[]
+  /** Instante de la captura (B2). Ausente en payloads anteriores a la Fase B. */
+  capturedAt?: number
+  /** Hasta 5 sesiones de fuerza ejecutadas antes del corte: historial de progresión de B1. */
+  executedStrengthSessions?: Session[]
+  /**
+   * Filas crudas de la última semana vivida con datos (sólo en recalibración).
+   * Alimentan `buildExecutionSignals`; `adherencePct` conserva el valor que ya
+   * calculaba el contexto (WeekSummary si existe).
+   */
+  signalRows?: { weekStartDate: string; sessions: Session[]; dayLogs: DayLog[]; adherencePct?: number }
   referenceDate: string
   lookbackWeeks: number
   hasHistory: boolean
@@ -295,7 +305,7 @@ export function trimRecentContextForPayload(context: PlanBuilderRecentContext): 
 export async function buildPlanBuilderRecentContext(
   plan: TrainingPlan,
   lookbackWeeks = DEFAULT_LOOKBACK_WEEKS,
-  options?: { asOfDate?: string },
+  options?: { asOfDate?: string; now?: number },
 ): Promise<PlanBuilderRecentContext> {
   // Sin `asOfDate` el anclaje sigue siendo el inicio del plan, que es el
   // comportamiento de la generación inicial y no debe cambiar. Con `asOfDate`
@@ -383,9 +393,22 @@ export async function buildPlanBuilderRecentContext(
     ? allWeeks.filter((week) => week.weekStartDate >= planStart)
     : undefined
 
+  const lastLived = livedPlanWeeks?.at(-1)
+  const signalRows = lastLived
+    ? {
+        weekStartDate: lastLived.weekStartDate,
+        sessions: sessionsByWeek.get(lastLived.weekStartDate) ?? [],
+        dayLogs: logsByWeek.get(lastLived.weekStartDate) ?? [],
+        adherencePct: lastLived.adherencePct,
+      }
+    : undefined
+
   return {
     referenceDate,
     executedSessions: getExecutedSessions(sessions, referenceDate).filter(s => s.type === 'squash' || s.type === 'running').slice(0, 12),
+    capturedAt: options?.now ?? Date.now(),
+    executedStrengthSessions: getExecutedSessions(sessions, referenceDate).filter((s) => s.type === 'strength').slice(0, 5),
+    ...(signalRows ? { signalRows } : {}),
     lookbackWeeks,
     hasHistory: preWeeks.length > 0,
     weeks: preWeeks,

@@ -21,6 +21,7 @@ import type {
   SupportedSport,
 } from '../../types'
 import { isCompetitionSquashMatch } from '../../utils/squash'
+import type { PromptContext } from './contextOptimizer'
 import { todayISO, currentWeekStartISO } from '../../utils/date'
 import {
   getAthleteDisplayName,
@@ -186,6 +187,8 @@ function buildLitePromptResult(context: ChatContext, userMessage?: string): Coac
     { key: 'athlete_profile_slim', content: slimProfile.content, required: true },
     { key: 'week', content: buildWeekSection(context), required: true },
     { key: 'sessions', content: buildSessionsSection(plannedSessions, { allowActions: false }), required: true },
+    { key: 'target_index', content: buildTargetIndexSection(context, false), required: true },
+    { key: 'consulted_sessions', content: buildConsultedSessionsSection(context), required: true },
     { key: 'today', content: buildTodaySection(context), required: true },
     { key: 'coach_memory', content: buildCoachMemorySection(context) },
     { key: 'fatigue', content: buildFatigueSection(context, { compact: true }) },
@@ -244,6 +247,7 @@ function buildAdjustActionPromptResult(context: ChatContext, userMessage?: strin
     },
     { key: 'week', content: buildWeekSection(context), required: true },
     { key: 'sessions', content: buildSessionsSection(plannedSessions, { allowActions: true }), required: true },
+    { key: 'target_index', content: buildTargetIndexSection(context, true), required: true },
     { key: 'recent_proposals', content: buildRecentProposalsSection(context) },
     { key: 'today', content: buildTodaySection(context), required: true },
     { key: 'fatigue', content: buildFatigueSection(context), required: true },
@@ -1510,6 +1514,74 @@ function buildImplicitPrioritySection(context: ChatContext): string {
   return lines.join('\n')
 }
 
+function buildTargetIndexSection(context: ChatContext, allowActions: boolean): string {
+  const projection = context as Partial<PromptContext>
+  const index = projection.targetIndex ?? []
+  const overflow = projection.overflowTargets ?? []
+  if (index.length === 0 && overflow.length === 0) return ''
+  const today = todayISO()
+  const detailed = new Set(getAllContextSessions(context).map((session) => session.id))
+  const lines = [
+    '═══ SESIONES QUE NOMBRA EL MENSAJE ═══',
+    allowActions
+      ? '(Alcance completo del pedido del usuario. IDs internos sólo para acciones JSON; no los muestres.)'
+      : '(Sesiones que el usuario nombró. No muestres los IDs.)',
+    ...index.map((ref) => {
+      const suffix = detailed.has(ref.id) ? '' : ' (sin detalle en este mensaje)'
+      return `- [${ref.id.slice(0, 8)}] ${formatSessionDateForPrompt(ref.date, today)} ${ref.timeBlock} · ${SESSION_TYPE_ES[ref.type] ?? ref.type} "${sanitizeUserText(ref.title, 40)}"${suffix}`
+    }),
+  ]
+  if (overflow.length > 0) {
+    lines.push(`Quedaron fuera por límite ${overflow.length} sesiones del pedido: NO propongas acciones sobre ellas; la app se lo avisa al usuario.`)
+  }
+  return lines.join('\n')
+}
+
+/**
+ * F10/I15: hechos reales de las sesiones pasadas que el mensaje nombra
+ * (`targetIndex`) o de las fechas que resolvió sin sesiones (`targetDates`).
+ * Nunca infiere ausencia por falta de detalle ni por el recorte de 12: eso lo
+ * cubre `overflowTargets`, que cuenta como "consultado" aunque no tenga
+ * detalle acá.
+ */
+function buildConsultedSessionsSection(context: ChatContext): string {
+  const projection = context as Partial<PromptContext>
+  const index = projection.targetIndex ?? []
+  const dates = projection.targetDates ?? []
+  if (index.length === 0 && dates.length === 0) return ''
+  const today = todayISO()
+  const byId = new Map(getAllContextSessions(context).map((session) => [session.id, session]))
+  const pastRefs = index.filter((ref) => ref.date <= today)
+  // I15: el detalle es el que cupo en la proyección; lo demás se nombra sin inventar hechos.
+  const consulted = pastRefs
+    .map((ref) => byId.get(ref.id))
+    .filter((session): session is Session => session != null && (session.date < today || session.status !== 'planned'))
+  const withoutDetail = pastRefs.filter((ref) => !byId.has(ref.id))
+  // El índice y el exceso conservan TODOS los objetivos resueltos del dominio.
+  // No inferir ausencia por la falta de detalle ni por el límite de 12.
+  const allResolvedRefs = [...index, ...(projection.overflowTargets ?? [])]
+  const emptyDates = dates.filter((date) => date <= today && !allResolvedRefs.some((ref) => ref.date === date))
+  if (consulted.length === 0 && withoutDetail.length === 0 && emptyDates.length === 0) return ''
+
+  const parts: string[] = []
+  if (consulted.length > 0) {
+    parts.push(buildSessionsSection(consulted, {
+      allowActions: false,
+      includePast: true,
+      title: '═══ SESIONES CONSULTADAS (HECHOS REGISTRADOS) ═══',
+    }))
+    parts.push('Responde con estos hechos. Si una sesión no tiene feedback, RPE real ni nota, dilo en vez de suponer cómo le fue.')
+  }
+  if (withoutDetail.length > 0) {
+    const list = withoutDetail.map((ref) => `"${sanitizeUserText(ref.title, 40)}" (${formatSessionDateForPrompt(ref.date, today)} ${ref.timeBlock})`).join(', ')
+    parts.push(`También consultó, sin detalle en este mensaje por límite: ${list}. No inventes cómo le fue; ofrece revisarlas en otro mensaje.`)
+  }
+  for (const date of emptyDates) {
+    parts.push(`No hay sesiones registradas el ${formatSessionDateForPrompt(date, today)}. Dilo así; no inventes una sesión.`)
+  }
+  return parts.join('\n')
+}
+
 function buildSessionsSection(
   sessions: Session[],
   options?: { allowActions?: boolean; includePast?: boolean; title?: string },
@@ -1546,7 +1618,7 @@ function buildSessionsSection(
     const type = SESSION_TYPE_ES[s.type] ?? s.type
     const subtype = s.subtype ? ` (${SQUASH_SUBTYPE_ES[s.subtype] ?? s.subtype})` : ''
     const status = STATUS_ES[s.status] ?? s.status
-    const rpe = s.rpe != null ? ` RPE${s.actualRpe ?? s.rpe}${s.actualRpe != null ? ' real' : ''}` : ''
+    const rpe = s.actualRpe != null || s.rpe != null ? ` RPE${s.actualRpe ?? s.rpe}${s.actualRpe != null ? ' real' : ''}` : ''
     const duration = `${s.actualDurationMin ?? s.durationMin}min`
     const flag = s.status === 'completed' ? '✓' : s.status === 'skipped' ? '✗' : s.status === 'adjusted' ? '~' : '○'
     const matchMeta = formatMatchMeta(s)

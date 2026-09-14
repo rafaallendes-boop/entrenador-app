@@ -23,9 +23,9 @@
         "warmupSetsCount": 0
       },
       {
-        "id": "side_plank_plate_press",
+        "id": "cable_chop",
         "sets": 3,
-        "reps": "30s",
+        "reps": 10,
         "group": "core",
         "weight": null,
         "targetPercent1RM": null,
@@ -108,9 +108,9 @@
         "warmupSetsCount": 0
       },
       {
-        "id": "side_plank_plate_press",
+        "id": "cable_chop",
         "sets": 3,
-        "reps": "30s",
+        "reps": 10,
         "group": "core",
         "weight": null,
         "targetPercent1RM": null,

@@ -264,4 +264,18 @@ describe('ChatCoach — scope del bloque de Whoop', () => {
     expect(h.sendMessage).toHaveBeenCalledTimes(1)
     expect(sentContext().whoopWorkoutBlock).toBeUndefined()
   })
+
+  it('captura 28 días de historial y 20 de planificación en el dominio', async () => {
+    const today = new Date()
+    const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    const shift = (days: number) => { const d = new Date(today); d.setDate(d.getDate() + days); return iso(d) }
+    h.getSessionsForDateRange.mockResolvedValue([{
+      id: 'past', date: shift(-10), weekStartDate: shift(-10), timeBlock: 'AM', type: 'squash', status: 'completed', title: 'Hace diez días', durationMin: 60, createdAt: 0, updatedAt: 0,
+    }])
+
+    await send('hola')
+
+    expect(h.getSessionsForDateRange).toHaveBeenCalledWith(shift(-28), shift(20))
+    expect(sentContext().historicalSessions?.map((s) => s.id)).toContain('past')
+  })
 })

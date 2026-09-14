@@ -3,18 +3,14 @@
  */
 
 import type { ChatContext, MacroPlanPhase } from '../../../types'
-import { resolveSelectorEquipment } from '../../training/equipmentVocabulary'
 import { isCompetitionSquashMatch } from '../../../utils/squash'
-import { todayISO } from '../../../utils/date'
 import { buildStrengthLoadPack } from '../prompt/packs/quality/strengthLoad'
 import { getAllowedPlanningSports, getPlanningPrimarySport } from '../../planningConstraints'
 import {
-  deriveStrengthExperienceLevel as deriveStrengthExperienceLevelFromProfile,
   deriveStrengthSportProfile as deriveStrengthSportProfileFromProfile,
   mapMacroPhaseToStrengthPhase as mapMacroPhaseToStrengthPhaseFromMacro,
 } from '../../training/strengthContext'
 import {
-  extractRecentStrengthExercises,
   getTargetExerciseDensity,
   runStrengthSelectorSmokeChecks,
   selectStrengthSession,
@@ -27,8 +23,9 @@ import {
 import { getStrengthProgression } from '../../progressionInsights'
 import { toModelFacingProposal } from '../../training/strengthExerciseProposal'
 import { resolveProfileStrengthSafetyConstraints } from '../../training/strengthSafetySurface'
+import { toStrengthContextAthleteFields } from '../../training/strengthAthleteContext'
+import { captureFromChatContext, chatPromptSlot, resolveChatStrengthAthleteContext } from '../chatSourceCapture'
 import {
-  deriveFatigueLevel,
   diffDays,
   getPlannedSessions,
   getHistoricalSessions,
@@ -47,14 +44,10 @@ export function deriveStrengthSportProfile(context: ChatContext): StrengthSportP
   return deriveStrengthSportProfileFromProfile(context.athleteProfile)
 }
 
-export function deriveStrengthExperienceLevel(context: ChatContext): 'beginner' | 'intermediate' | 'advanced' {
-  return deriveStrengthExperienceLevelFromProfile(context.athleteProfile)
-}
-
 export function getStrengthSelectionContext(context: ChatContext): StrengthContext {
-  const today = todayISO()
-  const plannedSessions = getPlannedSessions(context)
-  const historicalSessions = getHistoricalSessions(context)
+  const capture = captureFromChatContext(context)
+  const today = capture.knowledgeDate
+  const plannedSessions = getPlannedSessions(context, today)
   const macroPlan = getMacroPlan(context)
   const nextCompetitive = plannedSessions
     .filter((session) =>
@@ -73,20 +66,16 @@ export function getStrengthSelectionContext(context: ChatContext): StrengthConte
     ?? 'desarrollar una sesion de fuerza util y bien estructurada'
 
   return {
-    fatigueLevel: deriveFatigueLevel(context),
     phase: mapMacroPhaseToStrengthPhase(macroPlan?.currentPhase),
-    recentExercises: extractRecentStrengthExercises(historicalSessions),
     goal,
     sportProfile: deriveStrengthSportProfile(context),
     primarySport,
-    experienceLevel: deriveStrengthExperienceLevel(context),
     sessionDurationMin: primarySport === 'strength' ? 65 : 60,
     competitionSoon,
     daysToCompetition,
-    historicalSessions,
     strengthAcwr: context.loadAnalytics?.strengthAcwr,
     safetyConstraints: resolveProfileStrengthSafetyConstraints(context.athleteProfile),
-    availableEquipment: resolveSelectorEquipment(context.athleteProfile?.availableEquipment),
+    ...toStrengthContextAthleteFields(resolveChatStrengthAthleteContext(context, chatPromptSlot(capture))),
   }
 }
 

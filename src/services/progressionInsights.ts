@@ -18,12 +18,10 @@ import {
 } from './training/drillSelector'
 import {
   deriveStrengthProgressionState,
-  extractRecentStrengthExercises,
   type StrengthContext,
   type StrengthProgressionIntent,
 } from './training/strengthSelector'
 import {
-  deriveStrengthExperienceLevel,
   deriveStrengthSportProfile,
   mapMacroPhaseToStrengthPhase,
 } from './training/strengthContext'
@@ -37,6 +35,9 @@ import {
   type SquashWeeklyLoad,
   type StrengthWeeklyLoad,
 } from './loadAnalytics'
+import { captureSources, type SourceCapture } from './training/slotContext'
+import { toStrengthContextAthleteFields } from './training/strengthAthleteContext'
+import { resolveCapturedStrengthAthleteContext } from './ai/chatSourceCapture'
 
 const STRENGTH_PRIORITY_ORDER = [
   'sentadilla',
@@ -361,27 +362,25 @@ function buildSquashContext(
   }
 }
 
-function buildStrengthContext(
+export function buildInsightsStrengthContext(
   profile: AthleteProfile | undefined,
-  completedSessions: Session[],
+  capture: SourceCapture,
   strengthAcwr: DisciplineAcwr,
   upcomingCompetition: Session | undefined,
-  fatigueLevel: number,
 ): StrengthContext {
+  const today = capture.knowledgeDate
+  const athlete = resolveCapturedStrengthAthleteContext(capture, { date: today, timeBlock: 'PM' })
   return {
-    fatigueLevel,
     phase: mapMacroPhaseToStrengthPhase(computeMacroPlan(profile)?.currentPhase),
-    recentExercises: extractRecentStrengthExercises(completedSessions),
     goal: upcomingCompetition?.title ?? profile?.mainGoal ?? 'desarrollar fuerza util',
     sportProfile: deriveStrengthSportProfile(profile),
     primarySport: getPrimarySportNormalized(profile),
-    experienceLevel: deriveStrengthExperienceLevel(profile),
     sessionDurationMin: profile?.planWizardConfig?.sessionDurationMins ?? 50,
-    competitionSoon: Boolean(upcomingCompetition && diffDays(todayISO(), upcomingCompetition.date) <= 4),
-    daysToCompetition: upcomingCompetition ? diffDays(todayISO(), upcomingCompetition.date) : undefined,
-    historicalSessions: completedSessions,
+    competitionSoon: Boolean(upcomingCompetition && diffDays(today, upcomingCompetition.date) <= 4),
+    daysToCompetition: upcomingCompetition ? diffDays(today, upcomingCompetition.date) : undefined,
     strengthAcwr,
     safetyConstraints: resolveProfileStrengthSafetyConstraints(profile),
+    ...toStrengthContextAthleteFields(athlete),
   }
 }
 
@@ -433,7 +432,14 @@ export async function getAthleteProgressionInsights(): Promise<AthleteProgressio
       }
     : undefined
 
-  const strengthContext = buildStrengthContext(profile, completedSessions, strengthAcwr, nextCompetition, fatigueLevel)
+  const strengthCapture = captureSources({
+    scope: { athleteId: null, epoch: 0, requestId: 'progression-insights' },
+    now: Date.now(),
+    profile: profile ?? undefined,
+    sessions: allSessions,
+    dayLogs,
+  })
+  const strengthContext = buildInsightsStrengthContext(profile ?? undefined, strengthCapture, strengthAcwr, nextCompetition)
   const strengthProgressionState = deriveStrengthProgressionState(strengthContext)
   const strengthRecommendation = enabledSports.includes('strength') && strengthProgressionState.mainPattern
     ? {

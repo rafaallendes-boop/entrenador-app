@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { AthleteProfile, ChatContext } from '../../../types'
+import type { AthleteProfile, ChatContext, PlanWizardConfig } from '../../../types'
 import { buildWeekCreatorPrompt } from '../WeekCreatorPromptBuilder'
 import type { WeekCreatorEffectiveConfig } from '../WeekCreatorConfig'
 
@@ -171,7 +171,11 @@ describe('buildWeekCreatorPrompt quality blocks', () => {
     expect(prompt).toContain('Subir carga de fuerza un escalón')
     expect(prompt).toContain('## GUÍA DE CONTENIDO — FASE BUILD')
     expect(prompt).toContain('pressure drills')
-    expect(prompt).toContain('SUBIR CARGA')
+    // I7: sin `athleteProfile.planWizardConfig`, `currentFatigue: 'fresh'` del
+    // config ya no llega a la directiva de carga (fatiga declarada vigente
+    // sólo sale del wizard). Sin historial ni fatiga declarada, el default es
+    // el mismo camino de arranque que sin ninguna señal.
+    expect(prompt).toContain('INICIAR CON CARGA CONSERVADORA')
   })
 
   it('keeps fitness/fatigue and operative level only in the athlete profile block', () => {
@@ -191,6 +195,22 @@ describe('buildWeekCreatorPrompt quality blocks', () => {
     const deduped = buildPrompt({}, { injuryNotes: 'molestia leve de hombro derecho' })
     const restrictionLine = deduped.split('\n').find((line) => line.includes('Restricciones activas'))
     expect(restrictionLine).toBe('- ⚠️ Restricciones activas: Molestia leve de hombro derecho. Adapta carga, ejercicios, impactos y RPE a estas restricciones.')
+  })
+
+  // Caso real de producción (2026-09-14): el onboarding guarda la lesión en
+  // `currentInjuries` y el prompt sólo leía `restrictions` e `injuryNotes`, así
+  // que el modelo no la veía aunque el filtro determinista sí la aplicaba.
+  it('includes the onboarding current injury in the active restrictions line', () => {
+    const prompt = buildPrompt({
+      athleteProfile: makeProfile({ recoveryProfile: { currentInjuries: 'Lesión lumbar', restrictions: 'Molestia leve de hombro derecho' } }),
+    })
+    const restrictionLine = prompt.split('\n').find((line) => line.includes('Restricciones activas'))
+    expect(restrictionLine).toBe('- ⚠️ Restricciones activas: Lesión lumbar · Molestia leve de hombro derecho. Adapta carga, ejercicios, impactos y RPE a estas restricciones.')
+  })
+
+  it('does not render an explicit absence as an active restriction', () => {
+    const prompt = buildPrompt({ athleteProfile: makeProfile({ recoveryProfile: { currentInjuries: 'Ninguna.' } }) })
+    expect(prompt).not.toContain('Restricciones activas')
   })
 
   it('renders the declared performance limiter as its own line, separate from restrictions', () => {
@@ -214,6 +234,11 @@ describe('buildWeekCreatorPrompt quality blocks', () => {
 
   it('holds load without raising when fatigue is loaded', () => {
     const prompt = buildPrompt({
+      // I7: la fatiga declarada ahora se lee con vigencia desde el wizard, no
+      // sólo desde `config.currentFatigue`.
+      athleteProfile: makeProfile({
+        planWizardConfig: { currentFatigue: 'loaded', updatedAt: '2026-06-14T12:00:00.000Z' } as PlanWizardConfig,
+      }),
       historicalSessions: [
         { date: '2026-06-10', timeBlock: 'AM', type: 'squash', title: 'Control', durationMin: 60, rpe: 6 },
       ] as ChatContext['historicalSessions'],
@@ -239,6 +264,11 @@ describe('buildWeekCreatorPrompt quality blocks', () => {
 
   it('reduces load when fatigue is overloaded before looking at history', () => {
     const prompt = buildPrompt({
+      // I7: la fatiga declarada ahora se lee con vigencia desde el wizard, no
+      // sólo desde `config.currentFatigue`.
+      athleteProfile: makeProfile({
+        planWizardConfig: { currentFatigue: 'overloaded', updatedAt: '2026-06-14T12:00:00.000Z' } as PlanWizardConfig,
+      }),
       historicalSessions: [
         { date: '2026-06-10', timeBlock: 'AM', type: 'squash', title: 'Control', durationMin: 60, rpe: 6 },
       ] as ChatContext['historicalSessions'],
@@ -278,10 +308,15 @@ describe('buildWeekCreatorPrompt quality blocks', () => {
     expect(noHistoryPrompt).toContain('INICIAR CON CARGA CONSERVADORA')
 
     const highRpePrompt = buildPrompt({
+      // Fixture: `id` único por sesión. `captureFromChatContext` (T7) dedupea
+      // por `id` (`lastById` en `slotContext.ts`, B2); tres sesiones con `id`
+      // ausente colapsan a una sola bajo la misma clave `undefined`. No es un
+      // cambio de expectativa I1-I9: el fixture nunca necesitó `id` antes de
+      // pasar por la captura compartida.
       historicalSessions: [
-        { date: '2026-06-11', timeBlock: 'AM', type: 'squash', title: 'Match 1', durationMin: 60, rpe: 6, actualRpe: 8, status: 'completed' },
-        { date: '2026-06-10', timeBlock: 'PM', type: 'strength', title: 'Fuerza', durationMin: 60, rpe: 6, actualRpe: 9, status: 'completed' },
-        { date: '2026-06-09', timeBlock: 'AM', type: 'squash', title: 'Match 2', durationMin: 75, rpe: 6, actualRpe: 8, status: 'completed' },
+        { id: 's1', date: '2026-06-11', timeBlock: 'AM', type: 'squash', title: 'Match 1', durationMin: 60, rpe: 6, actualRpe: 8, status: 'completed' },
+        { id: 's2', date: '2026-06-10', timeBlock: 'PM', type: 'strength', title: 'Fuerza', durationMin: 60, rpe: 6, actualRpe: 9, status: 'completed' },
+        { id: 's3', date: '2026-06-09', timeBlock: 'AM', type: 'squash', title: 'Match 2', durationMin: 75, rpe: 6, actualRpe: 8, status: 'completed' },
       ] as ChatContext['historicalSessions'],
     }, { currentFatigue: 'normal' })
 

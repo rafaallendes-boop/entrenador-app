@@ -1,11 +1,13 @@
 import { materializeRunningTemplate } from '../training/runningTemplateMaterializer'
 import { finalizeCoachActionDose } from '../training/coachActionDose'
 import type { ChatContext, CoachAction, CoachExerciseProposal, CoachSessionProposal, MobilityDetails, Session, SessionType, SquashSessionBlockKind, TimeBlock } from '../../types'
-import { resolveSelectorEquipment } from '../training/equipmentVocabulary'
 import type { StrengthConstraint } from '../../types/strengthSafety'
 import { currentWeekStartISO, todayISO } from '../../utils/date'
 import { toStrengthProposalForEnhancement } from '../training/strengthExerciseProposal'
 import { selectStrengthSession, type StrengthContext, type StrengthPhase, type StrengthSportProfile } from '../training/strengthSelector'
+import type { ReferenceSlot } from '../training/slotContext'
+import { toStrengthContextAthleteFields } from '../training/strengthAthleteContext'
+import { captureFromChatContext, resolveChatStrengthAthleteContext } from './chatSourceCapture'
 import { prepareStrengthSession, type BlockedReason, type RemovedExercise, type ReplacedExercise } from '../training/strengthSafetyFinalizer'
 import { resolveStrengthSafetyConstraints } from '../training/strengthSafetyConstraints'
 import { BLOCKED_STRENGTH_COPY, blockedStrengthCopy } from '../training/strengthSafetyCopy'
@@ -236,12 +238,15 @@ export function postProcessCoachActions(
   const fullyBlocked = safetyResult.blockedReasons.length > 0 && actions.length === 0
   const partiallyBlocked = safetyResult.blockedReasons.length > 0 && actions.length > 0
   // Un bloqueo por contexto de entrenamiento no es una restricción registrada:
-  // si TODAS las razones son de contexto, el copy médico mentiría. Basta una
-  // razón de restricción para volver al copy conservador.
+  // si TODAS las razones son de contexto, el copy médico mentiría. Una
+  // restricción sin zona pide la zona, que es lo único que la destraba; el
+  // resto vuelve al copy conservador.
   const blockedCopy = blockedStrengthCopy(
     safetyResult.blockedReasons.every((reason) => reason === 'training_context_unavailable')
       ? 'training_context_unavailable'
-      : 'insufficient_safe_pool',
+      : safetyResult.blockedReasons.includes('unresolved_medical_restriction')
+        ? 'unresolved_medical_restriction'
+        : 'insufficient_safe_pool',
   )
   const baseMessage = fullyBlocked
     ? blockedCopy
@@ -768,7 +773,13 @@ function buildFallbackAddSessionAction(options: {
   if (options.sessionType === 'strength') {
     // El finalizador vuelve a resolver las restricciones con autoridad antes de
     // emitir la acción. Este productor temprano decide explícitamente `[]`.
-    action.exercises = selectStrengthProposalsForAction(options.context, durationMin, objective, [])
+    action.exercises = selectStrengthProposalsForAction(
+      options.context,
+      durationMin,
+      objective,
+      [],
+      actionStrengthSlot(options.context, action.targetDate, action.timeBlock),
+    )
   }
 
   if (options.sessionType === 'mobility' || options.sessionType === 'recovery') {
@@ -1386,6 +1397,7 @@ function finalizeStrengthActions(
         action.durationMin,
         action.objective,
         options.constraints,
+        actionStrengthSlot(options.context, action.targetDate, action.timeBlock),
       )
       const result = prepareStrengthSession(action, {
         constraints: options.constraints,
@@ -1428,6 +1440,7 @@ function finalizeStrengthActions(
         prospective.durationMin,
         prospective.objective,
         options.constraints,
+        actionStrengthSlot(options.context, prospective.date, prospective.timeBlock),
       )
       const result = prepareStrengthSession(prospective, {
         constraints: options.constraints,
@@ -1473,6 +1486,7 @@ function finalizeStrengthActions(
           session.durationMin,
           session.objective,
           options.constraints,
+          actionStrengthSlot(options.context, session.date, session.timeBlock),
         )
         const result = prepareStrengthSession(session, {
           constraints: options.constraints,
@@ -1565,6 +1579,7 @@ function completeStrengthLoads(
           action.durationMin,
           `${objective} ${actionIntentText}`,
           safetyConstraints,
+          actionStrengthSlot(context, action.targetDate, action.timeBlock),
         )
     return {
       ...action,
@@ -1590,6 +1605,7 @@ function completeStrengthLoads(
               session.durationMin,
               `${objective} ${actionIntentText}`,
               safetyConstraints,
+              actionStrengthSlot(context, session.date, session.timeBlock),
             )
         return {
           ...session,
@@ -1719,31 +1735,36 @@ function alignSingleSessionSportToRequest(
       next.durationMin,
       next.objective,
       [],
+      actionStrengthSlot(context, next.targetDate, next.timeBlock),
     )
   }
 
   return next
 }
 
-function buildStrengthSelectionContextForAction(
+export function buildStrengthSelectionContextForAction(
   context: ChatContext,
   durationMin: number | undefined,
   objective: string | undefined,
   safetyConstraints: readonly StrengthConstraint[],
+  slot: ReferenceSlot,
 ): StrengthContext {
   const primarySport = context.athleteProfile?.sportContext?.primarySport
   return {
-    fatigueLevel: 5,
     phase: mapActionStrengthPhase(context.athleteProfile?.macroPlan?.currentPhase),
-    recentExercises: [],
     goal: objective ?? context.athleteProfile?.mainGoal ?? 'sesion de fuerza util y estructurada',
     sportProfile: deriveActionStrengthSportProfile(primarySport),
     primarySport,
-    experienceLevel: 'intermediate',
     sessionDurationMin: durationMin ?? 60,
     safetyConstraints,
-    availableEquipment: resolveSelectorEquipment(context.athleteProfile?.availableEquipment),
+    // B1: fatiga, experiencia, 1RM, equipamiento, historial y recuperación.
+    ...toStrengthContextAthleteFields(resolveChatStrengthAthleteContext(context, slot)),
   }
+}
+
+/** Slot de una acción: su fecha y franja declaradas; sin fecha, la próxima franja de hoy. */
+function actionStrengthSlot(context: ChatContext, date: string | undefined, timeBlock: TimeBlock | undefined): ReferenceSlot {
+  return { date: date ?? captureFromChatContext(context).knowledgeDate, timeBlock: timeBlock ?? 'PM' }
 }
 
 function selectStrengthProposalsForAction(
@@ -1751,9 +1772,10 @@ function selectStrengthProposalsForAction(
   durationMin: number | undefined,
   objective: string | undefined,
   safetyConstraints: readonly StrengthConstraint[],
+  slot: ReferenceSlot,
 ): CoachExerciseProposal[] {
   return selectStrengthSession(
-    buildStrengthSelectionContextForAction(context, durationMin, objective, safetyConstraints),
+    buildStrengthSelectionContextForAction(context, durationMin, objective, safetyConstraints, slot),
   ).exercises.map(toStrengthProposalForEnhancement)
 }
 

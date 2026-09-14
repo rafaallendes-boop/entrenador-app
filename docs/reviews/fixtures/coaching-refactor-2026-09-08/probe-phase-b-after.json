@@ -1,0 +1,605 @@
+{
+  "mode": "after",
+  "output": [
+    {
+      "archetype": "sin-datos-normal",
+      "slot": {
+        "date": "2026-09-14",
+        "timeBlock": "AM"
+      },
+      "route": "chat",
+      "resolution": {
+        "loadVerdict": "no_signal",
+        "loadReason": "",
+        "declaredFatigue": "normal",
+        "experienceSource": "none",
+        "extraRecoveryReasons": []
+      },
+      "athlete": {
+        "fatigueLevel": 4,
+        "experienceLevel": "unknown",
+        "requireExtraRecovery": false,
+        "returningFromBreak": false,
+        "rpeAdjustment": 0,
+        "available1RM": [],
+        "availableEquipment": [
+          "barbell",
+          "dumbbell",
+          "kettlebell"
+        ]
+      },
+      "exercises": [
+        "farmer_carry",
+        "bulgarian_split_squat",
+        "barbell_single_leg_inverted_row",
+        "bb_reverse_lunge",
+        "incline_bench_press",
+        "bb_side_lunge",
+        "single_leg_hip_thrust",
+        "step_up"
+      ]
+    },
+    {
+      "archetype": "sin-datos-normal",
+      "slot": {
+        "date": "2026-09-14",
+        "timeBlock": "AM"
+      },
+      "route": "week_creator",
+      "resolution": {
+        "loadVerdict": "no_signal",
+        "loadReason": "",
+        "declaredFatigue": "normal",
+        "experienceSource": "none",
+        "extraRecoveryReasons": []
+      },
+      "athlete": {
+        "fatigueLevel": 4,
+        "experienceLevel": "unknown",
+        "requireExtraRecovery": false,
+        "returningFromBreak": false,
+        "rpeAdjustment": 0,
+        "available1RM": [],
+        "availableEquipment": [
+          "barbell",
+          "dumbbell",
+          "kettlebell"
+        ]
+      },
+      "exercises": [
+        "farmer_carry",
+        "bulgarian_split_squat",
+        "barbell_single_leg_inverted_row",
+        "bb_reverse_lunge",
+        "incline_bench_press",
+        "bb_side_lunge",
+        "single_leg_hip_thrust",
+        "step_up"
+      ]
+    },
+    {
+      "archetype": "sin-datos-normal",
+      "slot": {
+        "date": "2026-09-14",
+        "timeBlock": "AM"
+      },
+      "route": "plan_builder_repair",
+      "resolution": {
+        "loadVerdict": "no_signal",
+        "loadReason": "",
+        "declaredFatigue": "normal",
+        "experienceSource": "none",
+        "extraRecoveryReasons": []
+      },
+      "athlete": {
+        "fatigueLevel": 4,
+        "experienceLevel": "unknown",
+        "requireExtraRecovery": false,
+        "returningFromBreak": false,
+        "rpeAdjustment": 0,
+        "available1RM": [],
+        "availableEquipment": [
+          "barbell",
+          "dumbbell",
+          "kettlebell"
+        ]
+      },
+      "exercises": [
+        "farmer_carry",
+        "bulgarian_split_squat",
+        "barbell_single_leg_inverted_row",
+        "bb_reverse_lunge",
+        "incline_bench_press",
+        "bb_side_lunge",
+        "single_leg_hip_thrust",
+        "step_up"
+      ]
+    },
+    {
+      "archetype": "fresco-declarado",
+      "slot": {
+        "date": "2026-09-14",
+        "timeBlock": "AM"
+      },
+      "route": "chat",
+      "resolution": {
+        "loadVerdict": "progress",
+        "loadReason": "el atleta llega fresco",
+        "declaredFatigue": "fresh",
+        "experienceSource": "inferred_1rm",
+        "extraRecoveryReasons": []
+      },
+      "athlete": {
+        "fatigueLevel": 2,
+        "experienceLevel": "beginner",
+        "requireExtraRecovery": false,
+        "returningFromBreak": false,
+        "rpeAdjustment": 0,
+        "available1RM": [
+          "squat"
+        ],
+        "availableEquipment": [
+          "barbell",
+          "dumbbell",
+          "kettlebell"
+        ]
+      },
+      "exercises": [
+        "farmer_carry",
+        "goblet_squat",
+        "half_kneeling_row",
+        "step_up",
+        "incline_dumbbell_press",
+        "glute_bridge",
+        "hip_thrust",
+        "landmine_press"
+      ]
+    },
+    {
+      "archetype": "fresco-declarado",
+      "slot": {
+        "date": "2026-09-14",
+        "timeBlock": "AM"
+      },
+      "route": "week_creator",
+      "resolution": {
+        "loadVerdict": "progress",
+        "loadReason": "el atleta llega fresco",
+        "declaredFatigue": "fresh",
+        "experienceSource": "inferred_1rm",
+        "extraRecoveryReasons": []
+      },
+      "athlete": {
+        "fatigueLevel": 2,
+        "experienceLevel": "beginner",
+        "requireExtraRecovery": false,
+        "returningFromBreak": false,
+        "rpeAdjustment": 0,
+        "available1RM": [
+          "squat"
+        ],
+        "availableEquipment": [
+          "barbell",
+          "dumbbell",
+          "kettlebell"
+        ]
+      },
+      "exercises": [
+        "farmer_carry",
+        "goblet_squat",
+        "half_kneeling_row",
+        "step_up",
+        "incline_dumbbell_press",
+        "glute_bridge",
+        "hip_thrust",
+        "landmine_press"
+      ]
+    },
+    {
+      "archetype": "fresco-declarado",
+      "slot": {
+        "date": "2026-09-14",
+        "timeBlock": "AM"
+      },
+      "route": "plan_builder_repair",
+      "resolution": {
+        "loadVerdict": "progress",
+        "loadReason": "el atleta llega fresco",
+        "declaredFatigue": "fresh",
+        "experienceSource": "inferred_1rm",
+        "extraRecoveryReasons": []
+      },
+      "athlete": {
+        "fatigueLevel": 2,
+        "experienceLevel": "beginner",
+        "requireExtraRecovery": false,
+        "returningFromBreak": false,
+        "rpeAdjustment": 0,
+        "available1RM": [
+          "squat"
+        ],
+        "availableEquipment": [
+          "barbell",
+          "dumbbell",
+          "kettlebell"
+        ]
+      },
+      "exercises": [
+        "farmer_carry",
+        "goblet_squat",
+        "half_kneeling_row",
+        "step_up",
+        "incline_dumbbell_press",
+        "glute_bridge",
+        "hip_thrust",
+        "landmine_press"
+      ]
+    },
+    {
+      "archetype": "masters-squash",
+      "slot": {
+        "date": "2026-09-14",
+        "timeBlock": "AM"
+      },
+      "route": "chat",
+      "resolution": {
+        "loadVerdict": "no_signal",
+        "loadReason": "",
+        "declaredFatigue": "normal",
+        "experienceSource": "inferred_1rm",
+        "extraRecoveryReasons": [
+          "age"
+        ]
+      },
+      "athlete": {
+        "fatigueLevel": 4,
+        "experienceLevel": "intermediate",
+        "requireExtraRecovery": true,
+        "returningFromBreak": false,
+        "rpeAdjustment": 0,
+        "available1RM": [
+          "squat",
+          "deadlift"
+        ],
+        "availableEquipment": [
+          "barbell",
+          "dumbbell",
+          "kettlebell"
+        ]
+      },
+      "exercises": [
+        "farmer_carry",
+        "back_squat",
+        "barbell_single_leg_inverted_row",
+        "bulgarian_split_squat",
+        "incline_bench_press",
+        "romanian_deadlift",
+        "goblet_squat"
+      ]
+    },
+    {
+      "archetype": "masters-squash",
+      "slot": {
+        "date": "2026-09-14",
+        "timeBlock": "AM"
+      },
+      "route": "week_creator",
+      "resolution": {
+        "loadVerdict": "no_signal",
+        "loadReason": "",
+        "declaredFatigue": "normal",
+        "experienceSource": "inferred_1rm",
+        "extraRecoveryReasons": [
+          "age"
+        ]
+      },
+      "athlete": {
+        "fatigueLevel": 4,
+        "experienceLevel": "intermediate",
+        "requireExtraRecovery": true,
+        "returningFromBreak": false,
+        "rpeAdjustment": 0,
+        "available1RM": [
+          "squat",
+          "deadlift"
+        ],
+        "availableEquipment": [
+          "barbell",
+          "dumbbell",
+          "kettlebell"
+        ]
+      },
+      "exercises": [
+        "farmer_carry",
+        "back_squat",
+        "barbell_single_leg_inverted_row",
+        "bulgarian_split_squat",
+        "incline_bench_press",
+        "romanian_deadlift",
+        "goblet_squat"
+      ]
+    },
+    {
+      "archetype": "masters-squash",
+      "slot": {
+        "date": "2026-09-14",
+        "timeBlock": "AM"
+      },
+      "route": "plan_builder_repair",
+      "resolution": {
+        "loadVerdict": "no_signal",
+        "loadReason": "",
+        "declaredFatigue": "normal",
+        "experienceSource": "inferred_1rm",
+        "extraRecoveryReasons": [
+          "age"
+        ]
+      },
+      "athlete": {
+        "fatigueLevel": 4,
+        "experienceLevel": "intermediate",
+        "requireExtraRecovery": true,
+        "returningFromBreak": false,
+        "rpeAdjustment": 0,
+        "available1RM": [
+          "squat",
+          "deadlift"
+        ],
+        "availableEquipment": [
+          "barbell",
+          "dumbbell",
+          "kettlebell"
+        ]
+      },
+      "exercises": [
+        "farmer_carry",
+        "back_squat",
+        "barbell_single_leg_inverted_row",
+        "bulgarian_split_squat",
+        "incline_bench_press",
+        "romanian_deadlift",
+        "goblet_squat"
+      ]
+    },
+    {
+      "archetype": "sobrecargado-con-dolor-miercoles",
+      "slot": {
+        "date": "2026-09-16",
+        "timeBlock": "PM"
+      },
+      "route": "chat",
+      "resolution": {
+        "loadVerdict": "reduce",
+        "loadReason": "el atleta declara fatiga acumulada alta",
+        "declaredFatigue": "overloaded",
+        "experienceSource": "inferred_1rm",
+        "extraRecoveryReasons": [
+          "acute_signal"
+        ]
+      },
+      "athlete": {
+        "fatigueLevel": 8,
+        "experienceLevel": "advanced",
+        "requireExtraRecovery": true,
+        "returningFromBreak": false,
+        "rpeAdjustment": -1,
+        "available1RM": [
+          "squat",
+          "deadlift",
+          "benchPress",
+          "overheadPress"
+        ],
+        "availableEquipment": [
+          "barbell",
+          "dumbbell",
+          "kettlebell"
+        ]
+      },
+      "exercises": [
+        "farmer_carry",
+        "goblet_squat",
+        "barbell_single_leg_inverted_row",
+        "bulgarian_split_squat",
+        "incline_dumbbell_press"
+      ]
+    },
+    {
+      "archetype": "sobrecargado-con-dolor-miercoles",
+      "slot": {
+        "date": "2026-09-16",
+        "timeBlock": "PM"
+      },
+      "route": "week_creator",
+      "resolution": {
+        "loadVerdict": "reduce",
+        "loadReason": "el atleta declara fatiga acumulada alta",
+        "declaredFatigue": "overloaded",
+        "experienceSource": "inferred_1rm",
+        "extraRecoveryReasons": [
+          "acute_signal"
+        ]
+      },
+      "athlete": {
+        "fatigueLevel": 8,
+        "experienceLevel": "advanced",
+        "requireExtraRecovery": true,
+        "returningFromBreak": false,
+        "rpeAdjustment": -1,
+        "available1RM": [
+          "squat",
+          "deadlift",
+          "benchPress",
+          "overheadPress"
+        ],
+        "availableEquipment": [
+          "barbell",
+          "dumbbell",
+          "kettlebell"
+        ]
+      },
+      "exercises": [
+        "farmer_carry",
+        "goblet_squat",
+        "barbell_single_leg_inverted_row",
+        "bulgarian_split_squat",
+        "incline_dumbbell_press"
+      ]
+    },
+    {
+      "archetype": "sobrecargado-con-dolor-miercoles",
+      "slot": {
+        "date": "2026-09-16",
+        "timeBlock": "PM"
+      },
+      "route": "plan_builder_repair",
+      "resolution": {
+        "loadVerdict": "reduce",
+        "loadReason": "el atleta declara fatiga acumulada alta",
+        "declaredFatigue": "overloaded",
+        "experienceSource": "inferred_1rm",
+        "extraRecoveryReasons": [
+          "acute_signal"
+        ]
+      },
+      "athlete": {
+        "fatigueLevel": 8,
+        "experienceLevel": "advanced",
+        "requireExtraRecovery": true,
+        "returningFromBreak": false,
+        "rpeAdjustment": -1,
+        "available1RM": [
+          "squat",
+          "deadlift",
+          "benchPress",
+          "overheadPress"
+        ],
+        "availableEquipment": [
+          "barbell",
+          "dumbbell",
+          "kettlebell"
+        ]
+      },
+      "exercises": [
+        "farmer_carry",
+        "goblet_squat",
+        "barbell_single_leg_inverted_row",
+        "bulgarian_split_squat",
+        "incline_dumbbell_press"
+      ]
+    },
+    {
+      "archetype": "retorno-45-loaded-vencido",
+      "slot": {
+        "date": "2026-09-16",
+        "timeBlock": "AM"
+      },
+      "route": "chat",
+      "resolution": {
+        "loadVerdict": "no_signal",
+        "loadReason": "",
+        "declaredFatigue": null,
+        "experienceSource": "none",
+        "extraRecoveryReasons": [
+          "age"
+        ]
+      },
+      "athlete": {
+        "fatigueLevel": 4,
+        "experienceLevel": "unknown",
+        "requireExtraRecovery": true,
+        "returningFromBreak": true,
+        "rpeAdjustment": -1,
+        "available1RM": [],
+        "availableEquipment": [
+          "barbell",
+          "dumbbell",
+          "kettlebell"
+        ]
+      },
+      "exercises": [
+        "farmer_carry",
+        "bulgarian_split_squat",
+        "barbell_single_leg_inverted_row",
+        "bb_reverse_lunge",
+        "incline_bench_press",
+        "bb_side_lunge"
+      ]
+    },
+    {
+      "archetype": "retorno-45-loaded-vencido",
+      "slot": {
+        "date": "2026-09-16",
+        "timeBlock": "AM"
+      },
+      "route": "week_creator",
+      "resolution": {
+        "loadVerdict": "no_signal",
+        "loadReason": "",
+        "declaredFatigue": null,
+        "experienceSource": "none",
+        "extraRecoveryReasons": [
+          "age"
+        ]
+      },
+      "athlete": {
+        "fatigueLevel": 4,
+        "experienceLevel": "unknown",
+        "requireExtraRecovery": true,
+        "returningFromBreak": true,
+        "rpeAdjustment": -1,
+        "available1RM": [],
+        "availableEquipment": [
+          "barbell",
+          "dumbbell",
+          "kettlebell"
+        ]
+      },
+      "exercises": [
+        "farmer_carry",
+        "bulgarian_split_squat",
+        "barbell_single_leg_inverted_row",
+        "bb_reverse_lunge",
+        "incline_bench_press",
+        "bb_side_lunge"
+      ]
+    },
+    {
+      "archetype": "retorno-45-loaded-vencido",
+      "slot": {
+        "date": "2026-09-16",
+        "timeBlock": "AM"
+      },
+      "route": "plan_builder_repair",
+      "resolution": {
+        "loadVerdict": "no_signal",
+        "loadReason": "",
+        "declaredFatigue": null,
+        "experienceSource": "none",
+        "extraRecoveryReasons": [
+          "age"
+        ]
+      },
+      "athlete": {
+        "fatigueLevel": 4,
+        "experienceLevel": "unknown",
+        "requireExtraRecovery": true,
+        "returningFromBreak": true,
+        "rpeAdjustment": -1,
+        "available1RM": [],
+        "availableEquipment": [
+          "barbell",
+          "dumbbell",
+          "kettlebell"
+        ]
+      },
+      "exercises": [
+        "farmer_carry",
+        "bulgarian_split_squat",
+        "barbell_single_leg_inverted_row",
+        "bb_reverse_lunge",
+        "incline_bench_press",
+        "bb_side_lunge"
+      ]
+    }
+  ]
+}

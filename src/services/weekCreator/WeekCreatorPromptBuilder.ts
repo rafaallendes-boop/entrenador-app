@@ -12,12 +12,13 @@ import { deriveWeekCreatorAthleteTier, type WeekCreatorAthleteTier, type WeekCre
 import { normalizeSport } from '../../utils/athlete'
 import { isWhoopPrefilled } from '../readiness/dayLogPrefillSave'
 import { resolveSquashWeeklyExposurePolicy } from '../planBuilder/squashWeeklyExposurePolicy'
-import { decideLoadDirective, renderLoadDirective } from '../training/loadDirectivePolicy'
+import { renderLoadDirective, type LoadDirectiveDecision } from '../training/loadDirectivePolicy'
+import { hasDeclaredRestrictionSignal } from '../training/strengthSafetyConstraints'
 import {
   resolveWeekCreatorEventContext,
   type WeekCreatorEventContext,
 } from './WeekCreatorEventContext'
-import { buildWeekCreatorExecutionSignals, computeRecentRpeStats } from './weekCreatorExecutionSignals'
+import { computeRecentRpeStats, resolveWeekCreatorStrengthSources } from './weekCreatorExecutionSignals'
 
 export interface WeekCreatorPromptInput {
   userMessage: string
@@ -32,6 +33,8 @@ export interface WeekCreatorPromptInput {
   skeletonOutput?: boolean
   /** Objetivos de la semana del plan activo (TrainingPlanWeek.weekObjectives), si existe. */
   weekObjectives?: string[]
+  /** Decisión de carga de la operación; el engine la pasa. Un llamador aislado la deriva del dominio. */
+  loadDecision?: LoadDirectiveDecision
 }
 
 export interface WeekCreatorPromptBuildResult {
@@ -56,6 +59,9 @@ export function buildWeekCreatorPrompt(
   const prioritySport = extractPrioritySport(input.userMessage, config.allowedSports)
   const createWeekContract = ACTION_CONTRACTS.create_week
   const planningStartDate = input.planningStartDate ?? input.targetWeekStart
+  // Una sola decisión por operación: el engine la pasa; un llamador aislado la deriva del dominio.
+  const loadDecision = input.loadDecision
+    ?? resolveWeekCreatorStrengthSources(context, planningStartDate, Date.now()).loadDecision
   const weekEndDate = input.weekEndDate ?? addDaysIso(input.targetWeekStart, 6)
   const isPartialCurrentWeek = planningStartDate > input.targetWeekStart
   const eventContext = resolveWeekCreatorEventContext({
@@ -88,7 +94,7 @@ export function buildWeekCreatorPrompt(
     input.skeletonOutput && eventContext.phase !== 'race'
       ? ''
       : buildSquashPhaseContentGuide(config, eventContext),
-    buildProgressionContext(config, recentHistory, recentLogs),
+    buildProgressionContext(recentHistory, recentLogs, loadDecision),
     buildCurrentWeekSessionsSummary(targetWeekSessions, input.targetWeekStart),
     buildRecentCoachAdviceSummary(context.recentMessages),
     context.athleteMemory?.trim() ? `## MEMORIA DEL COACH\n${context.athleteMemory.trim()}` : '',
@@ -251,10 +257,14 @@ function buildRestrictionSummary(
   profile: ChatContext['athleteProfile'],
   config: WeekCreatorEffectiveConfig,
 ): string {
+  // `currentInjuries` es el campo que llena el onboarding: sin él, el modelo no
+  // veía la lesión que el filtro determinista sí aplicaba. Una ausencia
+  // explícita ("Ninguna.") no es una restricción y no se envía.
   const sources = [
+    profile?.recoveryProfile?.currentInjuries?.trim(),
     profile?.recoveryProfile?.restrictions?.trim(),
     config.injuryNotes?.trim(),
-  ].filter((value): value is string => Boolean(value))
+  ].filter((value): value is string => Boolean(value) && hasDeclaredRestrictionSignal({ restrictions: value }))
 
   // Concatena ambas fuentes; descarta solo duplicados textuales (mismo contenido).
   const seen = new Set<string>()
@@ -541,9 +551,9 @@ function summarizeExistingSessionDetails(
 }
 
 function buildProgressionContext(
-  config: WeekCreatorEffectiveConfig,
   sessions: ChatContext['historicalSessions'],
   logs: ChatContext['weekDayLogs'],
+  loadDecision: LoadDirectiveDecision,
 ): string {
   const rpeStats = computeRecentRpeStats(sessions)
   const sessionLines = sessions && sessions.length > 0
@@ -558,7 +568,7 @@ function buildProgressionContext(
 
   return [
     '## PROGRESIÓN Y DIRECTIVA DE CARGA',
-    `Directiva de carga: ${buildLoadDirective(config, sessions, logs)}`,
+    `Directiva de carga: ${buildLoadDirective(loadDecision, sessions)}`,
     'Historial de sesiones:',
     ...sessionLines,
     rpeStats.count > 0
@@ -569,12 +579,7 @@ function buildProgressionContext(
   ].join('\n')
 }
 
-function buildLoadDirective(
-  config: WeekCreatorEffectiveConfig,
-  sessions: ChatContext['historicalSessions'],
-  logs: ChatContext['weekDayLogs'],
-): string {
-  const decision = decideLoadDirective(buildWeekCreatorExecutionSignals(config, sessions, logs))
+function buildLoadDirective(decision: LoadDirectiveDecision, sessions: ChatContext['historicalSessions']): string {
   const rendered = renderLoadDirective(decision)
   if (rendered) return rendered
 

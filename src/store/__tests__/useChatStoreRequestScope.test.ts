@@ -39,7 +39,11 @@ vi.mock('../../services/ai/CoachEngine', () => ({
   },
 }))
 vi.mock('../../services/weekCreator/WeekCreatorEngine', () => ({ WeekCreatorEngine: { sendWeekCreate: vi.fn() } }))
-vi.mock('../../services/ai/contextOptimizer', () => ({ optimizeChatContext: (c: unknown) => c }))
+vi.mock('../../services/ai/contextOptimizer', () => ({
+  optimizeChatContext: (c: unknown) => c,
+  selectDomainRecentMessages: (messages: { role: string; content: string; timestamp?: number }[]) =>
+    messages.map(m => ({ role: m.role, content: m.content, timestamp: m.timestamp })),
+}))
 vi.mock('../../services/chatRouting', async (importOriginal) => {
   const actual = await importOriginal()
   return {
@@ -132,7 +136,14 @@ describe('A5 — el scope capturado gobierna la persistencia', () => {
       conversationEvents: [{ kind: 'ask_clarification', operation: 'move_session', missing: ['sessionId'], known: { targetDate: '2026-09-18' }, summary: 'Mover' }],
       meta: { hadActionsMarkup: true, actionParseFailed: false, likelyTruncated: false },
     })
-    await useChatStore.getState().sendMessage('muévela al viernes', undefined)
+    // Task 13 (B4): "muévela al viernes" es justo la anáfora singular sin
+    // referente que el resolver de objetivos ahora contesta LOCALMENTE, sin
+    // llegar a la IA — ver messageTargets.test.ts / useChatStorePromptContext.
+    // Este test cubre el mecanismo de `conversationEvents: ask_clarification`
+    // devuelto POR la IA, así que el mensaje se cambia a uno sin objetivo
+    // resoluble localmente (`resolveMessageTargets` da `{ kind: 'none' }` para
+    // esta frase) para seguir ejercitando ese camino en vez del nuevo.
+    await useChatStore.getState().sendMessage('ajusta el entrenamiento de esta semana', undefined)
     expect(mocks.chatMessages.filter(m => m.role === 'coach')).toHaveLength(1)
     expect(mocks.addProposal).not.toHaveBeenCalled()
     expect(useChatStore.getState().error).toBeNull()

@@ -719,6 +719,8 @@ export interface StrengthProfile {
   deadlift1RM?: number        // kg
   overheadPress1RM?: number   // kg
   pullUpMaxReps?: number      // reps
+  /** Experiencia técnica declarada en fuerza (D1). Ausente: se infiere por 1RM o queda `unknown`. */
+  experienceLevel?: 'beginner' | 'intermediate' | 'advanced'
   notes?: string
 }
 
@@ -1010,6 +1012,10 @@ export interface ChatContextMetadata {
   hasDayLog?: boolean
   hasAthleteProfile?: boolean
   hasAthleteMemory?: boolean
+  /** B4: objetivos resueltos procesados en esta operación. */
+  targetCount?: number
+  /** B4: ids que excedieron el tope y quedaron fuera; la respuesta los nombra. */
+  overflowTargetIds?: string[]
 }
 
 export interface ChatContext {
@@ -1057,6 +1063,12 @@ export interface ChatContext {
     known: Record<string, string | number>
     missing: string[]
   }
+  /**
+   * Captura inmutable del dominio (B2), adjuntada por `optimizeChatContext`
+   * ANTES de recortar. Los resolvers de fuerza la prefieren a las listas
+   * recortadas de la proyección. Efímera: no se persiste.
+   */
+  sourceCapture?: import('../services/training/slotContext').SourceCapture
 }
 
 // ─── Nutrition ────────────────────────────────────────────────────────────────

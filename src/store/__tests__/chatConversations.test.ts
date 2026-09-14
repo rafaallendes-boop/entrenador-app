@@ -151,6 +151,8 @@ vi.mock('../../services/chatRouting', async (importOriginal) => {
 
 vi.mock('../../services/ai/contextOptimizer', () => ({
   optimizeChatContext: (context: unknown) => context,
+  selectDomainRecentMessages: (messages: { role: string; content: string; timestamp?: number }[]) =>
+    messages.map(m => ({ role: m.role, content: m.content, timestamp: m.timestamp })),
 }))
 
 vi.mock('../../services/ai/CoachEngine', () => ({

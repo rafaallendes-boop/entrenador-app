@@ -62,7 +62,13 @@ import {
   isStrengthWorkExercise,
 } from '../training/strengthSessionStructure'
 import { planSupersetGroups, shouldApplySupersetPolicy } from '../training/supersetPolicy'
-import { getExerciseById, resolveStrengthExercise, type ExperienceLevel } from '../training/exerciseLibrary'
+import { getExerciseById, resolveStrengthExercise } from '../training/exerciseLibrary'
+import { captureSources, deriveSlotContext, type ReferenceSlot, type SourceCapture } from '../training/slotContext'
+import {
+  resolveStrengthAthleteContext,
+  toStrengthContextAthleteFields,
+  type StrengthAthleteContext,
+} from '../training/strengthAthleteContext'
 import { getStrengthExerciseKey, toStrengthProposal } from '../training/strengthExerciseProposal'
 import { selectMobilitySession, type MobilityPhase } from '../training/mobilitySelector'
 import { selectCyclingSession, type CyclingPhase, type CyclingSportProfile } from '../training/cyclingSelector'
@@ -126,6 +132,14 @@ export interface RepairContext {
   executionSignals?: ExecutionSignals
   /** Descriptores ordenados de todas las semanas. El fallback unitario conserva compatibilidad de repair aislado. */
   planWeekDescriptors?: readonly PlanWeekDescriptor[]
+  /** Captura B2 de la operación. Los campos de atleta de fuerza se resuelven desde acá (B1). */
+  sourceCapture?: SourceCapture
+  /**
+   * T8: el hidratador del Week Creator instala su propia resolución por slot.
+   * Efímero — no serializar en el payload del Plan Builder. Plan Builder no lo
+   * instala y conserva I8 (resolución propia vía `resolveStrengthAthleteContext`).
+   */
+  strengthAthleteForSlot?: (slot: ReferenceSlot) => StrengthAthleteContext
 }
 
 export interface RepairWarning {
@@ -481,7 +495,7 @@ function finalizeStrengthSafetySessions(
       constraints: athleteParameters.safetyConstraints,
       userMessageConstraints: [],
       userMessage: '',
-      selectionContext: buildStrengthSelectionContext(session, context, recentExercises),
+      selectionContext: buildPlanBuilderStrengthSelectionContext(session, context, recentExercises),
       structureOptions: {
         durationMin: session.durationMin,
         strengthProfile: context.profile.strengthProfile,
@@ -2394,7 +2408,7 @@ export function resolveStrengthBlockAllocation(
     .filter((slot) => isCountableRole(slot.role) && !isStructuralCoreSlot(slot))
     .map((slot) => {
       const session = strengthSessions[slot.sessionOrdinal]!
-      const selectionContext = buildStrengthSelectionContext(session, context, [])
+      const selectionContext = buildPlanBuilderStrengthSelectionContext(session, context, [])
       return {
         slotKey: slot.slotKey,
         canonicalId: canonicalSnapshotSlotId(slot),
@@ -2431,7 +2445,7 @@ export function resolveStrengthBlockAllocation(
     const sourceExercises = session.exercises ?? []
     const projection = structuralCoreByWeek[0]?.get(sessionKey)
     const projectedLength = sourceExercises.length + (projection?.slotIndex == null && projection ? 1 : 0)
-    const selectionContext = buildStrengthSelectionContext(session, canonicalDensityContext, [])
+    const selectionContext = buildPlanBuilderStrengthSelectionContext(session, canonicalDensityContext, [])
     const densityDeficit = Math.max(
       0,
       getTargetExerciseDensity(selectionContext).min - projectedLength,
@@ -2625,7 +2639,7 @@ function normalizeStrengthSessions(
 
     const replacement = buildStrengthReplacementById(
       assignedId,
-      buildStrengthSelectionContext(target.session, context, []),
+      buildPlanBuilderStrengthSelectionContext(target.session, context, []),
       target.index,
     )
     if (!replacement) {
@@ -2654,7 +2668,7 @@ function normalizeStrengthSessions(
     if (existingIds.has(assignedId)) continue
     const addition = buildStrengthReplacementById(
       assignedId,
-      buildStrengthSelectionContext(session, context, []),
+      buildPlanBuilderStrengthSelectionContext(session, context, []),
       session.exercises?.length ?? 0,
     )
     if (!addition) {
@@ -2918,7 +2932,7 @@ function createStrengthDensityOverlapGuard(
       const sourceExercises = session.exercises ?? []
       if (sourceExercises.length === 0) continue
 
-      const selectionContext = buildStrengthSelectionContext(session, virtualContext, recentExercises)
+      const selectionContext = buildPlanBuilderStrengthSelectionContext(session, virtualContext, recentExercises)
       const density = getTargetExerciseDensity(selectionContext)
       const sessionKey = sessionKeyOf(session)
       const projectedIds = projectSessionIds(week, sessionKey)
@@ -3594,7 +3608,7 @@ function hydrateStrengthExerciseTemplate(
   context: RepairContext,
   recentExercises: string[],
 ): void {
-  const result = selectStrengthSession(buildStrengthSelectionContext(session, context, recentExercises))
+  const result = selectStrengthSession(buildPlanBuilderStrengthSelectionContext(session, context, recentExercises))
   session.exercises = result.exercises.map(toStrengthProposal)
   if (result.starLift) {
     session.metadata = {
@@ -3637,29 +3651,50 @@ function enhanceStrengthSessionDetails(
   return before !== JSON.stringify(session.exercises ?? [])
 }
 
-function buildStrengthSelectionContext(
+export function buildPlanBuilderStrengthSelectionContext(
   session: CoachSessionProposal,
   context: RepairContext,
   recentExercises: string[],
 ): StrengthContext {
   const athleteParameters = buildAthleteParameters(context.profile, context.wizardConfig)
+  const athlete = resolvePlanBuilderStrengthAthlete(session, context)
 
   return {
-    fatigueLevel: fatigueToNumber(context.wizardConfig.currentFatigue),
     phase: mapStrengthPhase(context.week.phase) as StrengthPhase,
-    recentExercises,
     goal: buildLevelAwareGoal(context, session.objective ?? context.profile.mainGoal ?? ''),
     sportProfile: deriveStrengthSportProfile(context),
     primarySport: context.profile.sportContext?.primarySport,
-    experienceLevel: deriveStrengthExperienceLevel(context),
-    availableEquipment: athleteParameters.availableEquipment,
     sessionDurationMin: session.durationMin,
     weekIndexInBlock: getWeekIndexInBlock(context),
-    available1RM: athleteParameters.available1RM,
-    rpeAdjustment: athleteParameters.rpeAdjustment,
-    requireExtraRecovery: athleteParameters.requireExtraRecovery,
     safetyConstraints: athleteParameters.safetyConstraints,
+    ...toStrengthContextAthleteFields(athlete),
+    // I10: la progresión viene del historial capturado. La acumulación
+    // intra-semana del llamador (y, en densidad, `previousWeek`) va detrás y se
+    // conserva hasta C6: el orden congelado del repair no cambia.
+    recentExercises: [...athlete.recentExercises, ...recentExercises],
   }
+}
+
+function resolvePlanBuilderStrengthAthlete(session: CoachSessionProposal, context: RepairContext): StrengthAthleteContext {
+  // Repair aislado (tests, regeneración local sin payload): captura mínima y
+  // determinista anclada a la semana, sin leer el reloj.
+  const capture = context.sourceCapture ?? captureSources({
+    scope: { athleteId: context.plan.athleteId ?? null, epoch: 0, requestId: context.plan.id },
+    now: Date.parse(`${context.week.weekStartDate}T12:00:00.000Z`),
+    profile: context.profile,
+    sessions: context.historicalSessions ?? [],
+    dayLogs: [],
+  })
+  const slot = { date: session.date, timeBlock: session.timeBlock }
+  // T8: el hidratador del Week Creator aporta su resolución por slot.
+  // Plan Builder no instala este callback: conserva I8.
+  if (context.strengthAthleteForSlot) return context.strengthAthleteForSlot(slot)
+  return resolveStrengthAthleteContext({
+    slotContext: deriveSlotContext(capture, slot),
+    executionSignals: context.executionSignals ?? {},
+    // I6/I7: la vigencia de fatiga y retorno sale de la fecha de declaración del wizard.
+    declaration: context.wizardConfig,
+  })
 }
 
 function completeStrengthExerciseDensity(
@@ -3673,7 +3708,7 @@ function completeStrengthExerciseDensity(
 ): CoachExerciseProposal[] | undefined {
   if (!exercises || exercises.length === 0) return exercises
 
-  const selectionContext = buildStrengthSelectionContext(session, context, recentExercises)
+  const selectionContext = buildPlanBuilderStrengthSelectionContext(session, context, recentExercises)
   const density = getTargetExerciseDensity(selectionContext)
 
   const hasStructuralCore = exercises.some(isFoundationCore)
@@ -4771,15 +4806,6 @@ function deriveStrengthSportProfile(context: RepairContext): StrengthSportProfil
   if (primary === 'strength') return 'strength_primary'
   if (primary) return 'sport_support'
   return 'hybrid'
-}
-
-function deriveStrengthExperienceLevel(context: RepairContext): ExperienceLevel {
-  const fitness = context.wizardConfig.currentFitnessLevel
-  if (fitness === 'low' || fitness === 'returning') return 'beginner'
-  const competitiveLevel = deriveCompetitiveLevel(context)
-  if (competitiveLevel === 'elite' || competitiveLevel === 'masters') return 'advanced'
-  if (competitiveLevel === 'competitive' || fitness === 'fit') return 'intermediate'
-  return 'intermediate'
 }
 
 function deriveCompetitiveLevel(context: RepairContext): GoalEventLevel | undefined {

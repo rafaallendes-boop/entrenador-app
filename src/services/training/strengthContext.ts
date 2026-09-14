@@ -1,6 +1,5 @@
 import type { AthleteProfile, MacroPlanPhase } from '../../types'
 import { getEnabledSports, getPrimarySportNormalized } from '../../utils/athlete'
-import type { ExperienceLevel } from './exerciseLibrary'
 import type { StrengthPhase, StrengthSportProfile } from './strengthSelector'
 
 export function mapMacroPhaseToStrengthPhase(phase: MacroPlanPhase | undefined): StrengthPhase {
@@ -27,15 +26,4 @@ export function deriveStrengthSportProfile(profile: AthleteProfile | undefined):
   if (primarySport === 'strength') return 'strength_primary'
   if (enabledSports.includes('strength') && enabledSports.length > 1) return 'hybrid'
   return 'sport_support'
-}
-
-export function deriveStrengthExperienceLevel(profile: AthleteProfile | undefined): ExperienceLevel {
-  const sp = profile?.strengthProfile
-  const filled = [sp?.benchPress1RM, sp?.squat1RM, sp?.deadlift1RM, sp?.overheadPress1RM]
-    .filter((value) => value != null)
-    .length
-
-  if (filled >= 4) return 'advanced'
-  if (filled >= 2) return 'intermediate'
-  return 'beginner'
 }

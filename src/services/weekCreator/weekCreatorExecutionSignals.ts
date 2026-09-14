@@ -1,43 +1,39 @@
-import type { ChatContext, DayLog } from '../../types'
-import { isWhoopPrefilled } from '../readiness/dayLogPrefillSave'
-import type { ExecutionSignals } from '../training/loadDirectivePolicy'
-import type { WeekCreatorEffectiveConfig } from './WeekCreatorConfig'
+import type { ChatContext } from '../../types'
+import { captureFromChatContext } from '../ai/chatSourceCapture'
+import { buildExecutionSignals, previousWeekWindowStart } from '../training/executionSignals'
+import { decideLoadDirective, type ExecutionSignals, type LoadDirectiveDecision } from '../training/loadDirectivePolicy'
+import { deriveSlotContext, type SourceCapture } from '../training/slotContext'
+import { resolveDeclaredAthleteState } from '../training/strengthAthleteContext'
 
 /**
- * Única construcción de `ExecutionSignals` del Week Creator. La consumen el
- * prompt (`buildLoadDirective`) y el contexto de reparación del hidratador,
- * para que la señal que ve el modelo sea la misma que ve la composición local.
+ * Única construcción de las fuentes de fuerza del Week Creator por operación.
+ * La consumen el prompt (directiva), el hidratador (RepairContext) y el
+ * finalizador de fuerza. El prompt usa una directiva semanal; la composición
+ * resuelve la fuerza por slot con la captura compartida. Reemplaza
+ * `buildWeekCreatorExecutionSignals` (A1).
  *
- * `logs` NO tiene un orden garantizado: el hidratador pasa
- * `weekDayLogs` tal cual llega (ascendente por fecha), pero
- * `WeekCreatorPromptBuilder` pasa una copia pre-ordenada DESCENDENTE
- * (`recentLogs`, más reciente primero). Por eso el registro más reciente se
- * busca por fecha máxima, nunca por posición — un índice fijo (`[0]` o
- * `at(-1)`) acierta con un solo llamador y falla silenciosamente con el otro.
+ * `executionSignals` conserva la fatiga declarada VIGENTE en el ancla: el
+ * veredicto de ejecución de `repairWeek` (A1, F02) la sigue necesitando. El
+ * resolver de fuerza extrae señales y evalúa vigencia por sesión (I9),
+ * usando la caché compartida de T7; no reutiliza el agregado semanal.
  */
-export function buildWeekCreatorExecutionSignals(
-  config: Pick<WeekCreatorEffectiveConfig, 'currentFatigue'>,
-  sessions: ChatContext['historicalSessions'],
-  logs: ChatContext['weekDayLogs'],
-): ExecutionSignals {
-  const rpeStats = computeRecentRpeStats(sessions)
-  const latestLog = pickMostRecentLog(logs)
-  return {
-    declaredFatigue: config.currentFatigue,
-    latestEnergyLevel: latestLog && !isWhoopPrefilled(latestLog, 'energyLevel')
-      ? latestLog.energyLevel ?? undefined
-      : undefined,
-    latestPainLevel: latestLog?.painLevel ?? undefined,
-    avgActualRpe: rpeStats.count > 0 ? rpeStats.average : undefined,
-    rpeSampleCount: rpeStats.count,
-  }
+export interface WeekCreatorStrengthSources {
+  capture: SourceCapture
+  executionSignals: ExecutionSignals
+  loadDecision: LoadDirectiveDecision
 }
 
-function pickMostRecentLog(logs: DayLog[] | undefined): DayLog | undefined {
-  return (logs ?? []).reduce<DayLog | undefined>(
-    (best, log) => (!best || log.date > best.date ? log : best),
-    undefined,
-  )
+export function resolveWeekCreatorStrengthSources(
+  context: ChatContext,
+  planningStartDate: string,
+  now: number,
+): WeekCreatorStrengthSources {
+  const capture = captureFromChatContext(context, now)
+  const slotContext = deriveSlotContext(capture, { date: planningStartDate, timeBlock: 'AM' })
+  const { signals } = buildExecutionSignals(slotContext, { windowStart: previousWeekWindowStart(planningStartDate) })
+  const declared = resolveDeclaredAthleteState(capture.profile?.planWizardConfig, planningStartDate)
+  const executionSignals: ExecutionSignals = { ...signals, declaredFatigue: declared.declaredFatigue }
+  return { capture, executionSignals, loadDecision: decideLoadDirective(executionSignals) }
 }
 
 export function computeRecentRpeStats(

@@ -2,12 +2,20 @@ import { create } from 'zustand'
 import { db } from '../db/db'
 import type { ChatMessage, ChatContext, ChatContextMetadata, AIRequestClass, CoachAction, Session } from '../types'
 import { CoachEngine } from '../services/ai/CoachEngine'
-import { optimizeChatContext } from '../services/ai/contextOptimizer'
+import { optimizeChatContext, selectDomainRecentMessages } from '../services/ai/contextOptimizer'
 import { useCoachActionsStore } from './useCoachActionsStore'
 import { v4 as uuid } from '../utils/uuid'
 import { AIProviderError } from '../services/ai/types'
 import type { CoachNormalizedResponse } from '../services/ai/types'
 import { describeMissing, pendingIntentFromEvents, type PendingIntent } from '../services/chat/pendingIntent'
+import {
+  resolveMessageTargets,
+  describeTargetClarification,
+  buildTargetClarificationIntent,
+  readOnlyTargetsFromClarification,
+  withTargetOverflowNotice,
+  type MessageTargetResolution,
+} from '../services/chat/messageTargets'
 import { getOrCreateChatSessionId, isLocalOnlyChatSessionId, setStoredChatSessionId } from '../utils/chatSession'
 import { isRowInActiveScope, filterRowsToActiveScope, withActiveAthleteStamp } from '../services/athlete/activeScopeFilter'
 import * as syncService from '../services/syncService'
@@ -327,6 +335,28 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return { route: route.kind }
     }
 
+    // B4: objetivos del mensaje sobre el dominio. Una intención pendiente ya
+    // consumida trae su propio objetivo; no se vuelve a interpretar.
+    const rawTargets: MessageTargetResolution = !route.pendingOperation && (route.kind === 'chat_action' || route.kind === 'chat_general')
+      ? resolveMessageTargets({
+          message: content,
+          context: routeContext,
+          pendingIntent: get().pendingIntent,
+          scope: intentScope,
+          recentMessages: get().messages.map((m) => ({ role: m.role, content: m.content, timestamp: m.timestamp })),
+          now: Date.now(),
+        })
+      : { kind: 'none' }
+    // I13d: en chat de acción se aclara localmente, sin IA; nunca se amplía ni se recorta.
+    if (rawTargets.kind === 'clarify' && route.kind === 'chat_action') {
+      const clarification = buildTargetClarificationIntent(content, rawTargets, intentScope, Date.now())
+      set({ pendingIntent: clarification })
+      await appendLocalCoachMessage(get, set, requestScope, content, describeTargetClarification(rawTargets))
+      return { route: route.kind }
+    }
+    // En chat general no se interrumpe: las candidatas entran como referencia de lectura.
+    const targetResolution = rawTargets.kind === 'clarify' ? readOnlyTargetsFromClarification(rawTargets) : rawTargets
+
     const sessionId = get().currentSessionId
     // Lock immediately to prevent double-send before the async persist completes.
     if (get().isLoading) return { route: route.kind }
@@ -350,7 +380,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       content,
       timestamp: Date.now(),
       chatSessionId: sessionId,
-      contextMeta: buildChatContextMetadata(context, route.kind),
+      contextMeta: buildChatContextMetadata(context, route.kind, targetResolution),
       athleteId: requestScope.athleteId ?? undefined,
     })
     set(state => ({
@@ -376,19 +406,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
     void syncService.pushChatMessage(userMsg)
 
-    // Pasamos historial multi-turno real al provider (excluye el mensaje recién añadido)
-    const recentMessages = get().messages.slice(0, -1).map(m => ({ role: m.role, content: m.content, timestamp: m.timestamp }))
-    const enrichedContext = optimizeChatContext({
+    // B4: dominio completo para postprocesar, validar y resolver objetivos;
+    // proyección recortada sólo para el prompt.
+    const domainContext: ChatContext = {
       ...(context ?? { recentSessions: [], plannedSessions: [], historicalSessions: [] }),
-      recentMessages,
-    }, requestClass)
+      recentMessages: selectDomainRecentMessages(get().messages.slice(0, -1), Date.now()),
+    }
+    const promptContext = optimizeChatContext(domainContext, requestClass, targetResolution)
 
     if (route.pendingOperation && route.pendingOperation.type !== 'create_week') {
       const resolvedSessionId = typeof route.pendingOperation.known.sessionId === 'string'
         ? route.pendingOperation.known.sessionId
         : undefined
       const sourceSession = resolvedSessionId
-        ? (context?.plannedSessions ?? enrichedContext.plannedSessions ?? []).find(s => s.id === resolvedSessionId)
+        ? (domainContext.plannedSessions ?? []).find(s => s.id === resolvedSessionId)
         : undefined
       const local = buildDeterministicActionFromOperation(route.pendingOperation, sourceSession)
       if (local) {
@@ -421,7 +452,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
       // update_session / add_session: necesitan IA. La operación viaja en el contexto
       // como dato estructurado, no como texto libre.
-      enrichedContext.pendingOperation = route.pendingOperation
+      domainContext.pendingOperation = route.pendingOperation
+      promptContext.pendingOperation = route.pendingOperation
     }
 
     let receivedFirstChunk = false
@@ -460,36 +492,46 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
 
       const enginePromise: Promise<CoachNormalizedResponse> = route.kind === 'week_creator'
-        ? WeekCreatorEngine.sendWeekCreate(content, enrichedContext, {
+        ? WeekCreatorEngine.sendWeekCreate(content, domainContext, {
           surface: 'chat',
-          targetWeekStart: route.targetWeekStart ?? enrichedContext.currentWeekSummary?.weekStartDate ?? '',
+          targetWeekStart: route.targetWeekStart ?? domainContext.currentWeekSummary?.weekStartDate ?? '',
           generationId: weekCreatorGenerationId,
           signal: abortController.signal,
           targetAthleteId: requestScope.athleteId,
+          promptContext,
         })
         : requestClass === 'chat_general'
-        ? CoachEngine.sendChat(content, enrichedContext, {
+        ? CoachEngine.sendChat(content, domainContext, {
             surface: 'chat',
             onChunk: handleChunk,
             signal: abortController.signal,
             targetAthleteId: requestScope.athleteId,
+            promptContext,
           })
         : requestClass === 'chat_action'
-          ? CoachEngine.sendAction(content, enrichedContext, {
+          ? CoachEngine.sendAction(content, domainContext, {
               surface: 'chat',
               onChunk: handleChunk,
               signal: abortController.signal,
               targetAthleteId: requestScope.athleteId,
+              promptContext,
             })
-          : CoachEngine.send(content, enrichedContext, {
+          : CoachEngine.send(content, domainContext, {
               requestClass,
               surface: 'chat',
               onChunk: handleChunk,
               signal: abortController.signal,
               targetAthleteId: requestScope.athleteId,
+              promptContext,
             })
 
-      const response = await Promise.race([enginePromise, watchdogPromise])
+      const rawResponse = await Promise.race([enginePromise, watchdogPromise])
+      // I13d: en chat general las candidatas son referencia de sólo lectura —
+      // no se "procesó" nada, así que el aviso de desborde (redactado para
+      // chat_action) no aplica ahí.
+      const response = route.kind === 'chat_action'
+        ? withTargetOverflowNotice(rawResponse, promptContext.overflowTargets)
+        : rawResponse
       if (!isRequestScopeCurrent(requestScope) || !isActiveChatRequest(get().currentSessionId, sessionId, abortController)) {
         return { route: route.kind }
       }
@@ -1040,7 +1082,7 @@ function markWeekCreatorGenerationFailed(generationId: string, requestStartedAt:
   })
 }
 
-function buildChatContextMetadata(context?: ChatContext, route?: ChatRouteKind): ChatContextMetadata {
+function buildChatContextMetadata(context?: ChatContext, route?: ChatRouteKind, targets?: MessageTargetResolution): ChatContextMetadata {
   return {
     contextVersion: route ? 2 : 1,
     intent: context?.intent,
@@ -1052,6 +1094,9 @@ function buildChatContextMetadata(context?: ChatContext, route?: ChatRouteKind):
     hasDayLog: context?.dayLog != null,
     hasAthleteProfile: context?.athleteProfile != null,
     hasAthleteMemory: Boolean(context?.athleteMemory?.trim()),
+    ...(targets?.kind === 'resolved'
+      ? { targetCount: targets.targets.length, ...(targets.overflow.length > 0 ? { overflowTargetIds: targets.overflow.map((t) => t.sessionId) } : {}) }
+      : {}),
   }
 }
 

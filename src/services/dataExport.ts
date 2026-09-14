@@ -2192,6 +2192,7 @@ function optionalStrengthProfile(value: unknown, path: string): AthleteProfile['
     deadlift1RM: optionalFiniteNumber(row.deadlift1RM, `${path}.deadlift1RM`),
     overheadPress1RM: optionalFiniteNumber(row.overheadPress1RM, `${path}.overheadPress1RM`),
     pullUpMaxReps: optionalFiniteNumber(row.pullUpMaxReps, `${path}.pullUpMaxReps`),
+    experienceLevel: optionalEnum(row.experienceLevel, ['beginner', 'intermediate', 'advanced'] as const, `${path}.experienceLevel`),
     notes: optionalString(row.notes, `${path}.notes`),
   }
 }

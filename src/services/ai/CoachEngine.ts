@@ -17,6 +17,7 @@ import { postProcessCoachActions } from './actionPostProcessor'
 import { assertDailyAIRequestLimit } from './aiTelemetry'
 import { persistSafetyBlockedOutcome } from './safetyOutcomeTelemetry'
 import { resolveRequestTargetAthleteId } from './requestTarget'
+import type { PromptContext } from './contextOptimizer'
 
 export type CoachActionIntent = 'create_full_plan' | 'modify_plan' | 'none'
 type CoachSendOptions = {
@@ -27,6 +28,8 @@ type CoachSendOptions = {
   surface?: AITechnicalSurface
   /** Atleta capturado al inicio de la operación; evita leer el holder global tras un await. */
   targetAthleteId?: string | null
+  /** Proyección para el prompt (B4). Sin ella, el prompt se arma con `context` (tests y llamadores legacy). */
+  promptContext?: PromptContext
 }
 type CoachDispatcherOptions = CoachSendOptions & {
   requestClass?: AIRequestClass
@@ -180,8 +183,9 @@ async function sendTrackedCoachRequest(
     let outcome: CoachOutcome = 'error'
     try {
       let firstChunkSeen = false
+      const promptSource: ChatContext = options?.promptContext ?? context
       const promptStage = tracker.stage('prompt_build')
-      const prompt = buildCoachPrompt(context, { requestClass, userMessage })
+      const prompt = buildCoachPrompt(promptSource, { requestClass, userMessage })
       promptStage.end({ ok: true })
 
       if (prompt.trace) {
@@ -196,7 +200,7 @@ async function sendTrackedCoachRequest(
         requestClass,
         traceId,
         targetAthleteId: resolveRequestTargetAthleteId(options?.targetAthleteId),
-        conversation: (context.recentMessages ?? []).map(message => ({
+        conversation: (promptSource.recentMessages ?? []).map(message => ({
           role: message.role === 'coach' ? 'assistant' : 'user',
           content: message.content,
         })),
@@ -240,7 +244,7 @@ async function sendTrackedCoachRequest(
       ))
 
       const postProcessedResult = requestClass === 'chat_action'
-        ? postProcessCoachActions(result, context, userMessage)
+        ? dropOverflowTargetActions(postProcessCoachActions(result, context, userMessage), options?.promptContext?.overflowTargets)
         : result
       // A safety postcondition is a successful terminal decline, not a malformed
       // action response. The post-processor owns the detection because it sees
@@ -382,6 +386,29 @@ async function sendDirect(
 ): Promise<CoachNormalizedResponse> {
   const raw = await provider.call(request)
   return normalizeResponse(raw)
+}
+
+/** I13c: el modelo no puede actuar sobre sesiones que quedaron fuera del tope del pedido. */
+function dropOverflowTargetActions(
+  response: CoachNormalizedResponse,
+  overflow: ReadonlyArray<{ id: string }> | undefined,
+): CoachNormalizedResponse {
+  if (!overflow || overflow.length === 0 || !response.actions?.length) return response
+  const outOfScope = (sessionId: string | undefined) =>
+    sessionId != null && overflow.some((ref) => ref.id === sessionId || ref.id.startsWith(sessionId))
+  const kept = response.actions.filter((action) => !outOfScope(action.sessionId))
+  if (kept.length === response.actions.length) return response
+  return {
+    ...response,
+    actions: kept,
+    meta: {
+      hadActionsMarkup: response.meta?.hadActionsMarkup ?? true,
+      actionParseFailed: response.meta?.actionParseFailed ?? false,
+      likelyTruncated: response.meta?.likelyTruncated ?? false,
+      ...response.meta,
+      warnings: [...(response.meta?.warnings ?? []), 'chat_action_target_overflow_dropped'],
+    },
+  }
 }
 
 export function inferCoachActionIntent(userMessage: string): CoachActionIntent {
