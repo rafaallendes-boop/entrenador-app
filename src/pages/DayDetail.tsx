@@ -8,6 +8,7 @@ import PageHeader from '../components/layout/PageHeader'
 import SessionCard from '../components/session/SessionCard'
 import Slider from '../components/ui/Slider'
 import Card from '../components/ui/Card'
+import ConfirmDialog from '../components/ui/ConfirmDialog'
 import { ROUTES } from '../constants/routes'
 import { getActiveAthleteId, getSelfAthleteId } from '../services/athlete/activeAthlete'
 import {
@@ -312,7 +313,8 @@ function whoopSportLabel(sportName: string): string {
 
 export default function DayDetail() {
   const { date } = useParams<{ date: string }>()
-  const { sessions, dayLogs, loadWeek, loadedWeekStart, saveDayLog, updateSession } = useTrainingStore()
+  const { sessions, dayLogs, loadWeek, loadedWeekStart, saveDayLog, updateSession, deleteSession } = useTrainingStore()
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
   const { athleteProfile } = useCoachMemoryStore()
   const activeAthleteFromStore = useAuthStore((state) => state.activeAthleteId)
   const { setCurrentWeekStart, setSelectedDate } = useUIStore()
@@ -445,6 +447,12 @@ export default function DayDetail() {
     await updateSession(sessionId, { actualRpe })
   }
 
+  const handleConfirmDeleteSession = async () => {
+    if (!pendingDeleteId) return
+    await deleteSession(pendingDeleteId)
+    setPendingDeleteId(null)
+  }
+
   const isToday = dateISO ? isDateToday(dateISO) : false
   const completedCount = completedSessions.length
 
@@ -518,6 +526,7 @@ export default function DayDetail() {
                               ? workoutsById.get(s.autoCompletion.workoutId)
                               : undefined
                           }
+                          onDelete={(current) => setPendingDeleteId(current.id)}
                         />
                         <div className="grid gap-2 sm:grid-cols-2">
                           <ProtocolGuideCard label="Warm-up recomendado" protocol={protocols.warmup} />
@@ -544,6 +553,7 @@ export default function DayDetail() {
                               ? workoutsById.get(s.autoCompletion.workoutId)
                               : undefined
                           }
+                          onDelete={(current) => setPendingDeleteId(current.id)}
                         />
                         <div className="grid gap-2 sm:grid-cols-2">
                           <ProtocolGuideCard label="Warm-up recomendado" protocol={protocols.warmup} />
@@ -684,6 +694,16 @@ export default function DayDetail() {
           />
         </Card>
       </div>
+
+      <ConfirmDialog
+        open={pendingDeleteId != null}
+        title="Eliminar sesion"
+        message="Esta sesion se eliminara solo para esta semana. Esta accion no se puede deshacer."
+        confirmLabel="Eliminar"
+        destructive
+        onCancel={() => setPendingDeleteId(null)}
+        onConfirm={() => { void handleConfirmDeleteSession() }}
+      />
     </div>
   )
 }

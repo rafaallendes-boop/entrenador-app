@@ -48,7 +48,7 @@ export default function WeeklyView() {
   const [isGeneratingNote, setIsGeneratingNote] = useState(false)
   const [coachNoteError, setCoachNoteError] = useState<string | null>(null)
   const [checkInExpandToken, setCheckInExpandToken] = useState(0)
-  const [pendingCoachDeleteId, setPendingCoachDeleteId] = useState<string | null>(null)
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
   const [activeProposal, setActiveProposal] = useState<CoachProposal | null>(null)
   const [proposalError, setProposalError] = useState<string | null>(null)
   const { launchIntent, launchId } = useWeeklyLaunchIntent()
@@ -137,10 +137,10 @@ export default function WeeklyView() {
     }
   }, [currentWeekStart, generateCoachNote, isGeneratingNote])
 
-  const handleConfirmDeleteCoachSession = async () => {
-    if (!pendingCoachDeleteId) return
-    await deleteSession(pendingCoachDeleteId)
-    setPendingCoachDeleteId(null)
+  const handleConfirmDeleteSession = async () => {
+    if (!pendingDeleteId) return
+    await deleteSession(pendingDeleteId)
+    setPendingDeleteId(null)
   }
 
   const handleOpenAutoAdjustment = useCallback(async () => {
@@ -352,7 +352,7 @@ export default function WeeklyView() {
                         <SessionCard
                           key={session.id}
                           session={session}
-                          onDelete={session.source === 'coach' ? (current) => setPendingCoachDeleteId(current.id) : undefined}
+                          onDelete={(current) => setPendingDeleteId(current.id)}
                         />
                       ))}
                     </div>
@@ -366,7 +366,7 @@ export default function WeeklyView() {
                         <SessionCard
                           key={session.id}
                           session={session}
-                          onDelete={session.source === 'coach' ? (current) => setPendingCoachDeleteId(current.id) : undefined}
+                          onDelete={(current) => setPendingDeleteId(current.id)}
                         />
                       ))}
                     </div>
@@ -436,13 +436,13 @@ export default function WeeklyView() {
       )}
 
       <ConfirmDialog
-        open={pendingCoachDeleteId != null}
-        title="Eliminar sesion de RallyIQ"
-        message="Esta sesion de RallyIQ se eliminara solo para esta semana. Esta accion no se puede deshacer."
+        open={pendingDeleteId != null}
+        title="Eliminar sesion"
+        message="Esta sesion se eliminara solo para esta semana. Esta accion no se puede deshacer."
         confirmLabel="Eliminar"
         destructive
-        onCancel={() => setPendingCoachDeleteId(null)}
-        onConfirm={() => { void handleConfirmDeleteCoachSession() }}
+        onCancel={() => setPendingDeleteId(null)}
+        onConfirm={() => { void handleConfirmDeleteSession() }}
       />
 
       {activeProposal && (
