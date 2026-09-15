@@ -1,4 +1,4 @@
-import { Clock, Flame, ChevronDown, ChevronUp, Layers, Trash2, Wind } from 'lucide-react'
+import { Clock, Flame, ChevronDown, ChevronUp, Layers, Pencil, Trash2, Wind } from 'lucide-react'
 import { useState } from 'react'
 import type { Exercise, Session, SessionStatus, SquashDrill, WhoopWorkout } from '../../types'
 import { SESSION_TYPE_CONFIG, SQUASH_SUBTYPE_LABELS } from '../../constants/sessionTypes'
@@ -84,11 +84,12 @@ interface SessionCardProps {
   session: Session
   compact?: boolean
   onDelete?: (session: Session) => void
+  onEdit?: (session: Session) => void
   /** Detalle real del entrenamiento. La tarjeta no consulta Dexie: se lo pasan. */
   whoopWorkout?: WhoopWorkout
 }
 
-export default function SessionCard({ session, compact = false, onDelete, whoopWorkout }: SessionCardProps) {
+export default function SessionCard({ session, compact = false, onDelete, onEdit, whoopWorkout }: SessionCardProps) {
   const [expanded, setExpanded] = useState(false)
   const cycleStatus = useTrainingStore((s) => s.cycleSessionStatus)
   const updateSession = useTrainingStore((s) => s.updateSession)
@@ -266,6 +267,18 @@ export default function SessionCard({ session, compact = false, onDelete, whoopW
         <div className="ml-auto flex flex-shrink-0 flex-wrap items-center justify-end gap-2 self-start md:self-center">
           {session.status === 'completed' && session.autoCompletion?.source === 'whoop_workout' && (
             <WhoopSyncBadge />
+          )}
+          {onEdit && !compact && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                onEdit(session)
+              }}
+              title="Editar sesion"
+              className="rounded-lg p-2 text-ink-faint transition-colors hover:bg-surface-raised hover:text-ink"
+            >
+              <Pencil size={14} />
+            </button>
           )}
           {onDelete && !compact && (
             <button

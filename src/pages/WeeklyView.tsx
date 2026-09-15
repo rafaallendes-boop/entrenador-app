@@ -16,7 +16,7 @@ import AddSessionModal from '../components/session/AddSessionModal'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
 import Card from '../components/ui/Card'
 import { ROUTES } from '../constants/routes'
-import type { CoachProposal, TimeBlock } from '../types'
+import type { CoachProposal, Session, TimeBlock } from '../types'
 import { downloadICS } from '../utils/ics'
 import { useMacroWeekCoherence } from '../hooks/useMacroWeekCoherence'
 import { useWeeklyActionNavigator } from '../hooks/useWeeklyActionNavigator'
@@ -45,6 +45,7 @@ export default function WeeklyView() {
   const { currentWeekStart, selectedDate, setSelectedDate, setCurrentWeekStart } = useUIStore()
 
   const [showAddModal, setShowAddModal] = useState(false)
+  const [editingSession, setEditingSession] = useState<Session | null>(null)
   const [isGeneratingNote, setIsGeneratingNote] = useState(false)
   const [coachNoteError, setCoachNoteError] = useState<string | null>(null)
   const [checkInExpandToken, setCheckInExpandToken] = useState(0)
@@ -352,6 +353,7 @@ export default function WeeklyView() {
                         <SessionCard
                           key={session.id}
                           session={session}
+                          onEdit={(current) => setEditingSession(current)}
                           onDelete={(current) => setPendingDeleteId(current.id)}
                         />
                       ))}
@@ -366,6 +368,7 @@ export default function WeeklyView() {
                         <SessionCard
                           key={session.id}
                           session={session}
+                          onEdit={(current) => setEditingSession(current)}
                           onDelete={(current) => setPendingDeleteId(current.id)}
                         />
                       ))}
@@ -428,10 +431,14 @@ export default function WeeklyView() {
         <div className="px-4 py-4 text-center text-sm text-ink-muted md:px-6">Cargando...</div>
       )}
 
-      {showAddModal && (
+      {(showAddModal || editingSession) && (
         <AddSessionModal
+          session={editingSession ?? undefined}
           defaultDate={selectedDayData?.iso}
-          onClose={() => setShowAddModal(false)}
+          onClose={() => {
+            setShowAddModal(false)
+            setEditingSession(null)
+          }}
         />
       )}
 

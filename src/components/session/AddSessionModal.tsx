@@ -1,16 +1,22 @@
-import type { SessionType } from '../../types'
+import type { Session, SessionType } from '../../types'
 import { useTrainingStore } from '../../store/useTrainingStore'
 import { useCoachMemoryStore } from '../../store/useCoachMemoryStore'
-import { draftToNewSessionFields } from '../../services/athlete/coachSessionSerializer'
+import {
+  applyCoachSessionPatch,
+  draftToNewSessionFields,
+  draftToPatch,
+  sessionToDraft,
+} from '../../services/athlete/coachSessionSerializer'
 import SessionForm from './SessionForm'
 
 interface Props {
   defaultDate?: string
+  session?: Session
   onClose: () => void
 }
 
-export default function AddSessionModal({ defaultDate, onClose }: Props) {
-  const { addSession } = useTrainingStore()
+export default function AddSessionModal({ defaultDate, session, onClose }: Props) {
+  const { addSession, updateSession } = useTrainingStore()
   const { athleteProfile } = useCoachMemoryStore()
   const defaultType = (
     athleteProfile?.sportContext?.primarySport as SessionType | undefined
@@ -22,14 +28,20 @@ export default function AddSessionModal({ defaultDate, onClose }: Props) {
       <div className="relative w-full max-h-[92vh] overflow-y-auto rounded-t-2xl border-t border-surface-border bg-surface-card md:max-w-3xl md:rounded-2xl md:border md:max-h-[88vh]">
         <SessionForm
           athleteProfile={athleteProfile}
-          origin="new"
-          defaultSport={defaultType}
-          defaultDate={defaultDate}
-          heading="Nueva sesion"
-          submitLabel="Agregar sesion"
+          origin={session ? 'existing' : 'new'}
+          sessionStatus={session?.status}
+          initialValues={session ? sessionToDraft(session) : undefined}
+          defaultSport={session?.type ?? defaultType}
+          defaultDate={session?.date ?? defaultDate}
+          heading={session ? 'Editar sesion' : 'Nueva sesion'}
+          submitLabel={session ? 'Guardar cambios' : 'Agregar sesion'}
           onCancel={onClose}
           onSubmit={async (draft) => {
-            await addSession({ ...draftToNewSessionFields(draft), source: 'manual' })
+            if (session) {
+              await updateSession(session.id, applyCoachSessionPatch(session, draftToPatch(draft, session)))
+            } else {
+              await addSession({ ...draftToNewSessionFields(draft), source: 'manual' })
+            }
             onClose()
           }}
         />

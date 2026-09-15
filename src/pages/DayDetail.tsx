@@ -6,6 +6,7 @@ import { useAuthStore } from '../store/useAuthStore'
 import { formatFullDate, fromISO, isDateToday, isStrictISODate, toISO, getWeekStart, todayISO } from '../utils/date'
 import PageHeader from '../components/layout/PageHeader'
 import SessionCard from '../components/session/SessionCard'
+import AddSessionModal from '../components/session/AddSessionModal'
 import Slider from '../components/ui/Slider'
 import Card from '../components/ui/Card'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
@@ -315,6 +316,7 @@ export default function DayDetail() {
   const { date } = useParams<{ date: string }>()
   const { sessions, dayLogs, loadWeek, loadedWeekStart, saveDayLog, updateSession, deleteSession } = useTrainingStore()
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
+  const [editingSession, setEditingSession] = useState<Session | null>(null)
   const { athleteProfile } = useCoachMemoryStore()
   const activeAthleteFromStore = useAuthStore((state) => state.activeAthleteId)
   const { setCurrentWeekStart, setSelectedDate } = useUIStore()
@@ -526,6 +528,7 @@ export default function DayDetail() {
                               ? workoutsById.get(s.autoCompletion.workoutId)
                               : undefined
                           }
+                          onEdit={(current) => setEditingSession(current)}
                           onDelete={(current) => setPendingDeleteId(current.id)}
                         />
                         <div className="grid gap-2 sm:grid-cols-2">
@@ -553,6 +556,7 @@ export default function DayDetail() {
                               ? workoutsById.get(s.autoCompletion.workoutId)
                               : undefined
                           }
+                          onEdit={(current) => setEditingSession(current)}
                           onDelete={(current) => setPendingDeleteId(current.id)}
                         />
                         <div className="grid gap-2 sm:grid-cols-2">
@@ -694,6 +698,13 @@ export default function DayDetail() {
           />
         </Card>
       </div>
+
+      {editingSession && (
+        <AddSessionModal
+          session={editingSession}
+          onClose={() => setEditingSession(null)}
+        />
+      )}
 
       <ConfirmDialog
         open={pendingDeleteId != null}

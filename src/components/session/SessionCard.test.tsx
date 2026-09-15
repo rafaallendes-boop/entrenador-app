@@ -470,3 +470,24 @@ describe('SessionCard — estructura de running y contexto de squash', () => {
     expect(screen.getByText(/Elección manual/)).toBeTruthy()
   })
 })
+
+describe('SessionCard — acciones de editar/eliminar', () => {
+  it('no muestra los botones cuando no se pasan onEdit/onDelete', () => {
+    render(<SessionCard session={makeSession()} />)
+    expect(screen.queryByTitle('Editar sesion')).toBeNull()
+    expect(screen.queryByTitle('Eliminar sesion')).toBeNull()
+  })
+
+  it('onEdit y onDelete se invocan con la sesion, independiente del source', () => {
+    const onEdit = vi.fn()
+    const onDelete = vi.fn()
+    const session = makeSession({ source: 'manual' })
+    render(<SessionCard session={session} onEdit={onEdit} onDelete={onDelete} />)
+
+    fireEvent.click(screen.getByTitle('Editar sesion'))
+    fireEvent.click(screen.getByTitle('Eliminar sesion'))
+
+    expect(onEdit).toHaveBeenCalledWith(session)
+    expect(onDelete).toHaveBeenCalledWith(session)
+  })
+})
